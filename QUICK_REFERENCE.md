@@ -1,12 +1,26 @@
-# 📋 Quick Reference - APK Delivery
+# 📋 Quick Reference - Build & Delivery
 
-## 🚀 Build Command
+## 🚀 Build Commands
 
+### APK (Direct Installation - Testing)
 ```bash
+npm run build:preview
+# or
 npx eas build --platform android --profile preview
 ```
+**Use for**: Immediate testing, sideloading, pre-Play Store validation
 
-## 📦 Files to Send Client
+### AAB (Play Store - Production)
+```bash
+npm run build:production
+# or
+npx eas build --platform android --profile production
+```
+**Use for**: Play Store upload (Internal Testing, Production)
+
+> ⚠️ **Important**: Google Play Store REQUIRES AAB format (not APK)
+
+---
 
 1. APK file (from EAS download)
 2. DEMO_VERSION_README.md
