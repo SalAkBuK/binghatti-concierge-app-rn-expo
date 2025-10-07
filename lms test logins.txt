@@ -1,0 +1,4 @@
+ SUPER_ADMIN: superadmin@lms.com / SuperAdmin123!
+  ORG_ADMIN:   orgadmin@testorg.com / OrgAdmin123!
+  TEACHER:     teacher@testorg.com / Teacher123!
+  STUDENT:     student@testorg.com / Student123!

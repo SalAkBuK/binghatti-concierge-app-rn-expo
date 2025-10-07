@@ -1,0 +1,27 @@
+import React from "react";
+import Svg, { Path } from "react-native-svg";
+
+interface FireIconProps {
+  size?: number;
+  color?: string;
+}
+
+export default function FireIcon({
+  size = 20,
+  color = "#FD3C4F",
+}: FireIconProps) {
+  // Calculate width based on original aspect ratio (15.111/20.01)
+  const aspectRatio = 15.111 / 20.01;
+  const width = size * aspectRatio;
+  const height = size;
+
+  return (
+    <Svg width={width} height={height} viewBox="0 0 15.111 20.01">
+      <Path
+        d="M19.158,11.644A9.044,9.044,0,0,0,16.539,7.81,7.848,7.848,0,0,1,13.82,2.835,1,1,0,0,0,12.1,2.319a6.892,6.892,0,0,0-1.133,6.3c.485,1.943.124,2.683-.055,2.911a.917.917,0,0,1-.768.326c-1.6,0-1.687-3.446-1.687-3.481A1,1,0,0,0,6.7,7.722a9.955,9.955,0,0,0-2.016,4.041c-1.118,5.587,1.8,8.22,3.113,9.092a6.955,6.955,0,0,0,3.89,1.154,7.861,7.861,0,0,0,5.436-2.175,7.983,7.983,0,0,0,2.033-8.191Z"
+        transform="translate(-4.437 -2)"
+        fill={color}
+      />
+    </Svg>
+  );
+}

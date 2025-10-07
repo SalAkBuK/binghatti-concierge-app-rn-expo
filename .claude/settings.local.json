@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc:*)",
+      "Bash(npm run test:*)",
+      "Bash(npm run:*)",
+      "Bash(npx expo start:*)",
+      "Bash(git checkout:*)",
+      "Bash(npx expo install:*)",
+      "Bash(npm install:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(if exist node_modules rmdir /s /q node_modules)",
+      "Bash(if exist package-lock.json del /q package-lock.json)",
+      "Bash(ls:*)",
+      "Bash(claude-code agent --name react-native-code-optimizer --prompt \"Please implement the admin functionality tasks as described in .claude/agents/task-context.md. Implement all 4 tasks: 1) Enhance buildings.tsx with Create Building modal, 2) Add manager assignment functionality, 3) Create new permissions.tsx screen, 4) Update admin layout. Follow the existing code patterns from users.tsx exactly. Use absolute file paths for all operations.\")"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

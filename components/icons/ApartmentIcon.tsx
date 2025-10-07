@@ -1,0 +1,28 @@
+import React from "react";
+import Svg, { Rect, Path } from "react-native-svg";
+
+interface ApartmentIconProps {
+  size?: number;
+  color?: string;
+}
+
+export default function ApartmentIcon({
+  size = 22,
+  color = "#fff",
+}: ApartmentIconProps) {
+  const aspectRatio = 46 / 44; // height/width ratio to match XD specs
+  const width = size;
+  const height = size * aspectRatio;
+
+  return (
+    <Svg width={width} height={height} viewBox="0 0 44 46">
+      <Rect width="44" height="46" rx="10" fill={color} opacity="0.17" />
+      <Path
+        d="M21.656,8.457,15.491,3.171a3.941,3.941,0,0,0-5,0L4.328,8.457A3.046,3.046,0,0,0,3.26,10.783V20.888a3.059,3.059,0,0,0,3.06,3.06H19.675a3.059,3.059,0,0,0,3.06-3.06V10.783a3.064,3.064,0,0,0-1.068-2.326ZM15.491,22.279H10.483v-4.73a1.392,1.392,0,0,1,1.391-1.391H14.1a1.392,1.392,0,0,1,1.391,1.391Zm5.564-1.391a1.392,1.392,0,0,1-1.391,1.391h-2.5v-4.73a3.059,3.059,0,0,0-3.06-3.06H11.874a3.059,3.059,0,0,0-3.06,3.06v4.73h-2.5a1.392,1.392,0,0,1-1.391-1.391V10.783a1.382,1.382,0,0,1,.49-1.057l6.165-5.286a2.171,2.171,0,0,1,2.827,0l6.165,5.286a1.382,1.382,0,0,1,.49,1.057V20.888Z"
+        transform="translate(10 12)"
+        fill={color}
+        fillRule="evenodd"
+      />
+    </Svg>
+  );
+}
