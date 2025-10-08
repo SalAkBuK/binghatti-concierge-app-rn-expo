@@ -277,7 +277,7 @@ export default function BuildingsScreen() {
                 },
                 { text: "Close", style: "cancel" },
               ]);
-            }
+            }}
             emptyMessage="No buildings found"
             searchPlaceholder="Search buildings..."
             onSearch={setSearchQuery}
