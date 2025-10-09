@@ -1,17 +1,16 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
-  Alert,
-  Modal,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-  ActivityIndicator,
-  useWindowDimensions,
+    ActivityIndicator,
+    Alert,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    useWindowDimensions,
+    View
 } from "react-native";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
