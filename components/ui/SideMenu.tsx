@@ -10,10 +10,12 @@ import {
   Alert,
 } from "react-native";
 import Animated, {
-  useSharedValue,
+  Easing,
+  runOnJS,
   useAnimatedStyle,
-  withTiming,
+  useSharedValue,
   withSpring,
+  withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useApp } from "../../lib/context/connected-app-provider";
@@ -47,10 +49,12 @@ export function SideMenu({ isVisible, onClose }: SideMenuProps) {
   const { currentUser, actions } = useApp();
   const insets = useSafeAreaInsets();
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
+  const [isRendered, setIsRendered] = useState(isVisible);
 
   // Animation values
-  const translateX = useSharedValue(-MENU_WIDTH);
+  const translateX = useSharedValue(-MENU_WIDTH - 20);
   const overlayOpacity = useSharedValue(0);
+  const menuScale = useSharedValue(0.95);
 
   const closeMenu = () => {
     onClose();
@@ -66,12 +70,6 @@ export function SideMenu({ isVisible, onClose }: SideMenuProps) {
   };
 
   const tenantMenu: MenuItem[] = [
-    {
-      id: "dashboard",
-      title: "Tenant Dashboard",
-      icon: "home-outline",
-      action: () => navigateAndClose("/(tabs)/index"),
-    },
     {
       id: "amenities",
       title: "Amenities Booking",
@@ -105,28 +103,10 @@ export function SideMenu({ isVisible, onClose }: SideMenuProps) {
       ],
     },
     {
-      id: "requests",
-      title: "Requests",
-      icon: "construct-outline",
-      action: () => navigateAndClose("/(tabs)/requests"),
-    },
-    {
       id: "visitors",
       title: "Visitor Booking",
       icon: "people-outline",
       action: () => navigateAndClose("/(tabs)/visitors"),
-    },
-    {
-      id: "bookings",
-      title: "My Bookings",
-      icon: "calendar-outline",
-      action: () => navigateAndClose("/(tabs)/my-bookings"),
-    },
-    {
-      id: "divider-tenant",
-      title: "",
-      icon: "remove",
-      action: () => {},
     },
     {
       id: "logout",
@@ -267,23 +247,52 @@ export function SideMenu({ isVisible, onClose }: SideMenuProps) {
   // Animation effects
   useEffect(() => {
     if (isVisible) {
-      // Open menu
+      setIsRendered(true);
+
       translateX.value = withSpring(0, {
-        damping: 20,
-        stiffness: 90,
+        damping: 18,
+        stiffness: 180,
       });
-      overlayOpacity.value = withTiming(0.5, { duration: 300 });
+      overlayOpacity.value = withTiming(0.5, {
+        duration: 250,
+        easing: Easing.out(Easing.cubic),
+      });
+      menuScale.value = withTiming(1, {
+        duration: 280,
+        easing: Easing.out(Easing.cubic),
+      });
     } else {
-      // Close menu
-      translateX.value = withTiming(-MENU_WIDTH, { duration: 250 });
-      overlayOpacity.value = withTiming(0, { duration: 250 });
+      setExpandedItem(null);
+      overlayOpacity.value = withTiming(0, {
+        duration: 220,
+        easing: Easing.out(Easing.quad),
+      });
+      menuScale.value = withTiming(0.95, {
+        duration: 240,
+        easing: Easing.in(Easing.quad),
+      });
+      translateX.value = withTiming(
+        -MENU_WIDTH - 20,
+        {
+          duration: 260,
+          easing: Easing.inOut(Easing.cubic),
+        },
+        (finished) => {
+          if (finished) {
+            runOnJS(setIsRendered)(false);
+          }
+        }
+      );
     }
-  }, [isVisible]);
+  }, [isVisible, menuScale, overlayOpacity, translateX]);
 
   // Animated styles
   const menuAnimatedStyle = useAnimatedStyle(() => {
     return {
-      transform: [{ translateX: translateX.value }],
+      transform: [
+        { translateX: translateX.value },
+        { scale: menuScale.value },
+      ],
     };
   });
 
@@ -293,7 +302,7 @@ export function SideMenu({ isVisible, onClose }: SideMenuProps) {
     };
   });
 
-  if (!isVisible) {
+  if (!isRendered) {
     return null;
   }
 
