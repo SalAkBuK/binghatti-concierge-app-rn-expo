@@ -41,7 +41,7 @@ Files: `app/auth.tsx`, `lib/context/auth-context.tsx`, `lib/services/api/auth.ts
   - `AuthApiService` automatically stores tokens via interceptors; return `{ user, tokens }` to leverage that.
   - `auth-context` currently seeds users via `DEFAULT_USERS`; once live, use `GET /users/profile` after login to hydrate `currentUser`.
 
-### Home Dashboard (`app/(tabs)/index.tsx`)
+### Home Dashboard (`app/(tenant)/index.tsx`)
 - **UI status**: Ready; card layout renders stats, notices, quick actions, and recent lists.
 - **Data requirements**:
   - Request counts by status + recent 3–5 requests.
@@ -59,7 +59,7 @@ Files: `app/auth.tsx`, `lib/context/auth-context.tsx`, `lib/services/api/auth.ts
   - `GET /notices?status!=cancelled`
 - **Notes**: The component expects ISO timestamps; keep `createdAt` / `updatedAt` fields so the helper `formatDateTime` continues to work.
 
-### New Service Request (`app/(tabs)/new-request.tsx`)
+### New Service Request (`app/(tenant)/new-request.tsx`)
 - **UI status**: Fully validated form with attachment picker, priority/type enums, and success flow.
 - **DTO used**: `CreateRequestDTO` (`type`, `title`, `description`, `priority`, optional `apartment`, `tower`, `buildingId`, `preferredTime`, `contactPhone`, `additionalNotes`, `attachments`).
 - **Endpoints**:
@@ -67,7 +67,7 @@ Files: `app/auth.tsx`, `lib/context/auth-context.tsx`, `lib/services/api/auth.ts
   - `POST /uploads` (or `POST /uploads/multiple`) returning hosted URLs for attachments.
 - **Notes**: `AttachmentPicker` supplies local URIs; return CDN/Blob URLs from the upload endpoint so the request payload contains remote strings.
 
-### Request List (`app/(tabs)/requests.tsx`)
+### Request List (`app/(tenant)/requests.tsx`)
 - **UI status**: Complete list with filters, status chips, pull-to-refresh.
 - **Data requirements**:
   - Request collection filtered by `tenantId`.
@@ -107,7 +107,7 @@ Files: `app/(modals)/notifications-hub.tsx`, `app/(modals)/notice-details.tsx`, 
   - Admin modal reads role from `currentUser.role`; enforce authorization server-side.
 
 ### Amenities & Bookings  
-Files: `app/(tabs)/amenities.tsx`, `app/(modals)/amenity-booking-form.tsx`, `app/(tabs)/my-bookings.tsx`, `lib/types`  
+Files: `app/(tenant)/amenities.tsx`, `app/(modals)/amenity-booking-form.tsx`, `app/(tenant)/my-bookings.tsx`, `lib/types`  
 - **UI status**: Catalog grid, booking form with slot picker, bookings list with cancel flow.
 - **Data requirements**:
   - Amenity list by `buildingId`, each with `operatingHours`, `capacity`, `bookingDurationMinutes`, `status`.
@@ -124,7 +124,7 @@ Files: `app/(tabs)/amenities.tsx`, `app/(modals)/amenity-booking-form.tsx`, `app
   - The form currently generates time slots client-side; supplying `availability` lets you drive that from the server instead.
   - When cancelling, server should return updated booking so the UI can refresh status & `cancelledReason`.
 
-### Visitors (`app/(tabs)/visitors.tsx`, `app/(modals)/register-visitor.tsx`)
+### Visitors (`app/(tenant)/visitors.tsx`, `app/(modals)/register-visitor.tsx`)
 - **UI status**: List with status filter, registration modal, cancel flow.
 - **Data requirements**:
   - Visitor objects keyed by `tenantId` (`VisitorStatus` values: `expected`, `arrived`, `departed`, `cancelled`).
@@ -136,7 +136,7 @@ Files: `app/(tabs)/amenities.tsx`, `app/(modals)/amenity-booking-form.tsx`, `app
   - _(Optional)_ `PATCH /visitors/{id}` to mark arrival/departure.
 - **Notes**: Server should generate a unique `visitorCode` and `qrCodeUrl` so the UI can display it without additional logic.
 
-### Ratings (`app/(tabs)/my-ratings.tsx`, `app/(modals)/submit-rating.tsx`)
+### Ratings (`app/(tenant)/my-ratings.tsx`, `app/(modals)/submit-rating.tsx`)
 - **UI status**: Ratings list, detail modal, submission modal with star picker & attachments.
 - **Data requirements**:
   - Ratings filtered by tenant, each linking to `requestId` and `serviceProviderId`.
@@ -148,7 +148,7 @@ Files: `app/(tabs)/amenities.tsx`, `app/(modals)/amenity-booking-form.tsx`, `app
   - `GET /users/{id}` (to resolve service provider name) or embed `serviceProviderName` in the rating payload.
 - **Notes**: Frontend enforces “only completed requests can be rated”; backend should mirror the rule to keep data consistent.
 
-### Profile (`app/(tabs)/profile.tsx`)
+### Profile (`app/(tenant)/profile.tsx`)
 - **UI status**: Editable form with validation and logout.
 - **Data requirements**:
   - User profile payload with nested `profile` object (apartment, tower, phone, emergency contacts).
@@ -173,7 +173,7 @@ Files: `app/(tabs)/amenities.tsx`, `app/(modals)/amenity-booking-form.tsx`, `app
   - Under the hood, analytics can derive from requests/bookings/visitors tables; expose a pre-computed response to avoid client-side heavy lifting.
 - **Notes**: Include ISO dates and counts mirroring the `Analytics` interface; the UI already handles empty states if there is no data.
 
-### Buildings Management (`app/(admin)/buildings.tsx`)
+### Buildings Management (`app/(admin)/buildings.tsx`, `app/(management)/buildings.tsx`)
 - **UI status**: Table with search, create modal, assign manager modal.
 - **Data requirements**:
   - Building list with `managerId`, `managerName`, `totalUnits`, `occupiedUnits`, `status`.
@@ -197,7 +197,7 @@ Files: `app/(tabs)/amenities.tsx`, `app/(modals)/amenity-booking-form.tsx`, `app
   - `DELETE /users/{id}`
 - **Notes**: When returning users, include `profile.managedBuildingIds` if the role is management so the management dashboard can scope correctly.
 
-### Jobs Management (`app/(admin)/jobs.tsx`)
+### Jobs Management (`app/(admin)/jobs.tsx`, `app/(management)/jobs.tsx`)
 - **UI status**: Filter tabs, job cards with status badges.
 - **Data requirements**:
   - Jobs list filtered by building for management users.
@@ -248,4 +248,3 @@ Files: `app/(tabs)/amenities.tsx`, `app/(modals)/amenity-booking-form.tsx`, `app
 6. When endpoints are stable, flip `connected-app-provider` to call the real API, delete the `DEFAULT_*` data, and run through regression using `npm run lint` / `npm test`.
 
 With these endpoints live, every shipping screen in the Expo app can pivot from mocks to production data without further UI work.
-

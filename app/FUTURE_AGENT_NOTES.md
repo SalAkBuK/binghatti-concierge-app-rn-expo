@@ -3,17 +3,21 @@ _Last touched: 7 October 2025_
 
 ## Navigation Quick Facts
 - `_layout.tsx` wires the root `Stack`; it mounts `ConnectedAppProvider` and exposes modal routes.
-- `index.tsx` is the redirect gateway — waits ~300 ms then routes users to `/auth`, `/(tabs)`, or `/(admin)` based on `useApp()` auth state.
+- `index.tsx` is the redirect gateway — waits ~300 ms then routes users to `/auth`, `/(tenant)`, or `/(admin)` based on `useApp()` auth state.
 - `auth.tsx` renders the mocked login experience; credentials are validated against `lib/utils/mockData.ts`.
 - `modal.tsx` and `app/(modals)/*` define Expo Router modal screens.
 
-## Tenant Surfaces (`app/(tabs)`)
+## Tenant Surfaces (`app/(tenant)`)
 - `_layout.tsx` defines tab bar styling and icons.
 - `index.tsx` is the tenant home dashboard summarising bookings, notices, and ratings.
 - `requests.tsx` handles maintenance tickets with status filtering and `RequestsScreenSkeleton` fallback.
 - `amenities.tsx`, `my-bookings.tsx`, `visitors.tsx`, `my-ratings.tsx`, `new-request.tsx`, and `profile.tsx` cover the remaining tenant flows; all depend on `useApp().actions`.
 
-## Admin & Management (`app/(admin)`)
+## Management (`app/(management)`)
+- `_layout.tsx` defines the operations tab bar (requests, tenants, units, buildings, workforce, services, activity).
+- Screens re-export admin dashboards but route under the management namespace for cleaner RBAC.
+
+## Admin (`app/(admin)`)
 - `_layout.tsx` creates a dedicated tab bar for admin KPIs.
 - `index.tsx` surfaces analytics cards plus top providers.
 - `users.tsx`, `buildings.tsx`, `permissions.tsx`, `jobs.tsx` consume admin actions from `useApp()`.

@@ -47,44 +47,6 @@ export default function PermissionsScreen() {
   );
   const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
 
-  if (isManagementRole) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={[styles.contentWrapper, { paddingHorizontal: pagePadding }] }>
-          <HeaderBar
-            title="Permissions"
-            hasUnreadNotifications={hasUnreadNotifications}
-            showSideMenu={showSideMenu}
-            onSideMenuToggle={setShowSideMenu}
-            notificationRoute={ADMIN_NOTIFICATION_ROUTE}
-          />
-
-          <Animated.View
-            entering={FadeInDown.duration(300)}
-            style={styles.restrictedCard}
-          >
-            <Ionicons
-              name="lock-closed"
-              size={36}
-              color="#4C1D95"
-              style={styles.restrictedIcon}
-            />
-            <Text style={styles.restrictedTitle}>Admin Access Required</Text>
-            <Text style={styles.restrictedText}>
-              Contact your administrator to adjust role permissions. Building managers can monitor requests
-              and jobs from the dashboard.
-            </Text>
-          </Animated.View>
-        </View>
-
-        <SideMenu
-          isVisible={showSideMenu}
-          onClose={() => setShowSideMenu(false)}
-        />
-      </SafeAreaView>
-    );
-  }
-
   // Group permissions by resource
   const groupPermissionsByResource = (permissions: Permission[]) => {
     const grouped: { [resource: string]: Permission[] } = {};
@@ -122,6 +84,7 @@ export default function PermissionsScreen() {
   const getRoleBadgeColor = (role: UserRole) => {
     const colors = {
       admin: { bg: "#FEE2E2", text: "#DC2626" },
+      super_admin: { bg: "#FECACA", text: "#B91C1C" },
       management: { bg: "#E0E7FF", text: "#4338CA" },
       service_provider: { bg: "#DBEAFE", text: "#1E40AF" },
       tenant: { bg: "#D1FAE5", text: "#065F46" },
@@ -242,7 +205,7 @@ export default function PermissionsScreen() {
                       onValueChange={() => togglePermission(rolePerms.role, permission.id)}
                       trackColor={{ false: "#D1D5DB", true: "#A78BFA" }}
                       thumbColor={isEnabled ? "#7034FF" : "#F3F4F6"}
-                      disabled={rolePerms.role === "admin"} // Admins always have all permissions
+                      disabled={["admin", "super_admin"].includes(rolePerms.role)} // Core admin roles always have all permissions
                     />
                   </View>
                 );
@@ -254,58 +217,90 @@ export default function PermissionsScreen() {
     );
   };
 
+  const restrictedContent = (
+    <View style={[styles.contentWrapper, { paddingHorizontal: pagePadding }] }>
+      <HeaderBar
+        title="Permissions"
+        hasUnreadNotifications={hasUnreadNotifications}
+        showSideMenu={showSideMenu}
+        onSideMenuToggle={setShowSideMenu}
+        notificationRoute={ADMIN_NOTIFICATION_ROUTE}
+      />
+
+      <Animated.View
+        entering={FadeInDown.duration(300)}
+        style={styles.restrictedCard}
+      >
+        <Ionicons
+          name="lock-closed"
+          size={36}
+          color="#4C1D95"
+          style={styles.restrictedIcon}
+        />
+        <Text style={styles.restrictedTitle}>Admin Access Required</Text>
+        <Text style={styles.restrictedText}>
+          Contact your administrator to adjust role permissions. Building managers can monitor requests
+          and jobs from the dashboard.
+        </Text>
+      </Animated.View>
+    </View>
+  );
+
+  const permissionsContent = (
+    <View style={[styles.contentWrapper, { paddingHorizontal: pagePadding }] }>
+      {/* Header */}
+      <HeaderBar
+        title="Permissions Management"
+        hasUnreadNotifications={hasUnreadNotifications}
+        showSideMenu={showSideMenu}
+        onSideMenuToggle={setShowSideMenu}
+        notificationRoute={ADMIN_NOTIFICATION_ROUTE}
+      />
+
+      {/* Info Banner */}
+      <Animated.View entering={FadeInDown.delay(50).duration(400)} style={styles.infoBanner}>
+        <Ionicons name="information-circle" size={20} color="#4338CA" />
+        <Text style={styles.infoBannerText}>
+          Configure access permissions for each role. Admin and Super Admin permissions cannot be modified.
+        </Text>
+      </Animated.View>
+
+      {/* Roles List */}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+      >
+        {rolePermissions.map((rolePerms, index) => renderRoleSection(rolePerms, index))}
+
+        {/* Save Button */}
+        {hasChanges && (
+          <Animated.View entering={FadeInDown.delay(100).duration(400)}>
+            <TouchableOpacity
+              style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
+              onPress={handleSaveChanges}
+              disabled={isSaving}
+            >
+              {isSaving ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <>
+                  <Ionicons name="save" size={20} color="#FFFFFF" />
+                  <Text style={styles.saveButtonText}>Save Changes</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </Animated.View>
+        )}
+
+        <View style={styles.bottomPadding} />
+      </ScrollView>
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
-      <View style={[styles.contentWrapper, { paddingHorizontal: pagePadding }] }>
-        {/* Header */}
-        <HeaderBar
-          title="Permissions Management"
-          hasUnreadNotifications={hasUnreadNotifications}
-          showSideMenu={showSideMenu}
-          onSideMenuToggle={setShowSideMenu}
-          notificationRoute={ADMIN_NOTIFICATION_ROUTE}
-        />
+      {isManagementRole ? restrictedContent : permissionsContent}
 
-        {/* Info Banner */}
-        <Animated.View entering={FadeInDown.delay(50).duration(400)} style={styles.infoBanner}>
-          <Ionicons name="information-circle" size={20} color="#4338CA" />
-          <Text style={styles.infoBannerText}>
-            Configure access permissions for each role. Admin permissions cannot be modified.
-          </Text>
-        </Animated.View>
-
-        {/* Roles List */}
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContent}
-        >
-          {rolePermissions.map((rolePerms, index) => renderRoleSection(rolePerms, index))}
-
-          {/* Save Button */}
-          {hasChanges && (
-            <Animated.View entering={FadeInDown.delay(100).duration(400)}>
-              <TouchableOpacity
-                style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
-                onPress={handleSaveChanges}
-                disabled={isSaving}
-              >
-                {isSaving ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <>
-                    <Ionicons name="save" size={20} color="#FFFFFF" />
-                    <Text style={styles.saveButtonText}>Save Changes</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </Animated.View>
-          )}
-
-          <View style={styles.bottomPadding} />
-        </ScrollView>
-      </View>
-
-      {/* Side Menu */}
       <SideMenu
         isVisible={showSideMenu}
         onClose={() => setShowSideMenu(false)}

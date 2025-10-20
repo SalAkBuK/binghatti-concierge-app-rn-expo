@@ -3,12 +3,14 @@ import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   Dimensions,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
   Alert,
 } from "react-native";
+import type { ViewStyle, TextStyle } from "react-native";
 import Animated, {
   Easing,
   runOnJS,
@@ -45,6 +47,8 @@ interface MenuItem {
   expandable?: boolean;
 }
 
+type RouterPushInput = Parameters<typeof router.push>[0];
+
 export function SideMenu({ isVisible, onClose }: SideMenuProps) {
   const { currentUser, actions } = useApp();
   const insets = useSafeAreaInsets();
@@ -60,16 +64,24 @@ export function SideMenu({ isVisible, onClose }: SideMenuProps) {
     onClose();
   };
 
-  const navigateAndClose = (pathname: string, params?: Record<string, any>) => {
-    closeMenu();
-    if (params) {
-      router.push({ pathname, params });
-    } else {
-      router.push(pathname);
-    }
-  };
+const navigateAndClose = (href: RouterPushInput | string) => {
+  closeMenu();
+  router.push(href as RouterPushInput);
+};
 
   const tenantMenu: MenuItem[] = [
+    {
+      id: "tenant-bookings",
+      title: "My Bookings",
+      icon: "calendar-outline",
+      action: () => navigateAndClose("/(tenant)/my-bookings"),
+    },
+    {
+      id: "visitors",
+      title: "Guest Registration",
+      icon: "people-outline",
+      action: () => navigateAndClose("/(tenant)/visitors"),
+    },
     {
       id: "amenities",
       title: "Amenities Booking",
@@ -80,37 +92,53 @@ export function SideMenu({ isVisible, onClose }: SideMenuProps) {
           id: "pool",
           title: "Pool",
           icon: "water",
-          action: () => navigateAndClose("/(tabs)/amenities", { filter: "pool" }),
+          action: () =>
+            navigateAndClose({
+              pathname: "/(tenant)/amenities",
+              params: { filter: "pool" },
+            }),
         },
         {
           id: "gym",
           title: "Gym",
           icon: "fitness",
-          action: () => navigateAndClose("/(tabs)/amenities", { filter: "gym" }),
+          action: () =>
+            navigateAndClose({
+              pathname: "/(tenant)/amenities",
+              params: { filter: "gym" },
+            }),
         },
         {
           id: "sauna",
           title: "Sauna",
           icon: "flame",
-          action: () => navigateAndClose("/(tabs)/amenities", { filter: "sauna" }),
+          action: () =>
+            navigateAndClose({
+              pathname: "/(tenant)/amenities",
+              params: { filter: "sauna" },
+            }),
         },
         {
           id: "bbq",
           title: "BBQ",
           icon: "restaurant",
-          action: () => navigateAndClose("/(tabs)/amenities", { filter: "bbq" }),
+          action: () =>
+            navigateAndClose({
+              pathname: "/(tenant)/amenities",
+              params: { filter: "bbq" },
+            }),
         },
       ],
     },
     {
-      id: "visitors",
-      title: "Visitor Booking",
-      icon: "people-outline",
-      action: () => navigateAndClose("/(tabs)/visitors"),
+      id: "tenant-ratings",
+      title: "My Ratings & Reviews",
+      icon: "star-outline",
+      action: () => navigateAndClose("/(tenant)/my-ratings"),
     },
     {
       id: "logout",
-      title: "Logout",
+      title: "Sign Out",
       icon: "log-out-outline",
       color: "#ef4444",
       action: () => {
@@ -121,12 +149,12 @@ export function SideMenu({ isVisible, onClose }: SideMenuProps) {
   ];
 
   const adminMenu: MenuItem[] = [
-    {
-      id: "admin-dashboard",
-      title: "Admin Dashboard",
-      icon: "grid-outline",
-      action: () => navigateAndClose("/(admin)/index"),
-    },
+  {
+    id: "admin-dashboard",
+    title: "Admin Dashboard",
+    icon: "grid-outline",
+    action: () => navigateAndClose("/(admin)"),
+  },
     {
       id: "users",
       title: "User Management",
@@ -155,7 +183,11 @@ export function SideMenu({ isVisible, onClose }: SideMenuProps) {
       id: "notices",
       title: "Maintenance Notices",
       icon: "alert-circle-outline",
-      action: () => navigateAndClose("/(modals)/admin-notifications", { initialTab: "notices" }),
+      action: () =>
+        navigateAndClose({
+          pathname: "/(modals)/admin-notifications",
+          params: { initialTab: "notices" },
+        }),
     },
     {
       id: "divider-admin",
@@ -175,51 +207,97 @@ export function SideMenu({ isVisible, onClose }: SideMenuProps) {
     },
   ];
 
-  const managementMenu: MenuItem[] = [
-    {
-      id: "management-dashboard",
-      title: "Management Dashboard",
-      icon: "analytics-outline",
-      action: () => navigateAndClose("/(admin)/index"),
+const managementMenu: MenuItem[] = [
+  {
+    id: "management-dashboard",
+    title: "Operations Dashboard",
+    icon: "analytics-outline",
+    action: () => navigateAndClose("/(management)"),
+  },
+  {
+    id: "management-requests",
+    title: "Service Requests",
+    icon: "clipboard-outline",
+    action: () => navigateAndClose("/(management)/requests"),
+  },
+  {
+    id: "management-tenants",
+    title: "Tenant Directory",
+    icon: "people-outline",
+    action: () => navigateAndClose("/(management)/tenants"),
+  },
+  {
+    id: "management-units",
+    title: "Building Units",
+    icon: "home-outline",
+    action: () => navigateAndClose("/(management)/units"),
+  },
+  {
+    id: "management-amenities",
+    title: "Amenity Policies",
+    icon: "fitness-outline",
+    action: () => navigateAndClose("/(management)/amenities"),
+  },
+  {
+    id: "management-buildings",
+    title: "Buildings",
+    icon: "business-outline",
+    action: () => navigateAndClose("/(management)/buildings"),
+  },
+  {
+    id: "management-workforce",
+    title: "Building Employees",
+    icon: "briefcase-outline",
+    action: () => navigateAndClose("/(management)/workforce"),
+  },
+  {
+    id: "management-services",
+    title: "Service Providers",
+    icon: "construct-outline",
+    action: () => navigateAndClose("/(management)/jobs"),
+  },
+  {
+    id: "management-visitors",
+    title: "Visitors & Deliveries",
+    icon: "people-outline",
+    action: () => navigateAndClose("/(management)/visitors"),
+  },
+  {
+    id: "management-activity",
+    title: "Activity Feed",
+    icon: "notifications-outline",
+    action: () => navigateAndClose("/(management)/activity"),
+  },
+  {
+    id: "management-notices",
+    title: "Notices & Alerts",
+    icon: "alert-circle-outline",
+    action: () =>
+      navigateAndClose({
+        pathname: "/(modals)/admin-notifications",
+        params: { initialTab: "notices" },
+      }),
+  },
+  {
+    id: "divider-management",
+    title: "",
+    icon: "remove",
+    action: () => {},
+  },
+  {
+    id: "logout",
+    title: "Sign Out",
+    icon: "log-out-outline",
+    color: "#ef4444",
+    action: () => {
+      closeMenu();
+      handleLogout();
     },
-    {
-      id: "requests",
-      title: "Service Requests",
-      icon: "clipboard-outline",
-      action: () => navigateAndClose("/(tabs)/requests"),
-    },
-    {
-      id: "buildings",
-      title: "Buildings",
-      icon: "business-outline",
-      action: () => navigateAndClose("/(admin)/buildings"),
-    },
-    {
-      id: "team",
-      title: "Service Providers",
-      icon: "briefcase-outline",
-      action: () => navigateAndClose("/(admin)/jobs"),
-    },
-    {
-      id: "divider-management",
-      title: "",
-      icon: "remove",
-      action: () => {},
-    },
-    {
-      id: "logout",
-      title: "Sign Out",
-      icon: "log-out-outline",
-      color: "#ef4444",
-      action: () => {
-        closeMenu();
-        handleLogout();
-      },
-    },
-  ];
+  },
+];
 
   const menuItems: MenuItem[] =
-    currentUser?.role === "admin"
+    currentUser?.role === "admin" || currentUser?.role === "super_admin"
       ? adminMenu
       : currentUser?.role === "management"
         ? managementMenu
@@ -284,19 +362,19 @@ export function SideMenu({ isVisible, onClose }: SideMenuProps) {
         }
       );
     }
-  }, [isVisible, menuScale, overlayOpacity, translateX]);
+  }, [isVisible]);
 
   // Animated styles
-  const menuAnimatedStyle = useAnimatedStyle(() => {
+  const menuAnimatedStyle = useAnimatedStyle<ViewStyle>(() => {
     return {
       transform: [
         { translateX: translateX.value },
         { scale: menuScale.value },
-      ],
+      ] as ViewStyle["transform"],
     };
   });
 
-  const overlayAnimatedStyle = useAnimatedStyle(() => {
+  const overlayAnimatedStyle = useAnimatedStyle<ViewStyle>(() => {
     return {
       opacity: overlayOpacity.value,
     };
@@ -345,9 +423,13 @@ export function SideMenu({ isVisible, onClose }: SideMenuProps) {
         </View>
 
         {/* Menu Items */}
-        <View style={styles.menuItems}>
+        <ScrollView
+          style={styles.menuItems}
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
           {menuItems.map((item) => {
-            if (item.id === "divider") {
+            if (item.id.startsWith("divider")) {
               return <View key={item.id} style={styles.divider} />;
             }
 
@@ -374,7 +456,9 @@ export function SideMenu({ isVisible, onClose }: SideMenuProps) {
                   <Text
                     style={[
                       styles.menuItemText,
-                      item.color && { color: item.color },
+                      item.color
+                        ? ({ color: item.color } as TextStyle)
+                        : null,
                     ]}
                   >
                     {item.title}
@@ -414,7 +498,7 @@ export function SideMenu({ isVisible, onClose }: SideMenuProps) {
               </View>
             );
           })}
-        </View>
+        </ScrollView>
 
         {/* Footer */}
         <View style={styles.menuFooter}>

@@ -12,7 +12,7 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import { ConnectedAppProvider as AppProvider } from "../lib/context/connected-app-provider";
 
 export const unstable_settings = {
-  anchor: "(tabs)",
+  anchor: "(tenant)",
 };
 
 export default function RootLayout() {
@@ -24,7 +24,8 @@ export default function RootLayout() {
         <Stack>
           <Stack.Screen name="index" options={{ headerShown: false }} />
           <Stack.Screen name="auth" options={{ headerShown: false }} />
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="(tenant)" options={{ headerShown: false }} />
+          <Stack.Screen name="(management)" options={{ headerShown: false }} />
           <Stack.Screen name="(admin)" options={{ headerShown: false }} />
           <Stack.Screen
             name="modal"
@@ -32,6 +33,14 @@ export default function RootLayout() {
           />
           <Stack.Screen
             name="(modals)/notifications-hub"
+            options={{
+              presentation: "modal",
+              headerShown: false,
+              animation: "slide_from_bottom",
+            }}
+          />
+          <Stack.Screen
+            name="(modals)/admin-notifications"
             options={{
               presentation: "modal",
               headerShown: false,

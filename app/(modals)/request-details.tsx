@@ -548,7 +548,7 @@ export default function RequestDetailsScreen() {
                     const existingRating = actions.getRatingByRequestId(selectedRequest.id);
                     if (existingRating) {
                       // Navigate to ratings screen to view existing rating
-                      router.push("/(tabs)/my-ratings");
+                      router.push("/(tenant)/my-ratings");
                     } else {
                       // Navigate to submit rating modal
                       router.push({

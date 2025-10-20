@@ -141,7 +141,10 @@ export default function NoticeDetailsScreen() {
     );
   }
 
-  const canEdit = currentUser?.role === "admin" || currentUser?.role === "management";
+  const canEdit =
+    currentUser?.role === "admin" ||
+    currentUser?.role === "super_admin" ||
+    currentUser?.role === "management";
   const canDelete = canEdit && (selectedNotice.status === "scheduled" || selectedNotice.status === "cancelled");
   const statusColors = getStatusColor(selectedNotice.status);
   const statusIcon = getStatusIcon(selectedNotice.status);

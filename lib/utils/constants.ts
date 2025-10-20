@@ -9,16 +9,24 @@ export const NAVIGATION_ITEMS = {
     { id: "tenant-profile", icon: "user", label: "Profile" },
   ],
   management: [
-    { id: "management-dashboard", icon: "home", label: "Dashboard" },
-    { id: "management-requests", icon: "message-circle", label: "Requests" },
-    { id: "management-notices", icon: "bell", label: "Notices" },
-    { id: "management-reports", icon: "bar-chart-3", label: "Reports" },
+    { id: "management-dashboard", icon: "home", label: "Operations" },
+    { id: "management-requests", icon: "clipboard-list", label: "Requests" },
+    { id: "management-tenants", icon: "users", label: "Tenants" },
+    { id: "management-units", icon: "building", label: "Units" },
+    { id: "management-services", icon: "wrench", label: "Services" },
+    { id: "management-activity", icon: "bell", label: "Activity" },
   ],
   admin: [
     { id: "admin-dashboard", icon: "home", label: "Dashboard" },
     { id: "admin-users", icon: "users", label: "Users" },
     { id: "admin-settings", icon: "settings", label: "Settings" },
     { id: "admin-analytics", icon: "bar-chart-3", label: "Analytics" },
+  ],
+  super_admin: [
+    { id: "super-admin-dashboard", icon: "home", label: "Dashboard" },
+    { id: "super-admin-users", icon: "users", label: "Users" },
+    { id: "super-admin-buildings", icon: "business", label: "Buildings" },
+    { id: "super-admin-analytics", icon: "bar-chart-3", label: "Analytics" },
   ],
   service_provider: [
     { id: "provider-dashboard", icon: "home", label: "Dashboard" },
@@ -39,6 +47,7 @@ export const ROLE_HOME_VIEWS: Record<User["role"], string> = {
   tenant: "tenant-home",
   management: "management-dashboard",
   admin: "admin-dashboard",
+  super_admin: "super-admin-dashboard",
   service_provider: "provider-dashboard",
   employee: "employee-dashboard",
 };
@@ -100,6 +109,7 @@ export const APP_CONFIG = {
   api: {
     baseUrl: "https://1bnx.online/api",
     timeout: 10000,
+    adminLoginUrl: "http://16.171.240.211/api/Auth/login",
   },
   pagination: {
     defaultPageSize: 20,

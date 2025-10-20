@@ -1,4 +1,4 @@
-# Future Agent Notes — `app/(tabs)`
+# Future Agent Notes — `app/(tenant)`
 _Context reviewed: 7 October 2025_
 
 ## Purpose

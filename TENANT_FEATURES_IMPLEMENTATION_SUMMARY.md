@@ -34,7 +34,7 @@
   - All actions include simulated delays (500ms) and notifications
 
 ### 4. **Amenities List Screen** (100% Complete)
-- ✅ Screen: `app/(tabs)/amenities.tsx`
+- ✅ Screen: `app/(tenant)/amenities.tsx`
 - ✅ Features:
   - Displays all amenities from context
   - Filter by type (All, Pool, Gym, Sauna, Theater, BBQ, Playground)
@@ -80,7 +80,7 @@ All these screens have existing files that were created but may need to be conne
 ---
 
 ### 2. **My Bookings Screen**
-**File:** `app/(tabs)/my-bookings.tsx` (check if exists, if not create)
+**File:** `app/(tenant)/my-bookings.tsx` (check if exists, if not create)
 
 **Requirements:**
 - Tab screen with HeaderBar
@@ -121,7 +121,7 @@ All these screens have existing files that were created but may need to be conne
 ---
 
 ### 4. **My Visitors Screen**
-**File:** `app/(tabs)/visitors.tsx` (check if exists, if not create)
+**File:** `app/(tenant)/visitors.tsx` (check if exists, if not create)
 
 **Requirements:**
 - Tab screen with HeaderBar
@@ -161,7 +161,7 @@ All these screens have existing files that were created but may need to be conne
 ---
 
 ### 6. **My Ratings Screen**
-**File:** `app/(tabs)/my-ratings.tsx` (check if exists, if not create)
+**File:** `app/(tenant)/my-ratings.tsx` (check if exists, if not create)
 
 **Requirements:**
 - Tab screen with HeaderBar
@@ -202,7 +202,7 @@ All these screens have existing files that were created but may need to be conne
 ---
 
 ### 8. **Update Tab Navigation**
-**File:** `app/(tabs)/_layout.tsx`
+**File:** `app/(tenant)/_layout.tsx`
 
 **Requirements:**
 - Add tab for "Amenities" (already exists)
@@ -298,7 +298,7 @@ export default function ScreenName() {
 
 ```
 app/
-├── (tabs)/
+├── (tenant)/
 │   ├── amenities.tsx ✅
 │   ├── my-bookings.tsx ⚠️ (needs implementation)
 │   ├── visitors.tsx ⚠️ (needs implementation)

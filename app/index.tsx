@@ -1,4 +1,4 @@
-import { Redirect } from "expo-router";
+import { Redirect, type Href } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { LoadingScreen } from "../components/ui/LoadingScreen";
 import { useApp } from "../lib/context/connected-app-provider";
@@ -6,6 +6,10 @@ import { useApp } from "../lib/context/connected-app-provider";
 export default function IndexScreen() {
   const { isAuthenticated, currentUser } = useApp();
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+
+  const adminHomeHref = "/(admin)" as Href;
+  const managementHomeHref = "/(management)" as Href;
+  const tenantHomeHref = "/(tenant)" as Href;
 
   // Initial load timer
   useEffect(() => {
@@ -38,11 +42,19 @@ export default function IndexScreen() {
   }
 
   // Authenticated - redirect based on role
-  if (currentUser.role === "admin" || currentUser.role === "management") {
-    console.log("[Index] Admin/Management user, redirecting to /(admin)");
-    return <Redirect href="/(admin)" />;
+  if (currentUser.role === "management") {
+    console.log("[Index] Management user, redirecting to /(management)");
+    return <Redirect href={managementHomeHref} />;
   }
 
-  console.log("[Index] Regular user, redirecting to /(tabs)");
-  return <Redirect href="/(tabs)" />;
+  if (
+    currentUser.role === "admin" ||
+    currentUser.role === "super_admin"
+  ) {
+    console.log("[Index] Admin user, redirecting to /(admin)");
+    return <Redirect href={adminHomeHref} />;
+  }
+
+  console.log("[Index] Regular user, redirecting to /(tenant)");
+  return <Redirect href={tenantHomeHref} />;
 }

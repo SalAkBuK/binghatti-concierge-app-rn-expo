@@ -12,8 +12,9 @@ This Expo + React Native app powers tenant and management experiences for the Bi
 ## Application Flow
 1. **App root** (`app/`) uses Expo Router layouts:
    - `/` redirects based on `useApp()` context.
-   - `/(tabs)` tenant tabs (Home, Requests, Amenities, Visitors, Bookings, Ratings, Profile).
-   - `/(admin)` management dashboard tabs (Dashboard, Users, Buildings, Permissions, Jobs).
+   - `/(tenant)` tenant tabs (Home, Requests, Amenities, Visitors, Bookings, Ratings, Profile).
+   - `/(management)` operations tabs (Operations, Requests, Tenants, Units, Buildings, Workforce, Services, Activity).
+   - `/(admin)` system administration tabs (Dashboard, Users, Buildings, Permissions, Jobs).
    - `/(modals)` host detail modals (request details, amenity booking, visitor registration, notifications hub, rating submission).
 2. **State management** lives in `lib/context/`:
    - `ConnectedAppProvider` composes auth, requests, notifications, notices.

@@ -23,7 +23,8 @@ export function AnimatedBellIcon({
   onAnimationComplete,
 }: AnimatedBellIconProps) {
   const lottieRef = useRef<LottieView>(null);
-  const animationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const animationIntervalRef =
+    useRef<ReturnType<typeof setInterval> | null>(null);
   const dotScale = useSharedValue(hasUnreadNotifications ? 1 : 0);
   const dotOpacity = useSharedValue(hasUnreadNotifications ? 1 : 0);
 

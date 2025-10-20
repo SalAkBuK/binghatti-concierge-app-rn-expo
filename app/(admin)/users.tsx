@@ -36,10 +36,14 @@ export default function UsersScreen() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const isManagement = currentUser?.role === "management";
-  const managedBuildingIds = isManagement
+  const hasScopedBuildings =
+    currentUser?.role === "management" || currentUser?.role === "super_admin";
+  const managedBuildingIds = hasScopedBuildings
     ? actions.getManagedBuildingIds?.() ?? []
     : [];
-  const canManageUsers = currentUser?.role === "admin";
+  const canManageUsers = ["admin", "super_admin"].includes(
+    currentUser?.role ?? "",
+  );
   const defaultBuildingId =
     managedBuildingIds.length > 0
       ? managedBuildingIds[0]
@@ -106,6 +110,7 @@ export default function UsersScreen() {
   const getRoleBadgeColor = (role: UserRole) => {
     const colors = {
       admin: { bg: "#FEE2E2", text: "#DC2626" },
+      super_admin: { bg: "#FECACA", text: "#B91C1C" },
       management: { bg: "#E0E7FF", text: "#4338CA" },
       service_provider: { bg: "#DBEAFE", text: "#1E40AF" },
       tenant: { bg: "#D1FAE5", text: "#065F46" },

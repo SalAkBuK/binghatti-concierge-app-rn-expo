@@ -233,7 +233,7 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
       }
     },
 
-    markAllNotificationsAsRead: async (userId: string) => {
+    markAllNotificationsAsRead: async (userId?: string) => {
       try {
         dispatch({
           type: NOTIFICATIONS_ACTIONS.MARK_ALL_NOTIFICATIONS_READ,

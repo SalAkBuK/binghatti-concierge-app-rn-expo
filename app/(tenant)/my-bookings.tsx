@@ -437,7 +437,7 @@ export default function MyBookingsScreen() {
               {filterType === "all" && (
                 <TouchableOpacity
                   style={styles.emptyStateButton}
-                  onPress={() => router.push("/(tabs)/amenities")}
+                  onPress={() => router.push("/(tenant)/amenities")}
                 >
                   <Text style={styles.emptyStateButtonText}>
                     Browse Amenities

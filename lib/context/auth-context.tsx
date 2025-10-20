@@ -7,8 +7,8 @@ import React, {
   useState,
 } from "react";
 import { useAsyncStorage } from "../hooks/useAsyncStorage";
-import { STORAGE_KEYS, DEFAULT_USERS, generateId } from "../utils";
-// import { apiService } from '../services/api'; // Temporarily disabled to prevent crashes
+import { APP_CONFIG, STORAGE_KEYS, DEFAULT_USERS, generateId } from "../utils";
+import apiService from "../services/api";
 import type { User, LoginDTO, RegisterDTO } from "../types";
 
 // Auth State Interface
@@ -152,26 +152,101 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
+const ADMIN_LOGIN_EMAIL = "admin@towerdesk.com";
+
+const safeJsonParse = (raw: string): any => {
+  if (!raw) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+};
+
+const extractAuthToken = (payload: any): string | undefined => {
+  if (!payload || typeof payload !== "object") {
+    return undefined;
+  }
+
+  return (
+    payload.token ??
+    payload.access_token ??
+    payload.accessToken ??
+    payload.data?.token ??
+    payload.data?.access_token ??
+    payload.data?.accessToken ??
+    payload.result?.token ??
+    payload.data?.result?.token
+  );
+};
+
+const extractUserPayload = (payload: any): any => {
+  if (!payload || typeof payload !== "object") {
+    return undefined;
+  }
+
+  if (payload.user && typeof payload.user === "object") {
+    return payload.user;
+  }
+
+  if (payload.data && typeof payload.data === "object") {
+    if (payload.data.user && typeof payload.data.user === "object") {
+      return payload.data.user;
+    }
+    return payload.data;
+  }
+
+  return undefined;
+};
+
 // Auth Provider Component
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
-  const [users, setUsers, isLoadingUsers] = useAsyncStorage(STORAGE_KEYS.users, DEFAULT_USERS);
+  const [users, setUsers, isLoadingUsers] = useAsyncStorage(
+    STORAGE_KEYS.users,
+    DEFAULT_USERS,
+  );
   const [isInitialized, setIsInitialized] = useState(false);
+  const storedUsers =
+    users && typeof users === "object" ? (users as Record<string, User>) : {};
+  const mergedInitialUsers = { ...DEFAULT_USERS, ...storedUsers };
   const [state, dispatch] = useReducer(authReducer, {
     ...initialState,
-    users: users || {},
+    users: mergedInitialUsers,
   });
 
   // Sync users from AsyncStorage to state when loaded (only once on mount)
   useEffect(() => {
     if (!isLoadingUsers && !isInitialized) {
-      console.log("[AuthProvider] Users loaded from AsyncStorage:", Object.keys(users));
+      const incomingUsers =
+        users && typeof users === "object"
+          ? (users as Record<string, User>)
+          : {};
+      const mergedUsers = { ...DEFAULT_USERS, ...incomingUsers };
+
+      console.log(
+        "[AuthProvider] Users loaded from AsyncStorage:",
+        Object.keys(incomingUsers),
+      );
+      console.log(
+        "[AuthProvider] Users after merging defaults:",
+        Object.keys(mergedUsers),
+      );
+
       dispatch({
         type: AUTH_ACTIONS.SET_USERS,
-        payload: users,
+        payload: mergedUsers,
       });
+      if (
+        Object.keys(mergedUsers).length !== Object.keys(incomingUsers).length
+      ) {
+        setUsers(mergedUsers);
+      }
       setIsInitialized(true);
     }
-  }, [users, isLoadingUsers, isInitialized]);
+  }, [users, isLoadingUsers, isInitialized, setUsers]);
 
   // Update AsyncStorage when users change (but not on initial load)
   useEffect(() => {
@@ -220,29 +295,115 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         actions.setLoading(true);
         actions.clearError();
 
-        console.log("[Auth] Login attempt for:", credentials.email);
+        const normalizedEmail = credentials.email.trim().toLowerCase();
+
+        console.log("[Auth] Login attempt for:", normalizedEmail);
         console.log("[Auth] Available users:", Object.keys(state.users));
 
-        // TODO: Replace with real API call when ready
-        // const response = await apiService.login(credentials);
+        const existingUser =
+          state.users[normalizedEmail] || state.users[credentials.email];
 
-        // Mock login: Check if user exists in mock data
-        const existingUser = state.users[credentials.email];
+        const isAdminLogin = normalizedEmail === ADMIN_LOGIN_EMAIL;
+        let authenticatedUser: User | null = null;
 
-        if (!existingUser) {
-          console.log("[Auth] User not found in state.users");
-          throw new Error("Invalid email or password");
+        if (isAdminLogin) {
+          const response = await fetch(APP_CONFIG.api.adminLoginUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: credentials.email,
+              password: credentials.password,
+            }),
+          });
+
+          const rawPayload = await response.text();
+          const payload = safeJsonParse(rawPayload);
+
+          if (!response.ok) {
+            const errorMessage =
+              (payload &&
+                typeof payload === "object" &&
+                (payload.message || payload.error || payload.title)) ||
+              (typeof payload === "string" ? payload : null) ||
+              response.statusText ||
+              "Invalid admin credentials";
+            throw new Error(errorMessage);
+          }
+
+          const token = extractAuthToken(payload);
+          if (!token) {
+            throw new Error("Login response did not include an auth token");
+          }
+
+          await apiService.setAuthToken(token);
+
+          const payloadUser = extractUserPayload(payload);
+          const nowIso = new Date().toISOString();
+          const adminUser: User = {
+            id: payloadUser?.id
+              ? String(payloadUser.id)
+              : existingUser?.id ?? "admin-live",
+            email: normalizedEmail,
+            name:
+              payloadUser?.name ??
+              payloadUser?.fullName ??
+              payloadUser?.username ??
+              existingUser?.name ??
+              "Tower Desk Admin",
+            role: "admin",
+            phone:
+              payloadUser?.phone ??
+              payloadUser?.mobile ??
+              existingUser?.phone,
+            profile: {
+              ...(existingUser?.profile ?? {}),
+              ...(payloadUser?.profile && typeof payloadUser.profile === "object"
+                ? payloadUser.profile
+                : {}),
+              name:
+                payloadUser?.name ??
+                payloadUser?.fullName ??
+                existingUser?.profile?.name ??
+                "Tower Desk Admin",
+              phone:
+                payloadUser?.phone ??
+                payloadUser?.mobile ??
+                existingUser?.profile?.phone,
+            },
+            createdAt: existingUser?.createdAt ?? nowIso,
+            updatedAt: nowIso,
+          };
+
+          dispatch({
+            type: AUTH_ACTIONS.UPDATE_USER,
+            payload: { email: normalizedEmail, user: adminUser },
+          });
+
+          authenticatedUser = adminUser;
+        } else {
+          if (!existingUser) {
+            console.log("[Auth] User not found in state.users");
+            throw new Error("Invalid email or password");
+          }
+
+          authenticatedUser = existingUser;
         }
 
-        console.log("[Auth] User found:", { email: existingUser.email, role: existingUser.role });
+        if (!authenticatedUser) {
+          throw new Error("Authentication failed");
+        }
 
-        // In production, verify password here
-        // For mock, we accept any password for existing users
+        console.log("[Auth] User authenticated:", {
+          email: authenticatedUser.email,
+          role: authenticatedUser.role,
+        });
+
+        // In production, verify password for non-admin users here
 
         actions.setAuth({
           isAuthenticated: true,
-          currentUser: existingUser,
-          userRole: existingUser.role,
+          currentUser: authenticatedUser,
+          userRole: authenticatedUser.role,
         });
 
         console.log("[Auth] Auth state set successfully");

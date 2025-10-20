@@ -36,7 +36,7 @@ export default function MyRatingsScreen() {
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 
   // Get ratings from context
-  const ratings = actions.getRatings();
+  const ratings = actions.getRatings() as Rating[];
 
   const userRatings = useMemo(() => {
     return ratings.filter((rating) => rating.tenantId === currentUser?.id);

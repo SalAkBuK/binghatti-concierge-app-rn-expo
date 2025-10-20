@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 
-interface AnalyticsTileProps {
+interface ManagementTileProps {
   title: string;
   value: string | number;
   icon: keyof typeof Ionicons.glyphMap;
@@ -13,13 +13,13 @@ interface AnalyticsTileProps {
   };
 }
 
-export function AnalyticsTile({
+export function ManagementTile({
   title,
   value,
   icon,
-  iconColor = "#7034FF",
+  iconColor = "#2563EB",
   trend,
-}: AnalyticsTileProps) {
+}: ManagementTileProps) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -63,7 +63,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
     flex: 1,
-    minWidth: 220,
+    minWidth: 100,
   },
   header: {
     flexDirection: "row",

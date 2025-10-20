@@ -152,7 +152,7 @@ export default function TenantHomeScreen() {
         >
           <AnimatedButton
             style={[styles.actionButton, styles.newRequestButton]}
-            onPress={() => router.push("/(tabs)/new-request")}
+            onPress={() => router.push("/(tenant)/new-request")}
           >
             <View style={styles.actionButtonContent}>
               <View style={[styles.actionButtonIcon, styles.newRequestIcon]}>
@@ -170,7 +170,7 @@ export default function TenantHomeScreen() {
 
           <AnimatedButton
             style={[styles.actionButton, styles.myRequestsButton]}
-            onPress={() => router.push("/(tabs)/requests")}
+            onPress={() => router.push("/(tenant)/requests")}
           >
             <View style={styles.actionButtonContent}>
               <View style={[styles.actionButtonIcon, styles.myRequestsIcon]}>

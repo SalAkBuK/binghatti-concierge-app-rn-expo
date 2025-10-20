@@ -12,10 +12,13 @@ import Animated, { FadeIn } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AnimatedBellIcon } from "./AnimatedBellIcon";
 
+type RouterPushInput = Parameters<typeof router.push>[0];
+
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 interface HeaderBarProps {
   title?: string;
+  subtitle?: string;
   showTitle?: boolean;
   showMenu?: boolean;
   showNotifications?: boolean;
@@ -32,7 +35,7 @@ interface HeaderBarProps {
   onSideMenuToggle?: (isVisible: boolean) => void;
   showBackButton?: boolean;
   onBackPress?: () => void;
-  notificationRoute?: string;
+  notificationRoute?: RouterPushInput | string;
   notificationParams?: Record<string, any>;
 }
 
@@ -46,6 +49,7 @@ export function HeaderBar({
   onNotificationPress,
   backgroundColor = "transparent",
   textColor = "#000",
+  subtitle,
   style,
   menuMargin,
   notificationMargin,
@@ -92,13 +96,19 @@ export function HeaderBar({
       onNotificationPress();
     } else {
       if (notificationRoute) {
-        if (notificationParams) {
-          router.push({ pathname: notificationRoute, params: notificationParams });
+        if (
+          notificationParams &&
+          typeof notificationRoute === "string"
+        ) {
+          router.push({
+            pathname: notificationRoute,
+            params: notificationParams,
+          } as RouterPushInput);
         } else {
-          router.push(notificationRoute);
+          router.push(notificationRoute as RouterPushInput);
         }
       } else {
-        router.push("/(modals)/notifications-hub");
+        router.push("/(modals)/notifications-hub" as RouterPushInput);
       }
     }
   };
@@ -149,9 +159,23 @@ export function HeaderBar({
       )}
 
       {/* Title */}
-      {showTitle && title && (
-        <Text style={[styles.headerTitle, { color: textColor }]}>{title}</Text>
-      )}
+      <View style={styles.titleContainer}>
+        {showTitle && title ? (
+          <>
+            <Text style={[styles.headerTitle, { color: textColor }]} numberOfLines={1}>
+              {title}
+            </Text>
+            {subtitle ? (
+              <Text
+                style={[styles.headerSubtitle, { color: textColor }]}
+                numberOfLines={1}
+              >
+                {subtitle}
+              </Text>
+            ) : null}
+          </>
+        ) : null}
+      </View>
 
       {/* Notification Button */}
       {showNotifications ? (
@@ -186,11 +210,23 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
+  titleContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 40,
+    paddingHorizontal: 12,
+  },
   headerTitle: {
     fontSize: 18,
     fontWeight: "600",
-    flex: 1,
     textAlign: "center",
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    fontWeight: "500",
+    textAlign: "center",
+    opacity: 0.75,
   },
   notificationButton: {
     padding: 8,

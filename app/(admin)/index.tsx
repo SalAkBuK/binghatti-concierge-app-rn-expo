@@ -37,6 +37,7 @@ export default function AdminDashboard() {
   const pagePadding = Math.max(16, Math.min(32, width * 0.05));
   const isCompact = width < 768;
   const isManagement = currentUser?.role === "management";
+  const managementBaseRoute = isManagement ? "/(management)" : "/(admin)";
 
   const analytics = actions.getAnalytics();
 
@@ -308,7 +309,7 @@ export default function AdminDashboard() {
             actionSlot={
               upcomingBookings.length > 0 ? (
                 <TouchableOpacity
-                  onPress={() => router.push("/(tabs)/my-bookings")}
+                  onPress={() => router.push("/(tenant)/my-bookings")}
                 >
                   <Text style={styles.viewAllLink}>View bookings</Text>
                 </TouchableOpacity>
@@ -376,7 +377,9 @@ export default function AdminDashboard() {
             subtitle="Maintenance tasks currently in motion"
             actionSlot={
               activeJobs.length > 0 ? (
-                <TouchableOpacity onPress={() => router.push("/(admin)/jobs")}>
+                <TouchableOpacity
+                  onPress={() => router.push(`${managementBaseRoute}/jobs`)}
+                >
                   <Text style={styles.viewAllLink}>View jobs</Text>
                 </TouchableOpacity>
               ) : undefined

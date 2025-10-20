@@ -4,7 +4,13 @@ export interface User {
   id: string;
   email: string;
   name: string;
-  role: "tenant" | "admin" | "management" | "service_provider" | "employee";
+  role:
+    | "tenant"
+    | "admin"
+    | "super_admin"
+    | "management"
+    | "service_provider"
+    | "employee";
   phone?: string;
   profile?: UserProfile;
   createdAt: string;
@@ -36,6 +42,55 @@ export interface Attachment {
   createdAt: string;
 }
 
+export type RequestMessageChannel = "tenant" | "provider" | "internal";
+
+export interface RequestMessage {
+  id: string;
+  requestId: string;
+  senderId: string;
+  senderName: string;
+  senderRole: User["role"];
+  channel: RequestMessageChannel;
+  body: string;
+  attachments?: string[];
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export type RequestNoteVisibility = "management" | "operations" | "security";
+
+export interface RequestNote {
+  id: string;
+  requestId: string;
+  authorId: string;
+  authorName: string;
+  body: string;
+  visibility: RequestNoteVisibility;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export type RequestTimelineEventType =
+  | "status_change"
+  | "assignment"
+  | "sla"
+  | "message"
+  | "note"
+  | "attachment"
+  | "escalation";
+
+export interface RequestTimelineEvent {
+  id: string;
+  requestId: string;
+  eventType: RequestTimelineEventType;
+  title: string;
+  description?: string;
+  actorId?: string;
+  actorName?: string;
+  metadata?: Record<string, any>;
+  createdAt: string;
+}
+
 export interface Request {
   id: string;
   title: string;
@@ -59,7 +114,12 @@ export interface Request {
   contactPhone?: string;
   additionalNotes?: string;
   attachments: string[]; // URIs to attachments (kept as string[] for backward compatibility)
+  slaDueAt?: string;
+  lastEscalatedAt?: string;
   comments: RequestComment[];
+  messages: RequestMessage[];
+  notes: RequestNote[];
+  timeline: RequestTimelineEvent[];
   createdAt: string;
   updatedAt: string;
 }
@@ -71,6 +131,9 @@ export interface RequestComment {
   userName: string;
   message: string;
   createdAt: string;
+  channel?: RequestMessageChannel;
+  attachments?: string[];
+  visibility?: RequestMessageChannel | "internal";
 }
 
 export interface Notification {
@@ -124,6 +187,7 @@ export interface CreateRequestDTO {
   contactPhone?: string;
   additionalNotes?: string;
   attachments?: string[];
+  slaDueAt?: string;
 }
 
 export interface UpdateRequestDTO {
@@ -135,6 +199,36 @@ export interface UpdateRequestDTO {
   buildingId?: string;
   additionalNotes?: string;
   attachments?: string[];
+  slaDueAt?: string;
+  lastEscalatedAt?: string;
+}
+
+export interface CreateRequestMessageDTO {
+  requestId: string;
+  senderId: string;
+  senderName: string;
+  senderRole: User["role"];
+  channel: RequestMessageChannel;
+  body: string;
+  attachments?: string[];
+}
+
+export interface CreateRequestNoteDTO {
+  requestId: string;
+  authorId: string;
+  authorName: string;
+  body: string;
+  visibility?: RequestNoteVisibility;
+}
+
+export interface CreateRequestTimelineEventDTO {
+  requestId: string;
+  eventType: RequestTimelineEventType;
+  title: string;
+  description?: string;
+  actorId?: string;
+  actorName?: string;
+  metadata?: Record<string, any>;
 }
 
 export interface LoginDTO {
@@ -160,6 +254,7 @@ export interface AppState {
   selectedRequest: Request | null;
   requests: Request[];
   notifications: Notification[];
+  leases?: Lease[];
   maintenanceNotices: MaintenanceNotice[];
   users: Record<string, User>;
   loading: boolean;
@@ -198,10 +293,20 @@ export interface AuthActions {
 }
 
 export interface RequestActions {
-  createRequest: (requestData: CreateRequestDTO) => Promise<Request>;
+  createRequest: (
+    requestData: CreateRequestDTO,
+    tenantId: string,
+  ) => Promise<Request>;
   updateRequest: (id: string, updates: UpdateRequestDTO) => Promise<Request>;
-  deleteRequest: (id: string) => Promise<void>;
+  deleteRequest: (id: string) => Promise<Request>;
   setSelectedRequest: (request: Request | null) => void;
+  addRequestMessage: (
+    payload: CreateRequestMessageDTO,
+  ) => Promise<RequestMessage>;
+  addRequestNote: (payload: CreateRequestNoteDTO) => Promise<RequestNote>;
+  logTimelineEvent: (
+    payload: CreateRequestTimelineEventDTO,
+  ) => RequestTimelineEvent;
 }
 
 export interface NotificationActions {
@@ -212,7 +317,7 @@ export interface NotificationActions {
     type?: Notification["type"],
   ) => Notification;
   markNotificationAsRead: (id: string) => Promise<void>;
-  markAllNotificationsAsRead: () => Promise<void>;
+  markAllNotificationsAsRead: (userId?: string) => Promise<void>;
   deleteNotification: (id: string) => Promise<void>;
   deleteAllNotifications: () => Promise<void>;
 }
@@ -255,7 +360,9 @@ export interface AmenityBooking {
   amenityName: string;
   amenityType: AmenityType;
   tenantId: string;
+  tenantName?: string;
   buildingId: string;
+  unitNumber?: string;
   slotDate: string; // YYYY-MM-DD
   slotTimeStart: string; // HH:MM
   slotTimeEnd: string; // HH:MM
@@ -335,6 +442,171 @@ export interface Building {
   updatedAt: string;
 }
 
+export interface UnitType {
+  id: string;
+  name: string;
+  bedrooms: number;
+  bathrooms: number;
+  areaSqFt: number;
+  baseRent?: number;
+  amenities: string[];
+}
+
+export type ManagedBy = "building" | "owner";
+export type Furnishing = "furnished" | "semi_furnished" | "unfurnished";
+
+export interface BuildingUnit {
+  id: string;
+  buildingId: string;
+  unitNumber: string;
+  floor: number;
+  typeId: string;
+  templateId?: string;
+  bedrooms?: number;
+  bathrooms?: number;
+  areaSqFt?: number;
+  status: "occupied" | "vacant" | "maintenance";
+  tenantId?: string;
+  amenities: string[];
+  photos?: string[];
+  rentAmount?: number;
+  offlineReason?: string;
+  lastInspectionDate?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  tower?: string;
+  furnishing?: Furnishing;
+  managedBy?: ManagedBy;
+  billsInclusive?: boolean;
+  maintenanceInclusive?: boolean;
+  depositAmount?: number;
+  maintenanceCharges?: number;
+}
+
+export type LeaseStatus = "active" | "notice" | "scheduled" | "ended";
+
+export interface Lease {
+  id: string;
+  buildingId: string;
+  unitId: string;
+  tenantId: string;
+  startDate: string;
+  endDate: string;
+  rentAmount: number;
+  depositAmount?: number;
+  status: LeaseStatus;
+  documents?: string[];
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type VisitorPassType = "visitor" | "delivery" | "contractor";
+export type VisitorPassStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "checked_in"
+  | "completed"
+  | "cancelled";
+
+export interface VisitorPass {
+  id: string;
+  buildingId: string;
+  tenantId?: string;
+  unitNumber?: string;
+  type: VisitorPassType;
+  name: string;
+  company?: string;
+  contactPhone?: string;
+  contactEmail?: string;
+  scheduledStart: string; // ISO timestamp
+  scheduledEnd: string; // ISO timestamp
+  status: VisitorPassStatus;
+  qrCodeUrl?: string;
+  hostName?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type AmenityRule = {
+  id: string;
+  label: string;
+  description?: string;
+};
+
+export type AmenityMaintenanceWindow = {
+  start: string;
+  end: string;
+  notes?: string;
+};
+
+export interface BuildingAmenityConfig {
+  id: string;
+  buildingId: string;
+  amenityId: string;
+  amenityName: string;
+  bookingWindowDays: number;
+  maxDurationMinutes: number;
+  maxConcurrentBookings: number;
+  advanceCancellationHours: number;
+  status: AmenityStatus;
+  rules: AmenityRule[];
+  maintenanceWindow?: AmenityMaintenanceWindow;
+  imageUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BuildingEmployee {
+  id: string;
+  buildingId: string;
+  name: string;
+  role: string;
+  phone: string;
+  shift?: "morning" | "evening" | "night";
+  rating?: number;
+  jobsCompleted?: number;
+}
+
+export interface ServiceProviderProfile {
+  id: string;
+  userId?: string;
+  name: string;
+  specialty: string;
+  phone: string;
+  email?: string;
+  rating: number;
+  jobsCompleted: number;
+  responseTimeMinutes?: number;
+}
+
+export interface VisitorLog {
+  id: string;
+  buildingId: string;
+  tenantId?: string;
+  unitNumber?: string;
+  type: "visitor" | "delivery";
+  name: string;
+  company?: string;
+  expectedArrival: string;
+  checkInTime?: string;
+  checkOutTime?: string;
+  status: "expected" | "checked_in" | "completed" | "cancelled";
+  notes?: string;
+}
+
+export interface RatingSummary {
+  id: string;
+  entityId: string;
+  entityName: string;
+  role: "service_provider" | "employee";
+  averageRating: number;
+  reviewsCount: number;
+  lastReviewDate?: string;
+}
+
 export interface Job {
   id: string;
   requestId?: string; // Link to a tenant request if applicable
@@ -355,6 +627,10 @@ export interface Job {
   actualCost?: number;
   scheduledDate?: string;
   completedDate?: string;
+  costBreakdown?: JobCostBreakdownItem[];
+  complianceChecklist?: JobComplianceChecklistItem[];
+  assignmentHistory: JobAssignmentRecord[];
+  assignmentQueue?: JobAssignmentRecord[];
   createdAt: string;
   updatedAt: string;
 }
@@ -366,6 +642,36 @@ export interface JobNote {
   userName: string;
   note: string;
   createdAt: string;
+}
+
+export interface JobCostBreakdownItem {
+  id: string;
+  label: string;
+  amount: number;
+  category?: "labor" | "parts" | "fees" | "other";
+  description?: string;
+}
+
+export interface JobComplianceChecklistItem {
+  id: string;
+  label: string;
+  description?: string;
+  completed: boolean;
+  completedAt?: string;
+  completedBy?: string;
+  notes?: string;
+}
+
+export interface JobAssignmentRecord {
+  id: string;
+  serviceProviderId: string;
+  serviceProviderName: string;
+  assignedBy: string;
+  assignedByName?: string;
+  assignedAt: string;
+  scheduledDate?: string;
+  status: "pending" | "accepted" | "declined" | "completed";
+  notes?: string;
 }
 
 export interface Analytics {
@@ -472,6 +778,8 @@ export interface CreateJobDTO {
   attachments?: string[];
   estimatedCost?: number;
   scheduledDate?: string;
+  costBreakdown?: CreateJobCostItemDTO[];
+  complianceChecklist?: CreateJobChecklistItemDTO[];
 }
 
 export interface UpdateJobDTO {
@@ -485,6 +793,8 @@ export interface UpdateJobDTO {
   actualCost?: number;
   scheduledDate?: string;
   completedDate?: string;
+  costBreakdown?: CreateJobCostItemDTO[];
+  complianceChecklist?: UpdateJobChecklistItemDTO[];
 }
 
 export interface AssignJobDTO {
@@ -492,6 +802,70 @@ export interface AssignJobDTO {
   serviceProviderId: string;
   scheduledDate?: string;
   notes?: string;
+}
+
+export interface CreateJobCostItemDTO
+  extends Omit<JobCostBreakdownItem, "id"> {
+  id?: string;
+}
+
+export interface CreateJobChecklistItemDTO
+  extends Omit<JobComplianceChecklistItem, "id" | "completed"> {
+  id?: string;
+  completed?: boolean;
+}
+
+export interface UpdateJobChecklistItemDTO
+  extends Partial<Omit<JobComplianceChecklistItem, "id">> {
+  id: string;
+}
+
+export interface BulkUpdateJobStatusDTO {
+  jobIds: string[];
+  status: Job["status"];
+  updatedBy: string;
+  notes?: string;
+}
+
+export interface QueueJobAssignmentDTO {
+  jobId: string;
+  serviceProviderId: string;
+  scheduledDate?: string;
+  notes?: string;
+}
+
+export interface UpdateJobAssignmentDTO {
+  jobId: string;
+  assignmentId: string;
+  status: JobAssignmentRecord["status"];
+  notes?: string;
+}
+
+// Unit Type DTOs
+export interface CreateUnitTypeDTO {
+  name: string;
+  bedrooms: number;
+  bathrooms: number;
+  areaSqFt: number;
+  baseRent?: number;
+  amenities: string[];
+}
+
+export interface UpdateUnitTypeDTO {
+  name?: string;
+  bedrooms?: number;
+  bathrooms?: number;
+  areaSqFt?: number;
+  baseRent?: number;
+  amenities?: string[];
+}
+
+// Error types
+export interface AppError {
+  message: string;
+  code?: string;
+  status?: number;
+  details?: any;
 }
 
 // Utility types

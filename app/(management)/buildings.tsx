@@ -21,6 +21,7 @@ import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
 import type {
+  AppError,
   Building,
   BuildingStatus,
   BuildingUnit,
@@ -29,9 +30,10 @@ import type {
   VisitorLog,
   UnitType,
 } from "../../lib/types";
+import { getUserErrorMessage } from "../../lib/services/api/errors";
 import { filterNotificationsByUser, formatDate } from "../../lib/utils/helpers";
 
-const ADMIN_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
+const MANAGEMENT_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
 
 export default function BuildingsScreen() {
   const { currentUser, notifications, actions, unitTypes } = useApp();
@@ -158,8 +160,9 @@ export default function BuildingsScreen() {
         totalUnits: "",
         status: "active",
       });
-    } catch (error: any) {
-      Alert.alert("Error", error?.message || "Failed to create building");
+    } catch (error) {
+      const errorMessage = getUserErrorMessage(error);
+      Alert.alert("Error", errorMessage);
     } finally {
       setIsCreating(false);
     }
@@ -186,8 +189,9 @@ export default function BuildingsScreen() {
       setShowManagerModal(false);
       setSelectedBuilding(null);
       setFormData({ ...formData, managerId: "" });
-    } catch (error: any) {
-      Alert.alert("Error", error?.message || "Failed to assign manager");
+    } catch (error) {
+      const errorMessage = getUserErrorMessage(error);
+      Alert.alert("Error", errorMessage);
     } finally {
       setIsAssigning(false);
     }
@@ -387,58 +391,22 @@ export default function BuildingsScreen() {
             )}
           </View>
 
-          {/* Capacity Progress */}
-          <View style={styles.capacitySection}>
-            <View style={styles.capacityHeader}>
-              <Text style={styles.sectionTitle}>Unit Capacity</Text>
-              <Text style={styles.capacityText}>
-                {buildingUnitsData.length}/{detailsBuilding.totalUnits} units created
-              </Text>
-            </View>
-            <View style={styles.progressBar}>
-              <View
-                style={[
-                  styles.progressFill,
-                  {
-                    width: `${Math.min((buildingUnitsData.length / detailsBuilding.totalUnits) * 100, 100)}%`,
-                    backgroundColor:
-                      buildingUnitsData.length >= detailsBuilding.totalUnits
-                        ? "#DC2626"
-                        : buildingUnitsData.length / detailsBuilding.totalUnits >= 0.9
-                        ? "#F59E0B"
-                        : "#10B981",
-                  },
-                ]}
-              />
-            </View>
-            <Text style={styles.capacitySubtext}>
-              {detailsBuilding.totalUnits - buildingUnitsData.length} slots remaining
-            </Text>
-          </View>
-
           <View style={styles.summaryRow}>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryValue}>{buildingUnitsData.length}</Text>
+              <Text style={styles.summaryLabel}>Total Units</Text>
+            </View>
             <View style={styles.summaryCard}>
               <Text style={styles.summaryValue}>{occupiedUnits}</Text>
               <Text style={styles.summaryLabel}>Occupied</Text>
-              <Text style={styles.summaryMeta}>
-                {buildingUnitsData.length > 0
-                  ? `${Math.round((occupiedUnits / buildingUnitsData.length) * 100)}%`
-                  : "0%"}
-              </Text>
             </View>
             <View style={styles.summaryCard}>
               <Text style={styles.summaryValue}>{vacantUnits}</Text>
               <Text style={styles.summaryLabel}>Vacant</Text>
-              <Text style={styles.summaryMeta}>
-                {buildingUnitsData.length > 0
-                  ? `${Math.round((vacantUnits / buildingUnitsData.length) * 100)}%`
-                  : "0%"}
-              </Text>
             </View>
             <View style={styles.summaryCard}>
               <Text style={styles.summaryValue}>{maintenanceUnits}</Text>
               <Text style={styles.summaryLabel}>Maintenance</Text>
-              <Text style={styles.summaryMeta}>Offline</Text>
             </View>
           </View>
 
@@ -541,7 +509,7 @@ export default function BuildingsScreen() {
           hasUnreadNotifications={hasUnreadNotifications}
           showSideMenu={showSideMenu}
           onSideMenuToggle={setShowSideMenu}
-          notificationRoute={ADMIN_NOTIFICATION_ROUTE}
+          notificationRoute={MANAGEMENT_NOTIFICATION_ROUTE}
         />
 
         {/* Create Button */}
@@ -874,7 +842,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#7034FF",
+    backgroundColor: "#2563EB",
     paddingVertical: 14,
     paddingHorizontal: 20,
     borderRadius: 12,
@@ -955,7 +923,7 @@ const styles = StyleSheet.create({
   buildingNameText: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#7034FF",
+    color: "#2563EB",
     marginBottom: 16,
   },
   managerRow: {
@@ -969,7 +937,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 6,
     alignSelf: "flex-start",
-    backgroundColor: "#7034FF",
+    backgroundColor: "#2563EB",
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -1004,46 +972,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#6B7280",
     marginTop: 4,
-  },
-  summaryMeta: {
-    fontSize: 11,
-    color: "#9CA3AF",
-    marginTop: 2,
-    fontWeight: "600",
-  },
-  capacitySection: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    padding: 16,
-    marginBottom: 16,
-  },
-  capacityHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  capacityText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#1F2937",
-  },
-  progressBar: {
-    height: 8,
-    backgroundColor: "#F3F4F6",
-    borderRadius: 999,
-    overflow: "hidden",
-    marginBottom: 8,
-  },
-  progressFill: {
-    height: "100%",
-    borderRadius: 999,
-  },
-  capacitySubtext: {
-    fontSize: 12,
-    color: "#6B7280",
   },
   detailSection: {
     gap: 12,
@@ -1119,8 +1047,8 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   pickerOptionActive: {
-    backgroundColor: "#7034FF",
-    borderColor: "#7034FF",
+    backgroundColor: "#2563EB",
+    borderColor: "#2563EB",
   },
   pickerOptionText: {
     fontSize: 14,
@@ -1149,8 +1077,8 @@ const styles = StyleSheet.create({
     borderColor: "#E5E7EB",
   },
   statusButtonActive: {
-    backgroundColor: "#7034FF",
-    borderColor: "#7034FF",
+    backgroundColor: "#2563EB",
+    borderColor: "#2563EB",
   },
   statusButtonText: {
     fontSize: 12,
@@ -1164,7 +1092,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#7034FF",
+    backgroundColor: "#2563EB",
     paddingVertical: 14,
     borderRadius: 12,
     marginTop: 8,

@@ -13,7 +13,17 @@ import {
   createSystemNotification,
 } from "../utils";
 // import { apiService } from '../services/api'; // Temporarily disabled to prevent crashes
-import type { Request, CreateRequestDTO, UpdateRequestDTO } from "../types";
+import type {
+  Request,
+  CreateRequestDTO,
+  UpdateRequestDTO,
+  RequestMessage,
+  RequestNote,
+  RequestTimelineEvent,
+  CreateRequestMessageDTO,
+  CreateRequestNoteDTO,
+  CreateRequestTimelineEventDTO,
+} from "../types";
 
 // Requests State Interface
 interface RequestsState {
@@ -36,6 +46,13 @@ interface RequestsActions {
   ) => Promise<Request>;
   deleteRequest: (requestId: string) => Promise<Request>;
   setSelectedRequest: (request: Request | null) => void;
+  addRequestMessage: (
+    payload: CreateRequestMessageDTO,
+  ) => Promise<RequestMessage>;
+  addRequestNote: (payload: CreateRequestNoteDTO) => Promise<RequestNote>;
+  logTimelineEvent: (
+    payload: CreateRequestTimelineEventDTO,
+  ) => RequestTimelineEvent;
   setLoading: (loading: boolean) => void;
   setError: (error: string) => void;
   clearError: () => void;
@@ -52,6 +69,9 @@ const REQUESTS_ACTIONS = {
   CREATE_REQUEST: "CREATE_REQUEST",
   UPDATE_REQUEST: "UPDATE_REQUEST",
   DELETE_REQUEST: "DELETE_REQUEST",
+  ADD_MESSAGE: "ADD_MESSAGE",
+  ADD_NOTE: "ADD_NOTE",
+  ADD_TIMELINE_EVENT: "ADD_TIMELINE_EVENT",
   SET_SELECTED_REQUEST: "SET_SELECTED_REQUEST",
   SET_LOADING: "SET_LOADING",
   SET_ERROR: "SET_ERROR",
@@ -118,6 +138,58 @@ const requestsReducer = (
             : state.selectedRequest,
       };
 
+    case REQUESTS_ACTIONS.ADD_MESSAGE: {
+      const { requestId, message } = action.payload;
+      return {
+        ...state,
+        requests: state.requests.map((req) =>
+          req.id === requestId
+            ? {
+                ...req,
+                messages: [...(req.messages ?? []), message],
+                updatedAt: message.createdAt,
+              }
+            : req,
+        ),
+      };
+    }
+
+    case REQUESTS_ACTIONS.ADD_NOTE: {
+      const { requestId, note } = action.payload;
+      return {
+        ...state,
+        requests: state.requests.map((req) =>
+          req.id === requestId
+            ? {
+                ...req,
+                notes: [...(req.notes ?? []), note],
+                updatedAt: note.createdAt,
+              }
+            : req,
+        ),
+      };
+    }
+
+    case REQUESTS_ACTIONS.ADD_TIMELINE_EVENT: {
+      const { requestId, event } = action.payload;
+      return {
+        ...state,
+        requests: state.requests.map((req) =>
+          req.id === requestId
+            ? {
+                ...req,
+                timeline: [...(req.timeline ?? []), event].sort(
+                  (a: RequestTimelineEvent, b: RequestTimelineEvent) =>
+                    new Date(a.createdAt).getTime() -
+                    new Date(b.createdAt).getTime(),
+                ),
+                updatedAt: event.createdAt,
+              }
+            : req,
+        ),
+      };
+    }
+
     case REQUESTS_ACTIONS.SET_SELECTED_REQUEST:
       return {
         ...state,
@@ -146,6 +218,26 @@ const requestsReducer = (
     default:
       return state;
   }
+};
+
+const ensureRequestShape = (request: Request): Request => {
+  const createdAt = request.createdAt
+    ? new Date(request.createdAt)
+    : new Date();
+  const defaultSla = new Date(
+    createdAt.getTime() + 24 * 60 * 60 * 1000,
+  ).toISOString();
+
+  return {
+    ...request,
+    attachments: request.attachments ?? [],
+    comments: request.comments ?? [],
+    messages: request.messages ?? [],
+    notes: request.notes ?? [],
+    timeline: request.timeline ?? [],
+    slaDueAt: request.slaDueAt ?? defaultSla,
+    lastEscalatedAt: request.lastEscalatedAt,
+  };
 };
 
 // Initial State
@@ -183,7 +275,9 @@ export const RequestsProvider: React.FC<RequestsProviderProps> = ({
   );
   const [state, dispatch] = useReducer(requestsReducer, {
     ...initialState,
-    requests: requests || [],
+    requests: Array.isArray(requests)
+      ? requests.map((request) => ensureRequestShape(request))
+      : [],
   });
 
   // Update AsyncStorage when requests change
@@ -206,6 +300,15 @@ export const RequestsProvider: React.FC<RequestsProviderProps> = ({
         // Use existing local storage data for now
         console.log("Mock: Using local storage data for requests");
 
+        const normalized = Array.isArray(requests)
+          ? requests.map((request) => ensureRequestShape(request))
+          : DEFAULT_REQUESTS.map((request) => ensureRequestShape(request));
+
+        dispatch({
+          type: REQUESTS_ACTIONS.SET_REQUESTS,
+          payload: normalized,
+        });
+
         actions.setLoading(false);
       } catch (error: any) {
         actions.setError(error.message || "Failed to load requests");
@@ -221,27 +324,43 @@ export const RequestsProvider: React.FC<RequestsProviderProps> = ({
         actions.setLoading(true);
         actions.clearError();
 
-        // Add tenantId to the request data if not already present
-        const requestWithTenant = {
-          ...requestData,
-          tenantId,
-        };
-
         // TODO: Replace with real API call
         // const response = await apiService.requests.createRequest(requestWithTenant);
 
         // Mock create for now
-        const newRequest: Request = {
-          id: generateId(state.requests || []).toString(),
+        const newRequestId = generateId(state.requests || []).toString();
+        const submittedAt = new Date();
+        const baseRequest: Request = {
+          id: newRequestId,
           ...requestData,
           status: "pending",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
+          createdAt: submittedAt.toISOString(),
+          updatedAt: submittedAt.toISOString(),
           tenantId,
           assignedTo: undefined,
           attachments: requestData.attachments || [],
           comments: [],
+          slaDueAt:
+            requestData.slaDueAt ??
+            new Date(submittedAt.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+          lastEscalatedAt: undefined,
+          messages: [],
+          notes: [],
+          timeline: [
+            {
+              id: `timeline-${newRequestId}-submitted`,
+              requestId: newRequestId,
+              eventType: "status_change",
+              title: "Request Submitted",
+              description: `${requestData.type} request created by tenant`,
+              actorId: tenantId,
+              actorName: undefined,
+              createdAt: submittedAt.toISOString(),
+            },
+          ],
         };
+
+        const newRequest = ensureRequestShape(baseRequest);
 
         dispatch({
           type: REQUESTS_ACTIONS.CREATE_REQUEST,
@@ -320,12 +439,55 @@ export const RequestsProvider: React.FC<RequestsProviderProps> = ({
           );
         }
 
+        const timelineTimestamp = new Date().toISOString();
+
+        if (updates.status && updates.status !== originalRequest.status) {
+          dispatch({
+            type: REQUESTS_ACTIONS.ADD_TIMELINE_EVENT,
+            payload: {
+              requestId,
+              event: {
+                id: `timeline-${requestId}-status-${Date.now()}`,
+                requestId,
+                eventType: "status_change",
+                title: `Status updated to ${updates.status}`,
+                description: `Status changed from ${originalRequest.status} to ${updates.status}.`,
+                actorId: undefined,
+                actorName: undefined,
+                createdAt: timelineTimestamp,
+              },
+            },
+          });
+        }
+
+        if (
+          updates.assignedTo &&
+          updates.assignedTo !== originalRequest.assignedTo
+        ) {
+          dispatch({
+            type: REQUESTS_ACTIONS.ADD_TIMELINE_EVENT,
+            payload: {
+              requestId,
+              event: {
+                id: `timeline-${requestId}-assignment-${Date.now()}`,
+                requestId,
+                eventType: "assignment",
+                title: "Assignment updated",
+                description: `Reassigned to user ${updates.assignedTo}.`,
+                actorId: updates.assignedTo,
+                actorName: undefined,
+                createdAt: timelineTimestamp,
+              },
+            },
+          });
+        }
+
         actions.setLoading(false);
-        const updatedRequest = {
+        const updatedRequest = ensureRequestShape({
           ...originalRequest,
           ...updates,
-          updatedAt: new Date().toISOString(),
-        };
+          updatedAt: timelineTimestamp,
+        });
         return updatedRequest;
       } catch (error: any) {
         actions.setError(
@@ -379,6 +541,136 @@ export const RequestsProvider: React.FC<RequestsProviderProps> = ({
         );
         throw error;
       }
+    },
+
+    addRequestMessage: async (
+      payload: CreateRequestMessageDTO,
+    ): Promise<RequestMessage> => {
+      const targetRequest = state.requests.find(
+        (req) => req.id === payload.requestId,
+      );
+
+      if (!targetRequest) {
+        throw new Error("Request not found");
+      }
+
+      const timestamp = new Date().toISOString();
+      const message: RequestMessage = {
+        id: `msg-${payload.requestId}-${Date.now()}`,
+        requestId: payload.requestId,
+        senderId: payload.senderId,
+        senderName: payload.senderName,
+        senderRole: payload.senderRole,
+        channel: payload.channel,
+        body: payload.body,
+        attachments: payload.attachments,
+        createdAt: timestamp,
+      };
+
+      dispatch({
+        type: REQUESTS_ACTIONS.ADD_MESSAGE,
+        payload: { requestId: payload.requestId, message },
+      });
+
+      dispatch({
+        type: REQUESTS_ACTIONS.ADD_TIMELINE_EVENT,
+        payload: {
+          requestId: payload.requestId,
+          event: {
+            id: `timeline-${payload.requestId}-message-${Date.now()}`,
+            requestId: payload.requestId,
+            eventType: "message",
+            title: `Message from ${payload.senderName}`,
+            description: payload.body.slice(0, 140),
+            actorId: payload.senderId,
+            actorName: payload.senderName,
+            metadata: { channel: payload.channel },
+            createdAt: timestamp,
+          },
+        },
+      });
+
+      return message;
+    },
+
+    addRequestNote: async (
+      payload: CreateRequestNoteDTO,
+    ): Promise<RequestNote> => {
+      const targetRequest = state.requests.find(
+        (req) => req.id === payload.requestId,
+      );
+
+      if (!targetRequest) {
+        throw new Error("Request not found");
+      }
+
+      const timestamp = new Date().toISOString();
+      const note: RequestNote = {
+        id: `note-${payload.requestId}-${Date.now()}`,
+        requestId: payload.requestId,
+        authorId: payload.authorId,
+        authorName: payload.authorName,
+        body: payload.body,
+        visibility: payload.visibility ?? "management",
+        createdAt: timestamp,
+      };
+
+      dispatch({
+        type: REQUESTS_ACTIONS.ADD_NOTE,
+        payload: { requestId: payload.requestId, note },
+      });
+
+      dispatch({
+        type: REQUESTS_ACTIONS.ADD_TIMELINE_EVENT,
+        payload: {
+          requestId: payload.requestId,
+          event: {
+            id: `timeline-${payload.requestId}-note-${Date.now()}`,
+            requestId: payload.requestId,
+            eventType: "note",
+            title: "Internal note added",
+            description: payload.body.slice(0, 140),
+            actorId: payload.authorId,
+            actorName: payload.authorName,
+            metadata: { visibility: payload.visibility ?? "management" },
+            createdAt: timestamp,
+          },
+        },
+      });
+
+      return note;
+    },
+
+    logTimelineEvent: (
+      payload: CreateRequestTimelineEventDTO,
+    ): RequestTimelineEvent => {
+      const targetRequest = state.requests.find(
+        (req) => req.id === payload.requestId,
+      );
+
+      if (!targetRequest) {
+        throw new Error("Request not found");
+      }
+
+      const timestamp = new Date().toISOString();
+      const event: RequestTimelineEvent = {
+        id: `timeline-${payload.requestId}-${Date.now()}`,
+        requestId: payload.requestId,
+        eventType: payload.eventType,
+        title: payload.title,
+        description: payload.description,
+        actorId: payload.actorId,
+        actorName: payload.actorName,
+        metadata: payload.metadata,
+        createdAt: timestamp,
+      };
+
+      dispatch({
+        type: REQUESTS_ACTIONS.ADD_TIMELINE_EVENT,
+        payload: { requestId: payload.requestId, event },
+      });
+
+      return event;
     },
 
     setSelectedRequest: (request: Request | null): void => {

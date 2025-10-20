@@ -50,7 +50,7 @@ npm run build:list          # List all EAS builds
 
 ```
 app/                          # Expo Router file-based routing
-  ├── (tabs)/                 # Tab navigator routes (tenant views)
+  ├── (tenant)/              # Tab navigator routes (tenant views)
   │   ├── index.tsx           # Home dashboard
   │   ├── requests.tsx        # Request management
   │   ├── new-request.tsx     # Create new request
@@ -169,11 +169,12 @@ The API layer is built on a modular, extensible architecture:
 - **Expo Router v6** with file-based routing
 - **Typed Routes** enabled for type-safe navigation
 - **Route Groups**:
-  - `(tabs)`: Bottom tab navigation for tenant role
+  - `(tenant)`: Bottom tab navigation for tenant role
+  - `(management)`: Operations workspace for building managers
   - `(admin)`: Stack navigation for admin role
   - `(modals)`: Modal presentations
 - **Role-based routing**: Users are redirected based on their role (see `ROLE_HOME_VIEWS` in `lib/utils/constants.ts`)
-- **Root anchor**: Set to `(tabs)` via `unstable_settings` in `app/_layout.tsx`
+- **Root anchor**: Set to `(tenant)` via `unstable_settings` in `app/_layout.tsx`
 
 ### Authentication Flow
 
@@ -182,9 +183,9 @@ The API layer is built on a modular, extensible architecture:
 3. After login → `AuthContext` stores user data and token
 4. `MainApiService` syncs token across all API modules
 5. User redirected to role-specific home:
-   - Tenant → `(tabs)/index`
+   - Tenant → `(tenant)/index`
+   - Management → `(management)/index`
    - Admin → `(admin)/index`
-   - Management → management dashboard
 
 ### Role-Based Access Control
 
@@ -272,7 +273,7 @@ Secure storage keys are defined in `STORAGE_KEYS` constant:
 
 ### Adding New Screens
 
-1. Create file in appropriate route group (`(tabs)`, `(admin)`, `(modals)`)
+1. Create file in appropriate route group (`(tenant)`, `(admin)`, `(modals)`)
 2. Add route configuration in `app/_layout.tsx` if needed
 3. Update `NAVIGATION_ITEMS` in constants if adding to navigation
 4. Ensure role-based access control is enforced
@@ -301,7 +302,7 @@ Secure storage keys are defined in `STORAGE_KEYS` constant:
 
 ### Route Not Found
 - File-based routing requires exact file names
-- Check that route groups use parentheses: `(tabs)`, `(admin)`, `(modals)`
+- Check that route groups use parentheses: `(tenant)`, `(admin)`, `(modals)`
 - Verify `unstable_settings.anchor` is correctly set
 
 ## Testing Strategy

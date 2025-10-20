@@ -6,7 +6,7 @@
 
 ## 📱 Implemented Tenant Screens
 
-### 1. Home Screen (`app/(tabs)/index.tsx`) ✅
+### 1. Home Screen (`app/(tenant)/index.tsx`) ✅
 
 **Status**: Fully implemented and working
 
@@ -27,7 +27,7 @@
 - Dynamic stats calculation based on user's requests
 - Proper date formatting with `formatDate()` helper
 
-### 2. New Request Screen (`app/(tabs)/new-request.tsx`) ✅
+### 2. New Request Screen (`app/(tenant)/new-request.tsx`) ✅
 
 **Status**: Fully implemented and working
 
@@ -58,7 +58,7 @@
 - Auto-navigates back to home after successful submission
 - Preserves user data (apartment, tower, phone) from profile
 
-### 3. My Requests Screen (`app/(tabs)/requests.tsx`) ✅
+### 3. My Requests Screen (`app/(tenant)/requests.tsx`) ✅
 
 **Status**: Fully implemented and working
 
@@ -89,7 +89,7 @@
 - Uses `formatDate()` for consistent date formatting
 - Connected to `actions.setSelectedRequest()` for future detail view
 
-### 4. Profile Screen (`app/(tabs)/profile.tsx`) ✅
+### 4. Profile Screen (`app/(tenant)/profile.tsx`) ✅
 
 **Status**: Fully implemented and working (keyboard issue fixed)
 
@@ -124,7 +124,7 @@
 - Persists changes to secure storage via `authService.storeUserData()`
 - Handles logout with context state reset and navigation to auth screen
 
-### 5. Notifications Screen (`app/(tabs)/notifications.tsx`) ✅
+### 5. Notifications Screen (`app/(tenant)/notifications.tsx`) ✅
 
 **Status**: Fully implemented and working
 

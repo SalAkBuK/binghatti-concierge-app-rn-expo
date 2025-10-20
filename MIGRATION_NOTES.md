@@ -56,38 +56,38 @@
 
 ### 1. Remaining Tenant Screens
 
-- [ ] **New Request Screen** (`/(tabs)/new-request.tsx`)
-- [ ] **My Requests Screen** (`/(tabs)/requests.tsx`)
-- [ ] **Notifications Screen** (`/(tabs)/notifications.tsx`)
-- [ ] **Profile Screen** (`/(tabs)/profile.tsx`)
+- [ ] **New Request Screen** (`/(tenant)/new-request.tsx`)
+- [ ] **My Requests Screen** (`/(tenant)/requests.tsx`)
+- [ ] **Notifications Screen** (`/(tenant)/notifications.tsx`)
+- [ ] **Profile Screen** (`/(tenant)/profile.tsx`)
 - [ ] **Request Detail Screen** (modal/stack screen)
 
 ### 2. Admin Screens
 
-- [ ] **Admin Dashboard** (`/(tabs)/admin-dashboard.tsx`)
-- [ ] **Admin Users** (`/(tabs)/admin-users.tsx`)
-- [ ] **Admin Buildings** (`/(tabs)/admin-buildings.tsx`)
-- [ ] **Admin Settings** (`/(tabs)/admin-settings.tsx`)
+- [ ] **Admin Dashboard** (`/(admin)/index.tsx`)
+- [ ] **Admin Users** (`/(admin)/users.tsx`)
+- [ ] **Admin Buildings** (`/(admin)/buildings.tsx`)
+- [ ] **Admin Settings** (`/(admin)/permissions.tsx`)
 
 ### 3. Management Screens
 
-- [ ] **Management Dashboard** (`/(tabs)/management-dashboard.tsx`)
-- [ ] **Management Requests** (`/(tabs)/management-requests.tsx`)
-- [ ] **Management Notices** (`/(tabs)/management-notices.tsx`)
-- [ ] **Management Reports** (`/(tabs)/management-reports.tsx`)
+- [ ] **Management Dashboard** (`/(management)/index.tsx`)
+- [ ] **Management Requests** (`/(management)/requests.tsx`)
+- [ ] **Management Notices** (`/(modals)/admin-notifications.tsx`)
+- [ ] **Management Reports** (`/(management)/analytics.tsx`)
 
 ### 4. Employee Screens
 
-- [ ] **Employee Dashboard** (`/(tabs)/employee-dashboard.tsx`)
-- [ ] **Job Details** (`/(tabs)/job-details.tsx`)
-- [ ] **Employee Profile** (`/(tabs)/employee-profile.tsx`)
+- [ ] **Employee Dashboard** (`/(admin)/workforce.tsx`)
+- [ ] **Job Details** (`/(admin)/jobs.tsx`)
+- [ ] **Employee Profile** (`/(admin)/workforce.tsx`)
 
 ### 5. Service Provider Screens
 
-- [ ] **Service Dashboard** (`/(tabs)/service-dashboard.tsx`)
-- [ ] **Job Management** (`/(tabs)/job-management.tsx`)
-- [ ] **Employee Management** (`/(tabs)/employee-management.tsx`)
-- [ ] **Reviews** (`/(tabs)/reviews.tsx`)
+- [ ] **Service Dashboard** (`/(admin)/jobs.tsx`)
+- [ ] **Job Management** (`/(admin)/jobs.tsx`)
+- [ ] **Employee Management** (`/(admin)/workforce.tsx`)
+- [ ] **Reviews** (`/(tenant)/my-ratings.tsx`)
 
 ### 6. Remaining Technical Tasks
 
@@ -195,7 +195,7 @@ npx expo run:android
 ### Code Structure
 
 - Keep shared business logic in `src/shared/`
-- Screen components go in `app/(tabs)/`
+- Screen components go in `app/(tenant)/`
 - Common components in `src/components/`
 - Follow existing naming conventions from web app
 

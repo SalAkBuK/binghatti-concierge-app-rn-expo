@@ -149,7 +149,7 @@ export default function NewRequestScreen() {
             });
             setAttachments([]);
             // Navigate back to home
-            router.push("/(tabs)");
+            router.push("/(tenant)/index" as any);
           },
         },
       ]);

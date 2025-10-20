@@ -8,6 +8,7 @@ import type {
   Analytics,
   RolePermissions,
   User,
+  UnitType,
   CreateUserDTO,
   UpdateUserDTO,
   CreateBuildingDTO,
@@ -15,6 +16,8 @@ import type {
   CreateJobDTO,
   UpdateJobDTO,
   AssignJobDTO,
+  CreateUnitTypeDTO,
+  UpdateUnitTypeDTO,
   ApiResponse,
 } from "../../types";
 
@@ -493,6 +496,111 @@ export class AdminApiService extends BaseApiService {
 
     try {
       const response = await this.get<ApiResponse<User[]>>(`/api/admin/users?role=${role}`);
+      return response;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  // Unit Type Management
+  async getUnitTypes(): Promise<ApiResponse<UnitType[]>> {
+    if (USE_MOCK) {
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          resolve({
+            success: true,
+            data: [],
+            message: "Unit types fetched successfully (mock)",
+          });
+        }, MOCK_DELAY);
+      });
+    }
+
+    try {
+      const response = await this.get<ApiResponse<UnitType[]>>("/api/admin/unit-types");
+      return response;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async getUnitTypeById(id: string): Promise<ApiResponse<UnitType>> {
+    if (USE_MOCK) {
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          resolve({
+            success: true,
+            data: undefined,
+            message: "Unit type fetched successfully (mock)",
+          });
+        }, MOCK_DELAY);
+      });
+    }
+
+    try {
+      const response = await this.get<ApiResponse<UnitType>>(`/api/admin/unit-types/${id}`);
+      return response;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async createUnitType(unitTypeData: CreateUnitTypeDTO): Promise<ApiResponse<UnitType>> {
+    if (USE_MOCK) {
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          resolve({
+            success: true,
+            data: undefined,
+            message: "Unit type created successfully (mock)",
+          });
+        }, MOCK_DELAY);
+      });
+    }
+
+    try {
+      const response = await this.post<ApiResponse<UnitType>>("/api/admin/unit-types", unitTypeData);
+      return response;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async updateUnitType(id: string, updates: UpdateUnitTypeDTO): Promise<ApiResponse<UnitType>> {
+    if (USE_MOCK) {
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          resolve({
+            success: true,
+            data: undefined,
+            message: "Unit type updated successfully (mock)",
+          });
+        }, MOCK_DELAY);
+      });
+    }
+
+    try {
+      const response = await this.put<ApiResponse<UnitType>>(`/api/admin/unit-types/${id}`, updates);
+      return response;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async deleteUnitType(id: string): Promise<ApiResponse> {
+    if (USE_MOCK) {
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          resolve({
+            success: true,
+            message: "Unit type deleted successfully (mock)",
+          });
+        }, MOCK_DELAY);
+      });
+    }
+
+    try {
+      const response = await this.delete<ApiResponse>(`/api/admin/unit-types/${id}`);
       return response;
     } catch (error) {
       throw error;

@@ -51,7 +51,7 @@
 
 ```
 app/
-├── (tabs)/
+├── (tenant)/
 │   ├── _layout.tsx          # Tab navigation configuration
 │   ├── index.tsx            # Home screen (Tenant)
 │   ├── requests.tsx         # Requests screen
@@ -74,16 +74,16 @@ lib/
 
 ### Important Files to Know
 
-1. **app/(tabs)/index.tsx** - Main home screen
+1. **app/(tenant)/index.tsx** - Main home screen
    - Uses `SCREEN_WIDTH` for responsive sizing
    - Has `useSafeAreaInsets` for dynamic padding
    - All cards are 90% of screen width
 
-2. **app/(tabs)/requests.tsx** - Requests listing screen
+2. **app/(tenant)/requests.tsx** - Requests listing screen
    - Responsive stat cards
    - Already has refresh control
 
-3. **app/(tabs)/\_layout.tsx** - Tab bar configuration
+3. **app/(tenant)/\_layout.tsx** - Tab bar configuration
    - Tab bar height: 74px + safe area
    - Custom tab icons
 
