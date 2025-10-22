@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -20,12 +20,12 @@ import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useApp } from "../../lib/context/connected-app-provider";
-import type { Request } from "../../lib/types";
+import type { Job, Request } from "../../lib/types";
 import { ImageViewer } from "../../components/ui/ImageViewer";
 
 
 export default function RequestDetailsScreen() {
-  const { selectedRequest, actions } = useApp();
+  const { selectedRequest, actions, jobs } = useApp();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showEditMode, setShowEditMode] = useState(false);
   const [editForm, setEditForm] = useState({
@@ -41,6 +41,13 @@ export default function RequestDetailsScreen() {
   const [loading, setLoading] = useState(false);
   const [showImageViewer, setShowImageViewer] = useState(false);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+
+  const job = useMemo(() => {
+    if (!selectedRequest) {
+      return undefined;
+    }
+    return jobs.find((item) => item.requestId === selectedRequest.id);
+  }, [jobs, selectedRequest?.id]);
 
   // Helper functions
   const getStatusColor = (status: Request["status"]) => {
@@ -95,7 +102,157 @@ export default function RequestDetailsScreen() {
     return progress[status] || 0;
   };
 
+  const getJobStatusMeta = (status: Job["status"]) => {
+    const meta: Record<
+      Job["status"],
+      { label: string; bg: string; text: string; border: string }
+    > = {
+      pending: {
+        label: "Pending Assignment",
+        bg: "#FEF3C7",
+        text: "#92400E",
+        border: "#FDE68A",
+      },
+      assigned: {
+        label: "Assigned",
+        bg: "#DBEAFE",
+        text: "#1D4ED8",
+        border: "#BFDBFE",
+      },
+      "in-progress": {
+        label: "In Progress",
+        bg: "#E0F2FE",
+        text: "#0369A1",
+        border: "#BAE6FD",
+      },
+      completed: {
+        label: "Completed",
+        bg: "#D1FAE5",
+        text: "#047857",
+        border: "#A7F3D0",
+      },
+      cancelled: {
+        label: "Cancelled",
+        bg: "#FEE2E2",
+        text: "#B91C1C",
+        border: "#FCA5A5",
+      },
+    };
+
+    return meta[status];
+  };
+
+  const getCompletionStatusMeta = (
+    status: Job["completionStatus"],
+  ): { label: string; subtitle: string; bg: string; text: string } | null => {
+    if (!status) {
+      return null;
+    }
+
+    const map = {
+      awaiting_tenant_approval: {
+        label: "Awaiting Your Approval",
+        subtitle:
+          "Review the completion report to approve or request follow-up.",
+        bg: "#DBEAFE",
+        text: "#1D4ED8",
+      },
+      tenant_approved: {
+        label: "Approved",
+        subtitle: "You confirmed this job was completed to your satisfaction.",
+        bg: "#D1FAE5",
+        text: "#047857",
+      },
+      sp_override_approved: {
+        label: "Marked Complete",
+        subtitle:
+          "Service provider closed this job on your behalf. Reach out if something looks off.",
+        bg: "#FEF3C7",
+        text: "#92400E",
+      },
+    } as const;
+
+    return map[status];
+  };
+
+  const formatCurrency = (amount: number) => {
+    return `AED ${amount.toLocaleString()}`;
+  };
+
   // Event handlers
+  const handleApproveEstimate = (jobId: string) => {
+    Alert.alert(
+      "Approve Estimate",
+      "Do you want to proceed with the proposed costs?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Approve",
+          onPress: async () => {
+            try {
+              await actions.reviewJobEstimateAsTenant?.(jobId, "approve");
+              Alert.alert("Estimate Approved", "Thank you for confirming.");
+            } catch (error: any) {
+              Alert.alert(
+                "Error",
+                error?.message ||
+                  "Unable to approve the estimate. Please try again.",
+              );
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleDeclineEstimate = (jobId: string) => {
+    Alert.prompt(
+      "Request Changes",
+      "Tell us what needs to change before work begins.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Submit",
+          style: "destructive",
+          onPress: async (reason) => {
+            if (!reason?.trim()) {
+              Alert.alert(
+                "Reason Required",
+                "Please explain why you're declining the estimate.",
+              );
+              return;
+            }
+            try {
+              await actions.reviewJobEstimateAsTenant?.(
+                jobId,
+                "decline",
+                reason.trim(),
+              );
+              Alert.alert(
+                "Changes Requested",
+                "The service provider has been notified.",
+              );
+            } catch (error: any) {
+              Alert.alert(
+                "Error",
+                error?.message ||
+                  "Unable to submit your request. Please try again.",
+              );
+            }
+          },
+        },
+      ],
+      "plain-text",
+    );
+  };
+
+  const handleReviewCompletion = (jobId: string) => {
+    router.push({
+      pathname: "/(modals)/approve-job-completion",
+      params: { jobId },
+    });
+  };
+
   const handleDeleteRequest = async () => {
     if (!selectedRequest) return;
 
@@ -180,6 +337,76 @@ export default function RequestDetailsScreen() {
   const statusColors = getStatusColor(selectedRequest.status);
   const priorityColors = getPriorityColor(selectedRequest.priority);
   const statusIcon = getStatusIcon(selectedRequest.status);
+  const jobStatusMeta = job ? getJobStatusMeta(job.status) : null;
+  const estimate = job?.estimate;
+  const additionalCosts = job?.additionalCosts ?? [];
+  const hasAdditionalCosts = additionalCosts.length > 0;
+  const approvedAdditionalCostTotal = hasAdditionalCosts
+    ? additionalCosts
+        .filter((cost) => cost.status === "approved")
+        .reduce((sum, cost) => sum + cost.amount, 0)
+    : 0;
+  const pendingAdditionalCostCount = hasAdditionalCosts
+    ? additionalCosts.filter((cost) => cost.status === "pending").length
+    : 0;
+  const estimateAwaitingTenant = estimate?.status === "sp_approved";
+  const estimateApproved = estimate?.status === "tenant_approved";
+  const estimateDeclined = estimate?.status === "tenant_declined";
+  const estimateRejectedByProvider = estimate?.status === "sp_rejected";
+  const estimateDraftOrSubmitted =
+    estimate?.status === "draft" || estimate?.status === "submitted";
+  const completionMeta = getCompletionStatusMeta(job?.completionStatus);
+  const awaitingCompletionApproval =
+    job?.completionStatus === "awaiting_tenant_approval";
+  const completionRejectedReason = job?.completionRejectionReason;
+  const estimateStatusDetails = estimate
+    ? (() => {
+        if (estimateApproved) {
+          return {
+            icon: "checkmark-circle" as const,
+            color: "#10B981",
+            text: "You approved this estimate. Work can proceed.",
+          };
+        }
+        if (estimateDeclined) {
+          return {
+            icon: "alert-circle" as const,
+            color: "#F97316",
+            text: "You requested changes to this estimate.",
+          };
+        }
+        if (estimateRejectedByProvider) {
+          return {
+            icon: "alert-circle" as const,
+            color: "#F97316",
+            text:
+              "Service provider requested revisions before sharing with you.",
+          };
+        }
+        if (estimateAwaitingTenant) {
+          return {
+            icon: "time-outline" as const,
+            color: "#2563EB",
+            text: actions.reviewJobEstimateAsTenant
+              ? "Waiting for your decision."
+              : "Awaiting your review. Contact the concierge team if you need help.",
+          };
+        }
+        if (estimateDraftOrSubmitted) {
+          return {
+            icon: "time-outline" as const,
+            color: "#2563EB",
+            text:
+              "Waiting for the service team to review and share the estimate.",
+          };
+        }
+        return {
+          icon: "information-circle-outline" as const,
+          color: "#2563EB",
+          text: "Estimate status updated.",
+        };
+      })()
+    : null;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -504,10 +731,364 @@ export default function RequestDetailsScreen() {
             )}
           </Animated.View>
 
+          {/* Job Overview */}
+          {job && (
+            <Animated.View
+              entering={FadeInDown.delay(130).duration(400)}
+              style={styles.card}
+            >
+              <View style={styles.cardHeader}>
+                <Ionicons name="briefcase-outline" size={20} color="#6B7280" />
+                <Text style={styles.cardTitle}>Job Overview</Text>
+              </View>
+
+              <View style={styles.jobStatusRow}>
+                {jobStatusMeta && (
+                  <View
+                    style={[
+                      styles.jobStatusBadge,
+                      {
+                        backgroundColor: jobStatusMeta.bg,
+                        borderColor: jobStatusMeta.border,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.jobStatusBadgeText,
+                        { color: jobStatusMeta.text },
+                      ]}
+                    >
+                      {jobStatusMeta.label}
+                    </Text>
+                  </View>
+                )}
+                {completionMeta && (
+                  <View
+                    style={[
+                      styles.jobStatusBadge,
+                      {
+                        backgroundColor: completionMeta.bg,
+                        borderColor: completionMeta.bg,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.jobStatusBadgeText,
+                        { color: completionMeta.text },
+                      ]}
+                    >
+                      {completionMeta.label}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {completionMeta && (
+                <Text style={styles.completionSubtitle}>
+                  {completionMeta.subtitle}
+                </Text>
+              )}
+
+              {completionRejectedReason && (
+                <View style={styles.rejectionNotice}>
+                  <Ionicons name="alert-circle" size={18} color="#DC2626" />
+                  <Text style={styles.rejectionNoticeText}>
+                    {completionRejectedReason}
+                  </Text>
+                </View>
+              )}
+
+              <View style={styles.jobInfoGrid}>
+                <View style={styles.jobInfoItem}>
+                  <Text style={styles.jobInfoLabel}>Assigned To</Text>
+                  <Text style={styles.jobInfoValue}>
+                    {job.assignedToEmployeeName ||
+                      job.assignedToName ||
+                      "To be assigned"}
+                  </Text>
+                </View>
+                <View style={styles.jobInfoItem}>
+                  <Text style={styles.jobInfoLabel}>Service Provider</Text>
+                  <Text style={styles.jobInfoValue}>
+                    {job.assignedToName || "Not yet assigned"}
+                  </Text>
+                </View>
+                {job.scheduledDate && (
+                  <View style={styles.jobInfoItem}>
+                    <Text style={styles.jobInfoLabel}>Scheduled</Text>
+                    <Text style={styles.jobInfoValue}>
+                      {formatDate(job.scheduledDate)}
+                    </Text>
+                  </View>
+                )}
+                {job.startedAt && (
+                  <View style={styles.jobInfoItem}>
+                    <Text style={styles.jobInfoLabel}>Started</Text>
+                    <Text style={styles.jobInfoValue}>
+                      {formatDate(job.startedAt)}
+                    </Text>
+                  </View>
+                )}
+                {job.completedDate && (
+                  <View style={styles.jobInfoItem}>
+                    <Text style={styles.jobInfoLabel}>Completed</Text>
+                    <Text style={styles.jobInfoValue}>
+                      {formatDate(job.completedDate)}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {job.completionNotes && (
+                <View style={styles.jobNotes}>
+                  <Text style={styles.jobNotesLabel}>Completion Notes</Text>
+                  <Text style={styles.jobNotesText}>{job.completionNotes}</Text>
+                </View>
+              )}
+
+              {job.completionFeedback && (
+                <View style={styles.jobNotes}>
+                  <Text style={styles.jobNotesLabel}>Your Feedback</Text>
+                  <Text style={styles.jobNotesText}>
+                    {job.completionFeedback}
+                  </Text>
+                </View>
+              )}
+
+              {awaitingCompletionApproval && actions.approveTenantJobCompletion && (
+                <TouchableOpacity
+                  style={styles.reviewCompletionButton}
+                  onPress={() => handleReviewCompletion(job.id)}
+                >
+                  <Ionicons
+                    name="checkmark-circle-outline"
+                    size={18}
+                    color="#FFFFFF"
+                  />
+                  <Text style={styles.reviewCompletionButtonText}>
+                    Review & Confirm Completion
+                  </Text>
+                  <Ionicons
+                    name="chevron-forward"
+                    size={16}
+                    color="#FFFFFF"
+                    style={{ opacity: 0.8 }}
+                  />
+                </TouchableOpacity>
+              )}
+
+              {!awaitingCompletionApproval &&
+                job.status === "completed" &&
+                !completionMeta && (
+                  <View style={styles.jobCompletionInfo}>
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={18}
+                      color="#10B981"
+                    />
+                    <Text style={styles.jobCompletionInfoText}>
+                      Job marked completed on{" "}
+                      {job.completedDate
+                        ? formatDate(job.completedDate)
+                        : "the latest update"}
+                      .
+                    </Text>
+                  </View>
+                )}
+            </Animated.View>
+          )}
+
+          {/* Estimate */}
+          {job && estimate && (
+            <Animated.View
+              entering={FadeInDown.delay(160).duration(400)}
+              style={styles.card}
+            >
+              <View style={styles.cardHeader}>
+                <Ionicons name="receipt-outline" size={20} color="#6B7280" />
+                <Text style={styles.cardTitle}>Cost Estimate</Text>
+              </View>
+              <Text style={styles.estimateMeta}>
+                Submitted on {formatDate(estimate.createdAt)}
+              </Text>
+              {estimate.notes && (
+                <Text style={styles.estimateNotes}>{estimate.notes}</Text>
+              )}
+              <View style={styles.estimateItems}>
+                {estimate.items.map((item) => (
+                  <View key={item.id} style={styles.estimateItemRow}>
+                    <View style={styles.estimateItemInfo}>
+                      <Text style={styles.estimateItemLabel}>{item.label}</Text>
+                      {item.description && (
+                        <Text style={styles.estimateItemDescription}>
+                          {item.description}
+                        </Text>
+                      )}
+                    </View>
+                    <Text style={styles.estimateItemAmount}>
+                      {formatCurrency(item.amount)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+              <View style={styles.estimateTotalRow}>
+                <Text style={styles.estimateTotalLabel}>Total</Text>
+                <Text style={styles.estimateTotalAmount}>
+                  {formatCurrency(estimate.subtotal)}
+                </Text>
+              </View>
+
+              {estimateAwaitingTenant && actions.reviewJobEstimateAsTenant ? (
+                <View style={styles.estimateActionRow}>
+                  <TouchableOpacity
+                    style={[styles.estimateActionButton, styles.estimateDecline]}
+                    onPress={() => handleDeclineEstimate(job.id)}
+                  >
+                    <Ionicons
+                      name="close-circle-outline"
+                      size={18}
+                      color="#EF4444"
+                    />
+                    <Text style={styles.estimateDeclineText}>
+                      Request Changes
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.estimateActionButton, styles.estimateApprove]}
+                    onPress={() => handleApproveEstimate(job.id)}
+                  >
+                    <Ionicons
+                      name="checkmark-circle-outline"
+                      size={18}
+                      color="#FFFFFF"
+                    />
+                    <Text style={styles.estimateApproveText}>Approve</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : estimateStatusDetails ? (
+                <View style={styles.estimateStatusBanner}>
+                  <Ionicons
+                    name={estimateStatusDetails.icon}
+                    size={18}
+                    color={estimateStatusDetails.color}
+                  />
+                  <Text
+                    style={[
+                      styles.estimateStatusText,
+                      { color: estimateStatusDetails.color },
+                    ]}
+                  >
+                    {estimateStatusDetails.text}
+                  </Text>
+                </View>
+              ) : null}
+            </Animated.View>
+          )}
+
+          {/* Additional Costs */}
+          {job && hasAdditionalCosts && (
+            <Animated.View
+              entering={FadeInDown.delay(190).duration(400)}
+              style={styles.card}
+            >
+              <View style={styles.cardHeader}>
+                <Ionicons name="cash-outline" size={20} color="#6B7280" />
+                <Text style={styles.cardTitle}>Additional Costs</Text>
+              </View>
+              <View style={styles.additionalCostSummary}>
+                <View style={styles.additionalCostChip}>
+                  <Ionicons name="checkmark-circle" size={16} color="#047857" />
+                  <Text style={styles.additionalCostChipText}>
+                    Approved: {formatCurrency(approvedAdditionalCostTotal)}
+                  </Text>
+                </View>
+                {pendingAdditionalCostCount > 0 && (
+                  <View
+                    style={[
+                      styles.additionalCostChip,
+                      styles.additionalCostChipPending,
+                    ]}
+                  >
+                    <Ionicons name="time-outline" size={16} color="#92400E" />
+                    <Text
+                      style={[
+                        styles.additionalCostChipText,
+                        { color: "#92400E" },
+                      ]}
+                    >
+                      Pending: {pendingAdditionalCostCount}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.additionalCostList}>
+                {additionalCosts.map((cost) => (
+                  <View key={cost.id} style={styles.additionalCostItem}>
+                    <View style={styles.additionalCostHeader}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.additionalCostTitle}>
+                          {cost.description}
+                        </Text>
+                        <Text style={styles.additionalCostMeta}>
+                          {cost.category
+                            ? `${cost.category} • `
+                            : ""}
+                          Added by {cost.employeeName}
+                        </Text>
+                      </View>
+                      <Text style={styles.additionalCostAmount}>
+                        {formatCurrency(cost.amount)}
+                      </Text>
+                    </View>
+                    <View style={styles.additionalCostStatusRow}>
+                      <Ionicons
+                        name={
+                          cost.status === "approved"
+                            ? "checkmark-circle"
+                            : cost.status === "rejected"
+                              ? "close-circle"
+                              : "time-outline"
+                        }
+                        size={16}
+                        color={
+                          cost.status === "approved"
+                            ? "#10B981"
+                            : cost.status === "rejected"
+                              ? "#EF4444"
+                              : "#F59E0B"
+                        }
+                      />
+                      <Text style={styles.additionalCostStatusText}>
+                        {cost.status === "approved"
+                          ? `Approved${
+                              cost.approvedAt
+                                ? ` on ${new Date(
+                                    cost.approvedAt,
+                                  ).toLocaleDateString()}`
+                                : ""
+                            }`
+                          : cost.status === "rejected"
+                            ? `Rejected${
+                                cost.rejectionReason
+                                  ? ` – ${cost.rejectionReason}`
+                                  : ""
+                              }`
+                            : "Awaiting service provider review"}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </Animated.View>
+          )}
+
           {/* Contact Information */}
           {selectedRequest.contactPhone && (
             <Animated.View
-              entering={FadeInDown.delay(150).duration(400)}
+              entering={FadeInDown.delay(220).duration(400)}
               style={styles.card}
             >
               <View style={styles.cardHeader}>
@@ -533,7 +1114,7 @@ export default function RequestDetailsScreen() {
           {/* Rating Section */}
           {canProvideFeedback && (
             <Animated.View
-              entering={FadeInDown.delay(200).duration(400)}
+              entering={FadeInDown.delay(260).duration(400)}
               style={styles.card}
             >
               <View style={styles.ratingSection}>
@@ -849,6 +1430,286 @@ const styles = StyleSheet.create({
   timelineValue: {
     fontSize: 14,
     color: "#6B7280",
+  },
+  jobStatusRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 12,
+  },
+  jobStatusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  jobStatusBadgeText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  completionSubtitle: {
+    fontSize: 13,
+    color: "#4B5563",
+    marginBottom: 12,
+    lineHeight: 18,
+  },
+  rejectionNotice: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    backgroundColor: "#FEF2F2",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+  },
+  rejectionNoticeText: {
+    flex: 1,
+    fontSize: 13,
+    color: "#B91C1C",
+    lineHeight: 18,
+  },
+  jobInfoGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    rowGap: 12,
+    columnGap: 16,
+    marginBottom: 12,
+  },
+  jobInfoItem: {
+    flexBasis: "48%",
+    minWidth: 140,
+  },
+  jobInfoLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#6B7280",
+    textTransform: "uppercase",
+    marginBottom: 4,
+  },
+  jobInfoValue: {
+    fontSize: 14,
+    color: "#1F2937",
+  },
+  jobNotes: {
+    backgroundColor: "#F9FAFB",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+  },
+  jobNotesLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#374151",
+    marginBottom: 4,
+  },
+  jobNotesText: {
+    fontSize: 13,
+    color: "#4B5563",
+    lineHeight: 18,
+  },
+  reviewCompletionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#2563EB",
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  reviewCompletionButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#FFFFFF",
+    flex: 1,
+    textAlign: "center",
+  },
+  jobCompletionInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#ECFDF5",
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 12,
+  },
+  jobCompletionInfoText: {
+    flex: 1,
+    fontSize: 13,
+    color: "#047857",
+    lineHeight: 18,
+  },
+  estimateMeta: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginBottom: 8,
+  },
+  estimateNotes: {
+    fontSize: 13,
+    color: "#4B5563",
+    marginBottom: 12,
+    lineHeight: 18,
+  },
+  estimateItems: {
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: "#E5E7EB",
+    paddingVertical: 12,
+    marginBottom: 12,
+    gap: 12,
+  },
+  estimateItemRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+  estimateItemInfo: {
+    flex: 1,
+  },
+  estimateItemLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1F2937",
+    marginBottom: 2,
+  },
+  estimateItemDescription: {
+    fontSize: 12,
+    color: "#6B7280",
+    lineHeight: 18,
+  },
+  estimateItemAmount: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1F2937",
+  },
+  estimateTotalRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    borderTopWidth: 1,
+    borderColor: "#E5E7EB",
+    paddingTop: 12,
+    marginTop: 4,
+  },
+  estimateTotalLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1F2937",
+  },
+  estimateTotalAmount: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#1F2937",
+  },
+  estimateActionRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  estimateActionButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  estimateDecline: {
+    backgroundColor: "#FEE2E2",
+  },
+  estimateApprove: {
+    backgroundColor: "#2563EB",
+  },
+  estimateDeclineText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#EF4444",
+  },
+  estimateApproveText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#FFFFFF",
+  },
+  estimateStatusBanner: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "flex-start",
+    backgroundColor: "#EFF6FF",
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 12,
+  },
+  estimateStatusText: {
+    flex: 1,
+    fontSize: 13,
+    color: "#1D4ED8",
+    lineHeight: 18,
+  },
+  additionalCostSummary: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 16,
+  },
+  additionalCostChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#ECFDF5",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  additionalCostChipPending: {
+    backgroundColor: "#FEF3C7",
+  },
+  additionalCostChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#047857",
+  },
+  additionalCostList: {
+    gap: 16,
+  },
+  additionalCostItem: {
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 10,
+    padding: 12,
+    backgroundColor: "#F9FAFB",
+    gap: 12,
+  },
+  additionalCostHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+  additionalCostTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1F2937",
+    marginBottom: 2,
+  },
+  additionalCostMeta: {
+    fontSize: 12,
+    color: "#6B7280",
+  },
+  additionalCostAmount: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#1F2937",
+  },
+  additionalCostStatusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  additionalCostStatusText: {
+    flex: 1,
+    fontSize: 12,
+    color: "#4B5563",
+    lineHeight: 18,
   },
   contactPhone: {
     fontSize: 16,

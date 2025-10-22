@@ -27,6 +27,8 @@ export default function RootLayout() {
           <Stack.Screen name="(tenant)" options={{ headerShown: false }} />
           <Stack.Screen name="(management)" options={{ headerShown: false }} />
           <Stack.Screen name="(admin)" options={{ headerShown: false }} />
+          <Stack.Screen name="(serviceProvider)" options={{ headerShown: false }} />
+          <Stack.Screen name="(employee)" options={{ headerShown: false }} />
           <Stack.Screen
             name="modal"
             options={{ presentation: "modal", title: "Modal" }}
@@ -77,6 +79,20 @@ export default function RootLayout() {
           />
           <Stack.Screen
             name="(modals)/submit-rating"
+            options={{
+              presentation: "modal",
+              headerShown: false,
+            }}
+          />
+          <Stack.Screen
+            name="(modals)/approve-job-completion"
+            options={{
+              presentation: "modal",
+              headerShown: false,
+            }}
+          />
+          <Stack.Screen
+            name="(modals)/request-provider-access"
             options={{
               presentation: "modal",
               headerShown: false,

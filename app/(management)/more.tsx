@@ -102,12 +102,11 @@ export default function MoreScreen() {
         <HeaderBar
           title="More"
           subtitle="Additional management tools"
-          hasUnreadNotifications={hasUnreadNotifications}
-          onNotificationPress={() => router.push(MANAGEMENT_NOTIFICATION_ROUTE)}
-          showMenuButton
-          showSideMenu={showSideMenu}
-          onSideMenuToggle={setShowSideMenu}
-        />
+        hasUnreadNotifications={hasUnreadNotifications}
+        onNotificationPress={() => router.push(MANAGEMENT_NOTIFICATION_ROUTE)}
+        showSideMenu={showSideMenu}
+        onSideMenuToggle={setShowSideMenu}
+      />
 
         <View style={styles.menuGrid}>
           {menuItems.map((item) => (

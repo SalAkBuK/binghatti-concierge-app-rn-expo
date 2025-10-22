@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useMemo, useState } from "react";
+import { useLocalSearchParams } from "expo-router";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Modal,
@@ -29,14 +30,20 @@ type FilterType = "all" | JobStatus;
 export default function JobsScreen() {
   const { currentUser, notifications, actions } = useApp();
   const { width } = useWindowDimensions();
+  const params = useLocalSearchParams();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [filterType, setFilterType] = useState<FilterType>("all");
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
+  const [assignmentMode, setAssignmentMode] = useState<
+    "service_provider" | "building_employee"
+  >("service_provider");
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
   const isCompact = width < 768;
+  const isAdmin =
+    currentUser?.role === "admin" || currentUser?.role === "super_admin";
   const isManagement = currentUser?.role === "management";
   const managedBuildingIds = isManagement
     ? actions.getManagedBuildingIds?.() ?? []
@@ -63,7 +70,62 @@ export default function JobsScreen() {
   );
   const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
 
-  const serviceProviders = actions.getServiceProviders?.() ?? [];
+  // Get service providers assigned to the selected job's building
+  const serviceProviders = useMemo(() => {
+    if (!selectedJob?.buildingId) {
+      return [];
+    }
+    return actions.getServiceProvidersForBuilding?.(selectedJob.buildingId) ?? [];
+  }, [actions, selectedJob]);
+
+  const buildingEmployees = useMemo(() => {
+    if (!selectedJob?.buildingId) {
+      return [];
+    }
+    return actions.getBuildingEmployees?.(selectedJob.buildingId) ?? [];
+  }, [actions, selectedJob]);
+
+  const isBuildingManagerForJob = useCallback(
+    (job?: Job | null) => {
+      if (!job || !currentUser || !isManagement) {
+        return false;
+      }
+      const building = actions.getBuildingById?.(job.buildingId);
+      return building?.managerId === currentUser.id;
+    },
+    [actions, currentUser, isManagement],
+  );
+
+  const canAssignSelectedJob =
+    !!selectedJob &&
+    (isAdmin || isBuildingManagerForJob(selectedJob));
+
+  const canUpdateJobStatus = useCallback(
+    (job?: Job | null) => {
+      if (!job || !currentUser) return false;
+
+      // ONLY the assigned worker can update job status
+      // Check if current user is the assigned service provider
+      if (job.assignedTo === currentUser.id) return true;
+
+      // Check if current user is the assigned building employee
+      if (job.assignedBuildingEmployeeId === currentUser.id) return true;
+
+      // Managers and admins CANNOT update status - only assign workers
+      return false;
+    },
+    [currentUser],
+  );
+
+  // Handle deep linking from requests screen
+  useEffect(() => {
+    if (params.jobId && typeof params.jobId === "string") {
+      const job = allJobs.find((j) => j.id === params.jobId);
+      if (job) {
+        setSelectedJob(job);
+      }
+    }
+  }, [params.jobId, allJobs]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -72,11 +134,18 @@ export default function JobsScreen() {
 
   const handleAssignJob = async (providerId: string) => {
     if (!selectedJob) return;
+    if (!canAssignSelectedJob) {
+      Alert.alert(
+        "Permission denied",
+        "Only the assigned building manager can schedule service providers for this job.",
+      );
+      return;
+    }
 
     setIsAssigning(true);
     try {
       await actions.assignJob(selectedJob.id, providerId);
-      Alert.alert("Success", "Job assigned successfully");
+      Alert.alert("Success", "Job assigned successfully to service provider");
       setShowAssignModal(false);
       setSelectedJob(null);
     } catch (error) {
@@ -85,6 +154,48 @@ export default function JobsScreen() {
     } finally {
       setIsAssigning(false);
     }
+  };
+
+  const handleAssignBuildingEmployee = async (employeeId: string) => {
+    if (!selectedJob) return;
+    if (!canAssignSelectedJob) {
+      Alert.alert(
+        "Permission denied",
+        "Only the assigned building manager can schedule building employees for this job.",
+      );
+      return;
+    }
+
+    setIsAssigning(true);
+    try {
+      await actions.assignJobToBuildingEmployee(selectedJob.id, employeeId);
+      Alert.alert("Success", "Job assigned successfully to building employee");
+      setShowAssignModal(false);
+      setSelectedJob(null);
+    } catch (error) {
+      const errorMessage = getUserErrorMessage(error);
+      Alert.alert("Assignment failed", errorMessage);
+    } finally {
+      setIsAssigning(false);
+    }
+  };
+
+  const openAssignModal = () => {
+    if (!selectedJob) return;
+    if (!canAssignSelectedJob) {
+      Alert.alert(
+        "Permission denied",
+        "Only the assigned building manager can assign this job.",
+      );
+      return;
+    }
+    // Set initial mode based on current assignment
+    if (selectedJob.assignmentTargetType === "building_employee") {
+      setAssignmentMode("building_employee");
+    } else {
+      setAssignmentMode("service_provider");
+    }
+    setShowAssignModal(true);
   };
 
   const handleUpdateJobStatus = async (status: JobStatus) => {
@@ -268,36 +379,71 @@ export default function JobsScreen() {
 
                 {/* Action Buttons */}
                 <View style={styles.actionButtons}>
-                  <TouchableOpacity
-                    style={styles.assignButton}
-                    onPress={() => {
-                      setShowAssignModal(true);
-                    }}
-                  >
-                    <Ionicons name="person-add" size={18} color="#FFFFFF" />
-                    <Text style={styles.assignButtonText}>
-                      {selectedJob.assignedTo ? "Reassign" : "Assign Provider"}
-                    </Text>
-                  </TouchableOpacity>
+                  {selectedJob.status !== "completed" && (
+                    <>
+                      {/* Assign/Reassign Button - Only for Managers/Admins */}
+                      {canAssignSelectedJob && (
+                        <TouchableOpacity
+                          style={[
+                            styles.assignButton,
+                            isAssigning && styles.assignButtonDisabled,
+                          ]}
+                          onPress={openAssignModal}
+                          disabled={isAssigning}
+                        >
+                          <Ionicons name="person-add" size={18} color="#FFFFFF" />
+                          <Text style={styles.assignButtonText}>
+                            {selectedJob.assignedTo || selectedJob.assignedBuildingEmployeeId
+                              ? "Reassign Job"
+                              : "Assign Job"}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
 
-                  <View style={styles.statusButtonsRow}>
-                    {selectedJob.status !== "in-progress" && (
-                      <TouchableOpacity
-                        style={styles.statusButton}
-                        onPress={() => handleUpdateJobStatus("in-progress")}
-                      >
-                        <Text style={styles.statusButtonText}>Start</Text>
-                      </TouchableOpacity>
-                    )}
-                    {selectedJob.status !== "completed" && (
-                      <TouchableOpacity
-                        style={[styles.statusButton, styles.completeButton]}
-                        onPress={() => handleUpdateJobStatus("completed")}
-                      >
-                        <Text style={styles.statusButtonText}>Complete</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
+                      {/* Start/Complete Buttons - Only for Assigned Workers */}
+                      {canUpdateJobStatus(selectedJob) && (
+                        <View style={styles.statusButtonsRow}>
+                          {selectedJob.status !== "in-progress" && (
+                            <TouchableOpacity
+                              style={styles.statusButton}
+                              onPress={() => handleUpdateJobStatus("in-progress")}
+                            >
+                              <Text style={styles.statusButtonText}>Start Job</Text>
+                            </TouchableOpacity>
+                          )}
+                          <TouchableOpacity
+                            style={[styles.statusButton, styles.completeButton]}
+                            onPress={() => handleUpdateJobStatus("completed")}
+                          >
+                            <Text style={styles.statusButtonText}>Mark Complete</Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
+
+                      {/* Info message for managers - they can only assign */}
+                      {!canUpdateJobStatus(selectedJob) && !canAssignSelectedJob && (
+                        <View style={styles.statusRestriction}>
+                          <Ionicons name="information-circle" size={18} color="#6B7280" />
+                          <Text style={styles.statusRestrictionText}>
+                            Only the assigned service provider or building employee can start and complete this job.
+                          </Text>
+                        </View>
+                      )}
+                    </>
+                  )}
+
+                  {selectedJob.status === "completed" && (
+                    <View style={styles.completedBanner}>
+                      <Ionicons name="checkmark-circle" size={24} color="#10B981" />
+                      <View style={styles.completedBannerContent}>
+                        <Text style={styles.completedBannerTitle}>Job Completed</Text>
+                        <Text style={styles.completedBannerText}>
+                          This job has been marked as completed and cannot be modified.
+                          {selectedJob.completedAt && ` Completed on ${new Date(selectedJob.completedAt).toLocaleDateString()}`}
+                        </Text>
+                      </View>
+                    </View>
+                  )}
                 </View>
               </View>
             )}
@@ -305,35 +451,103 @@ export default function JobsScreen() {
         </SafeAreaView>
       </Modal>
 
-      {/* Service Provider Assignment Modal */}
+      {/* Work Assignment Modal */}
       <Modal
-        visible={showAssignModal}
+        visible={showAssignModal && canAssignSelectedJob}
         animationType="fade"
         transparent
         onRequestClose={() => setShowAssignModal(false)}
       >
         <View style={styles.assignModalOverlay}>
           <View style={styles.assignModalContent}>
-            <Text style={styles.assignModalTitle}>Assign Service Provider</Text>
+            <Text style={styles.assignModalTitle}>Assign Work</Text>
+
+            {/* Assignment Mode Selector */}
+            <View style={styles.assignmentModeRow}>
+              {[
+                { label: "Service Provider", value: "service_provider" as const },
+                { label: "Building Team", value: "building_employee" as const },
+              ].map((option) => {
+                const active = assignmentMode === option.value;
+                return (
+                  <TouchableOpacity
+                    key={option.value}
+                    style={[
+                      styles.assignmentModeButton,
+                      active && styles.assignmentModeButtonActive,
+                    ]}
+                    onPress={() => setAssignmentMode(option.value)}
+                  >
+                    <Text
+                      style={[
+                        styles.assignmentModeText,
+                        active && styles.assignmentModeTextActive,
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* List of Providers or Employees */}
             <ScrollView style={styles.providersList} showsVerticalScrollIndicator={false}>
-              {serviceProviders.map((provider) => (
-                <TouchableOpacity
-                  key={provider.id}
-                  style={styles.providerItem}
-                  onPress={() => handleAssignJob(provider.id)}
-                  disabled={isAssigning}
-                >
-                  <View>
-                    <Text style={styles.providerName}>{provider.name}</Text>
-                    <Text style={styles.providerMeta}>
-                      {provider.specialty} · {provider.rating.toFixed(1)} ★ ·{" "}
-                      {provider.jobsCompleted} jobs completed
+              {assignmentMode === "service_provider" ? (
+                serviceProviders.length > 0 ? (
+                  serviceProviders.map((provider) => (
+                    <TouchableOpacity
+                      key={provider.id}
+                      style={styles.providerItem}
+                      onPress={() => handleAssignJob(provider.id)}
+                      disabled={isAssigning}
+                    >
+                      <View>
+                        <Text style={styles.providerName}>{provider.name}</Text>
+                        <Text style={styles.providerMeta}>
+                          {provider.specialty} · {provider.rating.toFixed(1)} ★ ·{" "}
+                          {provider.jobsCompleted} jobs completed
+                        </Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+                    </TouchableOpacity>
+                  ))
+                ) : (
+                  <View style={styles.emptyAssignment}>
+                    <Ionicons name="alert-circle-outline" size={20} color="#94A3B8" />
+                    <Text style={styles.emptyAssignmentText}>
+                      No service providers are assigned to this building. Contact admin to assign vendors.
                     </Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
-                </TouchableOpacity>
-              ))}
+                )
+              ) : buildingEmployees.length > 0 ? (
+                buildingEmployees.map((employee) => (
+                  <TouchableOpacity
+                    key={employee.id}
+                    style={styles.providerItem}
+                    onPress={() => handleAssignBuildingEmployee(employee.id)}
+                    disabled={isAssigning}
+                  >
+                    <View>
+                      <Text style={styles.providerName}>{employee.name}</Text>
+                      <Text style={styles.providerMeta}>
+                        {employee.role || "Team member"}
+                        {employee.phone ? ` · ${employee.phone}` : ""}
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+                  </TouchableOpacity>
+                ))
+              ) : (
+                <View style={styles.emptyAssignment}>
+                  <Ionicons name="people-outline" size={20} color="#94A3B8" />
+                  <Text style={styles.emptyAssignmentText}>
+                    No building employees are registered for this property.
+                  </Text>
+                </View>
+              )}
             </ScrollView>
+
             <TouchableOpacity
               style={styles.cancelButton}
               onPress={() => setShowAssignModal(false)}
@@ -464,10 +678,33 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 16,
   },
+  assignButtonDisabled: {
+    backgroundColor: "#93C5FD",
+  },
   assignButtonText: {
     color: "#FFFFFF",
     fontSize: 15,
     fontWeight: "600",
+  },
+  assignRestriction: {
+    fontSize: 12,
+    color: "#9CA3AF",
+    textAlign: "center",
+  },
+  statusRestriction: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#F3F4F6",
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  statusRestrictionText: {
+    fontSize: 13,
+    color: "#6B7280",
+    flex: 1,
   },
   statusButtonsRow: {
     flexDirection: "row",
@@ -487,6 +724,30 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "600",
+  },
+  completedBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "#ECFDF5",
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+  },
+  completedBannerContent: {
+    flex: 1,
+    gap: 4,
+  },
+  completedBannerTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#065F46",
+  },
+  completedBannerText: {
+    fontSize: 13,
+    color: "#047857",
+    lineHeight: 18,
   },
   assignModalOverlay: {
     flex: 1,
@@ -528,6 +789,44 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#64748B",
     marginTop: 4,
+  },
+  assignmentModeRow: {
+    flexDirection: "row",
+    backgroundColor: "#E2E8F0",
+    borderRadius: 999,
+    padding: 4,
+    gap: 4,
+    marginTop: 16,
+    marginBottom: 12,
+  },
+  assignmentModeButton: {
+    flex: 1,
+    borderRadius: 999,
+    paddingVertical: 8,
+    alignItems: "center",
+  },
+  assignmentModeButtonActive: {
+    backgroundColor: "#2563EB",
+  },
+  assignmentModeText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#1E293B",
+  },
+  assignmentModeTextActive: {
+    color: "#FFFFFF",
+  },
+  emptyAssignment: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 32,
+  },
+  emptyAssignmentText: {
+    fontSize: 13,
+    color: "#64748B",
+    textAlign: "center",
+    paddingHorizontal: 16,
   },
   cancelButton: {
     marginTop: 16,

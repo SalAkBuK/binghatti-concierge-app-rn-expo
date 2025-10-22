@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Modal,
@@ -48,11 +48,7 @@ export default function ManagementRequestsScreen() {
     getBuildings,
     getManagedBuildings,
     getJobs,
-    getServiceProviders,
     updateRequest,
-    assignJob,
-    createJob,
-    updateJobStatus,
     setSelectedRequest: setSelectedRequestContext,
     addRequestNote,
     addRequestMessage,
@@ -64,14 +60,15 @@ export default function ManagementRequestsScreen() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [selectedRequest, setSelectedRequest] = useState<Request | null>(null);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
-  const [isAssigning, setIsAssigning] = useState(false);
-  const [showProviderModal, setShowProviderModal] = useState(false);
   const [detailTab, setDetailTab] = useState<"overview" | "notes" | "messages" | "timeline">("overview");
   const [newNote, setNewNote] = useState("");
   const [newMessage, setNewMessage] = useState("");
 
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
   const isCompact = width < 900;
+  const isAdmin =
+    currentUser?.role === "admin" || currentUser?.role === "super_admin";
+  const isManagement = currentUser?.role === "management";
 
   const allBuildings = useMemo(() => getBuildings(), [getBuildings]);
   const managedBuildings = useMemo(
@@ -104,9 +101,11 @@ export default function ManagementRequestsScreen() {
   }, [managedBuildings]);
 
   const jobs = useMemo(() => getJobs(), [getJobs]);
-  const serviceProviders = useMemo(
-    () => getServiceProviders(),
-    [getServiceProviders],
+  const getJobForRequest = useCallback(
+    (requestId: string): Job | undefined => {
+      return jobs.find((job) => job.requestId === requestId);
+    },
+    [jobs],
   );
 
   const scopedRequests = useMemo(() => {
@@ -141,6 +140,13 @@ export default function ManagementRequestsScreen() {
     statusFilter,
     searchQuery,
   ]);
+
+  const jobForSelectedRequest = useMemo(() => {
+    if (!selectedRequest) {
+      return undefined;
+    }
+    return getJobForRequest(selectedRequest.id);
+  }, [selectedRequest, getJobForRequest]);
 
   const summary = useMemo(() => {
     const buildingScoped = requestItems.filter((request) => {
@@ -187,10 +193,6 @@ export default function ManagementRequestsScreen() {
       ? buildingMap.get(selectedBuildingId)?.name
       : "All Buildings";
 
-  const getJobForRequest = (requestId: string): Job | undefined => {
-    return jobs.find((job) => job.requestId === requestId);
-  };
-
   const handleStatusUpdate = async (request: Request, status: RequestStatus) => {
     if (request.status === status) return;
     setIsUpdatingStatus(true);
@@ -202,45 +204,6 @@ export default function ManagementRequestsScreen() {
       Alert.alert("Update failed", errorMessage);
     } finally {
       setIsUpdatingStatus(false);
-    }
-  };
-
-  const handleAssignProvider = async (providerId: string) => {
-    if (!selectedRequest) return;
-    setIsAssigning(true);
-    try {
-      const existingJob = getJobForRequest(selectedRequest.id);
-      if (existingJob) {
-        await assignJob(existingJob.id, providerId);
-      } else {
-        await createJob({
-          requestId: selectedRequest.id,
-          title: selectedRequest.title,
-          description: selectedRequest.description,
-          type: selectedRequest.type,
-          priority: selectedRequest.priority,
-          buildingId: selectedRequest.buildingId,
-          unitNumber: selectedRequest.apartment,
-          assignedTo: providerId,
-        });
-      }
-      Alert.alert("Assigned", "Service provider has been scheduled.");
-      setShowProviderModal(false);
-    } catch (error) {
-      const errorMessage = getUserErrorMessage(error);
-      Alert.alert("Assignment failed", errorMessage);
-    } finally {
-      setIsAssigning(false);
-    }
-  };
-
-  const handleJobStatusUpdate = async (job: Job, status: Job["status"]) => {
-    try {
-      await updateJobStatus(job.id, status);
-      Alert.alert("Work order updated", `Job now marked as ${status}`);
-    } catch (error) {
-      const errorMessage = getUserErrorMessage(error);
-      Alert.alert("Update failed", errorMessage);
     }
   };
 
@@ -609,6 +572,48 @@ export default function ManagementRequestsScreen() {
                     <Text style={styles.detailValue}>{formatDateTime(selectedRequest.slaDueAt)}</Text>
                   </View>
                 )}
+
+                <View style={styles.assignmentSection}>
+                  <View style={styles.assignmentHeaderRow}>
+                    <Text style={styles.assignmentTitle}>Work Order Status</Text>
+                    {jobForSelectedRequest && (
+                      <View style={styles.jobStatusBadge}>
+                        <Text style={styles.jobStatusText}>
+                          {jobForSelectedRequest.status.toUpperCase()}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.assignmentMeta}>
+                    {jobForSelectedRequest
+                      ? `Job #${jobForSelectedRequest.id.slice(0, 8)} • ${
+                          jobForSelectedRequest.assignmentTargetType === "building_employee"
+                            ? `Building team: ${jobForSelectedRequest.assignedBuildingEmployeeName || "Assigned"}`
+                            : `Provider: ${jobForSelectedRequest.assignedToName || "Assigned"}`
+                        }`
+                      : "No work order has been created for this request yet."}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.assignmentButton}
+                    onPress={() => {
+                      if (jobForSelectedRequest) {
+                        router.push({
+                          pathname: "/(management)/jobs",
+                          params: { jobId: jobForSelectedRequest.id },
+                        });
+                      } else {
+                        router.push("/(management)/jobs");
+                      }
+                    }}
+                  >
+                    <Ionicons name="construct-outline" size={18} color="#FFFFFF" />
+                    <Text style={styles.assignmentButtonText}>
+                      {jobForSelectedRequest
+                        ? `View Job #${jobForSelectedRequest.id.slice(0, 6)}`
+                        : "Create Work Order"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
 
@@ -725,52 +730,6 @@ export default function ManagementRequestsScreen() {
             )}
           </ScrollView>
         </SafeAreaView>
-      </Modal>
-
-      <Modal
-        visible={showProviderModal}
-        animationType="fade"
-        transparent
-        onRequestClose={() => setShowProviderModal(false)}
-      >
-        <View style={styles.providerModalOverlay}>
-          <View style={styles.providerModalContent}>
-            <Text style={styles.providerModalTitle}>
-              Assign Service Provider
-            </Text>
-            <ScrollView
-              style={{ maxHeight: 320, marginVertical: 12 }}
-              showsVerticalScrollIndicator={false}
-            >
-              {serviceProviders.map((provider) => (
-                <TouchableOpacity
-                  key={provider.id}
-                  style={styles.providerItem}
-                  onPress={() => handleAssignProvider(provider.id)}
-                  disabled={isAssigning}
-                >
-                  <View>
-                    <Text style={styles.providerName}>{provider.name}</Text>
-                    <Text style={styles.providerMeta}>
-                      {provider.specialty} · {provider.rating.toFixed(1)} ★
-                    </Text>
-                  </View>
-                  <Ionicons
-                    name="chevron-forward"
-                    size={18}
-                    color="#94A3B8"
-                  />
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-            <TouchableOpacity
-              style={styles.providerCancel}
-              onPress={() => setShowProviderModal(false)}
-            >
-              <Text style={styles.providerCancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -1029,6 +988,57 @@ const styles = StyleSheet.create({
     color: "#6B7280",
     flex: 1,
   },
+  assignmentSection: {
+    marginTop: 8,
+    paddingTop: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#E5E7EB",
+    gap: 8,
+  },
+  assignmentHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  assignmentTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  assignmentValue: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#2563EB",
+  },
+  assignmentMeta: {
+    fontSize: 12,
+    color: "#6B7280",
+  },
+  jobStatusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: "#DBEAFE",
+  },
+  jobStatusText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#1D4ED8",
+  },
+  assignmentButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#2563EB",
+    borderRadius: 10,
+    paddingVertical: 10,
+  },
+  assignmentButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#FFFFFF",
+  },
   notesSection: {
     gap: 16,
   },
@@ -1197,51 +1207,5 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 24,
     fontStyle: "italic",
-  },
-  providerModalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.35)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
-  },
-  providerModalContent: {
-    width: "100%",
-    maxWidth: 420,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 20,
-  },
-  providerModalTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#111827",
-  },
-  providerItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(226, 232, 240, 1)",
-  },
-  providerName: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#0F172A",
-  },
-  providerMeta: {
-    fontSize: 13,
-    color: "#64748B",
-  },
-  providerCancel: {
-    marginTop: 12,
-    alignItems: "center",
-    paddingVertical: 12,
-  },
-  providerCancelText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#2563EB",
   },
 });

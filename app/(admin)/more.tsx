@@ -46,6 +46,14 @@ const MENU_ITEMS: MenuItem[] = [
     color: "#2563EB",
   },
   {
+    id: "service-providers",
+    title: "Service Providers",
+    subtitle: "Manage vendors and building assignments",
+    icon: "business",
+    route: "/(admin)/service-providers",
+    color: "#06B6D4",
+  },
+  {
     id: "tenants",
     title: "Tenant Directory",
     subtitle: "View all tenants across buildings",

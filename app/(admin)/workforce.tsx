@@ -888,9 +888,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E5E7EB",
     padding: 16,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    gap: 12,
   },
   providerName: {
     fontSize: 15,
@@ -908,6 +906,7 @@ const styles = StyleSheet.create({
   },
   providerStats: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
   },
   providerStatChip: {
@@ -918,11 +917,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 10,
+    flexShrink: 1,
   },
   providerStatText: {
     fontSize: 12,
     fontWeight: "600",
     color: "#4B5563",
+    flexShrink: 1,
   },
   emptyState: {
     backgroundColor: "#FFFFFF",

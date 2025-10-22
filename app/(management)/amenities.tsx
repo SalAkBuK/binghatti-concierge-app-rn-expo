@@ -5,6 +5,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
   useWindowDimensions,
@@ -28,6 +29,13 @@ export default function ManagementAmenitiesScreen() {
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [selectedConfig, setSelectedConfig] =
     useState<BuildingAmenityConfig | null>(null);
+  const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
+  const [maintenanceForm, setMaintenanceForm] = useState({
+    startDate: "",
+    endDate: "",
+    reason: "routine",
+    notes: "",
+  });
 
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
   const isCompact = width < 900;
@@ -69,6 +77,44 @@ export default function ManagementAmenitiesScreen() {
       await updateAmenityConfig(config.id, { status: nextStatus });
     } catch (error) {
       console.warn("Failed to update amenity:", getUserErrorMessage(error));
+    }
+  };
+
+  const openMaintenanceModal = (config: BuildingAmenityConfig) => {
+    // Pre-fill with mock data
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() + 3); // 3 days from now
+
+    const endDate = new Date();
+    endDate.setDate(endDate.getDate() + 7); // 7 days from now
+
+    setMaintenanceForm({
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
+      reason: "routine",
+      notes: "Annual HVAC system inspection and filter replacement. Facility will undergo thorough cleaning and equipment testing.",
+    });
+
+    setSelectedConfig(config);
+    setShowMaintenanceModal(true);
+  };
+
+  const handleScheduleMaintenance = async () => {
+    if (!selectedConfig) return;
+
+    try {
+      await updateAmenityConfig(selectedConfig.id, {
+        status: "maintenance",
+        maintenanceWindow: {
+          start: maintenanceForm.startDate,
+          end: maintenanceForm.endDate,
+          notes: `${maintenanceForm.reason}: ${maintenanceForm.notes}`,
+        },
+      });
+      setShowMaintenanceModal(false);
+      setSelectedConfig(null);
+    } catch (error) {
+      console.warn("Failed to schedule maintenance:", getUserErrorMessage(error));
     }
   };
 
@@ -244,8 +290,146 @@ export default function ManagementAmenitiesScreen() {
       <ScrollViewModal
         amenityConfig={selectedConfig}
         onClose={() => setSelectedConfig(null)}
-        onUpdate={updateAmenityConfig}
+        onOpenMaintenance={() => {
+          if (selectedConfig) {
+            openMaintenanceModal(selectedConfig);
+          }
+        }}
       />
+
+      {/* Maintenance Scheduling Modal */}
+      <Modal
+        visible={showMaintenanceModal}
+        animationType="slide"
+        onRequestClose={() => setShowMaintenanceModal(false)}
+      >
+        <SafeAreaView style={styles.maintenanceModalContainer}>
+          <View style={styles.maintenanceModalHeader}>
+            <TouchableOpacity onPress={() => setShowMaintenanceModal(false)}>
+              <Ionicons name="close" size={28} color="#111827" />
+            </TouchableOpacity>
+            <Text style={styles.maintenanceModalTitle}>
+              Schedule Maintenance
+            </Text>
+            <View style={{ width: 28 }} />
+          </View>
+
+          <ScrollView
+            style={styles.maintenanceModalContent}
+            contentContainerStyle={styles.maintenanceModalContentContainer}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.formSection}>
+              <Text style={styles.formLabel}>Amenity</Text>
+              <View style={styles.amenityNameBox}>
+                <Ionicons name="fitness-outline" size={20} color="#2563EB" />
+                <Text style={styles.formValue}>
+                  {selectedConfig?.amenityName || "N/A"}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.formSection}>
+              <Text style={styles.formLabel}>Start Date & Time</Text>
+              <View style={styles.dateDisplay}>
+                <Ionicons name="calendar-outline" size={20} color="#2563EB" />
+                <Text style={styles.dateText}>
+                  {new Date(maintenanceForm.startDate).toLocaleString("en-US", {
+                    weekday: "short",
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.formSection}>
+              <Text style={styles.formLabel}>End Date & Time</Text>
+              <View style={styles.dateDisplay}>
+                <Ionicons name="calendar-outline" size={20} color="#2563EB" />
+                <Text style={styles.dateText}>
+                  {new Date(maintenanceForm.endDate).toLocaleString("en-US", {
+                    weekday: "short",
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.formSection}>
+              <Text style={styles.formLabel}>Maintenance Reason</Text>
+              <View style={styles.reasonChips}>
+                {["routine", "repair", "upgrade", "inspection", "seasonal"].map((reason) => (
+                  <TouchableOpacity
+                    key={reason}
+                    style={[
+                      styles.reasonChip,
+                      maintenanceForm.reason === reason && styles.reasonChipActive,
+                    ]}
+                    onPress={() => setMaintenanceForm({ ...maintenanceForm, reason })}
+                  >
+                    <Text
+                      style={[
+                        styles.reasonChipText,
+                        maintenanceForm.reason === reason && styles.reasonChipTextActive,
+                      ]}
+                    >
+                      {reason.charAt(0).toUpperCase() + reason.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.formSection}>
+              <Text style={styles.formLabel}>Maintenance Notes</Text>
+              <TextInput
+                style={styles.notesTextarea}
+                value={maintenanceForm.notes}
+                onChangeText={(text) =>
+                  setMaintenanceForm({ ...maintenanceForm, notes: text })
+                }
+                multiline
+                numberOfLines={5}
+                placeholder="Add details about the maintenance work, expected impact, and any special instructions..."
+                placeholderTextColor="#9CA3AF"
+                textAlignVertical="top"
+              />
+            </View>
+
+            <View style={styles.infoBox}>
+              <Ionicons name="information-circle" size={22} color="#2563EB" />
+              <Text style={styles.infoText}>
+                The amenity will be marked as under maintenance and unavailable for
+                booking during this period. All residents will be notified automatically.
+              </Text>
+            </View>
+          </ScrollView>
+
+          <View style={styles.maintenanceModalFooter}>
+            <TouchableOpacity
+              style={styles.cancelMaintenanceButton}
+              onPress={() => setShowMaintenanceModal(false)}
+            >
+              <Text style={styles.cancelMaintenanceText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.scheduleMaintenanceButton}
+              onPress={handleScheduleMaintenance}
+            >
+              <Ionicons name="hammer-outline" size={20} color="#FFF" />
+              <Text style={styles.scheduleMaintenanceText}>Schedule Maintenance</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -253,11 +437,8 @@ export default function ManagementAmenitiesScreen() {
 const ScrollViewModal: React.FC<{
   amenityConfig: BuildingAmenityConfig | null;
   onClose: () => void;
-  onUpdate: (
-    configId: string,
-    updates: Partial<BuildingAmenityConfig>,
-  ) => Promise<BuildingAmenityConfig>;
-}> = ({ amenityConfig, onClose, onUpdate }) => {
+  onOpenMaintenance: () => void;
+}> = ({ amenityConfig, onClose, onOpenMaintenance }) => {
   if (!amenityConfig) return null;
 
   return (
@@ -315,7 +496,10 @@ const ScrollViewModal: React.FC<{
           <View style={styles.modalSection}>
             <TouchableOpacity
               style={styles.modalPrimaryButton}
-              onPress={() => onUpdate(amenityConfig.id, { status: "maintenance" })}
+              onPress={() => {
+                onClose();
+                onOpenMaintenance();
+              }}
             >
               <Ionicons name="calendar-outline" size={16} color="#FFF" />
               <Text style={styles.modalPrimaryText}>Schedule Maintenance</Text>
@@ -528,6 +712,164 @@ const styles = StyleSheet.create({
   modalPrimaryText: {
     fontSize: 14,
     fontWeight: "600",
+    color: "#FFFFFF",
+  },
+  maintenanceModalContainer: {
+    flex: 1,
+    backgroundColor: "#F9FAFB",
+  },
+  maintenanceModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+    backgroundColor: "#FFFFFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+  },
+  maintenanceModalTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  maintenanceModalContent: {
+    flex: 1,
+  },
+  maintenanceModalContentContainer: {
+    padding: 24,
+    paddingBottom: 40,
+  },
+  formSection: {
+    marginBottom: 24,
+  },
+  formLabel: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#374151",
+    marginBottom: 12,
+    letterSpacing: 0.2,
+  },
+  amenityNameBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "#FFFFFF",
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  formValue: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#111827",
+  },
+  dateDisplay: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "#FFFFFF",
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+  },
+  dateText: {
+    fontSize: 15,
+    fontWeight: "500",
+    color: "#1E40AF",
+    flex: 1,
+  },
+  reasonChips: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  reasonChip: {
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 2,
+    borderColor: "#E5E7EB",
+  },
+  reasonChipActive: {
+    backgroundColor: "#2563EB",
+    borderColor: "#2563EB",
+  },
+  reasonChipText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#4B5563",
+  },
+  reasonChipTextActive: {
+    color: "#FFFFFF",
+  },
+  notesTextarea: {
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 15,
+    color: "#111827",
+    backgroundColor: "#FFFFFF",
+    minHeight: 120,
+    lineHeight: 22,
+  },
+  infoBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    backgroundColor: "#EFF6FF",
+    padding: 16,
+    borderRadius: 12,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+  },
+  infoText: {
+    flex: 1,
+    fontSize: 14,
+    color: "#1E40AF",
+    lineHeight: 20,
+  },
+  maintenanceModalFooter: {
+    flexDirection: "row",
+    gap: 12,
+    padding: 24,
+    paddingBottom: 32,
+    backgroundColor: "#FFFFFF",
+    borderTopWidth: 1,
+    borderTopColor: "#E5E7EB",
+  },
+  cancelMaintenanceButton: {
+    flex: 1,
+    paddingVertical: 16,
+    borderRadius: 12,
+    backgroundColor: "#F3F4F6",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  cancelMaintenanceText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#6B7280",
+  },
+  scheduleMaintenanceButton: {
+    flex: 2,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    paddingVertical: 16,
+    borderRadius: 12,
+    backgroundColor: "#2563EB",
+  },
+  scheduleMaintenanceText: {
+    fontSize: 15,
+    fontWeight: "700",
     color: "#FFFFFF",
   },
 });

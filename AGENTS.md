@@ -1,35 +1,37 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `app/` contains Expo Router entry points and navigation wiring; avoid placing feature logic here.
-- `src/` hosts feature code split into `screens/`, `components/`, `hooks/`, and `services/`; share UI primitives via `components/common/`.
-- `assets/` stores images, icons, and fonts loaded through Expo’s asset system.
-- Native scaffolding lives in `ios/` and `android/`; only touch these when configuration cannot be expressed in Expo config files.
+- `app/` holds Expo Router entry points and navigation glue; keep feature logic out of this layer.
+- `src/` contains feature code under `screens/`, `components/`, `hooks/`, and `services/`; reusable UI lives in `components/common/`.
+- `assets/` stores images, icons, and fonts referenced via Expo’s asset system.
+- Native scaffolding resides in `ios/` and `android/`; touch these only for configuration that Expo config files cannot express.
+- Mirror source structure when adding test suites under `__tests__/`.
 
 ## Build, Test, and Development Commands
-- `npm install` (or `yarn install`) resolves JavaScript and native dependencies.
-- `npx expo start` launches Metro; add `--clear` when caches misbehave.
-- `npm run android` / `npm run ios` opens the app in Expo Go or a connected simulator.
-- `npm run lint` enforces ESLint + Prettier rules.
-- `npm test` executes the Jest test suite; use `npm run test:watch` during active development.
+- `npm install` resolves JavaScript and native dependencies.
+- `npx expo start` boots Metro; add `--clear` to flush caches when the packager misbehaves.
+- `npm run android` / `npm run ios` launches Expo Go or connected simulators.
+- `npm run lint` enforces the shared ESLint + Prettier ruleset before commits.
+- `npm test` runs the Jest suite; `npm run test:watch` helps during active development.
 
 ## Coding Style & Naming Conventions
-- Prettier and ESLint define formatting; keep 2-space indentation, single quotes, and trailing commas per defaults.
-- Use TypeScript strict mode with explicit interfaces or types for component props (`src/types/` when reusable).
-- React components follow PascalCase (e.g., `BookingHeader.tsx`); hooks are `useSomething.ts`.
-- Prefer named exports for utilities to aid tree shaking; avoid default exports in shared modules.
+- Formatting follows Prettier defaults: 2-space indentation, single quotes, trailing commas.
+- TypeScript runs in strict mode; define reusable types in `src/types/`.
+- React components use PascalCase (e.g., `BookingHeader.tsx`); hooks follow `useSomething` naming.
+- Prefer named exports for utilities and shared modules to aid tree shaking.
 
 ## Testing Guidelines
-- Jest with React Native Testing Library lives under `__tests__/`; mirror source structure. Example: `src/screens/Dashboard/__tests__/DashboardScreen.test.tsx`.
-- Target ≥80% coverage for new screens and focus on interaction assertions over snapshots.
-- Add guards for new context actions (e.g., manager assignment) with integration-style tests when feasible.
+- Jest with React Native Testing Library powers the tests; keep interaction-focused assertions over snapshots.
+- Target at least 80% coverage for new screens and cover new context actions with integration-style tests.
+- Place tests in `__tests__` directories beside their source counterparts (e.g., `src/screens/Dashboard/__tests__/DashboardScreen.test.tsx`).
 
 ## Commit & Pull Request Guidelines
-- Follow Conventional Commits (`feat:`, `fix:`, `chore:`); keep subject lines under 72 characters.
-- Squash fix-up commits before merging and ensure lint/tests pass locally.
-- Pull requests must include a concise summary, linked Linear/Jira ticket, UI proof (screenshot/video) for visible changes, and rollout notes when native config alters.
+- Use Conventional Commits (`feat:`, `fix:`, `chore:`); keep subject lines under 72 characters.
+- Ensure linting and tests pass locally before pushing.
+- Pull requests need a concise summary, linked Linear/Jira ticket, UI proof (screenshot/video) for user-facing changes, and rollout notes for native config updates.
+- Document OTA releases in the PR description, including any `eas update --branch <branch>` commands executed.
 
 ## Security & Configuration Notes
 - Store environment secrets in `.env.*`; never commit `.env.local`.
-- Update `app.json` and `eas.json` together for identifier or build-profile changes.
-- Document OTA releases in PRs and note `eas update --branch <branch>` commands executed.
+- Update `app.json` and `eas.json` together when changing identifiers or build profiles.
+- Record any EAS OTA release steps for traceability and handoff.

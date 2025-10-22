@@ -3,10 +3,12 @@ import { router } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Dimensions,
+  Alert,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
@@ -18,7 +20,7 @@ import { HeaderBar } from "../../components/ui/HeaderBar";
 import { RequestsScreenSkeleton } from "../../components/ui/RequestsScreenSkeleton";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
-import type { Request, RequestStatus } from "../../lib/types";
+import type { Job, Request, RequestStatus } from "../../lib/types";
 import { filterNotificationsByUser } from "../../lib/utils/helpers";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -26,7 +28,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get("window");
 type FilterStatus = "all" | RequestStatus;
 
 export default function RequestsScreen() {
-  const { requests, currentUser, notifications, actions } = useApp();
+  const { requests, currentUser, notifications, actions, jobs } = useApp();
   const insets = useSafeAreaInsets();
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
@@ -54,6 +56,16 @@ export default function RequestsScreen() {
 
     return filtered.filter((req) => req.status === filterStatus);
   }, [requests, currentUser, filterStatus]);
+
+  const jobsByRequestId = useMemo(() => {
+    const map: Record<string, Job> = {};
+    jobs.forEach((job) => {
+      if (job.requestId) {
+        map[job.requestId] = job;
+      }
+    });
+    return map;
+  }, [jobs]);
 
   // Calculate stats based on user's requests
   const stats = useMemo(() => {
@@ -140,6 +152,72 @@ export default function RequestsScreen() {
     }
   };
 
+  const handleApproveEstimate = (jobId: string) => {
+    Alert.alert(
+      "Approve Estimate",
+      "Do you want to proceed with the proposed costs?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Approve",
+          onPress: async () => {
+            try {
+              await actions.reviewJobEstimateAsTenant?.(jobId, "approve");
+              Alert.alert("Estimate Approved", "Thank you for confirming.");
+            } catch (error: any) {
+              Alert.alert(
+                "Error",
+                error?.message ||
+                  "Unable to approve the estimate. Please try again.",
+              );
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleDeclineEstimate = (jobId: string) => {
+    Alert.prompt(
+      "Decline Estimate",
+      "Tell us what needs to change before work begins.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Submit",
+          style: "destructive",
+          onPress: async (reason) => {
+            if (!reason?.trim()) {
+              Alert.alert(
+                "Reason Required",
+                "Please explain why you're declining the estimate.",
+              );
+              return;
+            }
+            try {
+              await actions.reviewJobEstimateAsTenant?.(
+                jobId,
+                "decline",
+                reason.trim(),
+              );
+              Alert.alert(
+                "Estimate Declined",
+                "The service provider has been notified.",
+              );
+            } catch (error: any) {
+              Alert.alert(
+                "Error",
+                error?.message ||
+                  "Unable to submit your decline. Please try again.",
+              );
+            }
+          },
+        },
+      ],
+      "plain-text",
+    );
+  };
+
   const handleRequestPress = (request: Request): void => {
     actions.setSelectedRequest(request);
     router.push("/(modals)/request-details");
@@ -221,7 +299,20 @@ export default function RequestsScreen() {
           {userRequests.length > 0 ? (
             userRequests.map((request) => {
               const statusColors = getStatusColor(request.status);
-              const priorityColor = getPriorityColor(request.priority);
+              const job = jobsByRequestId[request.id];
+              const estimate = job?.estimate;
+              const awaitingCompletionApproval =
+                job?.completionStatus === "awaiting_tenant_approval";
+              const completionApproved =
+                job?.completionStatus === "tenant_approved";
+              const completionDeclaredByProvider =
+                job?.completionStatus === "sp_override_approved";
+              const estimateAwaitingTenant =
+                estimate?.status === "sp_approved";
+              const estimateApproved =
+                estimate?.status === "tenant_approved";
+              const estimateDeclined =
+                estimate?.status === "tenant_declined";
 
               return (
                 <AnimatedButton
@@ -278,6 +369,170 @@ export default function RequestsScreen() {
                         hour12: true
                       })}
                     </Text>
+
+                    {estimate && (
+                      <View style={styles.requestEstimateCard}>
+                        <View style={styles.estimateHeader}>
+                          <Ionicons name="receipt-outline" size={16} color="#2563EB" />
+                          <Text style={styles.estimateHeaderText}>
+                            Estimate Proposal
+                          </Text>
+                          <Text style={styles.estimateTotalText}>
+                            AED {estimate.subtotal.toLocaleString()}
+                          </Text>
+                        </View>
+                        <View style={styles.requestEstimateItems}>
+                          {estimate.items.slice(0, 3).map((item) => (
+                            <View key={item.id} style={styles.requestEstimateRow}>
+                              <Text style={styles.requestEstimateLabel}>
+                                {item.label}
+                              </Text>
+                              <Text style={styles.requestEstimateAmount}>
+                                AED {item.amount.toLocaleString()}
+                              </Text>
+                            </View>
+                          ))}
+                          {estimate.items.length > 3 && (
+                            <Text style={styles.requestEstimateMore}>
+                              + {estimate.items.length - 3} more items
+                            </Text>
+                          )}
+                        </View>
+
+                        {estimateAwaitingTenant ? (
+                          <View style={styles.requestEstimateActions}>
+                            <TouchableOpacity
+                              style={[
+                                styles.estimateActionButton,
+                                styles.estimateDeclineButton,
+                              ]}
+                              onPress={() => handleDeclineEstimate(job.id)}
+                            >
+                              <Ionicons
+                                name="close-circle-outline"
+                                size={18}
+                                color="#EF4444"
+                              />
+                              <Text style={styles.estimateDeclineText}>
+                                Request Changes
+                              </Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[
+                                styles.estimateActionButton,
+                                styles.estimateApproveButton,
+                              ]}
+                              onPress={() => handleApproveEstimate(job.id)}
+                            >
+                              <Ionicons
+                                name="checkmark-circle-outline"
+                                size={18}
+                                color="#FFFFFF"
+                              />
+                              <Text style={styles.estimateApproveText}>
+                                Approve
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                        ) : (
+                          <Text
+                            style={[
+                              styles.requestEstimateStatus,
+                              estimateApproved
+                                ? styles.requestEstimateStatusSuccess
+                                : estimateDeclined
+                                ? styles.requestEstimateStatusWarning
+                                : styles.requestEstimateStatusInfo,
+                            ]}
+                          >
+                            {estimateApproved
+                              ? "Estimate approved – work will begin once scheduled."
+                              : estimateDeclined
+                              ? "You declined this estimate. The provider will follow up."
+                              : estimate.status === "submitted"
+                              ? "Service provider reviewing the estimate."
+                              : estimate.status === "sp_approved"
+                              ? "Waiting for your decision."
+                              : "Estimate in draft."}
+                          </Text>
+                        )}
+                      </View>
+                    )}
+
+                    {job ? (
+                      <View style={styles.jobStatusCard}>
+                        <View style={styles.jobStatusHeader}>
+                          <Ionicons name="briefcase-outline" size={16} color="#0F172A" />
+                          <Text style={styles.jobStatusTitle}>Job Status</Text>
+                          <View
+                            style={[
+                              styles.jobStatusBadge,
+                              awaitingCompletionApproval
+                                ? styles.jobStatusBadgePending
+                                : completionApproved
+                                ? styles.jobStatusBadgeApproved
+                                : completionDeclaredByProvider
+                                ? styles.jobStatusBadgeInfo
+                                : styles.jobStatusBadgeDefault,
+                            ]}
+                          >
+                            <Text style={styles.jobStatusBadgeText}>
+                              {awaitingCompletionApproval
+                                ? "ACTION REQUIRED"
+                                : completionApproved
+                                ? "APPROVED"
+                                : completionDeclaredByProvider
+                                ? "COMPLETED"
+                                : job.status.replace("-", " ").toUpperCase()}
+                            </Text>
+                          </View>
+                        </View>
+                        <Text style={styles.jobStatusDescription}>
+                          Assigned to{" "}
+                          {job.assignedToEmployeeName ||
+                            job.assignedToName ||
+                            "service team"}
+                        </Text>
+                        {awaitingCompletionApproval ? (
+                          <TouchableOpacity
+                            style={styles.reviewButton}
+                            onPress={() =>
+                              router.push({
+                                pathname: "/(modals)/approve-job-completion",
+                                params: { jobId: job.id },
+                              })
+                            }
+                          >
+                            <Ionicons
+                              name="checkmark-circle-outline"
+                              size={16}
+                              color="#FFFFFF"
+                            />
+                            <Text style={styles.reviewButtonText}>
+                              Review Completion
+                            </Text>
+                          </TouchableOpacity>
+                        ) : completionApproved ? (
+                          <Text style={styles.jobStatusMeta}>
+                            Approved on{" "}
+                            {job.completionApprovedAt
+                              ? new Date(job.completionApprovedAt).toLocaleDateString(
+                                  "en-US",
+                                  {
+                                    month: "short",
+                                    day: "numeric",
+                                  year: "numeric",
+                                },
+                              )
+                              : "recently"}
+                          </Text>
+                        ) : completionDeclaredByProvider ? (
+                          <Text style={styles.jobStatusMeta}>
+                            Service provider closed the job due to inactivity.
+                          </Text>
+                        ) : null}
+                      </View>
+                    ) : null}
                   </View>
                 </AnimatedButton>
               );
@@ -490,6 +745,165 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     letterSpacing: 0,
     opacity: 1,
+  },
+  requestEstimateCard: {
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 10,
+    backgroundColor: "#F1F5F9",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    gap: 12,
+  },
+  estimateHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  estimateHeaderText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#1F2937",
+    flex: 1,
+  },
+  estimateTotalText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#1F2937",
+  },
+  requestEstimateItems: {
+    gap: 8,
+  },
+  requestEstimateRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  requestEstimateLabel: {
+    fontSize: 12,
+    color: "#1F2937",
+    flex: 1,
+    marginRight: 8,
+  },
+  requestEstimateAmount: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#0F172A",
+  },
+  requestEstimateMore: {
+    fontSize: 11,
+    color: "#64748B",
+  },
+  requestEstimateActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 8,
+  },
+  estimateActionButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  estimateDeclineButton: {
+    backgroundColor: "#FFF",
+    borderWidth: 1,
+    borderColor: "#FCA5A5",
+  },
+  estimateApproveButton: {
+    backgroundColor: "#2563EB",
+  },
+  estimateDeclineText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#B91C1C",
+  },
+  estimateApproveText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#FFFFFF",
+  },
+  requestEstimateStatus: {
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  requestEstimateStatusSuccess: {
+    color: "#166534",
+  },
+  requestEstimateStatusWarning: {
+    color: "#B91C1C",
+  },
+  requestEstimateStatusInfo: {
+    color: "#475569",
+  },
+  jobStatusCard: {
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 10,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    gap: 12,
+  },
+  jobStatusHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  jobStatusTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#1F2937",
+    flex: 1,
+  },
+  jobStatusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  jobStatusBadgeDefault: {
+    backgroundColor: "#E2E8F0",
+  },
+  jobStatusBadgePending: {
+    backgroundColor: "#FEF3C7",
+  },
+  jobStatusBadgeApproved: {
+    backgroundColor: "#DCFCE7",
+  },
+  jobStatusBadgeInfo: {
+    backgroundColor: "#E0F2FE",
+  },
+  jobStatusBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#1F2937",
+  },
+  jobStatusDescription: {
+    fontSize: 12,
+    color: "#475569",
+    lineHeight: 18,
+  },
+  jobStatusMeta: {
+    fontSize: 11,
+    color: "#64748B",
+  },
+  reviewButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#2563EB",
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  reviewButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "600",
+    fontSize: 13,
   },
   emptyState: {
     alignItems: "center",

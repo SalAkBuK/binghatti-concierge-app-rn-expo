@@ -10,6 +10,16 @@ import type {
   UpdateRequestDTO,
   ApiResponse,
   AuthResponse,
+  Job,
+  AcceptJobAssignmentDTO,
+  DeclineJobAssignmentDTO,
+  StartJobDTO,
+  UploadJobPhotoDTO,
+  AddJobAdditionalCostDTO,
+  CompleteJobDTO,
+  EmployeeMessage,
+  SendEmployeeMessageDTO,
+  EmployeeEarnings,
 } from "../../types";
 
 // Base API configuration
@@ -81,6 +91,23 @@ export interface UsersApi {
   deleteUser(id: string): Promise<ApiResponse>;
 }
 
+// Employee API endpoints
+export interface EmployeeApi {
+  getJobs(params?: EmployeeJobListParams): Promise<ApiResponse<Job[]>>;
+  getJob(id: string): Promise<ApiResponse<Job>>;
+  acceptJob(id: string, data: AcceptJobAssignmentDTO): Promise<ApiResponse>;
+  declineJob(id: string, data: DeclineJobAssignmentDTO): Promise<ApiResponse>;
+  startJob(id: string, data: StartJobDTO): Promise<ApiResponse<Job>>;
+  uploadPhoto(id: string, data: UploadJobPhotoDTO): Promise<ApiResponse>;
+  addAdditionalCost(id: string, data: AddJobAdditionalCostDTO): Promise<ApiResponse>;
+  completeJob(id: string, data: CompleteJobDTO): Promise<ApiResponse<Job>>;
+  getMessages(params?: EmployeeMessageListParams): Promise<ApiResponse<EmployeeMessage[]>>;
+  sendMessage(data: SendEmployeeMessageDTO): Promise<ApiResponse<EmployeeMessage>>;
+  getEarnings(params?: EmployeeEarningsParams): Promise<ApiResponse<EmployeeEarnings>>;
+  getProfile(): Promise<ApiResponse<User>>;
+  updateProfile(data: Partial<User>): Promise<ApiResponse<User>>;
+}
+
 // List parameters
 export interface RequestListParams {
   page?: number;
@@ -104,6 +131,26 @@ export interface UserListParams {
   limit?: number;
   role?: User["role"];
   search?: string;
+}
+
+export interface EmployeeJobListParams {
+  page?: number;
+  limit?: number;
+  status?: Job["status"];
+  priority?: Job["priority"];
+}
+
+export interface EmployeeMessageListParams {
+  page?: number;
+  limit?: number;
+  unreadOnly?: boolean;
+}
+
+export interface EmployeeEarningsParams {
+  startDate?: string;
+  endDate?: string;
+  year?: number;
+  month?: number;
 }
 
 // Main API service interface

@@ -5,6 +5,7 @@ import { RequestsApiService } from "./requests";
 import { NotificationsApiService } from "./notifications";
 import { UsersApiService } from "./users";
 import { AdminApiService } from "./admin";
+import { EmployeeApiService } from "./employee";
 import type { ApiService } from "./types";
 
 export class MainApiService implements ApiService {
@@ -12,6 +13,7 @@ export class MainApiService implements ApiService {
   public notifications: NotificationsApiService;
   public users: UsersApiService;
   public admin: AdminApiService;
+  public employee: EmployeeApiService;
   private authService: AuthApiService;
 
   constructor() {
@@ -20,6 +22,7 @@ export class MainApiService implements ApiService {
     this.notifications = new NotificationsApiService();
     this.users = new UsersApiService();
     this.admin = new AdminApiService();
+    this.employee = new EmployeeApiService();
   }
 
   // Auth methods (delegated to AuthApiService)
@@ -80,6 +83,7 @@ export class MainApiService implements ApiService {
     await this.notifications.setAuthToken(token);
     await this.users.setAuthToken(token);
     await this.admin.setAuthToken(token);
+    await this.employee.setAuthToken(token);
   }
 
   async clearAuthToken(): Promise<void> {
@@ -89,6 +93,7 @@ export class MainApiService implements ApiService {
     await this.notifications.clearAuthToken();
     await this.users.clearAuthToken();
     await this.admin.clearAuthToken();
+    await this.employee.clearAuthToken();
   }
 
   async getAuthToken(): Promise<string | null> {
@@ -116,6 +121,7 @@ export { RequestsApiService } from "./requests";
 export { NotificationsApiService } from "./notifications";
 export { UsersApiService } from "./users";
 export { AdminApiService } from "./admin";
+export { EmployeeApiService } from "./employee";
 export { BaseApiService } from "./base";
 
 // Default export

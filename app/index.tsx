@@ -9,7 +9,10 @@ export default function IndexScreen() {
 
   const adminHomeHref = "/(admin)" as Href;
   const managementHomeHref = "/(management)" as Href;
+  const serviceProviderHomeHref = "/(serviceProvider)" as Href;
+  const employeeHomeHref = "/(employee)" as Href;
   const tenantHomeHref = "/(tenant)" as Href;
+  const buildingEmployeeHomeHref = "/(buildingEmployee)" as Href;
 
   // Initial load timer
   useEffect(() => {
@@ -53,6 +56,21 @@ export default function IndexScreen() {
   ) {
     console.log("[Index] Admin user, redirecting to /(admin)");
     return <Redirect href={adminHomeHref} />;
+  }
+
+  if (currentUser.role === "service_provider") {
+    console.log("[Index] Service provider user, redirecting to /(serviceProvider)");
+    return <Redirect href={serviceProviderHomeHref} />;
+  }
+
+  if (currentUser.role === "building_employee") {
+    console.log("[Index] Building employee user, redirecting to /(buildingEmployee)");
+    return <Redirect href={buildingEmployeeHomeHref} />;
+  }
+
+  if (currentUser.role === "employee") {
+    console.log("[Index] Employee user, redirecting to /(employee)");
+    return <Redirect href={employeeHomeHref} />;
   }
 
   console.log("[Index] Regular user, redirecting to /(tenant)");

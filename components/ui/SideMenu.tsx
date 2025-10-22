@@ -16,11 +16,11 @@ import Animated, {
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
   withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useApp } from "../../lib/context/connected-app-provider";
+import type { User } from "../../lib/types";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const MENU_WIDTH = SCREEN_WIDTH * 0.8; // 80% of screen width
@@ -28,6 +28,7 @@ const MENU_WIDTH = SCREEN_WIDTH * 0.8; // 80% of screen width
 interface SideMenuProps {
   isVisible: boolean;
   onClose: () => void;
+  userRole?: User["role"];
 }
 
 interface SubMenuItem {
@@ -68,6 +69,24 @@ const navigateAndClose = (href: RouterPushInput | string) => {
   closeMenu();
   router.push(href as RouterPushInput);
 };
+
+  const handleLogout = () => {
+    Alert.alert("Logout", "Are you sure you want to logout?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Logout",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await actions.logout();
+            router.replace("/auth");
+          } catch (error) {
+            console.error("Logout error:", error);
+          }
+        },
+      },
+    ]);
+  };
 
   const tenantMenu: MenuItem[] = [
     {
@@ -168,9 +187,15 @@ const navigateAndClose = (href: RouterPushInput | string) => {
       action: () => navigateAndClose("/(admin)/buildings"),
     },
     {
+      id: "admin-service-providers",
+      title: "Service Providers",
+      icon: "construct-outline",
+      action: () => navigateAndClose("/(admin)/service-providers"),
+    },
+    {
       id: "jobs",
       title: "Jobs & Work Orders",
-      icon: "construct-outline",
+      icon: "hammer-outline",
       action: () => navigateAndClose("/(admin)/jobs"),
     },
     {
@@ -245,16 +270,16 @@ const managementMenu: MenuItem[] = [
     action: () => navigateAndClose("/(management)/buildings"),
   },
   {
+    id: "management-jobs",
+    title: "Jobs & Work Orders",
+    icon: "hammer-outline",
+    action: () => navigateAndClose("/(management)/jobs"),
+  },
+  {
     id: "management-workforce",
     title: "Building Employees",
     icon: "briefcase-outline",
     action: () => navigateAndClose("/(management)/workforce"),
-  },
-  {
-    id: "management-services",
-    title: "Service Providers",
-    icon: "construct-outline",
-    action: () => navigateAndClose("/(management)/jobs"),
   },
   {
     id: "management-visitors",
@@ -296,64 +321,96 @@ const managementMenu: MenuItem[] = [
   },
 ];
 
+  const buildingEmployeeMenu: MenuItem[] = [
+    {
+      id: "be-dashboard",
+      title: "Shift Dashboard",
+      icon: "speedometer-outline",
+      action: () => navigateAndClose("/(buildingEmployee)"),
+    },
+    {
+      id: "be-requests",
+      title: "Service Requests",
+      icon: "clipboard-outline",
+      action: () => navigateAndClose("/(buildingEmployee)/requests"),
+    },
+    {
+      id: "be-jobs",
+      title: "Maintenance Jobs",
+      icon: "construct-outline",
+      action: () => navigateAndClose("/(buildingEmployee)/jobs"),
+    },
+    {
+      id: "be-amenities",
+      title: "Amenity Tasks",
+      icon: "fitness-outline",
+      action: () => navigateAndClose("/(buildingEmployee)/amenities"),
+    },
+    {
+      id: "divider-be",
+      title: "",
+      icon: "remove",
+      action: () => {},
+    },
+    {
+      id: "be-profile",
+      title: "My Profile",
+      icon: "person-outline",
+      action: () => navigateAndClose("/(buildingEmployee)/profile"),
+    },
+    {
+      id: "logout",
+      title: "Sign Out",
+      icon: "log-out-outline",
+      color: "#ef4444",
+      action: () => {
+        closeMenu();
+        handleLogout();
+      },
+    },
+  ];
+
   const menuItems: MenuItem[] =
     currentUser?.role === "admin" || currentUser?.role === "super_admin"
       ? adminMenu
       : currentUser?.role === "management"
         ? managementMenu
-        : tenantMenu;
-
-
-  const handleLogout = () => {
-    Alert.alert("Logout", "Are you sure you want to logout?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Logout",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await actions.logout();
-            router.replace("/auth");
-          } catch (error) {
-            console.error("Logout error:", error);
-          }
-        },
-      },
-    ]);
-  };
+        : currentUser?.role === "building_employee"
+          ? buildingEmployeeMenu
+          : tenantMenu;
 
   // Animation effects
   useEffect(() => {
     if (isVisible) {
       setIsRendered(true);
 
-      translateX.value = withSpring(0, {
-        damping: 18,
-        stiffness: 180,
+      translateX.value = withTiming(0, {
+        duration: 300,
+        easing: Easing.out(Easing.cubic),
       });
       overlayOpacity.value = withTiming(0.5, {
-        duration: 250,
+        duration: 300,
         easing: Easing.out(Easing.cubic),
       });
       menuScale.value = withTiming(1, {
-        duration: 280,
+        duration: 300,
         easing: Easing.out(Easing.cubic),
       });
     } else {
       setExpandedItem(null);
       overlayOpacity.value = withTiming(0, {
-        duration: 220,
-        easing: Easing.out(Easing.quad),
+        duration: 250,
+        easing: Easing.in(Easing.cubic),
       });
       menuScale.value = withTiming(0.95, {
-        duration: 240,
-        easing: Easing.in(Easing.quad),
+        duration: 250,
+        easing: Easing.in(Easing.cubic),
       });
       translateX.value = withTiming(
         -MENU_WIDTH - 20,
         {
-          duration: 260,
-          easing: Easing.inOut(Easing.cubic),
+          duration: 250,
+          easing: Easing.in(Easing.cubic),
         },
         (finished) => {
           if (finished) {

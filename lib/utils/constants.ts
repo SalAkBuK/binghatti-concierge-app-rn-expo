@@ -40,6 +40,13 @@ export const NAVIGATION_ITEMS = {
     { id: "employee-schedule", icon: "calendar", label: "Schedule" },
     { id: "employee-profile", icon: "user", label: "Profile" },
   ],
+  building_employee: [
+    { id: "be-dashboard", icon: "home", label: "Dashboard" },
+    { id: "be-requests", icon: "clipboard-list", label: "Requests" },
+    { id: "be-jobs", icon: "wrench", label: "Jobs" },
+    { id: "be-amenities", icon: "activity", label: "Amenities" },
+    { id: "be-profile", icon: "user", label: "Profile" },
+  ],
 } as const;
 
 // Default views for each role
@@ -50,6 +57,7 @@ export const ROLE_HOME_VIEWS: Record<User["role"], string> = {
   super_admin: "super-admin-dashboard",
   service_provider: "provider-dashboard",
   employee: "employee-dashboard",
+  building_employee: "be-dashboard",
 };
 
 // Status and Priority color mappings
@@ -101,6 +109,21 @@ export const API_ENDPOINTS = {
     list: "/notifications",
     markRead: (id: string) => `/notifications/${id}/read`,
     markAllRead: "/notifications/read-all",
+  },
+  employee: {
+    jobs: "/employee/jobs",
+    job: (id: string) => `/employee/jobs/${id}`,
+    acceptJob: (id: string) => `/employee/jobs/${id}/accept`,
+    declineJob: (id: string) => `/employee/jobs/${id}/decline`,
+    startJob: (id: string) => `/employee/jobs/${id}/start`,
+    uploadPhoto: (id: string) => `/employee/jobs/${id}/photos`,
+    addCost: (id: string) => `/employee/jobs/${id}/costs`,
+    completeJob: (id: string) => `/employee/jobs/${id}/complete`,
+    messages: "/employee/messages",
+    sendMessage: "/employee/messages",
+    earnings: "/employee/earnings",
+    profile: "/employee/profile",
+    updateProfile: "/employee/profile",
   },
 } as const;
 

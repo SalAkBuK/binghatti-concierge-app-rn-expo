@@ -19,6 +19,8 @@ import type {
   BuildingUnit,
   BuildingEmployee,
   ServiceProviderProfile,
+  ServiceProviderBuildingAssignment,
+  ProviderAccessRequest,
   VisitorLog,
   RatingSummary,
   Lease,
@@ -28,6 +30,10 @@ import type {
   JobCostBreakdownItem,
   JobComplianceChecklistItem,
   JobAssignmentRecord,
+  JobAdditionalCost,
+  JobEstimate,
+  JobEstimateItem,
+  JobEstimateStatus,
   Analytics,
   RolePermissions,
   CreateUserDTO,
@@ -39,6 +45,7 @@ import type {
   BulkUpdateJobStatusDTO,
   QueueJobAssignmentDTO,
   User,
+  CreateVisitorPassDTO,
 } from "../types";
 import {
   DEFAULT_AMENITIES,
@@ -53,6 +60,7 @@ import {
   DEFAULT_BUILDING_UNITS,
   DEFAULT_BUILDING_EMPLOYEES,
   DEFAULT_SERVICE_PROVIDERS_PROFILES,
+  DEFAULT_SERVICE_PROVIDER_BUILDING_ASSIGNMENTS,
   DEFAULT_VISITOR_LOGS,
   DEFAULT_RATING_SUMMARIES,
   DEFAULT_AMENITY_CONFIGS,
@@ -154,6 +162,10 @@ export const useApp = () => {
   const [serviceProviders] = useState<ServiceProviderProfile[]>(
     DEFAULT_SERVICE_PROVIDERS_PROFILES,
   );
+  const [serviceProviderAssignments, setServiceProviderAssignments] = useState<ServiceProviderBuildingAssignment[]>(
+    DEFAULT_SERVICE_PROVIDER_BUILDING_ASSIGNMENTS,
+  );
+  const [providerAccessRequests, setProviderAccessRequests] = useState<ProviderAccessRequest[]>([]);
   const [visitorLogs, setVisitorLogs] = useState<VisitorLog[]>(DEFAULT_VISITOR_LOGS);
   const [ratingSummaries, setRatingSummaries] = useState<RatingSummary[]>(
     DEFAULT_RATING_SUMMARIES,
@@ -308,9 +320,182 @@ export const useApp = () => {
     [buildingEmployees],
   );
 
+  const getBuildingEmployeeByUserId = useCallback(
+    (userId: string) => {
+      if (!userId) {
+        return undefined;
+      }
+      return buildingEmployees.find((employee) => employee.userId === userId);
+    },
+    [buildingEmployees],
+  );
+
+  const getBuildingEmployeeScope = useCallback(
+    (userId: string) => {
+      const employee = getBuildingEmployeeByUserId(userId);
+      if (!employee) {
+        return null;
+      }
+      return {
+        employee,
+        buildingIds: [employee.buildingId].filter(Boolean),
+      };
+    },
+    [getBuildingEmployeeByUserId],
+  );
+
   const getServiceProviders = useCallback(() => {
     return serviceProviders;
   }, [serviceProviders]);
+
+  // Service Provider Building Assignment Actions
+  const getServiceProviderBuildingAssignments = useCallback((providerId: string) => {
+    return serviceProviderAssignments.filter(
+      (assignment) => assignment.serviceProviderId === providerId && assignment.status === "active"
+    );
+  }, [serviceProviderAssignments]);
+
+  const getServiceProvidersForBuilding = useCallback((buildingId: string) => {
+    const activeAssignments = serviceProviderAssignments.filter(
+      (assignment) => assignment.buildingId === buildingId && assignment.status === "active"
+    );
+    const providerIds = activeAssignments.map((assignment) => assignment.serviceProviderId);
+    return serviceProviders.filter((provider) => providerIds.includes(provider.id));
+  }, [serviceProviderAssignments, serviceProviders]);
+
+  const assignServiceProviderToBuilding = useCallback((
+    providerId: string,
+    buildingId: string,
+    assignedBy: string,
+    assignedByName?: string,
+    specialties?: string[],
+    notes?: string
+  ) => {
+    const newAssignment: ServiceProviderBuildingAssignment = {
+      id: generateId(serviceProviderAssignments).toString(),
+      serviceProviderId: providerId,
+      buildingId,
+      assignedBy,
+      assignedByName,
+      assignedAt: new Date().toISOString(),
+      status: "active",
+      specialties: specialties || [],
+      notes,
+    };
+    setServiceProviderAssignments((prev) => [...prev, newAssignment]);
+    return newAssignment;
+  }, [serviceProviderAssignments]);
+
+  const removeServiceProviderFromBuilding = useCallback((
+    providerId: string,
+    buildingId: string,
+    revokedBy: string,
+    revokedReason?: string
+  ) => {
+    setServiceProviderAssignments((prev) =>
+      prev.map((assignment) =>
+        assignment.serviceProviderId === providerId && assignment.buildingId === buildingId
+          ? {
+              ...assignment,
+              status: "revoked" as const,
+              revokedAt: new Date().toISOString(),
+              revokedBy,
+              revokedReason,
+            }
+          : assignment
+      )
+    );
+  }, []);
+
+  const updateServiceProviderAssignment = useCallback((
+    assignmentId: string,
+    updates: Partial<ServiceProviderBuildingAssignment>
+  ) => {
+    setServiceProviderAssignments((prev) =>
+      prev.map((assignment) =>
+        assignment.id === assignmentId
+          ? { ...assignment, ...updates }
+          : assignment
+      )
+    );
+  }, []);
+
+  // Provider Access Request Actions
+  const createProviderAccessRequest = useCallback((request: ProviderAccessRequest) => {
+    setProviderAccessRequests((prev) => [...prev, request]);
+  }, []);
+
+  const updateProviderAccessRequest = useCallback((
+    requestId: string,
+    updates: Partial<ProviderAccessRequest>
+  ) => {
+    setProviderAccessRequests((prev) =>
+      prev.map((req) =>
+        req.id === requestId ? { ...req, ...updates } : req
+      )
+    );
+  }, []);
+
+  const approveProviderAccessRequest = useCallback((
+    requestId: string,
+    reviewedBy: string,
+    reviewedByName: string
+  ) => {
+    const request = providerAccessRequests.find((req) => req.id === requestId);
+    if (!request) return;
+
+    // Update the request status
+    updateProviderAccessRequest(requestId, {
+      status: "approved",
+      reviewedBy,
+      reviewedByName,
+      reviewedAt: new Date().toISOString(),
+    });
+
+    // Automatically assign the provider to the building
+    assignServiceProviderToBuilding(
+      request.serviceProviderId,
+      request.buildingId,
+      reviewedBy,
+      reviewedByName,
+      []
+    );
+
+    // Notify the requestor
+    notifications.actions.createNotification(
+      request.requestedBy,
+      "Provider Access Approved",
+      `Your request for ${request.serviceProviderName} has been approved for ${request.buildingName}`,
+      "success"
+    );
+  }, [providerAccessRequests, updateProviderAccessRequest, assignServiceProviderToBuilding, notifications]);
+
+  const rejectProviderAccessRequest = useCallback((
+    requestId: string,
+    reviewedBy: string,
+    reviewedByName: string,
+    rejectionReason?: string
+  ) => {
+    const request = providerAccessRequests.find((req) => req.id === requestId);
+    if (!request) return;
+
+    // Update the request status
+    updateProviderAccessRequest(requestId, {
+      status: "rejected",
+      reviewedBy,
+      reviewedByName,
+      reviewedAt: new Date().toISOString(),
+      rejectionReason,
+    });
+
+    // Notify the requestor
+    notifications.actions.createNotification(
+      request.requestedBy,
+      "Provider Access Rejected",
+      `Your request for ${request.serviceProviderName} was rejected. ${rejectionReason ? `Reason: ${rejectionReason}` : ""}`,
+      "error"
+    );
+  }, [providerAccessRequests, updateProviderAccessRequest, notifications]);
 
   const resolveServiceProviderIdentity = useCallback(
     (
@@ -1628,6 +1813,118 @@ export const useApp = () => {
     [buildings, auth.currentUser, notifications.actions],
   );
 
+  const getManagedBuildingIds = useCallback((): string[] => {
+    if (!auth.currentUser) return [];
+
+    const managed = auth.currentUser.profile?.managedBuildingIds;
+    if (managed && managed.length > 0) {
+      return managed;
+    }
+
+    if (auth.currentUser.profile?.buildingId) {
+      return [auth.currentUser.profile.buildingId];
+    }
+
+    return buildings
+      .filter((building) => building.managerId === auth.currentUser?.id)
+      .map((building) => building.id);
+  }, [auth.currentUser, buildings]);
+
+  const getManagedBuildings = useCallback((): Building[] => {
+    const ids = getManagedBuildingIds();
+    if (!ids.length) return [];
+    return buildings.filter((building) => ids.includes(building.id));
+  }, [buildings, getManagedBuildingIds]);
+
+  const createVisitorPass = useCallback(
+    async (payload: CreateVisitorPassDTO): Promise<VisitorPass> => {
+      if (!auth.currentUser) {
+        return Promise.reject(
+          new Error("User must be authenticated to create passes"),
+        );
+      }
+
+      const role = auth.currentUser.role;
+      const isAdmin = role === "admin" || role === "super_admin";
+      const isManagement = role === "management";
+
+      if (!isAdmin && !isManagement) {
+        return Promise.reject(
+          new Error("Only management or admin users can create visitor passes"),
+        );
+      }
+
+      const building = buildings.find(
+        (item) => item.id === payload.buildingId,
+      );
+      if (!building) {
+        return Promise.reject(new Error("Building not found"));
+      }
+
+      if (isManagement) {
+        const managedBuildings = getManagedBuildingIds();
+        const managesBuilding = managedBuildings.includes(building.id);
+        const isBuildingManager = building.managerId === auth.currentUser.id;
+        if (!managesBuilding || !isBuildingManager) {
+          return Promise.reject(
+            new Error("Only the assigned building manager can create passes for this building"),
+          );
+        }
+      }
+
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          const passId = `visitor-pass-${Date.now()}`;
+          const newPass: VisitorPass = {
+            id: passId,
+            buildingId: payload.buildingId,
+            tenantId: payload.tenantId,
+            unitNumber: payload.unitNumber,
+            type: payload.type,
+            name: payload.name,
+            company: payload.company,
+            contactPhone: payload.contactPhone,
+            contactEmail: payload.contactEmail,
+            scheduledStart: payload.scheduledStart,
+            scheduledEnd: payload.scheduledEnd,
+            status: "pending",
+            hostName: payload.hostName,
+            notes: payload.notes,
+            qrCodeUrl: `https://example.com/pass/${passId}`,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+
+          setVisitorPasses((prev) => [newPass, ...prev]);
+
+          notifications.actions.createNotification(
+            auth.currentUser!.id,
+            "Visitor Pass Created",
+            `Created pass for ${payload.name}`,
+            "success",
+          );
+
+          if (payload.tenantId) {
+            notifications.actions.createNotification(
+              payload.tenantId,
+              "Visitor Pass Requested",
+              `Management created a ${payload.type} pass for ${payload.name}`,
+              "info",
+            );
+          }
+
+          resolve(newPass);
+        }, 350);
+      });
+    },
+    [
+      auth.currentUser,
+      buildings,
+      notifications.actions,
+      getManagedBuildingIds,
+    ],
+  );
+
   // Admin actions - Jobs
   const getJobs = useCallback(
     (filter?: { status?: Job["status"]; buildingId?: string; assignedTo?: string }) => {
@@ -1659,14 +1956,19 @@ export const useApp = () => {
 
   const createJob = useCallback(
     async (jobData: CreateJobDTO): Promise<Job> => {
-      if (
-        !auth.currentUser ||
-        !["admin", "management", "super_admin"].includes(
-          auth.currentUser.role,
-        )
-      ) {
+      if (!auth.currentUser) {
         return Promise.reject(
-          new Error("Only admins and management can create jobs"),
+          new Error("Only authenticated users can create jobs"),
+        );
+      }
+
+      const role = auth.currentUser.role;
+      const isAdmin = role === "admin" || role === "super_admin";
+      const isManagement = role === "management";
+
+      if (!isAdmin && !isManagement) {
+        return Promise.reject(
+          new Error("You do not have permission to create jobs"),
         );
       }
 
@@ -1678,12 +1980,39 @@ export const useApp = () => {
             return;
           }
 
+          if (isManagement) {
+            const managedBuildings = getManagedBuildingIds();
+            const managesBuilding = managedBuildings.includes(building.id);
+            const isBuildingManager = building.managerId === auth.currentUser!.id;
+
+            if (!managesBuilding || !isBuildingManager) {
+              reject(
+                new Error("Only the assigned building manager can create jobs for this building"),
+              );
+              return;
+            }
+          }
+
           const assignedIdentity = resolveServiceProviderIdentity(
             jobData.assignedTo,
           );
 
+          const buildingEmployeeAssignment = jobData.assignedBuildingEmployeeId
+            ? buildingEmployees.find(
+                (employee) => employee.id === jobData.assignedBuildingEmployeeId,
+              )
+            : undefined;
+
           if (jobData.assignedTo && !assignedIdentity) {
             reject(new Error("Assigned service provider not found"));
+            return;
+          }
+
+          if (
+            jobData.assignmentTargetType === "building_employee" &&
+            !buildingEmployeeAssignment
+          ) {
+            reject(new Error("Building employee not found"));
             return;
           }
 
@@ -1707,19 +2036,67 @@ export const useApp = () => {
               notes: item.notes,
             })) ?? [];
 
+          const assignmentTargetType =
+            jobData.assignmentTargetType ??
+            (buildingEmployeeAssignment
+              ? "building_employee"
+              : assignedIdentity
+                ? "service_provider"
+                : undefined);
+
+          const assignmentHistory: JobAssignmentRecord[] = [];
+
+          const assignmentRecordBase = {
+            id: `job-assign-${Date.now()}`,
+            assignedBy: auth.currentUser!.id,
+            assignedByName:
+              auth.currentUser!.name || auth.currentUser!.email || "",
+            assignedAt: new Date().toISOString(),
+            scheduledDate: jobData.scheduledDate,
+            status: "pending" as const,
+            notes: jobData.description,
+          };
+
+          if (assignmentTargetType === "service_provider" && assignedIdentity) {
+            assignmentHistory.push({
+              ...assignmentRecordBase,
+              targetType: "service_provider",
+              serviceProviderId: assignedIdentity.id,
+              serviceProviderName: assignedIdentity.name,
+            });
+          }
+
+          if (
+            assignmentTargetType === "building_employee" &&
+            buildingEmployeeAssignment
+          ) {
+            assignmentHistory.push({
+              ...assignmentRecordBase,
+              targetType: "building_employee",
+              buildingEmployeeId: buildingEmployeeAssignment.id,
+              buildingEmployeeName: buildingEmployeeAssignment.name,
+            });
+          }
+
+          const assignedToName =
+            assignedIdentity?.name || buildingEmployeeAssignment?.name;
+
           const newJob: Job = {
             id: `job-${generateId(jobs)}`,
             requestId: jobData.requestId,
             title: jobData.title,
             description: jobData.description,
             type: jobData.type,
-            status: assignedIdentity ? "assigned" : "pending",
+            status: assignmentTargetType ? "assigned" : "pending",
             priority: jobData.priority,
             buildingId: jobData.buildingId,
             buildingName: building.name,
             unitNumber: jobData.unitNumber,
             assignedTo: assignedIdentity?.id,
-            assignedToName: assignedIdentity?.name,
+            assignedToName,
+            assignmentTargetType,
+            assignedBuildingEmployeeId: buildingEmployeeAssignment?.id,
+            assignedBuildingEmployeeName: buildingEmployeeAssignment?.name,
             createdBy: auth.currentUser!.id,
             attachments: jobData.attachments || [],
             notes: [],
@@ -1727,22 +2104,7 @@ export const useApp = () => {
             scheduledDate: jobData.scheduledDate,
             costBreakdown,
             complianceChecklist,
-            assignmentHistory: assignedIdentity
-              ? [
-                  {
-                    id: `job-assign-${Date.now()}`,
-                    serviceProviderId: assignedIdentity.id,
-                    serviceProviderName: assignedIdentity.name,
-                    assignedBy: auth.currentUser!.id,
-                    assignedByName:
-                      auth.currentUser!.name || auth.currentUser!.email || "",
-                    assignedAt: new Date().toISOString(),
-                    scheduledDate: jobData.scheduledDate,
-                    status: "pending",
-                    notes: jobData.description,
-                  },
-                ]
-              : [],
+            assignmentHistory,
             assignmentQueue: [],
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
@@ -1766,6 +2128,18 @@ export const useApp = () => {
             );
           }
 
+          if (
+            assignmentTargetType === "building_employee" &&
+            buildingEmployeeAssignment?.userId
+          ) {
+            notifications.actions.createNotification(
+              buildingEmployeeAssignment.userId,
+              "Job Assigned",
+              `You have been assigned to job: ${jobData.title}`,
+              "info",
+            );
+          }
+
           resolve(newJob);
         }, 500);
       });
@@ -1776,6 +2150,8 @@ export const useApp = () => {
       auth.currentUser,
       notifications.actions,
       resolveServiceProviderIdentity,
+      buildingEmployees,
+      getManagedBuildingIds,
     ],
   );
 
@@ -1936,15 +2312,38 @@ export const useApp = () => {
       serviceProviderId: string,
       scheduledDate?: string,
     ): Promise<Job> => {
-      if (
-        !auth.currentUser ||
-        !["admin", "management", "super_admin"].includes(
-          auth.currentUser.role,
-        )
-      ) {
+      if (!auth.currentUser) {
         return Promise.reject(
-          new Error("Only admins and management can assign jobs"),
+          new Error("Only authenticated users can assign jobs"),
         );
+      }
+
+      const role = auth.currentUser.role;
+      const isAdmin = role === "admin" || role === "super_admin";
+      const isManagement = role === "management";
+
+      if (!isAdmin && !isManagement) {
+        return Promise.reject(
+          new Error("You do not have permission to assign service providers"),
+        );
+      }
+
+      const job = jobs.find((item) => item.id === jobId);
+      if (!job) {
+        return Promise.reject(new Error("Job not found"));
+      }
+
+      if (isManagement) {
+        const managedBuildings = getManagedBuildingIds();
+        const managesBuilding = managedBuildings.includes(job.buildingId);
+        const building = buildings.find((b) => b.id === job.buildingId);
+        const isBuildingManager = building?.managerId === auth.currentUser.id;
+
+        if (!managesBuilding || !isBuildingManager) {
+          return Promise.reject(
+            new Error("Only the assigned building manager can assign service providers"),
+          );
+        }
       }
 
       const serviceProvider =
@@ -1963,6 +2362,7 @@ export const useApp = () => {
               if (job.id === jobId) {
                 const assignmentRecord: JobAssignmentRecord = {
                   id: `job-${jobId}-assign-${Date.now()}`,
+                  targetType: "service_provider",
                   serviceProviderId: serviceProvider.id,
                   serviceProviderName: serviceProvider.name,
                   assignedBy: auth.currentUser!.id,
@@ -1975,13 +2375,18 @@ export const useApp = () => {
                 };
 
                 const filteredQueue = (job.assignmentQueue ?? []).filter(
-                  (record) => record.serviceProviderId !== serviceProvider.id,
+                  (record) =>
+                    record.targetType !== "service_provider" ||
+                    record.serviceProviderId !== serviceProvider.id,
                 );
 
                 updatedJob = {
                   ...job,
                   assignedTo: serviceProvider.id,
                   assignedToName: serviceProvider.name,
+                  assignmentTargetType: "service_provider",
+                  assignedBuildingEmployeeId: undefined,
+                  assignedBuildingEmployeeName: undefined,
                   status: "assigned",
                   scheduledDate: scheduledDate || job.scheduledDate,
                   updatedAt: new Date().toISOString(),
@@ -2022,9 +2427,146 @@ export const useApp = () => {
     },
     [
       jobs,
+      buildings,
       auth.currentUser,
       notifications.actions,
       resolveServiceProviderIdentity,
+      getManagedBuildingIds,
+    ],
+  );
+
+  const assignJobToBuildingEmployee = useCallback(
+    async (
+      jobId: string,
+      buildingEmployeeId: string,
+      scheduledDate?: string,
+    ): Promise<Job> => {
+      if (!auth.currentUser) {
+        return Promise.reject(
+          new Error("Only authenticated users can assign jobs"),
+        );
+      }
+
+      const role = auth.currentUser.role;
+      const isAdmin = role === "admin" || role === "super_admin";
+      const isManagement = role === "management";
+
+      if (!isAdmin && !isManagement) {
+        return Promise.reject(
+          new Error("You do not have permission to assign building employees"),
+        );
+      }
+
+      const job = jobs.find((item) => item.id === jobId);
+      if (!job) {
+        return Promise.reject(new Error("Job not found"));
+      }
+
+      if (isManagement) {
+        const managedBuildings = getManagedBuildingIds();
+        const managesBuilding = managedBuildings.includes(job.buildingId);
+        const building = buildings.find((b) => b.id === job.buildingId);
+        const isBuildingManager = building?.managerId === auth.currentUser.id;
+
+        if (!managesBuilding || !isBuildingManager) {
+          return Promise.reject(
+            new Error("Only the assigned building manager can assign building employees"),
+          );
+        }
+      }
+
+      const buildingEmployee = buildingEmployees.find(
+        (employee) => employee.id === buildingEmployeeId,
+      );
+
+      if (!buildingEmployee) {
+        return Promise.reject(new Error("Building employee not found"));
+      }
+
+      if (buildingEmployee.buildingId !== job.buildingId) {
+        return Promise.reject(
+          new Error("Selected employee does not belong to this building"),
+        );
+      }
+
+      return new Promise((resolve, reject) => {
+        setTimeout(() => {
+          let updatedJob: Job | undefined;
+
+          setJobs((prev) =>
+            prev.map((jobItem) => {
+              if (jobItem.id !== jobId) {
+                return jobItem;
+              }
+
+              const assignmentRecord: JobAssignmentRecord = {
+                id: `job-${jobId}-assign-${Date.now()}`,
+                targetType: "building_employee",
+                buildingEmployeeId: buildingEmployee.id,
+                buildingEmployeeName: buildingEmployee.name,
+                assignedBy: auth.currentUser!.id,
+                assignedByName:
+                  auth.currentUser!.name || auth.currentUser!.email || "",
+                assignedAt: new Date().toISOString(),
+                scheduledDate: scheduledDate || jobItem.scheduledDate,
+                status: "pending",
+              };
+
+              updatedJob = {
+                ...jobItem,
+                assignedTo: undefined,
+                assignedToName: buildingEmployee.name,
+                assignedToEmployeeId: undefined,
+                assignedToEmployeeName: undefined,
+                assignmentTargetType: "building_employee",
+                assignedBuildingEmployeeId: buildingEmployee.id,
+                assignedBuildingEmployeeName: buildingEmployee.name,
+                status: "assigned",
+                scheduledDate: scheduledDate || jobItem.scheduledDate,
+                assignmentHistory: [
+                  ...(jobItem.assignmentHistory ?? []),
+                  assignmentRecord,
+                ],
+                assignmentQueue: [],
+                updatedAt: new Date().toISOString(),
+              };
+
+              return updatedJob;
+            }),
+          );
+
+          if (!updatedJob) {
+            reject(new Error("Job not found"));
+            return;
+          }
+
+          notifications.actions.createNotification(
+            auth.currentUser!.id,
+            "Job Assigned",
+            `Job "${updatedJob.title}" assigned to ${buildingEmployee.name}`,
+            "success",
+          );
+
+          if (buildingEmployee.userId) {
+            notifications.actions.createNotification(
+              buildingEmployee.userId,
+              "Job Assigned",
+              `You have been assigned to job: ${updatedJob.title}`,
+              "info",
+            );
+          }
+
+          resolve(updatedJob);
+        }, 400);
+      });
+    },
+    [
+      jobs,
+      buildings,
+      buildingEmployees,
+      auth.currentUser,
+      notifications.actions,
+      getManagedBuildingIds,
     ],
   );
 
@@ -2032,6 +2574,34 @@ export const useApp = () => {
     async (payload: QueueJobAssignmentDTO): Promise<Job> => {
       if (!auth.currentUser) {
         return Promise.reject(new Error("User must be authenticated"));
+      }
+
+      const role = auth.currentUser.role;
+      const isAdmin = role === "admin" || role === "super_admin";
+      const isManagement = role === "management";
+
+      if (!isAdmin && !isManagement) {
+        return Promise.reject(
+          new Error("You do not have permission to queue job assignments"),
+        );
+      }
+
+      const job = jobs.find((item) => item.id === payload.jobId);
+      if (!job) {
+        return Promise.reject(new Error("Job not found"));
+      }
+
+      if (isManagement) {
+        const managedBuildings = getManagedBuildingIds();
+        const managesBuilding = managedBuildings.includes(job.buildingId);
+        const building = buildings.find((b) => b.id === job.buildingId);
+        const isBuildingManager = building?.managerId === auth.currentUser.id;
+
+        if (!managesBuilding || !isBuildingManager) {
+          return Promise.reject(
+            new Error("Only the assigned building manager can queue assignments for this building"),
+          );
+        }
       }
 
       const serviceProvider = resolveServiceProviderIdentity(
@@ -2054,6 +2624,7 @@ export const useApp = () => {
 
               const record: JobAssignmentRecord = {
                 id: `job-${payload.jobId}-queue-${Date.now()}`,
+                targetType: "service_provider",
                 serviceProviderId: serviceProvider.id,
                 serviceProviderName: serviceProvider.name,
                 assignedBy: auth.currentUser!.id,
@@ -2084,13 +2655,41 @@ export const useApp = () => {
         }, 250);
       });
     },
-    [jobs, auth.currentUser, resolveServiceProviderIdentity],
+    [jobs, buildings, auth.currentUser, resolveServiceProviderIdentity, getManagedBuildingIds],
   );
 
   const promoteQueuedJobAssignment = useCallback(
     async (jobId: string): Promise<Job> => {
       if (!auth.currentUser) {
         return Promise.reject(new Error("User must be authenticated"));
+      }
+
+      const role = auth.currentUser.role;
+      const isAdmin = role === "admin" || role === "super_admin";
+      const isManagement = role === "management";
+
+      if (!isAdmin && !isManagement) {
+        return Promise.reject(
+          new Error("You do not have permission to manage assignment queue"),
+        );
+      }
+
+      const job = jobs.find((item) => item.id === jobId);
+      if (!job) {
+        return Promise.reject(new Error("Job not found"));
+      }
+
+      if (isManagement) {
+        const managedBuildings = getManagedBuildingIds();
+        const managesBuilding = managedBuildings.includes(job.buildingId);
+        const building = buildings.find((b) => b.id === job.buildingId);
+        const isBuildingManager = building?.managerId === auth.currentUser.id;
+
+        if (!managesBuilding || !isBuildingManager) {
+          return Promise.reject(
+            new Error("Only the assigned building manager can manage this job"),
+          );
+        }
       }
 
       return new Promise((resolve, reject) => {
@@ -2121,20 +2720,44 @@ export const useApp = () => {
                 status: "pending",
               };
 
-              updatedJob = {
-                ...job,
-                assignedTo: nextAssignment.serviceProviderId,
-                assignedToName: nextAssignment.serviceProviderName,
-                status: "assigned",
-                scheduledDate:
-                  nextAssignment.scheduledDate || job.scheduledDate,
-                assignmentHistory: [
-                  ...(job.assignmentHistory ?? []),
-                  assignmentRecord,
-                ],
-                assignmentQueue: remainingQueue,
-                updatedAt: new Date().toISOString(),
-              };
+              if (nextAssignment.targetType === "service_provider") {
+                updatedJob = {
+                  ...job,
+                  assignedTo: nextAssignment.serviceProviderId,
+                  assignedToName: nextAssignment.serviceProviderName,
+                  assignmentTargetType: "service_provider",
+                  assignedBuildingEmployeeId: undefined,
+                  assignedBuildingEmployeeName: undefined,
+                  status: "assigned",
+                  scheduledDate:
+                    nextAssignment.scheduledDate || job.scheduledDate,
+                  assignmentHistory: [
+                    ...(job.assignmentHistory ?? []),
+                    assignmentRecord,
+                  ],
+                  assignmentQueue: remainingQueue,
+                  updatedAt: new Date().toISOString(),
+                };
+              } else {
+                updatedJob = {
+                  ...job,
+                  assignedTo: undefined,
+                  assignedToName: nextAssignment.buildingEmployeeName,
+                  assignmentTargetType: "building_employee",
+                  assignedBuildingEmployeeId: nextAssignment.buildingEmployeeId,
+                  assignedBuildingEmployeeName:
+                    nextAssignment.buildingEmployeeName,
+                  status: "assigned",
+                  scheduledDate:
+                    nextAssignment.scheduledDate || job.scheduledDate,
+                  assignmentHistory: [
+                    ...(job.assignmentHistory ?? []),
+                    assignmentRecord,
+                  ],
+                  assignmentQueue: remainingQueue,
+                  updatedAt: new Date().toISOString(),
+                };
+              }
 
               promoted = true;
 
@@ -2156,13 +2779,23 @@ export const useApp = () => {
         }, 300);
       });
     },
-    [jobs, auth.currentUser],
+    [jobs, buildings, auth.currentUser, getManagedBuildingIds],
   );
 
   const updateJob = useCallback(
     async (jobId: string, updates: UpdateJobDTO): Promise<Job> => {
       if (!auth.currentUser) {
         return Promise.reject(new Error("User must be authenticated"));
+      }
+
+      if (
+        updates.status &&
+        auth.currentUser.role === "service_provider" &&
+        (updates.status === "in-progress" || updates.status === "completed")
+      ) {
+        return Promise.reject(
+          new Error("Only the assigned employee can update job progress"),
+        );
       }
 
       return new Promise((resolve, reject) => {
@@ -2255,28 +2888,1114 @@ export const useApp = () => {
     [jobs, auth.currentUser, auth.users, notifications.actions],
   );
 
-  const getManagedBuildingIds = useCallback((): string[] => {
-    if (!auth.currentUser) return [];
+  // Employee-specific job actions
+  const acceptEmployeeJob = useCallback(
+    async (jobId: string, notes?: string): Promise<Job> => {
+      if (!auth.currentUser || auth.currentUser.role !== "employee") {
+        return Promise.reject(new Error("Only employees can accept jobs"));
+      }
 
-    const managed = auth.currentUser.profile?.managedBuildingIds;
-    if (managed && managed.length > 0) {
-      return managed;
-    }
+      return new Promise((resolve, reject) => {
+        setTimeout(() => {
+          let updatedJob: Job | undefined;
 
-    if (auth.currentUser.profile?.buildingId) {
-      return [auth.currentUser.profile.buildingId];
-    }
+          setJobs((prev) =>
+            prev.map((job) => {
+              if (job.id === jobId && job.assignedToEmployeeId === auth.currentUser!.id) {
+                updatedJob = {
+                  ...job,
+                  status: "assigned",
+                  acceptedAt: new Date().toISOString(),
+                  acceptanceNotes: notes,
+                  updatedAt: new Date().toISOString(),
+                };
+                return updatedJob;
+              }
+              return job;
+            }),
+          );
 
-    return buildings
-      .filter((building) => building.managerId === auth.currentUser?.id)
-      .map((building) => building.id);
-  }, [auth.currentUser, buildings]);
+          if (!updatedJob) {
+            reject(new Error("Job not found or not assigned to you"));
+            return;
+          }
 
-  const getManagedBuildings = useCallback((): Building[] => {
-    const ids = getManagedBuildingIds();
-    if (!ids.length) return [];
-    return buildings.filter((building) => ids.includes(building.id));
-  }, [buildings, getManagedBuildingIds]);
+          notifications.actions.createNotification(
+            auth.currentUser!.id,
+            "Job Accepted",
+            `You have accepted the job "${updatedJob.title}"`,
+            "success",
+          );
+
+          resolve(updatedJob);
+        }, 500);
+      });
+    },
+    [jobs, auth.currentUser, notifications.actions],
+  );
+
+  const declineEmployeeJob = useCallback(
+    async (jobId: string, reason: string): Promise<void> => {
+      if (!auth.currentUser || auth.currentUser.role !== "employee") {
+        return Promise.reject(new Error("Only employees can decline jobs"));
+      }
+
+      return new Promise((resolve, reject) => {
+        setTimeout(() => {
+          let declinedJob: Job | undefined;
+
+          setJobs((prev) =>
+            prev.map((job) => {
+              if (job.id === jobId && job.assignedToEmployeeId === auth.currentUser!.id) {
+                declinedJob = {
+                  ...job,
+                  assignedToEmployeeId: undefined,
+                  assignedToEmployeeName: undefined,
+                  status: "pending",
+                  declinedBy: auth.currentUser!.id,
+                  declineReason: reason,
+                  updatedAt: new Date().toISOString(),
+                };
+                return declinedJob;
+              }
+              return job;
+            }),
+          );
+
+          if (!declinedJob) {
+            reject(new Error("Job not found or not assigned to you"));
+            return;
+          }
+
+          notifications.actions.createNotification(
+            auth.currentUser!.id,
+            "Job Declined",
+            `You have declined the job "${declinedJob.title}"`,
+            "info",
+          );
+
+          resolve();
+        }, 500);
+      });
+    },
+    [jobs, auth.currentUser, notifications.actions],
+  );
+
+  const startEmployeeJob = useCallback(
+    async (jobId: string): Promise<Job> => {
+      if (!auth.currentUser || auth.currentUser.role !== "employee") {
+        return Promise.reject(new Error("Only employees can start jobs"));
+      }
+
+      const targetJob = jobs.find(
+        (job) =>
+          job.id === jobId &&
+          job.assignedToEmployeeId === auth.currentUser!.id,
+      );
+
+      if (!targetJob) {
+        return Promise.reject(
+          new Error("Job not found or not assigned to you"),
+        );
+      }
+
+      if (
+        targetJob.estimate &&
+        targetJob.estimate.status !== "tenant_approved"
+      ) {
+        return Promise.reject(
+          new Error("Awaiting tenant approval before starting this job."),
+        );
+      }
+
+      return new Promise((resolve, reject) => {
+        setTimeout(() => {
+          let updatedJob: Job | undefined;
+
+          setJobs((prev) =>
+            prev.map((job) => {
+              if (job.id === jobId && job.assignedToEmployeeId === auth.currentUser!.id) {
+                updatedJob = {
+                  ...job,
+                  status: "in-progress",
+                  startedAt: new Date().toISOString(),
+                  startedBy: auth.currentUser!.id,
+                  updatedAt: new Date().toISOString(),
+                };
+                return updatedJob;
+              }
+              return job;
+            }),
+          );
+
+          if (!updatedJob) {
+            reject(new Error("Job not found or not assigned to you"));
+            return;
+          }
+
+          notifications.actions.createNotification(
+            auth.currentUser!.id,
+            "Job Started",
+            `You have started working on "${updatedJob.title}"`,
+            "success",
+          );
+
+          resolve(updatedJob);
+        }, 500);
+      });
+    },
+    [jobs, auth.currentUser, notifications.actions],
+  );
+
+  const uploadEmployeeJobPhoto = useCallback(
+    async (jobId: string, photoUri: string, caption?: string): Promise<void> => {
+      if (!auth.currentUser || auth.currentUser.role !== "employee") {
+        return Promise.reject(new Error("Only employees can upload photos"));
+      }
+
+      return new Promise((resolve, reject) => {
+        setTimeout(() => {
+          let found = false;
+
+          setJobs((prev) =>
+            prev.map((job) => {
+              if (job.id === jobId && job.assignedToEmployeeId === auth.currentUser!.id) {
+                found = true;
+                const newPhoto = {
+                  id: `job-${jobId}-photo-${Date.now()}`,
+                  jobId,
+                  employeeId: auth.currentUser!.id,
+                  employeeName: auth.currentUser!.name,
+                  uri: photoUri,
+                  caption,
+                  uploadedAt: new Date().toISOString(),
+                };
+
+                return {
+                  ...job,
+                  completionPhotos: [...(job.completionPhotos || []), newPhoto],
+                  updatedAt: new Date().toISOString(),
+                };
+              }
+              return job;
+            }),
+          );
+
+          if (!found) {
+            reject(new Error("Job not found or not assigned to you"));
+            return;
+          }
+
+          resolve();
+        }, 500);
+      });
+    },
+    [jobs, auth.currentUser],
+  );
+
+  const addEmployeeJobAdditionalCost = useCallback(
+    async (
+      jobId: string,
+      amount: number,
+      description: string,
+      category?: "parts" | "labor" | "materials" | "other",
+    ): Promise<void> => {
+      if (!auth.currentUser || auth.currentUser.role !== "employee") {
+        return Promise.reject(new Error("Only employees can add costs"));
+      }
+
+      return new Promise((resolve, reject) => {
+        setTimeout(() => {
+          let found = false;
+
+          setJobs((prev) =>
+            prev.map((job) => {
+              if (job.id === jobId && job.assignedToEmployeeId === auth.currentUser!.id) {
+                found = true;
+                const newCost = {
+                  id: `job-${jobId}-cost-${Date.now()}`,
+                  jobId,
+                  employeeId: auth.currentUser!.id,
+                  employeeName: auth.currentUser!.name,
+                  amount,
+                  description,
+                  category,
+                  status: "pending" as const,
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                };
+
+                return {
+                  ...job,
+                  additionalCosts: [...(job.additionalCosts || []), newCost],
+                  updatedAt: new Date().toISOString(),
+                };
+              }
+              return job;
+            }),
+          );
+
+          if (!found) {
+            reject(new Error("Job not found or not assigned to you"));
+            return;
+          }
+
+          resolve();
+        }, 500);
+      });
+    },
+    [jobs, auth.currentUser],
+  );
+
+  const completeEmployeeJob = useCallback(
+    async (jobId: string, notes: string): Promise<Job> => {
+      if (!auth.currentUser || auth.currentUser.role !== "employee") {
+        return Promise.reject(new Error("Only employees can complete jobs"));
+      }
+
+      return new Promise((resolve, reject) => {
+        setTimeout(() => {
+          let updatedJob: Job | undefined;
+
+          setJobs((prev) =>
+            prev.map((job) => {
+              if (job.id === jobId && job.assignedToEmployeeId === auth.currentUser!.id) {
+                if (!job.completionPhotos || job.completionPhotos.length === 0) {
+                  reject(new Error("At least one photo is required to complete the job"));
+                  return job;
+                }
+
+                updatedJob = {
+                  ...job,
+                  status: "completed",
+                  completionStatus: "awaiting_tenant_approval",
+                  completionNotes: notes,
+                  completedDate: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                };
+                return updatedJob;
+              }
+              return job;
+            }),
+          );
+
+          if (!updatedJob) {
+            reject(new Error("Job not found or not assigned to you"));
+            return;
+          }
+
+          notifications.actions.createNotification(
+            auth.currentUser!.id,
+            "Job Completed",
+            `You have submitted "${updatedJob.title}" for approval`,
+            "success",
+          );
+
+          resolve(updatedJob);
+        }, 500);
+      });
+    },
+    [jobs, auth.currentUser, notifications.actions],
+  );
+
+  const assignEmployeeToJob = useCallback(
+    async (jobId: string, employeeId: string): Promise<Job> => {
+      if (!auth.currentUser || auth.currentUser.role !== "service_provider") {
+        return Promise.reject(
+          new Error("Only service providers can assign employees"),
+        );
+      }
+
+      const usersList = Object.values(auth.users || {});
+
+      const employee = usersList.find(
+        (user) =>
+          user.id === employeeId &&
+          user.role === "employee" &&
+          user.profile?.serviceProviderId === auth.currentUser!.id,
+      );
+
+      if (!employee) {
+        return Promise.reject(
+          new Error("Employee not found or not part of your team"),
+        );
+      }
+
+      return new Promise((resolve, reject) => {
+        setTimeout(() => {
+          let updatedJob: Job | undefined;
+
+          setJobs((prev) =>
+            prev.map((job) => {
+              if (job.id !== jobId || job.assignedTo !== auth.currentUser!.id) {
+                return job;
+              }
+
+              if (job.assignedToEmployeeId === employee.id) {
+                updatedJob = {
+                  ...job,
+                  assignedToEmployeeName:
+                    employee.profile?.name ||
+                    employee.name ||
+                    employee.email ||
+                    "",
+                  updatedAt: new Date().toISOString(),
+                };
+                return updatedJob;
+              }
+
+              const newHistoryRecord: JobAssignmentRecord = {
+                id: `job-${jobId}-emp-assign-${Date.now()}`,
+                targetType: "service_provider",
+                serviceProviderId: auth.currentUser!.id,
+                serviceProviderName:
+                  auth.currentUser!.name ||
+                  auth.currentUser!.profile?.name ||
+                  auth.currentUser!.email ||
+                  "",
+                assignedBy: auth.currentUser!.id,
+                assignedByName:
+                  auth.currentUser!.name ||
+                  auth.currentUser!.email ||
+                  "",
+                assignedAt: new Date().toISOString(),
+                status: "accepted",
+                notes: `Assigned to ${employee.name || employee.email}`,
+              };
+
+              updatedJob = {
+                ...job,
+                assignedToEmployeeId: employee.id,
+                assignedToEmployeeName:
+                  employee.profile?.name ||
+                  employee.name ||
+                  employee.email ||
+                  "",
+                status: job.status === "pending" ? "assigned" : job.status,
+                updatedAt: new Date().toISOString(),
+                assignmentHistory: [
+                  ...(job.assignmentHistory ?? []),
+                  newHistoryRecord,
+                ],
+              };
+              return updatedJob;
+            }),
+          );
+
+          if (!updatedJob) {
+            reject(
+              new Error("Job not found or not assigned to your company"),
+            );
+            return;
+          }
+
+          notifications.actions.createNotification(
+            employee.id,
+            "New Job Assigned",
+            `You have been assigned to "${updatedJob.title}".`,
+            "info",
+          );
+
+          resolve(updatedJob);
+        }, 400);
+      });
+    },
+    [jobs, auth.currentUser, auth.users, notifications.actions],
+  );
+
+  const approveJobAdditionalCost = useCallback(
+    async (jobId: string, costId: string): Promise<JobAdditionalCost> => {
+      if (!auth.currentUser || auth.currentUser.role !== "service_provider") {
+        return Promise.reject(
+          new Error("Only service providers can approve costs"),
+        );
+      }
+
+      return new Promise((resolve, reject) => {
+        setTimeout(() => {
+          let updatedCost: JobAdditionalCost | undefined;
+          let updatedJob: Job | undefined;
+
+          setJobs((prev) =>
+            prev.map((job) => {
+              if (job.id !== jobId || job.assignedTo !== auth.currentUser!.id) {
+                return job;
+              }
+
+              const updatedCosts = (job.additionalCosts || []).map((cost) => {
+                if (cost.id !== costId) {
+                  return cost;
+                }
+
+                updatedCost = {
+                  ...cost,
+                  status: "approved",
+                  approvedBy: auth.currentUser!.id,
+                  approvedByName:
+                    auth.currentUser!.name ||
+                    auth.currentUser!.profile?.name ||
+                    auth.currentUser!.email ||
+                    "",
+                  approvedAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                };
+
+                return updatedCost;
+              });
+
+              if (!updatedCost) {
+                return job;
+              }
+
+              updatedJob = {
+                ...job,
+                additionalCosts: updatedCosts,
+                updatedAt: new Date().toISOString(),
+              };
+              return updatedJob;
+            }),
+          );
+
+          if (!updatedCost || !updatedJob) {
+            reject(
+              new Error(
+                "Additional cost not found or you are not authorized to approve it",
+              ),
+            );
+            return;
+          }
+
+          const employee = Object.values(auth.users || {}).find(
+            (user) => user.id === updatedCost!.employeeId,
+          );
+
+          if (employee) {
+            notifications.actions.createNotification(
+              employee.id,
+              "Additional Cost Approved",
+              `Your AED ${updatedCost.amount.toLocaleString()} cost for "${updatedCost.description}" has been approved.`,
+              "success",
+            );
+          }
+
+          resolve(updatedCost);
+        }, 400);
+      });
+    },
+    [jobs, auth.currentUser, auth.users, notifications.actions],
+  );
+
+  const rejectJobAdditionalCost = useCallback(
+    async (jobId: string, costId: string, reason: string): Promise<JobAdditionalCost> => {
+      if (!auth.currentUser || auth.currentUser.role !== "service_provider") {
+        return Promise.reject(
+          new Error("Only service providers can reject costs"),
+        );
+      }
+
+      if (!reason.trim()) {
+        return Promise.reject(
+          new Error("Rejection reason is required to reject a cost"),
+        );
+      }
+
+      return new Promise((resolve, reject) => {
+        setTimeout(() => {
+          let updatedCost: JobAdditionalCost | undefined;
+          let updatedJob: Job | undefined;
+
+          setJobs((prev) =>
+            prev.map((job) => {
+              if (job.id !== jobId || job.assignedTo !== auth.currentUser!.id) {
+                return job;
+              }
+
+              const updatedCosts = (job.additionalCosts || []).map((cost) => {
+                if (cost.id !== costId) {
+                  return cost;
+                }
+
+                updatedCost = {
+                  ...cost,
+                  status: "rejected",
+                  rejectionReason: reason,
+                  approvedBy: undefined,
+                  approvedByName: undefined,
+                  approvedAt: undefined,
+                  updatedAt: new Date().toISOString(),
+                };
+
+                return updatedCost;
+              });
+
+              if (!updatedCost) {
+                return job;
+              }
+
+              updatedJob = {
+                ...job,
+                additionalCosts: updatedCosts,
+                updatedAt: new Date().toISOString(),
+              };
+              return updatedJob;
+            }),
+          );
+
+          if (!updatedCost || !updatedJob) {
+            reject(
+              new Error(
+                "Additional cost not found or you are not authorized to reject it",
+              ),
+            );
+            return;
+          }
+
+          const employee = Object.values(auth.users || {}).find(
+            (user) => user.id === updatedCost!.employeeId,
+          );
+
+          if (employee) {
+            notifications.actions.createNotification(
+              employee.id,
+              "Additional Cost Rejected",
+              `Your AED ${updatedCost.amount.toLocaleString()} cost for "${updatedCost.description}" was rejected.`,
+              "warning",
+            );
+          }
+
+          resolve(updatedCost);
+        }, 400);
+      });
+    },
+    [jobs, auth.currentUser, auth.users, notifications.actions],
+  );
+
+  const overrideJobCompletion = useCallback(
+    async (jobId: string, reason: string): Promise<Job> => {
+      if (!auth.currentUser || auth.currentUser.role !== "service_provider") {
+        return Promise.reject(
+          new Error("Only service providers can override completion"),
+        );
+      }
+
+      if (!reason.trim()) {
+        return Promise.reject(
+          new Error("Please provide a reason for overriding completion"),
+        );
+      }
+
+      return new Promise((resolve, reject) => {
+        setTimeout(() => {
+          let updatedJob: Job | undefined;
+
+          setJobs((prev) =>
+            prev.map((job) => {
+              if (job.id !== jobId || job.assignedTo !== auth.currentUser!.id) {
+                return job;
+              }
+
+              updatedJob = {
+                ...job,
+                completionStatus: "sp_override_approved",
+                completionApprovedBy: auth.currentUser!.id,
+                completionApprovedByName:
+                  auth.currentUser!.name ||
+                  auth.currentUser!.profile?.name ||
+                  auth.currentUser!.email ||
+                  "",
+                completionApprovedAt: new Date().toISOString(),
+                completionOverrideReason: reason,
+                completionFeedback: undefined,
+                completionRejectionReason: undefined,
+                completionRejectedAt: undefined,
+                completionRejectedBy: undefined,
+                completionRejectedByName: undefined,
+                status: "completed",
+                updatedAt: new Date().toISOString(),
+              };
+              return updatedJob;
+            }),
+          );
+
+          if (!updatedJob) {
+            reject(
+              new Error(
+                "Job not found or you are not authorized to override its completion",
+              ),
+            );
+            return;
+          }
+
+          const tenantRequest = requests.requests.find(
+            (req) => req.id === updatedJob!.requestId,
+          );
+
+          if (tenantRequest?.tenantId) {
+            notifications.actions.createNotification(
+              tenantRequest.tenantId,
+              "Job Completed",
+              `Service provider has approved "${updatedJob.title}" on your behalf.`,
+              "info",
+            );
+          }
+
+          resolve(updatedJob);
+        }, 400);
+      });
+    },
+    [jobs, auth.currentUser, notifications.actions, requests.requests],
+  );
+
+  const approveTenantJobCompletion = useCallback(
+    async (jobId: string, feedback?: string): Promise<Job> => {
+      if (!auth.currentUser || auth.currentUser.role !== "tenant") {
+        return Promise.reject(
+          new Error("Only tenants can approve job completion"),
+        );
+      }
+
+      return new Promise((resolve, reject) => {
+        setTimeout(() => {
+          let updatedJob: Job | undefined;
+
+          setJobs((prev) =>
+            prev.map((job) => {
+              if (job.id !== jobId) {
+                return job;
+              }
+
+              updatedJob = {
+                ...job,
+                completionStatus: "tenant_approved",
+                completionApprovedBy: auth.currentUser!.id,
+                completionApprovedByName:
+                  auth.currentUser!.name || auth.currentUser!.email || "",
+                completionApprovedAt: new Date().toISOString(),
+                completionFeedback: feedback,
+                completionRejectionReason: undefined,
+                completionRejectedAt: undefined,
+                completionRejectedBy: undefined,
+                completionRejectedByName: undefined,
+                status: "completed",
+                updatedAt: new Date().toISOString(),
+              };
+              return updatedJob;
+            }),
+          );
+
+          if (!updatedJob) {
+            reject(new Error("Job not found"));
+            return;
+          }
+
+          if (updatedJob.assignedTo) {
+            notifications.actions.createNotification(
+              updatedJob.assignedTo,
+              "Tenant Approved Job",
+              `${auth.currentUser!.name || "Tenant"} approved "${updatedJob.title}".`,
+              "success",
+            );
+          }
+
+          if (updatedJob.assignedToEmployeeId) {
+            notifications.actions.createNotification(
+              updatedJob.assignedToEmployeeId,
+              "Job Approved",
+              `Tenant approved "${updatedJob.title}".`,
+              "success",
+            );
+          }
+
+          resolve(updatedJob);
+        }, 400);
+      });
+    },
+    [jobs, auth.currentUser, notifications.actions],
+  );
+
+  const rejectTenantJobCompletion = useCallback(
+    async (jobId: string, reason: string): Promise<Job> => {
+      if (!auth.currentUser || auth.currentUser.role !== "tenant") {
+        return Promise.reject(
+          new Error("Only tenants can reject job completion"),
+        );
+      }
+
+      if (!reason.trim()) {
+        return Promise.reject(
+          new Error("Please provide a reason for rejecting the completion"),
+        );
+      }
+
+      return new Promise((resolve, reject) => {
+        setTimeout(() => {
+          let updatedJob: Job | undefined;
+
+          setJobs((prev) =>
+            prev.map((job) => {
+              if (job.id !== jobId) {
+                return job;
+              }
+
+              updatedJob = {
+                ...job,
+                completionStatus: undefined,
+                completionRejectionReason: reason,
+                completionRejectedBy: auth.currentUser!.id,
+                completionRejectedByName:
+                  auth.currentUser!.name || auth.currentUser!.email || "",
+                completionRejectedAt: new Date().toISOString(),
+                completionFeedback: undefined,
+                status: "in-progress",
+                updatedAt: new Date().toISOString(),
+              };
+              return updatedJob;
+            }),
+          );
+
+          if (!updatedJob) {
+            reject(new Error("Job not found"));
+            return;
+          }
+
+          if (updatedJob.assignedTo) {
+            notifications.actions.createNotification(
+              updatedJob.assignedTo,
+              "Completion Rejected",
+              `${auth.currentUser!.name || "Tenant"} requested changes for "${updatedJob.title}".`,
+              "warning",
+            );
+          }
+
+          if (updatedJob.assignedToEmployeeId) {
+            notifications.actions.createNotification(
+              updatedJob.assignedToEmployeeId,
+              "Completion Rejected",
+              `Tenant requested follow-up on "${updatedJob.title}".`,
+              "warning",
+            );
+          }
+
+          resolve(updatedJob);
+        }, 400);
+      });
+    },
+    [jobs, auth.currentUser, notifications.actions],
+  );
+
+  const submitJobEstimate = useCallback(
+    async (
+      jobId: string,
+      estimateInput: {
+        items: Array<{
+          label: string;
+          amount: number;
+          description?: string;
+          category?: JobEstimateItem["category"];
+        }>;
+        notes?: string;
+      },
+    ): Promise<Job> => {
+      if (!auth.currentUser || auth.currentUser.role !== "employee") {
+        return Promise.reject(new Error("Only employees can submit estimates"));
+      }
+
+      if (!estimateInput.items.length) {
+        return Promise.reject(new Error("At least one estimate item is required"));
+      }
+
+      const parsedItems: JobEstimateItem[] = estimateInput.items.map(
+        (item, index) => ({
+          id: `job-${jobId}-estimate-item-${Date.now()}-${index}`,
+          label: item.label || "Line item",
+          amount: Math.max(0, Number(item.amount) || 0),
+          description: item.description,
+          category: item.category,
+        }),
+      );
+
+      if (parsedItems.some((item) => item.amount <= 0)) {
+        return Promise.reject(
+          new Error("Estimate item amounts must be greater than zero"),
+        );
+      }
+
+      const subtotal = parsedItems.reduce((sum, item) => sum + item.amount, 0);
+      const now = new Date().toISOString();
+
+      return new Promise((resolve, reject) => {
+        setTimeout(() => {
+          let updatedJob: Job | undefined;
+
+          setJobs((prev) =>
+            prev.map((job) => {
+              if (
+                job.id === jobId &&
+                job.assignedToEmployeeId === auth.currentUser!.id
+              ) {
+                const existingEstimate = job.estimate;
+                const estimate: JobEstimate = {
+                  id:
+                    existingEstimate?.id ??
+                    `job-${jobId}-estimate-${Date.now()}`,
+                  jobId,
+                  createdBy: existingEstimate?.createdBy ?? auth.currentUser!.id,
+                  createdByName:
+                    existingEstimate?.createdByName ??
+                    auth.currentUser!.name ??
+                    auth.currentUser!.email ??
+                    "",
+                  createdAt: existingEstimate?.createdAt ?? now,
+                  status: "submitted",
+                  items: parsedItems,
+                  subtotal,
+                  notes: estimateInput.notes,
+                  updatedAt: now,
+                  spApprovedBy: undefined,
+                  spApprovedByName: undefined,
+                  spDecisionAt: undefined,
+                  tenantDecisionBy: undefined,
+                  tenantDecisionByName: undefined,
+                  tenantDecisionAt: undefined,
+                  rejectionReason: undefined,
+                };
+
+                updatedJob = {
+                  ...job,
+                  estimate,
+                  updatedAt: now,
+                };
+                return updatedJob;
+              }
+              return job;
+            }),
+          );
+
+          if (!updatedJob) {
+            reject(
+              new Error("Job not found or not assigned to the current employee"),
+            );
+            return;
+          }
+
+          const providerRecipient = updatedJob.assignedTo;
+          if (providerRecipient) {
+            notifications.actions.createNotification(
+              providerRecipient,
+              "Estimate Submitted",
+              `${auth.currentUser!.name || "Employee"} proposed a cost estimate for "${updatedJob.title}".`,
+              "info",
+            );
+          }
+
+          resolve(updatedJob);
+        }, 400);
+      });
+    },
+    [jobs, auth.currentUser, notifications.actions],
+  );
+
+  const reviewJobEstimateAsProvider = useCallback(
+    async (
+      jobId: string,
+      decision: "approve" | "reject",
+      reason?: string,
+    ): Promise<Job> => {
+      if (!auth.currentUser || auth.currentUser.role !== "service_provider") {
+        return Promise.reject(
+          new Error("Only service providers can review estimates"),
+        );
+      }
+
+      if (decision === "reject" && !reason?.trim()) {
+        return Promise.reject(
+          new Error("Please provide a reason when rejecting an estimate"),
+        );
+      }
+
+      return new Promise((resolve, reject) => {
+        setTimeout(() => {
+          let updatedJob: Job | undefined;
+
+          setJobs((prev) =>
+            prev.map((job) => {
+              if (job.id !== jobId || job.assignedTo !== auth.currentUser!.id) {
+                return job;
+              }
+
+              if (!job.estimate || job.estimate.status === "tenant_approved") {
+                return job;
+              }
+
+              const nextStatus: JobEstimateStatus =
+                decision === "approve" ? "sp_approved" : "sp_rejected";
+
+              updatedJob = {
+                ...job,
+                estimate: {
+                  ...job.estimate,
+                  status: nextStatus,
+                  spApprovedBy: auth.currentUser!.id,
+                  spApprovedByName:
+                    auth.currentUser!.name ||
+                    auth.currentUser!.profile?.name ||
+                    auth.currentUser!.email ||
+                    "",
+                  spDecisionAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                  tenantDecisionBy:
+                    decision === "reject" ? undefined : job.estimate.tenantDecisionBy,
+                  tenantDecisionByName:
+                    decision === "reject"
+                      ? undefined
+                      : job.estimate.tenantDecisionByName,
+                  tenantDecisionAt:
+                    decision === "reject" ? undefined : job.estimate.tenantDecisionAt,
+                  rejectionReason: decision === "reject" ? reason : undefined,
+                },
+                updatedAt: new Date().toISOString(),
+              };
+              return updatedJob;
+            }),
+          );
+
+          if (!updatedJob || !updatedJob.estimate) {
+            reject(
+              new Error(
+                "Estimate not found or you are not authorised to review it",
+              ),
+            );
+            return;
+          }
+
+          const employeeRecipient = updatedJob.assignedToEmployeeId;
+          if (employeeRecipient) {
+            notifications.actions.createNotification(
+              employeeRecipient,
+              decision === "approve" ? "Estimate Approved" : "Estimate Rejected",
+              decision === "approve"
+                ? `Your estimate for "${updatedJob.title}" has been approved.`
+                : `Your estimate for "${updatedJob.title}" was rejected.`,
+              decision === "approve" ? "success" : "warning",
+            );
+          }
+
+          if (decision === "approve" && updatedJob.requestId) {
+            const tenantId = requests.requests.find(
+              (req) => req.id === updatedJob.requestId,
+            )?.tenantId;
+            if (tenantId) {
+              notifications.actions.createNotification(
+                tenantId,
+                "Estimate Ready for Review",
+                `${auth.currentUser!.name || "Service provider"} submitted an estimate for "${updatedJob.title}".`,
+                "info",
+              );
+            }
+          }
+
+          resolve(updatedJob);
+        }, 400);
+      });
+    },
+    [jobs, auth.currentUser, notifications.actions, requests.requests],
+  );
+
+  const reviewJobEstimateAsTenant = useCallback(
+    async (
+      jobId: string,
+      decision: "approve" | "decline",
+      reason?: string,
+    ): Promise<Job> => {
+      if (!auth.currentUser || auth.currentUser.role !== "tenant") {
+        return Promise.reject(
+          new Error("Only tenants can review the estimate proposal"),
+        );
+      }
+
+      if (decision === "decline" && !reason?.trim()) {
+        return Promise.reject(
+          new Error("Please provide a reason when declining the estimate"),
+        );
+      }
+
+      return new Promise((resolve, reject) => {
+        setTimeout(() => {
+          let updatedJob: Job | undefined;
+
+          setJobs((prev) =>
+            prev.map((job) => {
+              if (job.id !== jobId || !job.estimate) {
+                return job;
+              }
+
+              if (job.estimate.status !== "sp_approved") {
+                return job;
+              }
+
+              const nextStatus: JobEstimateStatus =
+                decision === "approve" ? "tenant_approved" : "tenant_declined";
+
+              updatedJob = {
+                ...job,
+                estimate: {
+                  ...job.estimate,
+                  status: nextStatus,
+                  tenantDecisionBy: auth.currentUser!.id,
+                  tenantDecisionByName:
+                    auth.currentUser!.name || auth.currentUser!.email || "",
+                  tenantDecisionAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                  rejectionReason: decision === "decline" ? reason : job.estimate.rejectionReason,
+                },
+                updatedAt: new Date().toISOString(),
+              };
+              return updatedJob;
+            }),
+          );
+
+          if (!updatedJob || !updatedJob.estimate) {
+            reject(
+              new Error(
+                "Estimate not found or no estimate awaiting your decision",
+              ),
+            );
+            return;
+          }
+
+          const employeeRecipient = updatedJob.assignedToEmployeeId;
+          if (employeeRecipient) {
+            notifications.actions.createNotification(
+              employeeRecipient,
+              decision === "approve"
+                ? "Estimate Approved"
+                : "Estimate Declined",
+              decision === "approve"
+                ? `${auth.currentUser!.name || "Tenant"} approved the estimate for "${updatedJob.title}".`
+                : `${auth.currentUser!.name || "Tenant"} declined the estimate for "${updatedJob.title}".`,
+              decision === "approve" ? "success" : "warning",
+            );
+          }
+
+          if (updatedJob.assignedTo) {
+            notifications.actions.createNotification(
+              updatedJob.assignedTo,
+              decision === "approve"
+                ? "Tenant Approved Estimate"
+                : "Tenant Declined Estimate",
+              decision === "approve"
+                ? `${auth.currentUser!.name || "Tenant"} approved the estimate for "${updatedJob.title}".`
+                : `${auth.currentUser!.name || "Tenant"} declined the estimate for "${updatedJob.title}".`,
+              decision === "approve" ? "success" : "warning",
+            );
+          }
+
+          resolve(updatedJob);
+        }, 400);
+      });
+    },
+    [jobs, auth.currentUser, notifications.actions],
+  );
 
   const getRequestsByBuilding = useCallback(
     (buildingId: string) => {
@@ -2466,6 +4185,7 @@ export const useApp = () => {
     leases,
     buildingEmployees,
     serviceProviders,
+    providerAccessRequests,
     visitorLogs,
     ratingSummaries,
 
@@ -2560,6 +4280,7 @@ export const useApp = () => {
       registerVisitor,
       getVisitors,
       cancelVisitor,
+      createVisitorPass,
       getVisitorPasses,
       getVisitorPassesByBuilding,
       approveVisitorPass,
@@ -2586,7 +4307,18 @@ export const useApp = () => {
       updateBuilding,
       deleteBuilding,
       getBuildingEmployees,
+      getBuildingEmployeeByUserId,
+      getBuildingEmployeeScope,
       getServiceProviders,
+      getServiceProviderBuildingAssignments,
+      getServiceProvidersForBuilding,
+      assignServiceProviderToBuilding,
+      removeServiceProviderFromBuilding,
+      updateServiceProviderAssignment,
+      createProviderAccessRequest,
+      updateProviderAccessRequest,
+      approveProviderAccessRequest,
+      rejectProviderAccessRequest,
       getVisitorLogsByBuilding,
       getRatingSummaries,
       createUnit,
@@ -2615,9 +4347,31 @@ export const useApp = () => {
       updateJobStatus,
       bulkUpdateJobStatus,
       assignJob,
+      assignJobToBuildingEmployee,
       queueJobAssignment,
       promoteQueuedJobAssignment,
       updateJob,
+
+      // Employee actions - Jobs
+      acceptEmployeeJob,
+      declineEmployeeJob,
+      startEmployeeJob,
+      uploadEmployeeJobPhoto,
+      addEmployeeJobAdditionalCost,
+      completeEmployeeJob,
+      submitJobEstimate,
+
+      // Service provider actions - Jobs
+      assignEmployeeToJob,
+      approveJobAdditionalCost,
+      rejectJobAdditionalCost,
+      overrideJobCompletion,
+      reviewJobEstimateAsProvider,
+
+      // Tenant actions - Jobs
+      approveTenantJobCompletion,
+      rejectTenantJobCompletion,
+      reviewJobEstimateAsTenant,
 
       // Admin actions - Analytics
       getAnalytics,

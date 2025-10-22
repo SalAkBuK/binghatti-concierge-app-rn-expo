@@ -220,6 +220,9 @@ export default function AdminLayout() {
 
       {/* Permissions - Hidden from bottom nav (Admin accesses via More) */}
       <Tabs.Screen name="permissions" options={{ href: null }} />
+
+      {/* Service Providers - Hidden from bottom nav (Admin accesses via More) */}
+      <Tabs.Screen name="service-providers" options={{ href: null }} />
     </Tabs>
   );
 }

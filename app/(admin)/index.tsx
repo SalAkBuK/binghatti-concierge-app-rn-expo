@@ -693,7 +693,7 @@ export default function AdminDashboard() {
       >
         <HeaderBar
           title={
-            isManagement ? "Building Operations" : "Super Admin Control Center"
+            isManagement ? "Building Operations" : " Admin Control Center"
           }
           hasUnreadNotifications={hasUnreadNotifications}
           showSideMenu={showSideMenu}

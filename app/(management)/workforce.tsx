@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
@@ -39,6 +40,7 @@ export default function WorkforceManagementScreen() {
     getManagedBuildings,
     getBuildingEmployees,
     getServiceProviders,
+    getServiceProviderBuildingAssignments,
     updateBuildingEmployee,
     removeBuildingEmployee,
     addBuildingEmployee,
@@ -474,40 +476,122 @@ export default function WorkforceManagementScreen() {
         </View>
 
         <View style={styles.providersList}>
-          <Text style={styles.providersHeading}>Vendor Directory</Text>
-          {serviceProviders.map((provider) => (
-            <View key={provider.id} style={styles.providerCard}>
-              <View>
-                <Text style={styles.providerName}>{provider.name}</Text>
-                <Text style={styles.providerSpecialty}>
-                  {provider.specialty}
-                </Text>
-                <Text style={styles.providerContact}>{provider.phone}</Text>
-              </View>
-              <View style={styles.providerStats}>
-                <View style={styles.providerStatChip}>
-                  <Ionicons name="star" size={16} color="#F59E0B" />
-                  <Text style={styles.providerStatText}>
-                    {provider.rating.toFixed(1)}
-                  </Text>
-                </View>
-                <View style={styles.providerStatChip}>
-                  <Ionicons name="construct-outline" size={16} color="#2563EB" />
-                  <Text style={styles.providerStatText}>
-                    {provider.jobsCompleted} jobs
-                  </Text>
-                </View>
-                {provider.responseTimeMinutes ? (
-                  <View style={styles.providerStatChip}>
-                    <Ionicons name="flash-outline" size={16} color="#10B981" />
-                    <Text style={styles.providerStatText}>
-                      {provider.responseTimeMinutes} mins
+          <View style={styles.providersHeader}>
+            <Text style={styles.providersHeading}>Vendor Directory</Text>
+            <Text style={styles.providersSubheading}>
+              View all service providers and request access for your building
+            </Text>
+            <Text style={styles.debugText}>
+              {serviceProviders.length} service provider{serviceProviders.length !== 1 ? 's' : ''} available
+            </Text>
+          </View>
+          {serviceProviders.map((provider) => {
+            const providerAssignments = getServiceProviderBuildingAssignments?.(provider.id) ?? [];
+            const activeAssignments = providerAssignments.filter((a) => a.status === "active");
+            const assignedToSelectedBuilding = selectedBuildingId !== "all"
+              ? activeAssignments.some((a) => a.buildingId === selectedBuildingId)
+              : activeAssignments.length > 0;
+
+            return (
+              <View key={provider.id} style={styles.providerCard}>
+                <View style={styles.providerCardContent}>
+                  <View style={styles.providerInfo}>
+                    <Text style={styles.providerName} numberOfLines={2}>
+                      {provider.name}
+                    </Text>
+                    <Text style={styles.providerSpecialty} numberOfLines={1}>
+                      {provider.specialty}
+                    </Text>
+                    <Text style={styles.providerContact} numberOfLines={1}>
+                      {provider.phone}
                     </Text>
                   </View>
-                ) : null}
+                  <View style={styles.providerStats}>
+                    <View style={styles.providerStatChip}>
+                      <Ionicons name="star" size={16} color="#F59E0B" />
+                      <Text style={styles.providerStatText} numberOfLines={1}>
+                        {provider.rating.toFixed(1)}
+                      </Text>
+                    </View>
+                    <View style={styles.providerStatChip}>
+                      <Ionicons name="construct-outline" size={16} color="#2563EB" />
+                      <Text style={styles.providerStatText} numberOfLines={1}>
+                        {provider.jobsCompleted} jobs
+                      </Text>
+                    </View>
+                    <View style={[
+                      styles.providerStatChip,
+                      assignedToSelectedBuilding && styles.providerStatChipActive
+                    ]}>
+                      <Ionicons
+                        name="business"
+                        size={16}
+                        color={assignedToSelectedBuilding ? "#10B981" : "#6B7280"}
+                      />
+                      <Text
+                        style={[
+                          styles.providerStatText,
+                          assignedToSelectedBuilding && styles.providerStatTextActive
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {activeAssignments.length} {activeAssignments.length === 1 ? "building" : "buildings"}
+                      </Text>
+                    </View>
+                  </View>
+                  {activeAssignments.length > 0 && (
+                    <View style={styles.assignedBuildingsRow}>
+                      <Text style={styles.assignedLabel}>Assigned to:</Text>
+                      <View style={styles.assignedBuildingTags}>
+                        {activeAssignments.map((assignment) => {
+                          const building = buildingMap.get(assignment.buildingId);
+                          return (
+                            <View key={assignment.id} style={styles.buildingTag}>
+                              <Text style={styles.buildingTagText}>
+                                {building?.name || "Unknown"}
+                              </Text>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  )}
+                  <TouchableOpacity
+                    style={[
+                      styles.requestAccessButton,
+                      assignedToSelectedBuilding && selectedBuildingId !== "all" && styles.requestAccessButtonDisabled
+                    ]}
+                    onPress={() => {
+                      if (selectedBuildingId === "all") {
+                        alert("Please select a specific building to request provider access");
+                        return;
+                      }
+                      router.push({
+                        pathname: "/(modals)/request-provider-access",
+                        params: {
+                          providerId: provider.id,
+                          buildingId: selectedBuildingId,
+                        },
+                      });
+                    }}
+                    disabled={assignedToSelectedBuilding && selectedBuildingId !== "all"}
+                  >
+                    <Ionicons
+                      name={assignedToSelectedBuilding && selectedBuildingId !== "all" ? "checkmark-circle" : "add-circle-outline"}
+                      size={18}
+                      color={assignedToSelectedBuilding && selectedBuildingId !== "all" ? "#10B981" : "#2563EB"}
+                    />
+                    <Text style={[
+                      styles.requestAccessButtonText,
+                      assignedToSelectedBuilding && selectedBuildingId !== "all" && styles.requestAccessButtonTextDisabled
+                    ]}>
+                      {assignedToSelectedBuilding && selectedBuildingId !== "all" ? "Already Assigned" : "Request Access"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-            </View>
-          ))}
+            );
+          })}
         </View>
 
         <View style={{ height: 48 }} />
@@ -872,10 +956,52 @@ const styles = StyleSheet.create({
     marginTop: 30,
     gap: 12,
   },
+  providersHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
   providersHeading: {
     fontSize: 16,
     fontWeight: "700",
     color: "#111827",
+    marginBottom: 4,
+  },
+  providersSubheading: {
+    fontSize: 13,
+    color: "#6B7280",
+  },
+  debugText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#2563EB",
+    marginTop: 8,
+  },
+  requestAccessButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#EFF6FF",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: "#DBEAFE",
+  },
+  requestAccessButtonDisabled: {
+    backgroundColor: "#F3F4F6",
+    borderColor: "#E5E7EB",
+  },
+  requestAccessButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#2563EB",
+  },
+  requestAccessButtonTextDisabled: {
+    color: "#10B981",
   },
   providerCard: {
     backgroundColor: "#FFFFFF",
@@ -883,9 +1009,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E5E7EB",
     padding: 16,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+  },
+  providerCardContent: {
+    gap: 12,
+  },
+  providerInfo: {
+    gap: 4,
   },
   providerName: {
     fontSize: 15,
@@ -899,11 +1028,12 @@ const styles = StyleSheet.create({
   providerContact: {
     fontSize: 12,
     color: "#4B5563",
-    marginTop: 4,
   },
   providerStats: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
+    alignItems: "center",
   },
   providerStatChip: {
     flexDirection: "row",
@@ -913,11 +1043,45 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 10,
+    flexShrink: 1,
+  },
+  providerStatChipActive: {
+    backgroundColor: "#D1FAE5",
   },
   providerStatText: {
     fontSize: 12,
     fontWeight: "600",
     color: "#4B5563",
+    flexShrink: 1,
+  },
+  providerStatTextActive: {
+    color: "#059669",
+  },
+  assignedBuildingsRow: {
+    gap: 8,
+  },
+  assignedLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#6B7280",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  assignedBuildingTags: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  buildingTag: {
+    backgroundColor: "#DBEAFE",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  buildingTagText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#1E40AF",
   },
   emptyState: {
     backgroundColor: "#FFFFFF",

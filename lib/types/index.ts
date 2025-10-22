@@ -10,7 +10,8 @@ export interface User {
     | "super_admin"
     | "management"
     | "service_provider"
-    | "employee";
+    | "employee"
+    | "building_employee";
   phone?: string;
   profile?: UserProfile;
   createdAt: string;
@@ -27,6 +28,13 @@ export interface UserProfile {
   avatar?: string;
   buildingId?: string;
   managedBuildingIds?: string[];
+  serviceProviderId?: string;
+  serviceProviderName?: string;
+  jobTitle?: string;
+  specialties?: string[];
+  certifications?: string[];
+  rating?: number;
+  completedJobs?: number;
 }
 
 export interface Attachment {
@@ -416,10 +424,14 @@ export interface Rating {
   buildingEmployeeId?: string;
   rating: number; // 1-5
   reviewText: string;
+  jobId?: string;
+  tenantName?: string;
   attachments: string[];
   responseText?: string;
+  response?: string;
   responseDate?: string;
   respondedBy?: string;
+  comment?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -440,6 +452,8 @@ export interface Building {
   status: "active" | "maintenance" | "inactive";
   createdAt: string;
   updatedAt: string;
+  location?: string;
+  units?: BuildingUnit[];
 }
 
 export interface UnitType {
@@ -530,6 +544,21 @@ export interface VisitorPass {
   updatedAt: string;
 }
 
+export interface CreateVisitorPassDTO {
+  buildingId: string;
+  tenantId?: string;
+  unitNumber?: string;
+  type: VisitorPassType;
+  name: string;
+  company?: string;
+  contactPhone?: string;
+  contactEmail?: string;
+  scheduledStart: string;
+  scheduledEnd: string;
+  hostName?: string;
+  notes?: string;
+}
+
 export type AmenityRule = {
   id: string;
   label: string;
@@ -562,6 +591,7 @@ export interface BuildingAmenityConfig {
 export interface BuildingEmployee {
   id: string;
   buildingId: string;
+  userId?: string;
   name: string;
   role: string;
   phone: string;
@@ -580,6 +610,54 @@ export interface ServiceProviderProfile {
   rating: number;
   jobsCompleted: number;
   responseTimeMinutes?: number;
+}
+
+export interface ServiceProviderEmployee {
+  id: string;
+  serviceProviderId: string; // Link to parent Service Provider company
+  userId?: string; // Link to User account if they can login (for future employee portal)
+  name: string;
+  phone: string;
+  email?: string;
+  specialty: string; // e.g., "Plumber", "Electrician", "HVAC Technician"
+  status: "active" | "inactive" | "on_leave";
+  rating?: number;
+  jobsCompleted?: number;
+  certifications?: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ServiceProviderBuildingAssignment {
+  id: string;
+  serviceProviderId: string;
+  buildingId: string;
+  assignedBy: string; // admin/management user ID
+  assignedByName?: string;
+  assignedAt: string;
+  status: "active" | "suspended" | "revoked";
+  specialties: string[]; // What services they offer at this building
+  notes?: string;
+  revokedAt?: string;
+  revokedBy?: string;
+  revokedReason?: string;
+}
+
+export interface ProviderAccessRequest {
+  id: string;
+  serviceProviderId: string;
+  serviceProviderName: string;
+  buildingId: string;
+  buildingName: string;
+  requestedBy: string; // manager user ID
+  requestedByName: string;
+  requestedAt: string;
+  status: "pending" | "approved" | "rejected";
+  notes?: string;
+  reviewedBy?: string;
+  reviewedByName?: string;
+  reviewedAt?: string;
+  rejectionReason?: string;
 }
 
 export interface VisitorLog {
@@ -618,8 +696,20 @@ export interface Job {
   buildingId: string;
   buildingName?: string;
   unitNumber?: string;
-  assignedTo?: string; // Service provider ID
-  assignedToName?: string;
+  assignedTo?: string; // Service Provider Company ID
+  assignedToName?: string; // Service Provider Company Name
+  assignedToEmployeeId?: string; // Service Provider Employee ID (who will execute the job)
+  assignedToEmployeeName?: string; // Service Provider Employee Name
+  assignmentTargetType?: "service_provider" | "building_employee";
+  assignedBuildingEmployeeId?: string;
+  assignedBuildingEmployeeName?: string;
+  offerStatus?: "offered" | "accepted" | "declined"; // Track SP company acceptance of job offer
+  offeredAt?: string; // Timestamp when job was offered to SP
+  acceptedAt?: string; // Timestamp when SP accepted the job
+  declinedAt?: string; // Timestamp when SP declined the job
+  declinedBy?: string;
+  declineReason?: string;
+  acceptanceNotes?: string;
   createdBy: string; // Admin or system
   attachments: string[];
   notes: JobNote[];
@@ -631,6 +721,26 @@ export interface Job {
   complianceChecklist?: JobComplianceChecklistItem[];
   assignmentHistory: JobAssignmentRecord[];
   assignmentQueue?: JobAssignmentRecord[];
+  // Employee workflow fields
+  completionPhotos?: JobCompletionPhoto[]; // Photos uploaded by employee when completing job
+  additionalCosts?: JobAdditionalCost[]; // Additional costs added by employee (requires SP approval)
+  completionStatus?: "awaiting_tenant_approval" | "tenant_approved" | "sp_override_approved"; // Completion approval workflow
+  completionApprovedBy?: string; // User ID who approved completion (tenant or SP)
+  completionApprovedByName?: string; // Name of who approved
+  completionApprovedAt?: string; // Timestamp of approval
+  completionNotes?: string; // Employee or provider completion notes
+  completionFeedback?: string; // Optional feedback provided by tenant on approval
+  completionOverrideReason?: string; // Reason if SP overrode completion without tenant approval
+  completionRejectionReason?: string; // Tenant supplied reason when rejecting completion
+  completionRejectedBy?: string; // User ID who rejected completion
+  completionRejectedByName?: string; // Name of user who rejected completion
+  completionRejectedAt?: string; // Timestamp of rejection
+  startedAt?: string; // When employee started the job
+  startedBy?: string; // Employee ID who started the job
+  tenantName?: string;
+  tenantPhone?: string;
+  paidDate?: string;
+  estimate?: JobEstimate;
   createdAt: string;
   updatedAt: string;
 }
@@ -664,14 +774,158 @@ export interface JobComplianceChecklistItem {
 
 export interface JobAssignmentRecord {
   id: string;
-  serviceProviderId: string;
-  serviceProviderName: string;
+  targetType: "service_provider" | "building_employee";
+  serviceProviderId?: string;
+  serviceProviderName?: string;
+  buildingEmployeeId?: string;
+  buildingEmployeeName?: string;
   assignedBy: string;
   assignedByName?: string;
   assignedAt: string;
   scheduledDate?: string;
   status: "pending" | "accepted" | "declined" | "completed";
   notes?: string;
+}
+
+// Employee-specific job types
+
+export interface JobCompletionPhoto {
+  id: string;
+  jobId: string;
+  employeeId: string;
+  employeeName: string;
+  uri: string;
+  thumbnailUri?: string;
+  caption?: string;
+  uploadedAt: string;
+}
+
+export interface JobAdditionalCost {
+  id: string;
+  jobId: string;
+  employeeId: string;
+  employeeName: string;
+  amount: number;
+  description: string;
+  category?: "parts" | "labor" | "materials" | "other";
+  status: "pending" | "approved" | "rejected";
+  proofPhotoUri?: string;
+  approvedBy?: string;
+  approvedByName?: string;
+  approvedAt?: string;
+  rejectionReason?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type JobAssignmentAction = "accept" | "decline" | "start" | "complete" | "upload_photo" | "add_cost";
+
+export type JobEstimateStatus =
+  | "draft"
+  | "submitted"
+  | "sp_approved"
+  | "sp_rejected"
+  | "tenant_approved"
+  | "tenant_declined";
+
+export interface JobEstimateItem {
+  id: string;
+  label: string;
+  amount: number;
+  description?: string;
+  category?: "labor" | "parts" | "fees" | "materials" | "other";
+}
+
+export interface JobEstimate {
+  id: string;
+  jobId: string;
+  createdBy: string;
+  createdByName?: string;
+  createdAt: string;
+  status: JobEstimateStatus;
+  items: JobEstimateItem[];
+  subtotal: number;
+  notes?: string;
+  updatedAt: string;
+  spApprovedBy?: string;
+  spApprovedByName?: string;
+  spDecisionAt?: string;
+  tenantDecisionBy?: string;
+  tenantDecisionByName?: string;
+  tenantDecisionAt?: string;
+  rejectionReason?: string;
+}
+
+export interface EmployeeMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderRole: "service_provider" | "employee";
+  recipientId: string;
+  recipientName: string;
+  recipientRole: "service_provider" | "employee";
+  jobId?: string;
+  subject?: string;
+  body: string;
+  attachments?: string[];
+  read: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EmployeeEarnings {
+  employeeId: string;
+  employeeName: string;
+  totalEarnings: number;
+  earningsThisMonth: number;
+  earningsThisWeek: number;
+  pendingPayments: number;
+  completedJobsCount: number;
+  completedJobsThisMonth: number;
+  averageJobValue: number;
+  averageRating: number;
+  onTimeCompletionRate: number; // percentage
+  jobHistory: EmployeeJobEarning[];
+  updatedAt: string;
+}
+
+export interface EmployeeJobEarning {
+  id: string;
+  jobId: string;
+  jobTitle: string;
+  buildingName: string;
+  completedDate: string;
+  earning: number;
+  rating?: number;
+  bonus?: number;
+  deductions?: number;
+  netEarning: number;
+}
+
+export interface EmployeeSkill {
+  id: string;
+  employeeId: string;
+  skillName: string;
+  proficiencyLevel: "beginner" | "intermediate" | "advanced" | "expert";
+  yearsOfExperience?: number;
+  certifications?: EmployeeCertification[];
+  lastUsedDate?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EmployeeCertification {
+  id: string;
+  employeeId: string;
+  certificationName: string;
+  issuingAuthority: string;
+  issueDate: string;
+  expiryDate?: string;
+  certificateUrl?: string; // URL to uploaded certificate image
+  verificationUrl?: string;
+  status: "active" | "expired" | "pending_renewal";
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Analytics {
@@ -775,6 +1029,9 @@ export interface CreateJobDTO {
   buildingId: string;
   unitNumber?: string;
   assignedTo?: string;
+  assignmentTargetType?: Job["assignmentTargetType"];
+  assignedBuildingEmployeeId?: string;
+  assignedBuildingEmployeeName?: string;
   attachments?: string[];
   estimatedCost?: number;
   scheduledDate?: string;
@@ -788,11 +1045,32 @@ export interface UpdateJobDTO {
   status?: Job["status"];
   priority?: RequestPriority;
   assignedTo?: string;
+  assignedToEmployeeId?: string;
+  assignedToEmployeeName?: string;
+  assignmentTargetType?: Job["assignmentTargetType"];
+  assignedBuildingEmployeeId?: string;
+  assignedBuildingEmployeeName?: string;
   attachments?: string[];
   estimatedCost?: number;
   actualCost?: number;
   scheduledDate?: string;
   completedDate?: string;
+  tenantName?: string;
+  tenantPhone?: string;
+  acceptanceNotes?: string;
+  declineReason?: string;
+  completionStatus?: Job["completionStatus"];
+  completionApprovedBy?: string;
+  completionApprovedByName?: string;
+  completionApprovedAt?: string;
+  completionNotes?: string;
+  completionFeedback?: string;
+  completionOverrideReason?: string;
+  completionRejectionReason?: string;
+  completionRejectedBy?: string;
+  completionRejectedByName?: string;
+  completionRejectedAt?: string;
+  paidDate?: string;
   costBreakdown?: CreateJobCostItemDTO[];
   complianceChecklist?: UpdateJobChecklistItemDTO[];
 }
@@ -858,6 +1136,123 @@ export interface UpdateUnitTypeDTO {
   areaSqFt?: number;
   baseRent?: number;
   amenities?: string[];
+}
+
+// Employee DTOs
+
+export interface AssignJobToEmployeeDTO {
+  jobId: string;
+  employeeId: string;
+  scheduledDate?: string;
+  notes?: string;
+}
+
+export interface AcceptJobAssignmentDTO {
+  jobId: string;
+  employeeId: string;
+  notes?: string;
+}
+
+export interface DeclineJobAssignmentDTO {
+  jobId: string;
+  employeeId: string;
+  reason: string;
+}
+
+export interface StartJobDTO {
+  jobId: string;
+  employeeId: string;
+  startTime?: string;
+  notes?: string;
+}
+
+export interface UploadJobPhotoDTO {
+  jobId: string;
+  employeeId: string;
+  uri: string;
+  caption?: string;
+}
+
+export interface AddJobAdditionalCostDTO {
+  jobId: string;
+  employeeId: string;
+  amount: number;
+  description: string;
+  category?: "parts" | "labor" | "materials" | "other";
+  proofPhotoUri?: string;
+}
+
+export interface ApproveAdditionalCostDTO {
+  costId: string;
+  jobId: string;
+  approvedBy: string;
+  notes?: string;
+}
+
+export interface RejectAdditionalCostDTO {
+  costId: string;
+  jobId: string;
+  rejectedBy: string;
+  reason: string;
+}
+
+export interface CompleteJobDTO {
+  jobId: string;
+  employeeId: string;
+  completionNotes?: string;
+  completionPhotos?: string[];
+}
+
+export interface ApproveJobCompletionDTO {
+  jobId: string;
+  approvedBy: string; // Tenant or SP user ID
+  approvedByName: string;
+  notes?: string;
+}
+
+export interface OverrideJobCompletionDTO {
+  jobId: string;
+  overriddenBy: string; // SP user ID
+  overriddenByName: string;
+  reason: string;
+}
+
+export interface SendEmployeeMessageDTO {
+  senderId: string;
+  senderName: string;
+  senderRole: "service_provider" | "employee";
+  recipientId: string;
+  recipientName: string;
+  recipientRole: "service_provider" | "employee";
+  jobId?: string;
+  subject?: string;
+  body: string;
+  attachments?: string[];
+}
+
+export interface AddEmployeeSkillDTO {
+  employeeId: string;
+  skillName: string;
+  proficiencyLevel: "beginner" | "intermediate" | "advanced" | "expert";
+  yearsOfExperience?: number;
+}
+
+export interface AddEmployeeCertificationDTO {
+  employeeId: string;
+  certificationName: string;
+  issuingAuthority: string;
+  issueDate: string;
+  expiryDate?: string;
+  certificateUrl?: string;
+}
+
+export interface UpdateServiceProviderEmployeeDTO {
+  name?: string;
+  phone?: string;
+  email?: string;
+  specialty?: string;
+  status?: "active" | "inactive" | "on_leave";
+  certifications?: string[];
 }
 
 // Error types
