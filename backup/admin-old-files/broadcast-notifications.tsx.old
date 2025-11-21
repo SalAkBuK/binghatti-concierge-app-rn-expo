@@ -1,0 +1,1345 @@
+import { Ionicons } from "@expo/vector-icons";
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+  useWindowDimensions,
+  Switch,
+} from "react-native";
+import Animated, { FadeInDown } from "react-native-reanimated";
+import { SafeAreaView } from "react-native-safe-area-context";
+
+import { HeaderBar } from "../../components/ui/HeaderBar";
+import { SideMenu } from "../../components/ui/SideMenu";
+import { useApp } from "../../lib/context/connected-app-provider";
+import { BroadcastApiService } from "../../lib/services/api/broadcast";
+import type {
+  Announcement,
+  AnnouncementTemplate,
+  AnnouncementPriority,
+  AnnouncementTargetType,
+  Building,
+} from "../../lib/types";
+import { filterNotificationsByUser } from "../../lib/utils/helpers";
+
+const ADMIN_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
+
+const broadcastService = new BroadcastApiService();
+
+type TabType = "announcements" | "templates";
+
+export default function BroadcastNotificationsScreen() {
+  const { currentUser, notifications, actions } = useApp();
+  const { getBuildings } = actions;
+  const { width } = useWindowDimensions();
+  const [showSideMenu, setShowSideMenu] = useState(false);
+  const [selectedTab, setSelectedTab] = useState<TabType>("announcements");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  // Announcements state
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [selectedAnnouncement, setSelectedAnnouncement] = useState<Announcement | null>(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [showComposeModal, setShowComposeModal] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+
+  // Templates state
+  const [templates, setTemplates] = useState<AnnouncementTemplate[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState<AnnouncementTemplate | null>(null);
+
+  // Form state
+  const [formData, setFormData] = useState({
+    title: "",
+    body: "",
+    priority: "normal" as AnnouncementPriority,
+    targetType: "all_tenants" as AnnouncementTargetType,
+    targetBuildingIds: [] as string[],
+    scheduledFor: "",
+    templateId: "",
+  });
+
+  // Preview state
+  const [showPreview, setShowPreview] = useState(false);
+  const [recipientPreview, setRecipientPreview] = useState<{
+    count: number;
+    buildings: { buildingId: string; buildingName: string; recipientCount: number }[];
+  } | null>(null);
+
+  const pagePadding = Math.max(16, Math.min(28, width * 0.05));
+  const isCompact = width < 768;
+
+  const allBuildings = useMemo(() => getBuildings(), [getBuildings]);
+
+  // Load data
+  useEffect(() => {
+    if (selectedTab === "announcements") {
+      loadAnnouncements();
+    } else {
+      loadTemplates();
+    }
+  }, [selectedTab, statusFilter]);
+
+  const loadAnnouncements = async () => {
+    setLoading(true);
+    try {
+      const response = await broadcastService.getAnnouncements(
+        statusFilter !== "all" ? statusFilter : undefined
+      );
+      if (response.success && response.data) {
+        setAnnouncements(response.data);
+      }
+    } catch (error) {
+      console.error("Failed to load announcements:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadTemplates = async () => {
+    setLoading(true);
+    try {
+      const response = await broadcastService.getTemplates();
+      if (response.success && response.data) {
+        setTemplates(response.data);
+      }
+    } catch (error) {
+      console.error("Failed to load templates:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUseTemplate = (template: AnnouncementTemplate) => {
+    setFormData({
+      ...formData,
+      title: template.title,
+      body: template.body,
+      priority: template.priority,
+      targetType: template.targetType,
+      templateId: template.id,
+    });
+    setShowComposeModal(true);
+  };
+
+  const handlePreviewRecipients = async () => {
+    try {
+      const response = await broadcastService.previewRecipients({
+        title: formData.title,
+        body: formData.body,
+        priority: formData.priority,
+        targetType: formData.targetType,
+        targetBuildingIds: formData.targetBuildingIds,
+        createdBy: currentUser?.id || "admin",
+      });
+
+      if (response.success && response.data) {
+        setRecipientPreview(response.data);
+        setShowPreview(true);
+      }
+    } catch (error) {
+      Alert.alert("Error", "Failed to preview recipients");
+    }
+  };
+
+  const handleSendAnnouncement = async () => {
+    if (!formData.title || !formData.body) {
+      Alert.alert("Error", "Please fill in title and message");
+      return;
+    }
+
+    try {
+      // Create announcement
+      const createResponse = await broadcastService.createAnnouncement({
+        title: formData.title,
+        body: formData.body,
+        priority: formData.priority,
+        targetType: formData.targetType,
+        targetBuildingIds: formData.targetBuildingIds,
+        scheduledFor: formData.scheduledFor || undefined,
+        templateId: formData.templateId || undefined,
+        createdBy: currentUser?.id || "admin",
+        createdByName: currentUser?.name || "Admin",
+      });
+
+      if (createResponse.success && createResponse.data) {
+        // Send immediately if not scheduled
+        if (!formData.scheduledFor) {
+          const sendResponse = await broadcastService.sendAnnouncement(createResponse.data.id);
+          if (sendResponse.success) {
+            Alert.alert(
+              "Success",
+              `Announcement sent to ${sendResponse.data?.recipientCount || 0} recipients`
+            );
+          }
+        } else {
+          Alert.alert("Success", "Announcement scheduled successfully");
+        }
+
+        setShowComposeModal(false);
+        resetForm();
+        loadAnnouncements();
+      }
+    } catch (error) {
+      Alert.alert("Error", "Failed to send announcement");
+    }
+  };
+
+  const handleCancelScheduled = async (announcementId: string) => {
+    Alert.alert(
+      "Cancel Scheduled Announcement",
+      "Are you sure you want to cancel this scheduled announcement?",
+      [
+        { text: "No", style: "cancel" },
+        {
+          text: "Yes, Cancel",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const response = await broadcastService.cancelScheduledAnnouncement(announcementId);
+              if (response.success) {
+                Alert.alert("Success", "Scheduled announcement cancelled");
+                setShowDetailModal(false);
+                loadAnnouncements();
+              }
+            } catch (error) {
+              Alert.alert("Error", "Failed to cancel announcement");
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const resetForm = () => {
+    setFormData({
+      title: "",
+      body: "",
+      priority: "normal",
+      targetType: "all_tenants",
+      targetBuildingIds: [],
+      scheduledFor: "",
+      templateId: "",
+    });
+    setRecipientPreview(null);
+    setShowPreview(false);
+  };
+
+  const filteredAnnouncements = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return announcements.filter((announcement) => {
+      if (!query) return true;
+      const haystack = `${announcement.title} ${announcement.body}`.toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [announcements, searchQuery]);
+
+  const filteredTemplates = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return templates.filter((template) => {
+      if (!query) return true;
+      const haystack = `${template.name} ${template.title} ${template.category}`.toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [templates, searchQuery]);
+
+  const userNotifications = filterNotificationsByUser(notifications || [], currentUser?.id);
+  const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
+
+  const getPriorityColor = (priority: AnnouncementPriority) => {
+    const colorMap = {
+      low: "#4CAF50",
+      normal: "#2196F3",
+      high: "#FF9800",
+      urgent: "#F44336",
+    };
+    return colorMap[priority] || "#2196F3";
+  };
+
+  const getStatusColor = (status: Announcement["status"]) => {
+    const colorMap = {
+      draft: "#9E9E9E",
+      scheduled: "#FF9800",
+      sent: "#4CAF50",
+      cancelled: "#757575",
+    };
+    return colorMap[status] || "#9E9E9E";
+  };
+
+  return (
+    <SafeAreaView style={styles.container} edges={["top"]}>
+      <HeaderBar
+        title="Broadcast Notifications"
+        onMenuPress={() => setShowSideMenu(true)}
+        onNotificationPress={() => {}}
+        hasUnreadNotifications={hasUnreadNotifications}
+        notificationRoute={ADMIN_NOTIFICATION_ROUTE}
+      />
+
+      {showSideMenu && <SideMenu isVisible={showSideMenu} onClose={() => setShowSideMenu(false)} />}
+
+      <ScrollView style={styles.scrollView}>
+        <View style={[styles.content, { padding: pagePadding }]}>
+          {/* Tabs */}
+          <View style={styles.tabs}>
+            <TouchableOpacity
+              style={[styles.tab, selectedTab === "announcements" && styles.activeTab]}
+              onPress={() => setSelectedTab("announcements")}
+            >
+              <Ionicons
+                name="megaphone-outline"
+                size={20}
+                color={selectedTab === "announcements" ? "#00796B" : "#666"}
+              />
+              <Text
+                style={[styles.tabText, selectedTab === "announcements" && styles.activeTabText]}
+              >
+                Announcements
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tab, selectedTab === "templates" && styles.activeTab]}
+              onPress={() => setSelectedTab("templates")}
+            >
+              <Ionicons
+                name="document-text-outline"
+                size={20}
+                color={selectedTab === "templates" ? "#00796B" : "#666"}
+              />
+              <Text style={[styles.tabText, selectedTab === "templates" && styles.activeTabText]}>
+                Templates
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Filters */}
+          <View style={styles.filters}>
+            {selectedTab === "announcements" && (
+              <View style={styles.filterItem}>
+                <Text style={styles.filterLabel}>Status:</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  {["all", "draft", "scheduled", "sent", "cancelled"].map((status) => (
+                    <TouchableOpacity
+                      key={status}
+                      style={[
+                        styles.filterChip,
+                        statusFilter === status && styles.activeFilterChip,
+                      ]}
+                      onPress={() => setStatusFilter(status)}
+                    >
+                      <Text
+                        style={[
+                          styles.filterChipText,
+                          statusFilter === status && styles.activeFilterChipText,
+                        ]}
+                      >
+                        {status.charAt(0).toUpperCase() + status.slice(1)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+
+            {/* Search */}
+            <View style={styles.searchContainer}>
+              <Ionicons name="search" size={20} color="#999" />
+              <TextInput
+                style={styles.searchInput}
+                placeholder={`Search ${selectedTab}...`}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholderTextColor="#999"
+              />
+            </View>
+
+            {/* Compose Button */}
+            <TouchableOpacity
+              style={styles.composeButton}
+              onPress={() => setShowComposeModal(true)}
+            >
+              <Ionicons name="create-outline" size={20} color="#fff" />
+              <Text style={styles.composeButtonText}>Compose Announcement</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Content */}
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#00796B" />
+            </View>
+          ) : selectedTab === "announcements" ? (
+            <View style={styles.listContainer}>
+              {filteredAnnouncements.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="megaphone-outline" size={64} color="#ccc" />
+                  <Text style={styles.emptyStateText}>No announcements found</Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={filteredAnnouncements}
+                  keyExtractor={(item) => item.id}
+                  renderItem={({ item, index }) => (
+                    <Animated.View entering={FadeInDown.delay(index * 50)} style={styles.card}>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setSelectedAnnouncement(item);
+                          setShowDetailModal(true);
+                        }}
+                      >
+                        <View style={styles.cardHeader}>
+                          <View style={styles.cardHeaderLeft}>
+                            <View
+                              style={[
+                                styles.priorityIndicator,
+                                { backgroundColor: getPriorityColor(item.priority) },
+                              ]}
+                            />
+                            <View style={styles.cardHeaderText}>
+                              <Text style={styles.cardTitle}>{item.title}</Text>
+                              <Text style={styles.cardSubtitle}>
+                                {item.targetType === "all_tenants"
+                                  ? "All Tenants"
+                                  : item.targetType === "building"
+                                    ? `${item.targetBuildingIds?.length || 0} Building(s)`
+                                    : item.targetType}
+                              </Text>
+                            </View>
+                          </View>
+                          <View
+                            style={[
+                              styles.statusBadge,
+                              { backgroundColor: getStatusColor(item.status) },
+                            ]}
+                          >
+                            <Text style={styles.statusBadgeText}>
+                              {item.status.toUpperCase()}
+                            </Text>
+                          </View>
+                        </View>
+
+                        <Text style={styles.cardDescription} numberOfLines={2}>
+                          {item.body}
+                        </Text>
+
+                        <View style={styles.cardFooter}>
+                          {item.sentAt && (
+                            <View style={styles.footerItem}>
+                              <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
+                              <Text style={styles.footerText}>
+                                Sent {new Date(item.sentAt).toLocaleDateString()}
+                              </Text>
+                            </View>
+                          )}
+                          {item.scheduledFor && !item.sentAt && (
+                            <View style={styles.footerItem}>
+                              <Ionicons name="time-outline" size={16} color="#FF9800" />
+                              <Text style={styles.footerText}>
+                                Scheduled {new Date(item.scheduledFor).toLocaleString()}
+                              </Text>
+                            </View>
+                          )}
+                          {item.recipientCount !== undefined && (
+                            <View style={styles.footerItem}>
+                              <Ionicons name="people-outline" size={16} color="#666" />
+                              <Text style={styles.footerText}>
+                                {item.recipientCount} recipient{item.recipientCount !== 1 ? "s" : ""}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+
+                        {item.deliveryStats && item.status === "sent" && (
+                          <View style={styles.statsRow}>
+                            <View style={styles.statItem}>
+                              <Text style={styles.statLabel}>Delivered</Text>
+                              <Text style={styles.statValue}>{item.deliveryStats.delivered}</Text>
+                            </View>
+                            <View style={styles.statItem}>
+                              <Text style={styles.statLabel}>Read</Text>
+                              <Text style={styles.statValue}>{item.deliveryStats.read}</Text>
+                            </View>
+                            <View style={styles.statItem}>
+                              <Text style={styles.statLabel}>Failed</Text>
+                              <Text style={[styles.statValue, styles.failedText]}>
+                                {item.deliveryStats.failed}
+                              </Text>
+                            </View>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    </Animated.View>
+                  )}
+                  scrollEnabled={false}
+                />
+              )}
+            </View>
+          ) : (
+            <View style={styles.listContainer}>
+              {filteredTemplates.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="document-text-outline" size={64} color="#ccc" />
+                  <Text style={styles.emptyStateText}>No templates found</Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={filteredTemplates}
+                  keyExtractor={(item) => item.id}
+                  renderItem={({ item, index }) => (
+                    <Animated.View entering={FadeInDown.delay(index * 50)} style={styles.card}>
+                      <View style={styles.cardHeader}>
+                        <View style={styles.cardHeaderText}>
+                          <Text style={styles.cardTitle}>{item.name}</Text>
+                          <Text style={styles.cardSubtitle}>
+                            {item.category.charAt(0).toUpperCase() + item.category.slice(1)}
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.useButton}
+                          onPress={() => handleUseTemplate(item)}
+                        >
+                          <Ionicons name="document-outline" size={18} color="#00796B" />
+                          <Text style={styles.useButtonText}>Use</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      <Text style={styles.templateTitle}>{item.title}</Text>
+                      <Text style={styles.cardDescription} numberOfLines={3}>
+                        {item.body}
+                      </Text>
+
+                      <View style={styles.templateFooter}>
+                        <View style={styles.footerItem}>
+                          <Ionicons name="flash-outline" size={16} color="#666" />
+                          <Text style={styles.footerText}>
+                            {item.priority.toUpperCase()} priority
+                          </Text>
+                        </View>
+                        <View style={styles.footerItem}>
+                          <Ionicons name="repeat-outline" size={16} color="#666" />
+                          <Text style={styles.footerText}>Used {item.usageCount} times</Text>
+                        </View>
+                      </View>
+                    </Animated.View>
+                  )}
+                  scrollEnabled={false}
+                />
+              )}
+            </View>
+          )}
+        </View>
+      </ScrollView>
+
+      {/* Detail Modal */}
+      {selectedAnnouncement && (
+        <Modal
+          visible={showDetailModal}
+          animationType="slide"
+          transparent
+          onRequestClose={() => setShowDetailModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, isCompact && styles.modalContentCompact]}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Announcement Details</Text>
+                <TouchableOpacity onPress={() => setShowDetailModal(false)}>
+                  <Ionicons name="close" size={24} color="#333" />
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={styles.modalBody}>
+                <View
+                  style={[
+                    styles.statusBadgeLarge,
+                    { backgroundColor: getStatusColor(selectedAnnouncement.status) },
+                  ]}
+                >
+                  <Text style={styles.statusBadgeLargeText}>
+                    {selectedAnnouncement.status.toUpperCase()}
+                  </Text>
+                </View>
+
+                <Text style={styles.detailLabel}>Title</Text>
+                <Text style={styles.detailValue}>{selectedAnnouncement.title}</Text>
+
+                <Text style={styles.detailLabel}>Message</Text>
+                <Text style={styles.detailValue}>{selectedAnnouncement.body}</Text>
+
+                <Text style={styles.detailLabel}>Priority</Text>
+                <View style={styles.priorityRow}>
+                  <View
+                    style={[
+                      styles.priorityDot,
+                      { backgroundColor: getPriorityColor(selectedAnnouncement.priority) },
+                    ]}
+                  />
+                  <Text style={styles.detailValue}>
+                    {selectedAnnouncement.priority.toUpperCase()}
+                  </Text>
+                </View>
+
+                <Text style={styles.detailLabel}>Target Audience</Text>
+                <Text style={styles.detailValue}>
+                  {selectedAnnouncement.targetType === "all_tenants"
+                    ? "All Tenants"
+                    : selectedAnnouncement.targetType === "building"
+                      ? `${selectedAnnouncement.targetBuildingIds?.length || 0} Building(s)`
+                      : selectedAnnouncement.targetType}
+                </Text>
+
+                {selectedAnnouncement.sentAt && (
+                  <>
+                    <Text style={styles.detailLabel}>Sent At</Text>
+                    <Text style={styles.detailValue}>
+                      {new Date(selectedAnnouncement.sentAt).toLocaleString()}
+                    </Text>
+                  </>
+                )}
+
+                {selectedAnnouncement.scheduledFor && !selectedAnnouncement.sentAt && (
+                  <>
+                    <Text style={styles.detailLabel}>Scheduled For</Text>
+                    <Text style={styles.detailValue}>
+                      {new Date(selectedAnnouncement.scheduledFor).toLocaleString()}
+                    </Text>
+                  </>
+                )}
+
+                {selectedAnnouncement.deliveryStats && (
+                  <>
+                    <Text style={styles.detailLabel}>Delivery Statistics</Text>
+                    <View style={styles.deliveryStatsGrid}>
+                      <View style={styles.deliveryStatCard}>
+                        <Text style={styles.deliveryStatValue}>
+                          {selectedAnnouncement.deliveryStats.sent}
+                        </Text>
+                        <Text style={styles.deliveryStatLabel}>Sent</Text>
+                      </View>
+                      <View style={styles.deliveryStatCard}>
+                        <Text style={styles.deliveryStatValue}>
+                          {selectedAnnouncement.deliveryStats.delivered}
+                        </Text>
+                        <Text style={styles.deliveryStatLabel}>Delivered</Text>
+                      </View>
+                      <View style={styles.deliveryStatCard}>
+                        <Text style={styles.deliveryStatValue}>
+                          {selectedAnnouncement.deliveryStats.read}
+                        </Text>
+                        <Text style={styles.deliveryStatLabel}>Read</Text>
+                      </View>
+                      <View style={styles.deliveryStatCard}>
+                        <Text style={[styles.deliveryStatValue, styles.failedText]}>
+                          {selectedAnnouncement.deliveryStats.failed}
+                        </Text>
+                        <Text style={styles.deliveryStatLabel}>Failed</Text>
+                      </View>
+                    </View>
+                  </>
+                )}
+
+                {selectedAnnouncement.status === "scheduled" && (
+                  <View style={styles.actionButtons}>
+                    <TouchableOpacity
+                      style={[styles.actionButton, styles.cancelButton]}
+                      onPress={() => handleCancelScheduled(selectedAnnouncement.id)}
+                    >
+                      <Ionicons name="close-circle" size={20} color="#fff" />
+                      <Text style={styles.actionButtonText}>Cancel Schedule</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Compose Modal */}
+      <Modal
+        visible={showComposeModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowComposeModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, isCompact && styles.modalContentCompact]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Compose Announcement</Text>
+              <TouchableOpacity onPress={() => setShowComposeModal(false)}>
+                <Ionicons name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.modalBody}>
+              <Text style={styles.formLabel}>Title *</Text>
+              <TextInput
+                style={styles.formInput}
+                value={formData.title}
+                onChangeText={(text) => setFormData({ ...formData, title: text })}
+                placeholder="Enter announcement title..."
+                placeholderTextColor="#999"
+              />
+
+              <Text style={styles.formLabel}>Message *</Text>
+              <TextInput
+                style={[styles.formInput, styles.formTextArea]}
+                value={formData.body}
+                onChangeText={(text) => setFormData({ ...formData, body: text })}
+                placeholder="Enter your message..."
+                placeholderTextColor="#999"
+                multiline
+                numberOfLines={6}
+              />
+
+              <Text style={styles.formLabel}>Priority</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                {(["low", "normal", "high", "urgent"] as AnnouncementPriority[]).map(
+                  (priority) => (
+                    <TouchableOpacity
+                      key={priority}
+                      style={[
+                        styles.filterChip,
+                        formData.priority === priority && styles.activeFilterChip,
+                      ]}
+                      onPress={() => setFormData({ ...formData, priority })}
+                    >
+                      <Text
+                        style={[
+                          styles.filterChipText,
+                          formData.priority === priority && styles.activeFilterChipText,
+                        ]}
+                      >
+                        {priority.toUpperCase()}
+                      </Text>
+                    </TouchableOpacity>
+                  )
+                )}
+              </ScrollView>
+
+              <Text style={styles.formLabel}>Target Audience</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                {[
+                  { value: "all_tenants", label: "All Tenants" },
+                  { value: "building", label: "Specific Buildings" },
+                ].map((option) => (
+                  <TouchableOpacity
+                    key={option.value}
+                    style={[
+                      styles.filterChip,
+                      formData.targetType === option.value && styles.activeFilterChip,
+                    ]}
+                    onPress={() =>
+                      setFormData({
+                        ...formData,
+                        targetType: option.value as AnnouncementTargetType,
+                      })
+                    }
+                  >
+                    <Text
+                      style={[
+                        styles.filterChipText,
+                        formData.targetType === option.value && styles.activeFilterChipText,
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              {formData.targetType === "building" && (
+                <>
+                  <Text style={styles.formLabel}>Select Buildings</Text>
+                  <View style={styles.buildingList}>
+                    {allBuildings.map((building) => (
+                      <TouchableOpacity
+                        key={building.id}
+                        style={[
+                          styles.buildingItem,
+                          formData.targetBuildingIds.includes(building.id) &&
+                            styles.buildingItemSelected,
+                        ]}
+                        onPress={() => {
+                          const isSelected = formData.targetBuildingIds.includes(building.id);
+                          setFormData({
+                            ...formData,
+                            targetBuildingIds: isSelected
+                              ? formData.targetBuildingIds.filter((id) => id !== building.id)
+                              : [...formData.targetBuildingIds, building.id],
+                          });
+                        }}
+                      >
+                        <Ionicons
+                          name={
+                            formData.targetBuildingIds.includes(building.id)
+                              ? "checkbox"
+                              : "square-outline"
+                          }
+                          size={24}
+                          color={
+                            formData.targetBuildingIds.includes(building.id)
+                              ? "#00796B"
+                              : "#999"
+                          }
+                        />
+                        <Text style={styles.buildingItemText}>{building.name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </>
+              )}
+
+              {recipientPreview && showPreview && (
+                <View style={styles.previewContainer}>
+                  <Text style={styles.previewTitle}>
+                    📊 {recipientPreview.count} Total Recipients
+                  </Text>
+                  {recipientPreview.buildings.map((building) => (
+                    <View key={building.buildingId} style={styles.previewRow}>
+                      <Text style={styles.previewBuildingName}>{building.buildingName}</Text>
+                      <Text style={styles.previewCount}>
+                        {building.recipientCount} recipients
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              <View style={styles.buttonRow}>
+                <TouchableOpacity style={styles.previewButton} onPress={handlePreviewRecipients}>
+                  <Ionicons name="eye-outline" size={20} color="#00796B" />
+                  <Text style={styles.previewButtonText}>Preview</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.submitButton} onPress={handleSendAnnouncement}>
+                  <Ionicons name="send" size={20} color="#fff" />
+                  <Text style={styles.submitButtonText}>Send Now</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#f5f5f5",
+  },
+  scrollView: {
+    flex: 1,
+  },
+  content: {
+    paddingBottom: 24,
+  },
+  tabs: {
+    flexDirection: "row",
+    marginBottom: 16,
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    padding: 4,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  tab: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+    gap: 8,
+  },
+  activeTab: {
+    backgroundColor: "#E0F2F1",
+  },
+  tabText: {
+    fontSize: 14,
+    color: "#666",
+    fontWeight: "500",
+  },
+  activeTabText: {
+    color: "#00796B",
+    fontWeight: "600",
+  },
+  filters: {
+    marginBottom: 16,
+    gap: 12,
+  },
+  filterItem: {
+    gap: 8,
+  },
+  filterLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+  },
+  filterChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: "#ddd",
+  },
+  activeFilterChip: {
+    backgroundColor: "#00796B",
+    borderColor: "#00796B",
+  },
+  filterChipText: {
+    fontSize: 14,
+    color: "#666",
+    fontWeight: "500",
+  },
+  activeFilterChipText: {
+    color: "#fff",
+  },
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+      },
+      android: {
+        elevation: 1,
+      },
+    }),
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: "#333",
+  },
+  composeButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#00796B",
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    gap: 8,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
+  },
+  composeButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  loadingContainer: {
+    paddingVertical: 48,
+    alignItems: "center",
+  },
+  listContainer: {
+    gap: 12,
+  },
+  emptyState: {
+    paddingVertical: 48,
+    alignItems: "center",
+  },
+  emptyStateText: {
+    fontSize: 16,
+    color: "#999",
+    marginTop: 16,
+  },
+  card: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 12,
+  },
+  cardHeaderLeft: {
+    flexDirection: "row",
+    flex: 1,
+    gap: 12,
+    alignItems: "center",
+  },
+  priorityIndicator: {
+    width: 4,
+    height: 48,
+    borderRadius: 2,
+  },
+  cardHeaderText: {
+    flex: 1,
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 4,
+  },
+  cardSubtitle: {
+    fontSize: 14,
+    color: "#666",
+  },
+  statusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statusBadgeText: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#fff",
+  },
+  cardDescription: {
+    fontSize: 14,
+    color: "#666",
+    marginBottom: 12,
+    lineHeight: 20,
+  },
+  cardFooter: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  footerItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  footerText: {
+    fontSize: 12,
+    color: "#666",
+  },
+  statsRow: {
+    flexDirection: "row",
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#f0f0f0",
+    gap: 16,
+  },
+  statItem: {
+    flex: 1,
+    alignItems: "center",
+  },
+  statLabel: {
+    fontSize: 11,
+    color: "#999",
+    marginBottom: 4,
+  },
+  statValue: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#333",
+  },
+  failedText: {
+    color: "#F44336",
+  },
+  templateTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#00796B",
+    marginBottom: 8,
+  },
+  templateFooter: {
+    flexDirection: "row",
+    gap: 16,
+    marginTop: 8,
+  },
+  useButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: "#E0F2F1",
+    borderRadius: 16,
+  },
+  useButtonText: {
+    fontSize: 12,
+    color: "#00796B",
+    fontWeight: "600",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 16,
+  },
+  modalContent: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    width: "100%",
+    maxWidth: 600,
+    maxHeight: "90%",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
+  },
+  modalContentCompact: {
+    maxWidth: "100%",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#333",
+  },
+  modalBody: {
+    padding: 20,
+  },
+  statusBadgeLarge: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    alignSelf: "flex-start",
+    marginBottom: 16,
+  },
+  statusBadgeLargeText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#fff",
+  },
+  detailLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#666",
+    marginTop: 16,
+    marginBottom: 4,
+    textTransform: "uppercase",
+  },
+  detailValue: {
+    fontSize: 16,
+    color: "#333",
+  },
+  priorityRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  priorityDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  deliveryStatsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    marginTop: 8,
+  },
+  deliveryStatCard: {
+    flex: 1,
+    minWidth: 80,
+    backgroundColor: "#f5f5f5",
+    borderRadius: 8,
+    padding: 12,
+    alignItems: "center",
+  },
+  deliveryStatValue: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#333",
+    marginBottom: 4,
+  },
+  deliveryStatLabel: {
+    fontSize: 12,
+    color: "#666",
+  },
+  actionButtons: {
+    gap: 12,
+    marginTop: 24,
+  },
+  actionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 8,
+  },
+  cancelButton: {
+    backgroundColor: "#F44336",
+  },
+  actionButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  formLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  formInput: {
+    backgroundColor: "#f5f5f5",
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    color: "#333",
+    borderWidth: 1,
+    borderColor: "#ddd",
+  },
+  formTextArea: {
+    height: 120,
+    textAlignVertical: "top",
+  },
+  buildingList: {
+    gap: 8,
+  },
+  buildingItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: "#f5f5f5",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#ddd",
+  },
+  buildingItemSelected: {
+    backgroundColor: "#E0F2F1",
+    borderColor: "#00796B",
+  },
+  buildingItemText: {
+    flex: 1,
+    fontSize: 16,
+    color: "#333",
+  },
+  previewContainer: {
+    backgroundColor: "#E3F2FD",
+    borderRadius: 8,
+    padding: 16,
+    marginTop: 16,
+  },
+  previewTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#1976D2",
+    marginBottom: 12,
+  },
+  previewRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#BBDEFB",
+  },
+  previewBuildingName: {
+    fontSize: 14,
+    color: "#1976D2",
+  },
+  previewCount: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1976D2",
+  },
+  buttonRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 24,
+  },
+  previewButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 8,
+    backgroundColor: "#fff",
+    borderWidth: 2,
+    borderColor: "#00796B",
+  },
+  previewButtonText: {
+    color: "#00796B",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  submitButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 8,
+    backgroundColor: "#00796B",
+  },
+  submitButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+});

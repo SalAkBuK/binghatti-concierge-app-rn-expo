@@ -23,6 +23,7 @@ import { TrendDelta } from "../../components/admin/TrendDelta";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
+import type { NotificationType } from "../../lib/types";
 import {
   filterNotificationsByUser,
   formatDate,
@@ -30,6 +31,64 @@ import {
 } from "../../lib/utils/helpers";
 
 const MANAGEMENT_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
+
+const BROADCAST_TYPES: {
+  label: string;
+  value: NotificationType;
+  icon: React.ComponentProps<typeof Ionicons>["name"];
+  description: string;
+}[] = [
+  {
+    label: "Info",
+    value: "info",
+    icon: "information-circle",
+    description: "General updates and reminders",
+  },
+  {
+    label: "Success",
+    value: "success",
+    icon: "checkmark-circle",
+    description: "Positive news or confirmations",
+  },
+  {
+    label: "Warning",
+    value: "warning",
+    icon: "alert-circle",
+    description: "Cautionary notices requiring attention",
+  },
+  {
+    label: "Alert",
+    value: "error",
+    icon: "warning",
+    description: "Critical incidents or outages",
+  },
+];
+
+const BROADCAST_TYPE_VISUALS: Record<
+  NotificationType,
+  { background: string; border: string; text: string }
+> = {
+  info: {
+    background: "#DBEAFE",
+    border: "#BFDBFE",
+    text: "#1D4ED8",
+  },
+  success: {
+    background: "#DCFCE7",
+    border: "#BBF7D0",
+    text: "#15803D",
+  },
+  warning: {
+    background: "#FEF3C7",
+    border: "#FDE68A",
+    text: "#B45309",
+  },
+  error: {
+    background: "#FEE2E2",
+    border: "#FCA5A5",
+    text: "#B91C1C",
+  },
+};
 
 export default function ManagementDashboard() {
   const { currentUser, notifications, actions } = useApp();
@@ -39,6 +98,8 @@ export default function ManagementDashboard() {
   const [showBroadcastModal, setShowBroadcastModal] = useState(false);
   const [broadcastTitle, setBroadcastTitle] = useState("");
   const [broadcastMessage, setBroadcastMessage] = useState("");
+  const [broadcastType, setBroadcastType] =
+    useState<NotificationType>("info");
   const [isSending, setIsSending] = useState(false);
 
   const isTablet = width >= 768;
@@ -48,7 +109,7 @@ export default function ManagementDashboard() {
   const pagePadding = isLargeDesktop ? 48 : isDesktop ? 40 : isTablet ? 28 : 20;
   const sectionSpacing = isDesktop ? 28 : isTablet ? 22 : 16;
 
-  const analytics = actions.getAnalytics();
+  const analytics = useMemo(() => actions.getAnalytics(), [actions]);
 
   const userNotifications = filterNotificationsByUser(
     notifications || [],
@@ -56,26 +117,62 @@ export default function ManagementDashboard() {
   );
   const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
 
-  const managedBuildings = actions.getManagedBuildings?.() ?? [];
-  const [selectedBuildingId, setSelectedBuildingId] = useState<string | null>(
-    managedBuildings.length ? managedBuildings[0].id : null,
+  // Memoize managed buildings - compute once on mount
+  const managedBuildings = useMemo(
+    () => actions.getManagedBuildings?.() ?? [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
   );
 
+  // Lazy initialization - only runs once on mount
+  const [selectedBuildingId, setSelectedBuildingId] = useState<string | null>(() => {
+    const buildings = actions.getManagedBuildings?.() ?? [];
+    return buildings.length > 0 ? buildings[0].id : null;
+  });
+
+  // Lazy initialization for broadcast scope
+  const [broadcastScope, setBroadcastScope] = useState<string[]>(() => {
+    const buildings = actions.getManagedBuildings?.() ?? [];
+    const firstId = buildings.length > 0 ? buildings[0].id : null;
+    return firstId ? [firstId] : [];
+  });
+
+  const allManagedBuildingIds = useMemo(
+    () => managedBuildings.map((building) => building.id),
+    [managedBuildings],
+  );
+
+  // Sync state only when building count changes (not on every render)
   useEffect(() => {
-    if (!managedBuildings.length) {
-      if (selectedBuildingId !== null) {
-        setSelectedBuildingId(null);
-      }
+    if (managedBuildings.length === 0) {
+      setSelectedBuildingId((prev) => (prev !== null ? null : prev));
+      setBroadcastScope((prev) => (prev.length > 0 ? [] : prev));
       return;
     }
 
-    if (
-      !selectedBuildingId ||
-      !managedBuildings.some((building) => building.id === selectedBuildingId)
-    ) {
-      setSelectedBuildingId(managedBuildings[0].id);
-    }
-  }, [managedBuildings, selectedBuildingId]);
+    setSelectedBuildingId((prev) => {
+      if (!prev || !managedBuildings.some((b) => b.id === prev)) {
+        return managedBuildings[0].id;
+      }
+      return prev;
+    });
+
+    setBroadcastScope((prev) => {
+      const valid = prev.filter((id) =>
+        managedBuildings.some((b) => b.id === id),
+      );
+      if (valid.length > 0) {
+        // Only return new array if content actually changed
+        if (valid.length === prev.length && valid.every((id, i) => id === prev[i])) {
+          return prev;
+        }
+        return valid;
+      }
+      const fallbackId = managedBuildings[0]?.id;
+      return fallbackId ? [fallbackId] : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [managedBuildings.length]);
 
   const managementSnapshot = selectedBuildingId
     ? actions.getManagementAnalytics(selectedBuildingId)
@@ -126,6 +223,43 @@ export default function ManagementDashboard() {
       },
     ];
   }, [managementSnapshot]);
+
+  const broadcastSelectedBuildings = useMemo(
+    () =>
+      managedBuildings.filter((building) =>
+        broadcastScope.includes(building.id),
+      ),
+    [broadcastScope, managedBuildings],
+  );
+
+  const broadcastAudienceLabel = useMemo(() => {
+    if (!broadcastSelectedBuildings.length) {
+      return "no buildings selected";
+    }
+    if (broadcastSelectedBuildings.length === managedBuildings.length) {
+      return "all managed buildings";
+    }
+    return broadcastSelectedBuildings.map((building) => building.name).join(", ");
+  }, [broadcastSelectedBuildings, managedBuildings.length]);
+
+  const isBroadcastAudienceEmpty = broadcastScope.length === 0;
+  const isAllBroadcastSelected =
+    broadcastScope.length > 0 &&
+    broadcastScope.length === allManagedBuildingIds.length;
+
+  const broadcastVisual = BROADCAST_TYPE_VISUALS[broadcastType];
+  const broadcastTypeIcon =
+    BROADCAST_TYPES.find((option) => option.value === broadcastType)?.icon ||
+    "information-circle";
+  const broadcastPreviewTitle =
+    broadcastTitle.trim() || "Notification title";
+  const broadcastPreviewMessage =
+    broadcastMessage.trim() || "Message preview will appear here.";
+  const isBroadcastActionDisabled =
+    !broadcastTitle.trim() ||
+    !broadcastMessage.trim() ||
+    isBroadcastAudienceEmpty ||
+    isSending;
 
   const requestsToday = managementSnapshot?.lists.requestsToday ?? [];
   const upcomingBookings = managementSnapshot?.lists.upcomingBookings ?? [];
@@ -192,28 +326,63 @@ export default function ManagementDashboard() {
     setTimeout(() => setRefreshing(false), 1000);
   };
 
+  const toggleBroadcastBuilding = (buildingId: string) => {
+    setBroadcastScope((prev) => {
+      if (prev.includes(buildingId)) {
+        return prev.filter((id) => id !== buildingId);
+      }
+      return [...prev, buildingId];
+    });
+  };
+
+  const toggleSelectAllBroadcast = () => {
+    setBroadcastScope((prev) =>
+      prev.length === allManagedBuildingIds.length
+        ? []
+        : [...allManagedBuildingIds],
+    );
+  };
+
   const handleBroadcast = async () => {
     if (!broadcastTitle.trim() || !broadcastMessage.trim()) {
       Alert.alert("Validation Error", "Please enter both title and message");
       return;
     }
 
-    if (!selectedBuildingId) {
-      Alert.alert("Error", "Please select a building first");
+    if (isBroadcastAudienceEmpty) {
+      Alert.alert(
+        "Select audience",
+        "Choose at least one building for this announcement.",
+      );
       return;
     }
 
     setIsSending(true);
     try {
-      // Broadcast to all tenants in the selected building
+      const audienceNames = broadcastSelectedBuildings.map(
+        (building) => building.name,
+      );
+      const audienceTag =
+        audienceNames.length === managedBuildings.length
+          ? "All Managed Buildings"
+          : audienceNames.join(", ");
+      const finalMessage = audienceNames.length
+        ? `[${audienceTag}] ${broadcastMessage.trim()}`
+        : broadcastMessage.trim();
+
       await actions.broadcastNotificationToRole?.(
         "tenant",
         broadcastTitle.trim(),
-        broadcastMessage.trim(),
-        "info"
+        finalMessage,
+        broadcastType,
       );
 
-      Alert.alert("Success", "Notification sent to all tenants");
+      Alert.alert(
+        "Success",
+        audienceNames.length
+          ? `Notification queued for tenants in ${audienceTag}.`
+          : "Notification queued for tenants.",
+      );
       setBroadcastTitle("");
       setBroadcastMessage("");
       setShowBroadcastModal(false);
@@ -706,9 +875,156 @@ export default function ManagementDashboard() {
 
           <ScrollView style={styles.broadcastModalContent}>
             <Text style={styles.broadcastModalSubtitle}>
-              Send a notification to all tenants in{" "}
-              {managedBuildings.find((b) => b.id === selectedBuildingId)?.name || "the selected building"}
+              {broadcastSelectedBuildings.length
+                ? `Notifying tenants in ${broadcastAudienceLabel}.`
+                : "Select one or more buildings to target your message."}
             </Text>
+
+            {managedBuildings.length ? (
+              <View style={styles.broadcastAudienceSection}>
+                <Text style={styles.broadcastLabel}>Audience</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.broadcastChipsRow}
+                >
+                  {managedBuildings.map((building) => {
+                    const isSelected = broadcastScope.includes(building.id);
+                    return (
+                      <TouchableOpacity
+                        key={building.id}
+                        style={[
+                          styles.broadcastAudienceChip,
+                          isSelected && styles.broadcastAudienceChipActive,
+                        ]}
+                        onPress={() => toggleBroadcastBuilding(building.id)}
+                      >
+                        <Text
+                          style={[
+                            styles.broadcastAudienceChipText,
+                            isSelected && styles.broadcastAudienceChipTextActive,
+                          ]}
+                        >
+                          {building.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                  {managedBuildings.length > 1 && (
+                    <TouchableOpacity
+                      style={[
+                        styles.broadcastAudienceChip,
+                        isAllBroadcastSelected &&
+                          styles.broadcastAudienceChipActive,
+                      ]}
+                      onPress={toggleSelectAllBroadcast}
+                    >
+                      <Text
+                        style={[
+                          styles.broadcastAudienceChipText,
+                          isAllBroadcastSelected &&
+                            styles.broadcastAudienceChipTextActive,
+                        ]}
+                      >
+                        {isAllBroadcastSelected ? "Clear all" : "Select all"}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </ScrollView>
+              </View>
+            ) : (
+              <Text style={styles.broadcastEmptyStateText}>
+                No buildings assigned to your profile yet.
+              </Text>
+            )}
+
+            <View style={styles.broadcastTypeSection}>
+              <Text style={styles.broadcastLabel}>Notification Type</Text>
+              <View style={styles.broadcastTypeRow}>
+                {BROADCAST_TYPES.map((option) => {
+                  const isActive = option.value === broadcastType;
+                  return (
+                    <TouchableOpacity
+                      key={option.value}
+                      style={[
+                        styles.broadcastTypeOption,
+                        isActive && styles.broadcastTypeOptionActive,
+                      ]}
+                      onPress={() => setBroadcastType(option.value)}
+                    >
+                      <Ionicons
+                        name={option.icon}
+                        size={18}
+                        color={isActive ? "#FFFFFF" : "#2563EB"}
+                      />
+                      <View style={styles.broadcastTypeTextWrapper}>
+                        <Text
+                          style={[
+                            styles.broadcastTypeTitle,
+                            isActive && styles.broadcastTypeTitleActive,
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.broadcastTypeDescription,
+                            isActive && styles.broadcastTypeDescriptionActive,
+                          ]}
+                          numberOfLines={2}
+                        >
+                          {option.description}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            <View
+              style={[
+                styles.broadcastPreview,
+                {
+                  backgroundColor: broadcastVisual.background,
+                  borderColor: broadcastVisual.border,
+                },
+              ]}
+            >
+              <Ionicons
+                name={broadcastTypeIcon}
+                size={24}
+                color={broadcastVisual.text}
+              />
+              <View style={styles.broadcastPreviewTextWrapper}>
+                <Text
+                  style={[
+                    styles.broadcastPreviewTitle,
+                    { color: broadcastVisual.text },
+                  ]}
+                >
+                  {broadcastPreviewTitle}
+                </Text>
+                <Text
+                  style={[
+                    styles.broadcastPreviewBody,
+                    { color: broadcastVisual.text },
+                  ]}
+                >
+                  {broadcastPreviewMessage}
+                </Text>
+                <Text
+                  style={[
+                    styles.broadcastPreviewAudience,
+                    { color: broadcastVisual.text },
+                  ]}
+                >
+                  {broadcastSelectedBuildings.length
+                    ? `Audience: ${broadcastAudienceLabel}`
+                    : "Audience pending selection"}
+                </Text>
+              </View>
+            </View>
 
             <View style={styles.broadcastInputGroup}>
               <Text style={styles.broadcastLabel}>Title</Text>
@@ -741,11 +1057,10 @@ export default function ManagementDashboard() {
             <TouchableOpacity
               style={[
                 styles.broadcastSendButton,
-                (!broadcastTitle.trim() || !broadcastMessage.trim() || isSending) &&
-                  styles.broadcastSendButtonDisabled,
+                isBroadcastActionDisabled && styles.broadcastSendButtonDisabled,
               ]}
               onPress={handleBroadcast}
-              disabled={!broadcastTitle.trim() || !broadcastMessage.trim() || isSending}
+              disabled={isBroadcastActionDisabled}
             >
               {isSending ? (
                 <Text style={styles.broadcastSendButtonText}>Sending...</Text>
@@ -1116,6 +1431,107 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#6B7280",
     marginBottom: 24,
+  },
+  broadcastAudienceSection: {
+    marginBottom: 24,
+    gap: 12,
+  },
+  broadcastChipsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  broadcastAudienceChip: {
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: "#CBD5F5",
+    backgroundColor: "#F8FAFC",
+  },
+  broadcastAudienceChipActive: {
+    backgroundColor: "#1D4ED8",
+    borderColor: "#1D4ED8",
+  },
+  broadcastAudienceChipText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#1E293B",
+  },
+  broadcastAudienceChipTextActive: {
+    color: "#FFFFFF",
+  },
+  broadcastEmptyStateText: {
+    fontSize: 13,
+    color: "#9CA3AF",
+    marginBottom: 16,
+  },
+  broadcastTypeSection: {
+    marginBottom: 24,
+    gap: 12,
+  },
+  broadcastTypeRow: {
+    flexDirection: "column",
+    gap: 12,
+  },
+  broadcastTypeOption: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#DBEAFE",
+    backgroundColor: "#EFF6FF",
+  },
+  broadcastTypeOptionActive: {
+    backgroundColor: "#1D4ED8",
+    borderColor: "#1D4ED8",
+  },
+  broadcastTypeTextWrapper: {
+    flex: 1,
+    gap: 4,
+  },
+  broadcastTypeTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1D4ED8",
+  },
+  broadcastTypeTitleActive: {
+    color: "#FFFFFF",
+  },
+  broadcastTypeDescription: {
+    fontSize: 12,
+    color: "#1E3A8A",
+  },
+  broadcastTypeDescriptionActive: {
+    color: "#E0E7FF",
+  },
+  broadcastPreview: {
+    flexDirection: "row",
+    gap: 12,
+    alignItems: "flex-start",
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 24,
+  },
+  broadcastPreviewTextWrapper: {
+    flex: 1,
+    gap: 4,
+  },
+  broadcastPreviewTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  broadcastPreviewBody: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  broadcastPreviewAudience: {
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: 4,
   },
   broadcastInputGroup: {
     marginBottom: 20,

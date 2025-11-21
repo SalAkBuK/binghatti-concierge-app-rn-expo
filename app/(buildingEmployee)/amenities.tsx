@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useMemo, useState } from "react";
+import { router } from "expo-router";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   RefreshControl,
   ScrollView,
@@ -19,10 +20,16 @@ import type { AmenityBooking, BookingStatus } from "../../lib/types";
 type BookingFilter = "all" | BookingStatus;
 
 export default function BuildingEmployeeAmenitiesScreen() {
-  const { currentUser, notifications, actions } = useApp();
+  const { isAuthenticated, currentUser, notifications, actions } = useApp();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<BookingFilter>("all");
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.replace("/auth" as any);
+    }
+  }, [isAuthenticated]);
 
   const buildingEmployee = useMemo(() => {
     if (!currentUser) return null;
@@ -78,7 +85,11 @@ export default function BuildingEmployeeAmenitiesScreen() {
     })} · ${booking.slotTimeStart} - ${booking.slotTimeEnd}`;
   };
 
-  if (!currentUser || currentUser.role !== "building_employee") {
+  if (!isAuthenticated || !currentUser) {
+    return null;
+  }
+
+  if (currentUser.role !== "building_employee") {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.emptyState}>

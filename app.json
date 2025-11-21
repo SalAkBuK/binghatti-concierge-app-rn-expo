@@ -9,7 +9,8 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.codefier.towerdesk"
     },
     "android": {
       "adaptiveIcon": {
@@ -20,7 +21,10 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.codefier.towerdesk"
+      "package": "com.codefier.towerdesk",
+      "permissions": [
+        "WAKE_LOCK"
+      ]
     },
     "web": {
       "output": "static",
@@ -42,6 +46,10 @@
       ],
       "expo-secure-store",
       "expo-web-browser"
+    ],
+    "assetBundlePatterns": [
+      "assets/**/*",
+      "node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/*"
     ],
     "experiments": {
       "typedRoutes": true,

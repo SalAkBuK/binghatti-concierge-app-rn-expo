@@ -1,14 +1,25 @@
 import { Ionicons } from "@expo/vector-icons";
-import React from "react";
+import { router } from "expo-router";
+import React, { useEffect } from "react";
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useApp } from "../../lib/context/connected-app-provider";
 
 export default function BuildingEmployeeProfileScreen() {
-  const { currentUser, actions } = useApp();
+  const { isAuthenticated, currentUser, actions } = useApp();
 
-  if (!currentUser || currentUser.role !== "building_employee") {
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.replace("/auth" as any);
+    }
+  }, [isAuthenticated]);
+
+  if (!isAuthenticated || !currentUser) {
+    return null;
+  }
+
+  if (currentUser.role !== "building_employee") {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.card}>
@@ -37,7 +48,9 @@ export default function BuildingEmployeeProfileScreen() {
         onPress: async () => {
           try {
             await actions.logout?.();
+            router.replace("/auth" as any);
           } catch (error) {
+            console.error("Failed to sign out building employee:", error);
             Alert.alert("Error", "Unable to sign out right now. Please try again.");
           }
         },

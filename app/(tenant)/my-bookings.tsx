@@ -98,6 +98,7 @@ export default function MyBookingsScreen() {
               await actions.cancelBooking(booking.id, "Cancelled by user");
               Alert.alert("Success", "Booking cancelled successfully");
             } catch (error) {
+              console.error("Failed to cancel booking:", error);
               Alert.alert("Error", "Failed to cancel booking");
             }
           },

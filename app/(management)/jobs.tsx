@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Modal,
@@ -45,11 +45,12 @@ export default function JobsScreen() {
   const isAdmin =
     currentUser?.role === "admin" || currentUser?.role === "super_admin";
   const isManagement = currentUser?.role === "management";
-  const managedBuildingIds = isManagement
-    ? actions.getManagedBuildingIds?.() ?? []
-    : [];
+  const managedBuildingIds = useMemo(
+    () => (isManagement ? actions.getManagedBuildingIds?.() ?? [] : []),
+    [actions, isManagement],
+  );
 
-  const allJobs = actions.getJobs();
+  const allJobs = useMemo(() => actions.getJobs(), [actions]);
 
   const scopedJobs = useMemo(() => {
     if (!isManagement) return allJobs;
@@ -117,12 +118,19 @@ export default function JobsScreen() {
     [currentUser],
   );
 
-  // Handle deep linking from requests screen
+  // Track if we've already handled the deep link param
+  const handledDeepLinkRef = useRef<string | null>(null);
+
+  // Handle deep linking from requests screen - only once per jobId
   useEffect(() => {
     if (params.jobId && typeof params.jobId === "string") {
-      const job = allJobs.find((j) => j.id === params.jobId);
-      if (job) {
-        setSelectedJob(job);
+      // Only handle if we haven't already processed this jobId
+      if (handledDeepLinkRef.current !== params.jobId) {
+        const job = allJobs.find((j) => j.id === params.jobId);
+        if (job) {
+          handledDeepLinkRef.current = params.jobId;
+          setSelectedJob(job);
+        }
       }
     }
   }, [params.jobId, allJobs]);
@@ -144,10 +152,12 @@ export default function JobsScreen() {
 
     setIsAssigning(true);
     try {
-      await actions.assignJob(selectedJob.id, providerId);
-      Alert.alert("Success", "Job assigned successfully to service provider");
+      await actions.assignJob(selectedJob.id, { serviceProviderId: providerId });
+      // Close both modals first
       setShowAssignModal(false);
       setSelectedJob(null);
+      // Then show success message
+      Alert.alert("Success", "Job assigned successfully to service provider");
     } catch (error) {
       const errorMessage = getUserErrorMessage(error);
       Alert.alert("Assignment failed", errorMessage);
@@ -169,9 +179,11 @@ export default function JobsScreen() {
     setIsAssigning(true);
     try {
       await actions.assignJobToBuildingEmployee(selectedJob.id, employeeId);
-      Alert.alert("Success", "Job assigned successfully to building employee");
+      // Close both modals first
       setShowAssignModal(false);
       setSelectedJob(null);
+      // Then show success message
+      Alert.alert("Success", "Job assigned successfully to building employee");
     } catch (error) {
       const errorMessage = getUserErrorMessage(error);
       Alert.alert("Assignment failed", errorMessage);
@@ -439,7 +451,8 @@ export default function JobsScreen() {
                         <Text style={styles.completedBannerTitle}>Job Completed</Text>
                         <Text style={styles.completedBannerText}>
                           This job has been marked as completed and cannot be modified.
-                          {selectedJob.completedAt && ` Completed on ${new Date(selectedJob.completedAt).toLocaleDateString()}`}
+                          {selectedJob.completedDate &&
+                            ` Completed on ${new Date(selectedJob.completedDate).toLocaleDateString()}`}
                         </Text>
                       </View>
                     </View>

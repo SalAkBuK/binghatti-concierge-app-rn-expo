@@ -254,6 +254,128 @@ Secure storage keys are defined in `STORAGE_KEYS` constant:
 - **Console Stripping**: Production builds remove console.log (except error/warn)
 - **Memory Settings**: Increased Node memory (`--max-old-space-size=4096`)
 
+## Claude Code Tool Usage (Windows Environment)
+
+**Platform**: Windows (win32) - Use Windows-specific commands and paths
+
+### Essential Tools & When to Use Them
+
+1. **File Operations - Use Specialized Tools, NOT Bash**
+   ```
+   ✅ CORRECT: Use Read tool          ❌ WRONG: Bash("cat file.ts")
+   ✅ CORRECT: Use Glob tool           ❌ WRONG: Bash("find . -name '*.ts'")
+   ✅ CORRECT: Use Grep tool           ❌ WRONG: Bash("grep 'pattern' files")
+   ✅ CORRECT: Use Edit tool           ❌ WRONG: Bash("sed -i 's/old/new/' file")
+   ✅ CORRECT: Use Write tool          ❌ WRONG: Bash("echo 'content' > file")
+   ```
+
+2. **Glob - File Pattern Matching**
+   - Use for finding files by name/pattern
+   - Faster than Bash find/ls for file searches
+   - Examples:
+     ```
+     Glob("**/*.tsx")              # Find all TypeScript React files
+     Glob("app/(admin)/**/*.ts")   # Find files in admin directory
+     Glob("**/index.tsx")          # Find all index files
+     ```
+
+3. **Grep - Content Search**
+   - Use for searching within file contents
+   - Supports regex patterns
+   - Examples:
+     ```
+     Grep(pattern: "useApp", glob: "**/*.tsx")
+     Grep(pattern: "interface.*Props", output_mode: "content")
+     ```
+
+4. **Read - Reading Files**
+   - Always use for reading file contents
+   - Can read images, PDFs, notebooks
+   - Read multiple files in parallel when possible
+
+5. **Task - For Complex Multi-Step Operations**
+   - Use `subagent_type: "Explore"` for codebase exploration
+   - Use when searching requires multiple rounds of investigation
+   - Examples:
+     - "Where are errors from the client handled?"
+     - "What is the codebase structure?"
+     - "How does authentication work?"
+
+6. **TodoWrite - Task Management**
+   - ALWAYS use for multi-step tasks (3+ steps)
+   - Update status in real-time (in_progress → completed)
+   - Only ONE task should be in_progress at a time
+   - Mark completed immediately after finishing each task
+
+### Windows-Specific Bash Commands
+
+When Bash is necessary (git, npm, build commands), use Windows syntax:
+
+```bash
+# ✅ List directory contents
+dir                           # Simple list
+dir /b                       # Bare format (names only)
+dir /s /b                    # Recursive with full paths
+
+# ✅ Find files (but prefer Glob tool)
+dir /s /b "*.tsx"           # Find all .tsx files recursively
+dir /b "app\(admin)"        # List admin directory
+
+# ✅ File operations
+type file.txt               # Display file contents (but prefer Read tool)
+copy source.txt dest.txt    # Copy file
+move old.txt new.txt        # Move/rename file
+del file.txt                # Delete file
+
+# ✅ Path syntax - Use quotes for paths with spaces
+cd "C:\Users\Name\My Documents"
+npm run build --config "path with spaces\config.json"
+
+# ✅ Git operations (most common use of Bash)
+git status
+git diff
+git add .
+git commit -m "message"
+git push
+```
+
+### Parallel Tool Execution
+
+Execute independent operations in parallel for better performance:
+
+```typescript
+// ✅ Read multiple files at once
+Read("file1.tsx") + Read("file2.tsx") + Read("file3.tsx")
+
+// ✅ Run multiple Bash commands in parallel (if independent)
+Bash("git status") + Bash("npm run typecheck")
+
+// ✅ Search multiple patterns at once
+Glob("**/*.tsx") + Glob("**/*.ts") + Glob("**/index.*")
+```
+
+### Tool Selection Decision Tree
+
+```
+Need to work with files?
+├─ Finding files by name/pattern → Use Glob
+├─ Searching file contents → Use Grep
+├─ Reading file contents → Use Read
+├─ Editing existing file → Use Edit
+└─ Creating new file → Use Write
+
+Need to run commands?
+├─ Git operations → Use Bash
+├─ npm/build commands → Use Bash
+├─ File operations → Use specialized tools above
+└─ Complex exploration → Use Task (Explore agent)
+
+Need to manage work?
+├─ Multi-step task → Use TodoWrite
+├─ Ask user for input → Use AskUserQuestion
+└─ Documentation → Only if explicitly requested
+```
+
 ## Development Best Practices
 
 ### When Adding New Features

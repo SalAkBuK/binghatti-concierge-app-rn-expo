@@ -46,7 +46,7 @@ interface NotificationsActions {
 }
 
 // Notifications Context Type
-interface NotificationsContextType extends NotificationsState {
+export interface NotificationsContextType extends NotificationsState {
   actions: NotificationsActions;
 }
 

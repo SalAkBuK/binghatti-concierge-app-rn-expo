@@ -27,7 +27,6 @@ export default function ScheduleScreen() {
   const { currentUser, notifications, jobs } = useApp();
   const { width } = useWindowDimensions();
   const [showSideMenu, setShowSideMenu] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>("month");
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [refreshing, setRefreshing] = useState(false);
 

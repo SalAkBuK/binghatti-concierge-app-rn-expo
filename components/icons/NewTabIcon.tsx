@@ -16,7 +16,6 @@ export default function NewTabIcon({
 
   // Icon colors based on state
   const iconColor = focused ? "#336BE3" : "#8296C4";
-  const iconFill = focused ? "#356FEC" : "#8296C4";
 
   return (
     <Svg

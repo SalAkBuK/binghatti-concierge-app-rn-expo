@@ -246,6 +246,7 @@ export default function TeamScreen() {
                 { text: "OK", onPress: () => router.back() },
               ]);
             } catch (error) {
+              console.error("Failed to assign employee to job:", error);
               Alert.alert(
                 "Error",
                 "Failed to assign job. Please try again."
@@ -255,14 +256,6 @@ export default function TeamScreen() {
         },
       ]
     );
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-      month: "short",
-      year: "numeric",
-    });
   };
 
   return (

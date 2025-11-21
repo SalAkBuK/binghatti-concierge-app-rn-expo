@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useMemo, useState } from "react";
+import { router } from "expo-router";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   RefreshControl,
@@ -21,11 +22,17 @@ import type { Request, RequestStatus } from "../../lib/types";
 type StatusFilter = "all" | RequestStatus;
 
 export default function BuildingEmployeeRequestsScreen() {
-  const { currentUser, notifications, actions } = useApp();
+  const { isAuthenticated, currentUser, notifications, actions } = useApp();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState<StatusFilter>("all");
   const [isUpdating, setIsUpdating] = useState(false);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.replace("/auth" as any);
+    }
+  }, [isAuthenticated]);
 
   const buildingEmployee = useMemo(() => {
     if (!currentUser) return null;
@@ -150,7 +157,11 @@ export default function BuildingEmployeeRequestsScreen() {
     return null;
   };
 
-  if (!currentUser || currentUser.role !== "building_employee") {
+  if (!isAuthenticated || !currentUser) {
+    return null;
+  }
+
+  if (currentUser.role !== "building_employee") {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.emptyState}>

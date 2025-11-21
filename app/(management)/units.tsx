@@ -185,21 +185,10 @@ export default function ManagementUnitsScreen() {
     };
   }, [filteredUnits]);
 
-  const unitTypeSummary = useMemo(() => {
-    const counts: Record<string, number> = {};
-    filteredUnits.forEach((unit) => {
-      const type = unitTypeMap.get(unit.typeId);
-      const key = type?.name || "Unknown";
-      counts[key] = (counts[key] || 0) + 1;
-    });
-    return counts;
-  }, [filteredUnits, unitTypeMap]);
-
   const userNotifications = filterNotificationsByUser(
     notifications || [],
     currentUser?.id,
   );
-  const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
 
   const buildingFilterOptions = useMemo(() => {
     const scope = isManagement ? managedBuildings : allBuildings;

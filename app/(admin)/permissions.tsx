@@ -135,6 +135,7 @@ export default function PermissionsScreen() {
       Alert.alert("Success", "Permissions updated successfully");
       setChanges({});
     } catch (error) {
+      console.error("Failed to update permissions:", error);
       Alert.alert("Error", "Failed to update permissions");
     } finally {
       setIsSaving(false);

@@ -11,7 +11,7 @@ import {
   View,
 } from "react-native";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import BuildingIcon from "../../components/icons/BuildingIcon";
 import FireIcon from "../../components/icons/FireIcon";
@@ -36,7 +36,6 @@ export default function TenantHomeScreen() {
     actions,
     isAuthenticated,
   } = useApp();
-  const insets = useSafeAreaInsets();
   const [isLoading, setIsLoading] = useState(true);
   const [showSideMenu, setShowSideMenu] = useState(false);
 
@@ -56,24 +55,6 @@ export default function TenantHomeScreen() {
 
     return () => clearTimeout(timer);
   }, [currentUser]);
-
-  const handleLogout = async () => {
-    Alert.alert("Logout", "Are you sure you want to logout?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Logout",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await actions.logout();
-            router.replace("/auth");
-          } catch (error) {
-            console.error("Logout error:", error);
-          }
-        },
-      },
-    ]);
-  };
 
   const handleNoticePress = (notice: any) => {
     actions.setSelectedNotice(notice);

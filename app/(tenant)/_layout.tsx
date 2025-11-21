@@ -2,7 +2,6 @@ import { Tabs } from "expo-router";
 import React from "react";
 import { Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
 import NewHomeTabIcon from "../../components/icons/NewHomeTabIcon";
 import NewTabIcon from "../../components/icons/NewTabIcon";
 import ProfileIcon from "../../components/icons/ProfileIcon";
@@ -22,8 +21,6 @@ const normalizeRole = (r: string) => {
 export default function TabLayout() {
   const { userRole, isAuthenticated } = useApp();
   const insets = useSafeAreaInsets();
-
-  const role = normalizeRole(userRole || "tenant");
 
   // Only render tabs if authenticated
   if (!isAuthenticated) {

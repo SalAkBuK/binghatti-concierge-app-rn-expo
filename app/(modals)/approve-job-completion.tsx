@@ -344,7 +344,7 @@ export default function ApproveJobCompletionScreen() {
               <Text style={styles.cardTitle}>Rejection Reason</Text>
             </View>
             <Text style={styles.helperText}>
-              If you're not satisfied, provide details on what needs to be
+              If you&apos;re not satisfied, provide details on what needs to be
               addressed
             </Text>
             <TextInput

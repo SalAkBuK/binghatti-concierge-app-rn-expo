@@ -41,7 +41,7 @@ interface AuthActions {
 }
 
 // Auth Context Type
-interface AuthContextType extends AuthState {
+export interface AuthContextType extends AuthState {
   actions: AuthActions;
 }
 

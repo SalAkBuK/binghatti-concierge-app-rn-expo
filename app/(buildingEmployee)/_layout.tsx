@@ -46,19 +46,6 @@ export default function BuildingEmployeeLayout() {
         }}
       />
       <Tabs.Screen
-        name="requests"
-        options={{
-          title: "Requests",
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? "clipboard" : "clipboard-outline"}
-              size={22}
-              color={color}
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="jobs"
         options={{
           title: "Jobs",
@@ -85,6 +72,19 @@ export default function BuildingEmployeeLayout() {
         }}
       />
       <Tabs.Screen
+        name="shifts"
+        options={{
+          title: "Shifts",
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? "calendar" : "calendar-outline"}
+              size={22}
+              color={color}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           title: "Profile",
@@ -95,6 +95,13 @@ export default function BuildingEmployeeLayout() {
               color={color}
             />
           ),
+        }}
+      />
+      {/* Hidden screens - accessible via navigation but not shown in tab bar */}
+      <Tabs.Screen
+        name="requests"
+        options={{
+          href: null,
         }}
       />
     </Tabs>

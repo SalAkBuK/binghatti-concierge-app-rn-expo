@@ -3,7 +3,6 @@ import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Dimensions,
-  Image,
   ScrollView,
   StyleSheet,
   Text,

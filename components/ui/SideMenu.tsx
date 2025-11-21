@@ -1,17 +1,18 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
+import type { TextStyle, ViewStyle } from "react-native";
 import {
+  Alert,
   Dimensions,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
-  Alert,
 } from "react-native";
-import type { ViewStyle, TextStyle } from "react-native";
 import Animated, {
+  cancelAnimation,
   Easing,
   runOnJS,
   useAnimatedStyle,
@@ -79,7 +80,7 @@ const navigateAndClose = (href: RouterPushInput | string) => {
         onPress: async () => {
           try {
             await actions.logout();
-            router.replace("/auth");
+            router.replace("/auth" as any);
           } catch (error) {
             console.error("Logout error:", error);
           }
@@ -329,12 +330,6 @@ const managementMenu: MenuItem[] = [
       action: () => navigateAndClose("/(buildingEmployee)"),
     },
     {
-      id: "be-requests",
-      title: "Service Requests",
-      icon: "clipboard-outline",
-      action: () => navigateAndClose("/(buildingEmployee)/requests"),
-    },
-    {
       id: "be-jobs",
       title: "Maintenance Jobs",
       icon: "construct-outline",
@@ -370,6 +365,128 @@ const managementMenu: MenuItem[] = [
     },
   ];
 
+  const serviceProviderMenu: MenuItem[] = [
+    {
+      id: "sp-dashboard",
+      title: "Dashboard",
+      icon: "grid-outline",
+      action: () => navigateAndClose("/(serviceProvider)"),
+    },
+    {
+      id: "sp-jobs",
+      title: "Jobs",
+      icon: "construct-outline",
+      action: () => navigateAndClose("/(serviceProvider)/jobs"),
+    },
+    {
+      id: "sp-schedule",
+      title: "Schedule",
+      icon: "calendar-outline",
+      action: () => navigateAndClose("/(serviceProvider)/schedule"),
+    },
+    {
+      id: "sp-team",
+      title: "Team",
+      icon: "people-outline",
+      action: () => navigateAndClose("/(serviceProvider)/team"),
+    },
+    {
+      id: "sp-service-areas",
+      title: "Service Areas",
+      icon: "location-outline",
+      action: () => navigateAndClose("/(serviceProvider)/service-areas"),
+    },
+    {
+      id: "sp-analytics",
+      title: "Analytics & Reports",
+      icon: "stats-chart-outline",
+      action: () => navigateAndClose("/(serviceProvider)/analytics"),
+    },
+    {
+      id: "sp-ratings",
+      title: "Ratings & Reviews",
+      icon: "star-outline",
+      action: () => navigateAndClose("/(serviceProvider)/ratings"),
+    },
+    {
+      id: "divider-sp",
+      title: "",
+      icon: "remove",
+      action: () => {},
+    },
+    {
+      id: "sp-profile",
+      title: "Profile & Settings",
+      icon: "person-outline",
+      action: () => navigateAndClose("/(serviceProvider)/profile"),
+    },
+    {
+      id: "logout",
+      title: "Sign Out",
+      icon: "log-out-outline",
+      color: "#ef4444",
+      action: () => {
+        closeMenu();
+        handleLogout();
+      },
+    },
+  ];
+
+  const employeeMenu: MenuItem[] = [
+    {
+      id: "emp-dashboard",
+      title: "Dashboard",
+      icon: "home-outline",
+      action: () => navigateAndClose("/(employee)"),
+    },
+    {
+      id: "emp-jobs",
+      title: "My Jobs",
+      icon: "briefcase-outline",
+      action: () => navigateAndClose("/(employee)/jobs"),
+    },
+    {
+      id: "emp-schedule",
+      title: "Schedule",
+      icon: "calendar-outline",
+      action: () => navigateAndClose("/(employee)/schedule"),
+    },
+    {
+      id: "emp-earnings",
+      title: "Earnings",
+      icon: "cash-outline",
+      action: () => navigateAndClose("/(employee)/earnings"),
+    },
+    {
+      id: "emp-messages",
+      title: "Messages",
+      icon: "chatbubbles-outline",
+      action: () => navigateAndClose("/(employee)/messages"),
+    },
+    {
+      id: "divider-emp",
+      title: "",
+      icon: "remove",
+      action: () => {},
+    },
+    {
+      id: "emp-profile",
+      title: "Profile",
+      icon: "person-outline",
+      action: () => navigateAndClose("/(employee)/profile"),
+    },
+    {
+      id: "logout",
+      title: "Sign Out",
+      icon: "log-out-outline",
+      color: "#ef4444",
+      action: () => {
+        closeMenu();
+        handleLogout();
+      },
+    },
+  ];
+
   const menuItems: MenuItem[] =
     currentUser?.role === "admin" || currentUser?.role === "super_admin"
       ? adminMenu
@@ -377,7 +494,11 @@ const managementMenu: MenuItem[] = [
         ? managementMenu
         : currentUser?.role === "building_employee"
           ? buildingEmployeeMenu
-          : tenantMenu;
+          : currentUser?.role === "service_provider"
+            ? serviceProviderMenu
+            : currentUser?.role === "employee"
+              ? employeeMenu
+              : tenantMenu;
 
   // Animation effects
   useEffect(() => {
@@ -419,6 +540,13 @@ const managementMenu: MenuItem[] = [
         }
       );
     }
+
+    // Cleanup on unmount
+    return () => {
+      cancelAnimation(translateX);
+      cancelAnimation(overlayOpacity);
+      cancelAnimation(menuScale);
+    };
   }, [isVisible]);
 
   // Animated styles

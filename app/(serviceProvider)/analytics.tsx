@@ -14,26 +14,16 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
-import { filterNotificationsByUser } from "../../lib/utils/helpers";
-
-const NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
 
 type TimePeriod = "week" | "month" | "year";
 
 export default function AnalyticsScreen() {
-  const { currentUser, notifications, jobs } = useApp();
+  const { currentUser, jobs } = useApp();
   const { width } = useWindowDimensions();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>("month");
 
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
-  const isTablet = width >= 768;
-
-  const userNotifications = filterNotificationsByUser(
-    notifications || [],
-    currentUser?.id
-  );
-  const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
 
   // Filter jobs for current service provider
   const myJobs = useMemo(() => {

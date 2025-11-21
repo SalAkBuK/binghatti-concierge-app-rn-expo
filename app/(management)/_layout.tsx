@@ -1,11 +1,42 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Tabs } from "expo-router";
-import React from "react";
+import { Tabs, router } from "expo-router";
+import React, { useEffect } from "react";
 import { Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useApp } from "../../lib/context/connected-app-provider";
+
 export default function ManagementLayout() {
   const insets = useSafeAreaInsets();
+  const { isAuthenticated, currentUser } = useApp();
+  const isManagement = currentUser?.role === "management";
+
+  // Debug: Log current user role
+  console.log("🔍 ManagementLayout - Current User Role:", currentUser?.role);
+  console.log("🔍 ManagementLayout - isManagement:", isManagement);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.replace("/auth" as any);
+    }
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    // Redirect non-management users back to home
+    if (isAuthenticated && currentUser && !isManagement) {
+      console.log("🔍 ManagementLayout - Non-management user detected, redirecting to /");
+      router.replace("/" as any);
+    }
+  }, [isAuthenticated, currentUser, isManagement]);
+
+  // Only allow management users
+  if (!isAuthenticated || !currentUser) {
+    return null;
+  }
+
+  if (!isManagement) {
+    return null;
+  }
 
   return (
     <Tabs
@@ -115,7 +146,7 @@ export default function ManagementLayout() {
         }}
       />
       <Tabs.Screen
-        name="visitors"
+        name="visitors/index"
         options={{
           href: null,
         }}
@@ -134,6 +165,36 @@ export default function ManagementLayout() {
       />
       <Tabs.Screen
         name="activity"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="parcels/index"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="shifts"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="maintenance/index"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="billing/index"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="managers/index"
         options={{
           href: null,
         }}

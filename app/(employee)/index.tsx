@@ -2,21 +2,22 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-  useWindowDimensions,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+    useWindowDimensions,
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
+import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
-import { filterNotificationsByUser } from "../../lib/utils/helpers";
 import { Job } from "../../lib/types";
+import { filterNotificationsByUser } from "../../lib/utils/helpers";
 
 const NOTIFICATION_ROUTE = "/(modals)/notifications-hub";
 
@@ -24,6 +25,7 @@ export default function EmployeeDashboard() {
   const { currentUser, notifications, actions } = useApp();
   const { width } = useWindowDimensions();
   const [refreshing, setRefreshing] = useState(false);
+  const [showSideMenu, setShowSideMenu] = useState(false);
 
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
   const isTablet = width >= 768;
@@ -37,7 +39,7 @@ export default function EmployeeDashboard() {
   const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
 
   // Get employee's assigned jobs (jobs where assignedToEmployeeId matches current user)
-  const allJobs = actions.getJobs?.() ?? [];
+  const allJobs = useMemo(() => actions.getJobs?.() ?? [], [actions]);
   const myJobs = useMemo(() => {
     // For now, we'll use a mock employee ID based on current user
     // In production, this would come from ServiceProviderEmployee.userId
@@ -203,6 +205,8 @@ export default function EmployeeDashboard() {
           subtitle={`Welcome back, ${currentUser?.name?.split(" ")[0] || "Employee"}`}
           hasUnreadNotifications={hasUnreadNotifications}
           onNotificationPress={() => router.push(NOTIFICATION_ROUTE as any)}
+          showSideMenu={showSideMenu}
+          onSideMenuToggle={setShowSideMenu}
         />
 
         {/* Earnings Summary */}
@@ -416,6 +420,12 @@ export default function EmployeeDashboard() {
           )}
         </Animated.View>
       </ScrollView>
+
+      <SideMenu
+        isVisible={showSideMenu}
+        onClose={() => setShowSideMenu(false)}
+        userRole={currentUser?.role}
+      />
     </SafeAreaView>
   );
 }

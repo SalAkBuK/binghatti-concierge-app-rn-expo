@@ -1,7 +1,31 @@
 {
   "permissions": {
     "allow": [
-      "Bash(tail -20 \"C:\\Users\\13463\\OneDrive\\Documents\\CodeFier\\binghatti-concierge-app-rn-expo\\app\\(management)\\index.tsx\")"
+      "Bash(\"C:\\Users\\13463\\OneDrive\\Documents\\CodeFier\\binghatti-concierge-app-rn-expo\\app\\(admin)\\unit-types\\styles.ts\")",
+      "Bash(\"C:\\Users\\13463\\OneDrive\\Documents\\CodeFier\\binghatti-concierge-app-rn-expo\\app\\(admin)\\unit-types\\index.tsx\")",
+      "Bash(\"C:\\Users\\13463\\OneDrive\\Documents\\CodeFier\\binghatti-concierge-app-rn-expo\\app\\(admin)\\tenants\\styles.ts\")",
+      "Bash(\"C:\\Users\\13463\\OneDrive\\Documents\\CodeFier\\binghatti-concierge-app-rn-expo\\app\\(admin)\\tenants\\index.tsx\")",
+      "Bash(diff:*)",
+      "Bash(npx expo:*)",
+      "Bash(npm start -- --clear)",
+      "Bash(cd:*)",
+      "Bash(ls:*)",
+      "Bash(robocopy:*)",
+      "Bash(xcopy:*)",
+      "Bash(find:*)",
+      "Bash(findstr:*)",
+      "Bash(dir /s /b \"C:\\Users\\13463\\OneDrive\\Documents\\CodeFier\\binghatti-concierge-app-rn-expo\\app\\(management)\\billing\\hooks\" 2)",
+      "Bash(nul)",
+      "Bash(dir /b \"C:\\Users\\13463\\OneDrive\\Documents\\CodeFier\\binghatti-concierge-app-rn-expo\\app\\(management)\")",
+      "Bash(dir /b \"C:\\Users\\13463\\OneDrive\\Documents\\CodeFier\\binghatti-concierge-app-rn-expo\\app\\(management)\\visitors\")",
+      "Bash(dir /b \"C:\\Users\\13463\\OneDrive\\Documents\\CodeFier\\binghatti-concierge-app-rn-expo\\app\\(management)\\parcels\")",
+      "Bash(dir /b \"C:\\Users\\13463\\OneDrive\\Documents\\CodeFier\\binghatti-concierge-app-rn-expo\\app\\(management)\\billing\")",
+      "Bash(dir /b \"C:\\Users\\13463\\OneDrive\\Documents\\CodeFier\\binghatti-concierge-app-rn-expo\\app\\(management)\\maintenance\")",
+      "Bash(dir /b \"C:\\Users\\13463\\OneDrive\\Documents\\CodeFier\\binghatti-concierge-app-rn-expo\\app\\(admin)\")",
+      "Bash(dir /b \"app\\(admin)\" 2)",
+      "Bash(mkdir:*)",
+      "Bash(dir /s /b /ad \"C:\\Users\\13463\\OneDrive\\Documents\\CodeFier\\binghatti-concierge-app-rn-expo\\app\\(admin)\")",
+      "Bash(powershell:*)"
     ],
     "deny": [],
     "ask": []

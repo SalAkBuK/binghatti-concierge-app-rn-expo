@@ -40,6 +40,7 @@ export default function AuthScreen() {
   });
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const placeholderColor = "#94A3B8";
 
   const handleSubmit = async () => {
     if (!formData.email || !formData.password) {
@@ -104,6 +105,7 @@ export default function AuthScreen() {
               await AsyncStorage.removeItem(STORAGE_KEYS.users);
               Alert.alert("Success", "Cache cleared! Please restart the app.");
             } catch (error) {
+              console.error("Failed to clear auth cache:", error);
               Alert.alert("Error", "Failed to clear cache");
             }
           },
@@ -153,6 +155,7 @@ export default function AuthScreen() {
                   <TextInput
                     style={styles.input}
                     placeholder="Full Name"
+                    placeholderTextColor={placeholderColor}
                     value={formData.name}
                     onChangeText={(text) => updateFormData("name", text)}
                     autoCapitalize="words"
@@ -164,6 +167,7 @@ export default function AuthScreen() {
                   <TextInput
                     style={styles.input}
                     placeholder="Phone Number"
+                    placeholderTextColor={placeholderColor}
                     value={formData.phone}
                     onChangeText={(text) => updateFormData("phone", text)}
                     keyboardType="phone-pad"
@@ -194,6 +198,7 @@ export default function AuthScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="Email"
+                placeholderTextColor={placeholderColor}
                 value={formData.email}
                 onChangeText={(text) => updateFormData("email", text)}
                 keyboardType="email-address"
@@ -207,6 +212,7 @@ export default function AuthScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="Password"
+                placeholderTextColor={placeholderColor}
                 value={formData.password}
                 onChangeText={(text) => updateFormData("password", text)}
                 secureTextEntry={!showPassword}

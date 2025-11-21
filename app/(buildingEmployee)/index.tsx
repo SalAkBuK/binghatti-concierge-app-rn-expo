@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   RefreshControl,
   ScrollView,
@@ -17,9 +17,15 @@ import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
 
 export default function BuildingEmployeeDashboard() {
-  const { currentUser, notifications, actions } = useApp();
+  const { isAuthenticated, currentUser, notifications, actions } = useApp();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.replace("/auth" as any);
+    }
+  }, [isAuthenticated]);
 
   const buildingEmployee = useMemo(() => {
     if (!currentUser) return null;
@@ -81,7 +87,11 @@ export default function BuildingEmployeeDashboard() {
     setTimeout(() => setRefreshing(false), 800);
   };
 
-  if (!currentUser || currentUser.role !== "building_employee") {
+  if (!isAuthenticated || !currentUser) {
+    return null;
+  }
+
+  if (currentUser.role !== "building_employee") {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.emptyState}>

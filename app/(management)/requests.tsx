@@ -28,6 +28,8 @@ import {
 const MANAGEMENT_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
 
 type StatusFilter = "all" | RequestStatus;
+type PriorityFilter = "all" | Request["priority"];
+type TypeFilter = "all" | NonNullable<Request["type"]>;
 
 const STATUS_OPTIONS: { label: string; value: StatusFilter }[] = [
   { label: "All", value: "all" },
@@ -48,7 +50,6 @@ export default function ManagementRequestsScreen() {
     getBuildings,
     getManagedBuildings,
     getJobs,
-    updateRequest,
     setSelectedRequest: setSelectedRequestContext,
     addRequestNote,
     addRequestMessage,
@@ -58,18 +59,15 @@ export default function ManagementRequestsScreen() {
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [selectedRequest, setSelectedRequest] = useState<Request | null>(null);
-  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [detailTab, setDetailTab] = useState<"overview" | "notes" | "messages" | "timeline">("overview");
   const [newNote, setNewNote] = useState("");
   const [newMessage, setNewMessage] = useState("");
 
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
   const isCompact = width < 900;
-  const isAdmin =
-    currentUser?.role === "admin" || currentUser?.role === "super_admin";
-  const isManagement = currentUser?.role === "management";
-
   const allBuildings = useMemo(() => getBuildings(), [getBuildings]);
   const managedBuildings = useMemo(
     () => getManagedBuildings?.() ?? allBuildings,
@@ -100,6 +98,26 @@ export default function ManagementRequestsScreen() {
     return map;
   }, [managedBuildings]);
 
+  const priorityOptions = useMemo(() => {
+    const priorities = new Set<Request["priority"]>();
+    requestItems.forEach((request) => {
+      if (request.priority) {
+        priorities.add(request.priority);
+      }
+    });
+    return ["all", ...Array.from(priorities)] as PriorityFilter[];
+  }, [requestItems]);
+
+  const typeOptions = useMemo(() => {
+    const types = new Set<NonNullable<Request["type"]>>();
+    requestItems.forEach((request) => {
+      if (request.type) {
+        types.add(request.type);
+      }
+    });
+    return ["all", ...Array.from(types)] as TypeFilter[];
+  }, [requestItems]);
+
   const jobs = useMemo(() => getJobs(), [getJobs]);
   const getJobForRequest = useCallback(
     (requestId: string): Job | undefined => {
@@ -121,6 +139,14 @@ export default function ManagementRequestsScreen() {
         return buildingScope.includes(request.buildingId);
       })
       .filter((request) => {
+        if (priorityFilter === "all") return true;
+        return request.priority === priorityFilter;
+      })
+      .filter((request) => {
+        if (typeFilter === "all") return true;
+        return request.type === typeFilter;
+      })
+      .filter((request) => {
         if (statusFilter === "all") return true;
         return request.status === statusFilter;
       })
@@ -138,6 +164,8 @@ export default function ManagementRequestsScreen() {
     managedBuildings,
     selectedBuildingId,
     statusFilter,
+    priorityFilter,
+    typeFilter,
     searchQuery,
   ]);
 
@@ -192,20 +220,6 @@ export default function ManagementRequestsScreen() {
     selectedBuildingId !== "all"
       ? buildingMap.get(selectedBuildingId)?.name
       : "All Buildings";
-
-  const handleStatusUpdate = async (request: Request, status: RequestStatus) => {
-    if (request.status === status) return;
-    setIsUpdatingStatus(true);
-    try {
-      await updateRequest(request.id, { status });
-      Alert.alert("Status updated", `Request marked as ${status}`);
-    } catch (error) {
-      const errorMessage = getUserErrorMessage(error);
-      Alert.alert("Update failed", errorMessage);
-    } finally {
-      setIsUpdatingStatus(false);
-    }
-  };
 
   const handleAddNote = async () => {
     if (!selectedRequest || !newNote.trim() || !currentUser) return;
@@ -417,8 +431,82 @@ export default function ManagementRequestsScreen() {
           </View>
         </Animated.View>
 
+        {priorityOptions.length > 1 && (
+          <Animated.View
+            entering={FadeInDown.delay(140).duration(280)}
+            style={styles.secondaryFilterRow}
+          >
+            <Text style={styles.secondaryFilterLabel}>Priority</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.secondaryFilterPills}
+            >
+              {(priorityOptions as PriorityFilter[]).map((option) => (
+                <TouchableOpacity
+                  key={`priority-${option}`}
+                  style={[
+                    styles.secondaryPill,
+                    priorityFilter === option && styles.secondaryPillActive,
+                  ]}
+                  onPress={() => setPriorityFilter(option)}
+                >
+                  <Text
+                    style={[
+                      styles.secondaryPillText,
+                      priorityFilter === option &&
+                        styles.secondaryPillTextActive,
+                    ]}
+                  >
+                    {option === "all"
+                      ? "All"
+                      : option.replace(/_/g, " ").toUpperCase()}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </Animated.View>
+        )}
+
+        {typeOptions.length > 1 && (
+          <Animated.View
+            entering={FadeInDown.delay(160).duration(280)}
+            style={styles.secondaryFilterRow}
+          >
+            <Text style={styles.secondaryFilterLabel}>Type</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.secondaryFilterPills}
+            >
+              {(typeOptions as TypeFilter[]).map((option) => (
+                <TouchableOpacity
+                  key={`type-${option}`}
+                  style={[
+                    styles.secondaryPill,
+                    typeFilter === option && styles.secondaryPillActive,
+                  ]}
+                  onPress={() => setTypeFilter(option)}
+                >
+                  <Text
+                    style={[
+                      styles.secondaryPillText,
+                      typeFilter === option &&
+                        styles.secondaryPillTextActive,
+                    ]}
+                  >
+                    {option === "all"
+                      ? "All"
+                      : option.replace(/_/g, " ").toUpperCase()}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </Animated.View>
+        )}
+
         <Animated.View
-          entering={FadeInDown.delay(160).duration(320)}
+          entering={FadeInDown.delay(200).duration(320)}
           style={styles.requestList}
         >
           {scopedRequests.length ? (
@@ -506,16 +594,7 @@ export default function ManagementRequestsScreen() {
               <Ionicons name="close" size={24} color="#111827" />
             </TouchableOpacity>
             <Text style={styles.modalTitle}>Request Details</Text>
-            <TouchableOpacity
-              onPress={() =>
-                router.push({
-                  pathname: "/(modals)/request-details",
-                  params: { requestId: selectedRequest?.id },
-                })
-              }
-            >
-              <Text style={styles.modalActionText}>Open modal</Text>
-            </TouchableOpacity>
+            <View style={{ width: 24 }} />
           </View>
 
           {/* Tab Navigation */}
@@ -584,35 +663,44 @@ export default function ManagementRequestsScreen() {
                       </View>
                     )}
                   </View>
-                  <Text style={styles.assignmentMeta}>
-                    {jobForSelectedRequest
-                      ? `Job #${jobForSelectedRequest.id.slice(0, 8)} • ${
-                          jobForSelectedRequest.assignmentTargetType === "building_employee"
-                            ? `Building team: ${jobForSelectedRequest.assignedBuildingEmployeeName || "Assigned"}`
-                            : `Provider: ${jobForSelectedRequest.assignedToName || "Assigned"}`
-                        }`
-                      : "No work order has been created for this request yet."}
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.assignmentButton}
-                    onPress={() => {
-                      if (jobForSelectedRequest) {
-                        router.push({
-                          pathname: "/(management)/jobs",
-                          params: { jobId: jobForSelectedRequest.id },
-                        });
-                      } else {
-                        router.push("/(management)/jobs");
-                      }
-                    }}
-                  >
-                    <Ionicons name="construct-outline" size={18} color="#FFFFFF" />
-                    <Text style={styles.assignmentButtonText}>
-                      {jobForSelectedRequest
-                        ? `View Job #${jobForSelectedRequest.id.slice(0, 6)}`
-                        : "Create Work Order"}
-                    </Text>
-                  </TouchableOpacity>
+                  {jobForSelectedRequest ? (
+                    <View style={styles.jobDetailsCard}>
+                      <View style={styles.jobDetailRow}>
+                        <Text style={styles.jobDetailLabel}>Job ID</Text>
+                        <Text style={styles.jobDetailValue}>#{jobForSelectedRequest.id.slice(0, 8)}</Text>
+                      </View>
+                      <View style={styles.jobDetailRow}>
+                        <Text style={styles.jobDetailLabel}>Assigned To</Text>
+                        <Text style={styles.jobDetailValue}>
+                          {jobForSelectedRequest.assignmentTargetType === "building_employee"
+                            ? jobForSelectedRequest.assignedBuildingEmployeeName || "Building Team"
+                            : jobForSelectedRequest.assignedToName || "Service Provider"}
+                        </Text>
+                      </View>
+                      {jobForSelectedRequest.scheduledDate && (
+                        <View style={styles.jobDetailRow}>
+                          <Text style={styles.jobDetailLabel}>Scheduled</Text>
+                          <Text style={styles.jobDetailValue}>
+                            {formatDateTime(jobForSelectedRequest.scheduledDate)}
+                          </Text>
+                        </View>
+                      )}
+                      {jobForSelectedRequest.estimatedCost && (
+                        <View style={styles.jobDetailRow}>
+                          <Text style={styles.jobDetailLabel}>Est. Cost</Text>
+                          <Text style={styles.jobDetailValue}>
+                            AED {jobForSelectedRequest.estimatedCost}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  ) : (
+                    <View style={styles.noJobCard}>
+                      <Ionicons name="construct-outline" size={24} color="#9CA3AF" />
+                      <Text style={styles.noJobText}>No work order created yet</Text>
+                      <Text style={styles.noJobHint}>Create a job from the Jobs tab to assign this request</Text>
+                    </View>
+                  )}
                 </View>
               </View>
             )}
@@ -802,6 +890,38 @@ const styles = StyleSheet.create({
     marginTop: 20,
     gap: 16,
   },
+  secondaryFilterRow: {
+    marginTop: 16,
+    gap: 10,
+  },
+  secondaryFilterLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#475569",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  secondaryFilterPills: {
+    gap: 10,
+    paddingTop: 4,
+  },
+  secondaryPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "#E2E8F0",
+  },
+  secondaryPillActive: {
+    backgroundColor: "#1D4ED8",
+  },
+  secondaryPillText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#1F2937",
+  },
+  secondaryPillTextActive: {
+    color: "#FFFFFF",
+  },
   searchInputWrapper: {
     flexDirection: "row",
     alignItems: "center",
@@ -938,11 +1058,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#111827",
   },
-  modalActionText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#2563EB",
-  },
   modalContent: {
     padding: 24,
   },
@@ -1005,11 +1120,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#111827",
   },
-  assignmentValue: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#2563EB",
-  },
   assignmentMeta: {
     fontSize: 12,
     color: "#6B7280",
@@ -1024,20 +1134,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     color: "#1D4ED8",
-  },
-  assignmentButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    backgroundColor: "#2563EB",
-    borderRadius: 10,
-    paddingVertical: 10,
-  },
-  assignmentButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#FFFFFF",
   },
   notesSection: {
     gap: 16,
@@ -1207,5 +1303,48 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 24,
     fontStyle: "italic",
+  },
+  jobDetailsCard: {
+    backgroundColor: "#F0F9FF",
+    borderRadius: 12,
+    padding: 16,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+  },
+  jobDetailRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  jobDetailLabel: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#64748B",
+  },
+  jobDetailValue: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#1E40AF",
+  },
+  noJobCard: {
+    backgroundColor: "#F9FAFB",
+    borderRadius: 12,
+    padding: 20,
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderStyle: "dashed",
+  },
+  noJobText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#6B7280",
+  },
+  noJobHint: {
+    fontSize: 12,
+    color: "#9CA3AF",
+    textAlign: "center",
   },
 });

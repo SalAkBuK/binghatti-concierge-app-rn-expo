@@ -1,6 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useMemo, useState } from "react";
+import { router } from "expo-router";
+import React, { useEffect, useMemo, useState } from "react";
 import {
+  Alert,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -19,10 +21,16 @@ import type { Job } from "../../lib/types";
 type JobStatusFilter = "all" | Job["status"];
 
 export default function BuildingEmployeeJobsScreen() {
-  const { currentUser, notifications, actions } = useApp();
+  const { isAuthenticated, currentUser, actions, notifications } = useApp();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState<JobStatusFilter>("all");
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.replace("/auth" as any);
+    }
+  }, [isAuthenticated]);
 
   const buildingEmployee = useMemo(() => {
     if (!currentUser) return null;
@@ -51,6 +59,50 @@ export default function BuildingEmployeeJobsScreen() {
     setTimeout(() => setRefreshing(false), 800);
   };
 
+  const handleStartJob = async (job: Job) => {
+    Alert.alert(
+      "Start Job",
+      `Are you ready to start working on this job?\n\n${job.title}`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Start",
+          style: "default",
+          onPress: async () => {
+            try {
+              await actions.updateJobStatus?.(job.id, "in-progress");
+              Alert.alert("Success", "Job has been started");
+            } catch {
+              Alert.alert("Error", "Failed to start job. Please try again.");
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleCompleteJob = async (job: Job) => {
+    Alert.alert(
+      "Complete Job",
+      `Mark this job as completed?\n\n${job.title}`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Complete",
+          style: "default",
+          onPress: async () => {
+            try {
+              await actions.updateJobStatus?.(job.id, "completed");
+              Alert.alert("Success", "Job has been marked as completed");
+            } catch {
+              Alert.alert("Error", "Failed to complete job. Please try again.");
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const filters: { label: string; value: JobStatusFilter }[] = [
     { label: "All", value: "all" },
     { label: "Pending", value: "pending" },
@@ -77,7 +129,11 @@ export default function BuildingEmployeeJobsScreen() {
     }
   };
 
-  if (!currentUser || currentUser.role !== "building_employee") {
+  if (!isAuthenticated || !currentUser) {
+    return null;
+  }
+
+  if (currentUser.role !== "building_employee") {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.emptyState}>
@@ -103,7 +159,7 @@ export default function BuildingEmployeeJobsScreen() {
       >
         <HeaderBar
           title="Maintenance Jobs"
-          subtitle="Track work orders across your building"
+          subtitle={`${filteredJobs.length} ${filteredJobs.length === 1 ? "job" : "jobs"}`}
           hasUnreadNotifications={hasUnreadNotifications}
           showSideMenu={showSideMenu}
           onSideMenuToggle={setShowSideMenu}
@@ -241,6 +297,31 @@ export default function BuildingEmployeeJobsScreen() {
                       </Text>
                     </View>
                   )}
+
+                  {/* Action Buttons */}
+                  {job.status === "assigned" && (
+                    <View style={styles.actionButtons}>
+                      <TouchableOpacity
+                        style={styles.startButton}
+                        onPress={() => handleStartJob(job)}
+                      >
+                        <Ionicons name="play-circle" size={18} color="#FFFFFF" />
+                        <Text style={styles.startButtonText}>Start Job</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
+                  {job.status === "in-progress" && (
+                    <View style={styles.actionButtons}>
+                      <TouchableOpacity
+                        style={styles.completeButton}
+                        onPress={() => handleCompleteJob(job)}
+                      >
+                        <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
+                        <Text style={styles.completeButtonText}>Complete Job</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
                 </View>
               );
             })
@@ -329,17 +410,17 @@ const styles = StyleSheet.create({
   emptyCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
-    paddingVertical: 32,
+    paddingVertical: 48,
     alignItems: "center",
     gap: 12,
   },
   emptyCardTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: "600",
     color: "#1F2937",
   },
   emptyCardSubtitle: {
-    fontSize: 13,
+    fontSize: 14,
     color: "#6B7280",
     paddingHorizontal: 24,
     textAlign: "center",
@@ -347,13 +428,13 @@ const styles = StyleSheet.create({
   jobCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
-    padding: 20,
-    gap: 14,
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 4 },
+    padding: 24,
+    gap: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
-    shadowRadius: 12,
-    elevation: 3,
+    shadowRadius: 8,
+    elevation: 2,
   },
   jobHeader: {
     flexDirection: "row",
@@ -376,14 +457,15 @@ const styles = StyleSheet.create({
     color: "#6B7280",
   },
   jobTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: "700",
     color: "#111827",
+    marginBottom: 4,
   },
   jobDescription: {
-    fontSize: 13,
+    fontSize: 15,
     color: "#4B5563",
-    lineHeight: 19,
+    lineHeight: 22,
   },
   metaRow: {
     flexDirection: "row",
@@ -410,5 +492,41 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#6B7280",
     textAlign: "center",
+  },
+  actionButtons: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: "#E5E7EB",
+  },
+  startButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#2563EB",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+  startButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#FFFFFF",
+  },
+  completeButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#10B981",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+  completeButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#FFFFFF",
   },
 });

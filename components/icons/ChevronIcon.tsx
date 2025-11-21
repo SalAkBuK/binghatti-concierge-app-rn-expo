@@ -13,7 +13,6 @@ export default function ChevronIcon({
   opacity = 0.5,
 }: ChevronIconProps) {
   // Original SVG dimensions: width="5.935" height="10.791"
-  const aspectRatio = 10.791 / 5.935; // height/width ratio from SVG
   const width = size * (5.935 / 10.791); // Scale to match height-based sizing
   const height = size;
 

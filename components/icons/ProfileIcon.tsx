@@ -1,5 +1,5 @@
 import React from "react";
-import Svg, { Rect, Path } from "react-native-svg";
+import Svg, { Path } from "react-native-svg";
 
 interface ProfileIconProps {
   size?: number;
@@ -17,7 +17,6 @@ export default function ProfileIcon({
   const containerHeight = focused ? 64 : 39;
 
   // Icon colors based on state
-  const iconColor = focused ? "#336BE3" : "#8296C4";
   const iconFill = focused ? "#356FEC" : "#8296C4";
 
   return (

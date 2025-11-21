@@ -1,5 +1,7 @@
 // Core application types
 
+export type UserStatus = "active" | "inactive";
+
 export interface User {
   id: string;
   email: string;
@@ -13,6 +15,7 @@ export interface User {
     | "employee"
     | "building_employee";
   phone?: string;
+  status?: UserStatus;
   profile?: UserProfile;
   createdAt: string;
   updatedAt: string;
@@ -35,6 +38,9 @@ export interface UserProfile {
   certifications?: string[];
   rating?: number;
   completedJobs?: number;
+  emiratesId?: string;
+  passportNumber?: string;
+  attachments?: string[]; // Profile pictures and documents
 }
 
 export interface Attachment {
@@ -438,16 +444,42 @@ export interface Rating {
 
 // Admin-specific types
 
+export type BuildingType = "residential" | "commercial" | "mixed_use" | "hospitality";
+
+export interface UnitBreakdown {
+  studios?: number;
+  oneBedroom?: number;
+  twoBedroom?: number;
+  threeBedroom?: number;
+  fourPlusBedroom?: number;
+  commercial?: number;
+}
+
 export interface Building {
   id: string;
   name: string;
   address: string;
   city: string;
   country: string;
+  // UAE-specific location fields
+  emirate?: string; // Dubai, Abu Dhabi, Sharjah, Ajman, UAQ, RAK, Fujairah
+  community?: string; // e.g., Dubai Marina, Downtown Dubai, JBR
+  street?: string;
+  plotNumber?: string;
+  buildingNumber?: string;
+  makaniNumber?: string; // Dubai's smart addressing system
+  // Building details
+  buildingType?: BuildingType;
+  developer?: string;
+  yearBuilt?: number;
+  totalFloors?: number;
+  utilityPremisesNumber?: string; // DEWA/FEWA/ADDC premises number
+  // Management
   managerId?: string;
   managerName?: string;
   totalUnits: number;
   occupiedUnits: number;
+  unitBreakdown?: UnitBreakdown; // Optional breakdown of unit types
   amenities: string[]; // Array of amenity IDs
   status: "active" | "maintenance" | "inactive";
   createdAt: string;
@@ -598,6 +630,185 @@ export interface BuildingEmployee {
   shift?: "morning" | "evening" | "night";
   rating?: number;
   jobsCompleted?: number;
+}
+
+// Parcel & Delivery Management types
+export type ParcelStatus = "pending" | "picked_up" | "delivered" | "lost";
+
+export interface Parcel {
+  id: string;
+  buildingId: string;
+  unitNumber: string;
+  tenantId?: string;
+  tenantName?: string;
+  courier?: string;
+  receivedBy: string; // Employee name who received the parcel
+  receivedByEmployeeId?: string;
+  status: ParcelStatus;
+  deliveryDate: string; // ISO timestamp when parcel arrived
+  pickupDate?: string; // ISO timestamp when picked up
+  pickupCode?: string; // Optional code for pickup verification
+  notes?: string;
+  imageUrl?: string; // Optional photo of parcel
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateParcelDTO {
+  buildingId: string;
+  unitNumber: string;
+  tenantId?: string;
+  courier?: string;
+  receivedBy: string;
+  receivedByEmployeeId?: string;
+  deliveryDate: string;
+  pickupCode?: string;
+  notes?: string;
+  imageUrl?: string;
+}
+
+export interface UpdateParcelDTO {
+  unitNumber?: string;
+  tenantId?: string;
+  courier?: string;
+  status?: ParcelStatus;
+  pickupDate?: string;
+  notes?: string;
+  imageUrl?: string;
+}
+
+// Shift Management types
+export type ShiftStatus = "active" | "completed" | "cancelled";
+
+export interface Shift {
+  id: string;
+  buildingId: string;
+  employeeId: string;
+  employeeName: string;
+  role: string; // Job role/position for this shift (e.g., "Security", "Cleaner")
+  shiftDate: string; // YYYY-MM-DD
+  startTime: string; // HH:MM (24-hour format)
+  endTime: string; // HH:MM (24-hour format)
+  status: ShiftStatus;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: string;
+  createdByName?: string;
+}
+
+export interface CreateShiftDTO {
+  buildingId: string;
+  employeeId: string;
+  employeeName: string;
+  role: string;
+  shiftDate: string; // YYYY-MM-DD
+  startTime: string; // HH:MM
+  endTime: string; // HH:MM
+  notes?: string;
+}
+
+export interface UpdateShiftDTO {
+  employeeId?: string;
+  employeeName?: string;
+  role?: string;
+  shiftDate?: string;
+  startTime?: string;
+  endTime?: string;
+  status?: ShiftStatus;
+  notes?: string;
+}
+
+export interface ShiftConflict {
+  conflictType: "overlap" | "employee_on_leave" | "exceeds_max_hours";
+  message: string;
+  conflictingShift?: Shift;
+}
+
+// Maintenance Scheduling types
+export type MaintenanceScheduleStatus = "upcoming" | "in_progress" | "completed" | "cancelled";
+export type MaintenanceType =
+  | "hvac"
+  | "elevator"
+  | "plumbing"
+  | "electrical"
+  | "fire_safety"
+  | "water_system"
+  | "cleaning"
+  | "pest_control"
+  | "landscaping"
+  | "general"
+  | "other";
+
+export interface MaintenanceSchedule {
+  id: string;
+  buildingId: string;
+  buildingName?: string;
+  title: string;
+  description: string;
+  maintenanceType: MaintenanceType;
+  scheduledDate: string; // ISO timestamp
+  scheduledTime?: string; // HH:MM (optional, for display)
+  duration?: number; // Duration in hours
+  status: MaintenanceScheduleStatus;
+  affectedAreas?: string[]; // Floor numbers, zones, or "Entire Building"
+  affectedUnits?: string[]; // Specific unit numbers
+  estimatedImpact?: string; // e.g., "Water will be shut off", "Elevator unavailable"
+  notifiedTenants: boolean;
+  notificationSentAt?: string; // ISO timestamp
+  notificationMessage?: string; // Message sent to tenants
+  completedAt?: string; // ISO timestamp
+  cancelledAt?: string; // ISO timestamp
+  cancellationReason?: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: string;
+  createdByName?: string;
+  notes?: string;
+}
+
+export interface CreateMaintenanceScheduleDTO {
+  buildingId: string;
+  title: string;
+  description: string;
+  maintenanceType: MaintenanceType;
+  scheduledDate: string;
+  scheduledTime?: string;
+  duration?: number;
+  affectedAreas?: string[];
+  affectedUnits?: string[];
+  estimatedImpact?: string;
+  notifyTenants?: boolean;
+  notificationMessage?: string;
+  notes?: string;
+}
+
+export interface UpdateMaintenanceScheduleDTO {
+  title?: string;
+  description?: string;
+  maintenanceType?: MaintenanceType;
+  scheduledDate?: string;
+  scheduledTime?: string;
+  duration?: number;
+  status?: MaintenanceScheduleStatus;
+  affectedAreas?: string[];
+  affectedUnits?: string[];
+  estimatedImpact?: string;
+  completedAt?: string;
+  notes?: string;
+}
+
+export interface TenantImpact {
+  totalUnits: number;
+  affectedUnits: number;
+  estimatedTenants: number;
+  unitNumbers: string[];
+}
+
+export interface ScheduleConflict {
+  conflictType: "overlap" | "same_day_multiple";
+  message: string;
+  conflictingSchedule?: MaintenanceSchedule;
 }
 
 export interface ServiceProviderProfile {
@@ -1003,8 +1214,23 @@ export interface CreateBuildingDTO {
   address: string;
   city: string;
   country: string;
+  // UAE-specific location fields
+  emirate?: string;
+  community?: string;
+  street?: string;
+  plotNumber?: string;
+  buildingNumber?: string;
+  makaniNumber?: string;
+  // Building details
+  buildingType?: BuildingType;
+  developer?: string;
+  yearBuilt?: number;
+  totalFloors?: number;
+  utilityPremisesNumber?: string;
+  // Management & capacity
   managerId?: string;
   totalUnits: number;
+  unitBreakdown?: UnitBreakdown;
   amenities?: string[];
 }
 
@@ -1013,9 +1239,24 @@ export interface UpdateBuildingDTO {
   address?: string;
   city?: string;
   country?: string;
+  // UAE-specific location fields
+  emirate?: string;
+  community?: string;
+  street?: string;
+  plotNumber?: string;
+  buildingNumber?: string;
+  makaniNumber?: string;
+  // Building details
+  buildingType?: BuildingType;
+  developer?: string;
+  yearBuilt?: number;
+  totalFloors?: number;
+  utilityPremisesNumber?: string;
+  // Management & capacity
   managerId?: string;
   totalUnits?: number;
   occupiedUnits?: number;
+  unitBreakdown?: UnitBreakdown;
   amenities?: string[];
   status?: "active" | "maintenance" | "inactive";
 }
@@ -1262,6 +1503,194 @@ export interface AppError {
   status?: number;
   details?: any;
 }
+
+// Billing & Meter Reading types
+export type MeterType = "gas" | "water" | "electricity";
+export type MeterReadingStatus = "pending" | "verified" | "rejected" | "disputed";
+
+export interface MeterReading {
+  id: string;
+  buildingId: string;
+  buildingName?: string;
+  unitNumber: string;
+  tenantId: string;
+  tenantName?: string;
+  meterType: MeterType;
+  currentReading: number;
+  previousReading?: number;
+  consumption?: number;
+  unit: string; // e.g., "kWh", "m³", "gallons"
+  readingDate: string; // ISO timestamp
+  submittedBy: string; // Tenant or employee ID
+  submittedByName?: string;
+  photoUrl?: string; // Photo verification
+  status: MeterReadingStatus;
+  verifiedBy?: string;
+  verifiedByName?: string;
+  verifiedAt?: string;
+  rejectionReason?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BillSummary {
+  id: string;
+  buildingId: string;
+  buildingName?: string;
+  unitNumber: string;
+  tenantId: string;
+  tenantName?: string;
+  billingPeriod: string; // e.g., "2025-01" for January 2025
+  billingPeriodStart: string; // ISO timestamp
+  billingPeriodEnd: string; // ISO timestamp
+  rentAmount: number;
+  gasCharges?: number;
+  waterCharges?: number;
+  electricityCharges?: number;
+  maintenanceCharges?: number;
+  otherCharges?: number;
+  totalAmount: number;
+  paidAmount?: number;
+  balanceAmount?: number;
+  dueDate: string; // ISO timestamp
+  paidDate?: string; // ISO timestamp
+  status: "pending" | "partial" | "paid" | "overdue";
+  paymentMethod?: string;
+  transactionId?: string;
+  meterReadings: string[]; // Array of MeterReading IDs
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateMeterReadingDTO {
+  buildingId: string;
+  unitNumber: string;
+  tenantId: string;
+  meterType: MeterType;
+  currentReading: number;
+  previousReading?: number;
+  unit: string;
+  readingDate: string;
+  submittedBy: string;
+  photoUrl?: string;
+  notes?: string;
+}
+
+export interface UpdateMeterReadingDTO {
+  currentReading?: number;
+  photoUrl?: string;
+  status?: MeterReadingStatus;
+  verifiedBy?: string;
+  verifiedByName?: string;
+  verifiedAt?: string;
+  rejectionReason?: string;
+  notes?: string;
+}
+
+export interface VerifyMeterReadingDTO {
+  readingId: string;
+  verifiedBy: string;
+  verifiedByName: string;
+  status: "verified" | "rejected";
+  rejectionReason?: string;
+  notes?: string;
+}
+
+// Broadcast Notifications & Announcements types
+export type AnnouncementPriority = "low" | "normal" | "high" | "urgent";
+export type AnnouncementTargetType = "all_tenants" | "building" | "specific_units" | "role_based";
+export type AnnouncementStatus = "draft" | "scheduled" | "sent" | "cancelled";
+
+export interface AnnouncementDraft {
+  id?: string;
+  title: string;
+  body: string;
+  priority: AnnouncementPriority;
+  targetType: AnnouncementTargetType;
+  targetBuildingIds?: string[]; // If targetType is "building"
+  targetUnitNumbers?: string[]; // If targetType is "specific_units"
+  targetRoles?: UserRole[]; // If targetType is "role_based"
+  scheduledFor?: string; // ISO timestamp for scheduled sending
+  templateId?: string; // Reference to a template if used
+  attachments?: string[];
+  createdBy: string;
+  createdByName?: string;
+}
+
+export interface Announcement {
+  id: string;
+  title: string;
+  body: string;
+  priority: AnnouncementPriority;
+  targetType: AnnouncementTargetType;
+  targetBuildingIds?: string[];
+  targetUnitNumbers?: string[];
+  targetRoles?: UserRole[];
+  scheduledFor?: string;
+  sentAt?: string; // ISO timestamp when actually sent
+  status: AnnouncementStatus;
+  templateId?: string;
+  attachments?: string[];
+  createdBy: string;
+  createdByName?: string;
+  recipientCount?: number; // Number of users who received this
+  readCount?: number; // Number of users who read this
+  deliveryStats?: {
+    sent: number;
+    delivered: number;
+    failed: number;
+    read: number;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AnnouncementTemplate {
+  id: string;
+  name: string;
+  category: "maintenance" | "event" | "emergency" | "general";
+  title: string;
+  body: string;
+  priority: AnnouncementPriority;
+  targetType: AnnouncementTargetType;
+  usageCount: number;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateAnnouncementDTO {
+  title: string;
+  body: string;
+  priority: AnnouncementPriority;
+  targetType: AnnouncementTargetType;
+  targetBuildingIds?: string[];
+  targetUnitNumbers?: string[];
+  targetRoles?: UserRole[];
+  scheduledFor?: string;
+  templateId?: string;
+  attachments?: string[];
+  createdBy: string;
+  createdByName?: string;
+}
+
+export interface UpdateAnnouncementDTO {
+  title?: string;
+  body?: string;
+  priority?: AnnouncementPriority;
+  targetType?: AnnouncementTargetType;
+  targetBuildingIds?: string[];
+  targetUnitNumbers?: string[];
+  targetRoles?: UserRole[];
+  scheduledFor?: string;
+  status?: AnnouncementStatus;
+  attachments?: string[];
+}
+
+// Maintenance Event (Portfolio-level view) - Alias for MaintenanceSchedule for consistency with Admin-Task.md naming
+export type MaintenanceEvent = MaintenanceSchedule;
 
 // Utility types
 export type UserRole = User["role"];

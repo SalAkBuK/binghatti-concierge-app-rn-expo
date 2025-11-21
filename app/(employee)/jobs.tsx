@@ -16,6 +16,7 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
+import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
 import type { Job } from "../../lib/types";
 import { filterNotificationsByUser } from "../../lib/utils/helpers";
@@ -48,6 +49,7 @@ export default function EmployeeJobsScreen() {
   const [selectedStatus, setSelectedStatus] = useState<JobStatus>("all");
   const [selectedPriority, setSelectedPriority] = useState<JobPriority>("all");
   const [showFilters, setShowFilters] = useState(false);
+  const [showSideMenu, setShowSideMenu] = useState(false);
 
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
 
@@ -58,7 +60,7 @@ export default function EmployeeJobsScreen() {
   const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
 
   // Get employee's assigned jobs
-  const allJobs = actions.getJobs?.() ?? [];
+  const allJobs = useMemo(() => actions.getJobs?.() ?? [], [actions]);
   const myJobs = useMemo(() => {
     return allJobs.filter((job) => job.assignedToEmployeeId === currentUser?.id);
   }, [allJobs, currentUser?.id]);
@@ -116,24 +118,6 @@ export default function EmployeeJobsScreen() {
     setRefreshing(true);
     await new Promise((resolve) => setTimeout(resolve, 1000));
     setRefreshing(false);
-  };
-
-  const handleAcceptJob = (job: Job) => {
-    Alert.alert(
-      "Accept Job",
-      `Are you sure you want to accept this job?\n\n${job.title}`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Accept",
-          style: "default",
-          onPress: () => {
-            // TODO: Implement accept job action in context
-            Alert.alert("Success", "Job accepted successfully");
-          },
-        },
-      ]
-    );
   };
 
   const handleDeclineJob = (job: Job) => {
@@ -274,6 +258,8 @@ export default function EmployeeJobsScreen() {
           subtitle={`${filteredJobs.length} ${filteredJobs.length === 1 ? "job" : "jobs"}`}
           hasUnreadNotifications={hasUnreadNotifications}
           onNotificationPress={() => router.push(NOTIFICATION_ROUTE as any)}
+          showSideMenu={showSideMenu}
+          onSideMenuToggle={setShowSideMenu}
         />
 
         {/* Search Bar */}
@@ -516,6 +502,12 @@ export default function EmployeeJobsScreen() {
           )}
         </ScrollView>
       </View>
+
+      <SideMenu
+        isVisible={showSideMenu}
+        onClose={() => setShowSideMenu(false)}
+        userRole={currentUser?.role}
+      />
     </SafeAreaView>
   );
 }

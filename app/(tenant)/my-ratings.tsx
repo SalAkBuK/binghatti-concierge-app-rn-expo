@@ -1,6 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Dimensions,
   Image,
@@ -13,7 +12,7 @@ import {
   View,
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AnimatedButton } from "../../components/ui/AnimatedButton";
 import { HeaderBar } from "../../components/ui/HeaderBar";
@@ -28,7 +27,6 @@ const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 export default function MyRatingsScreen() {
   const { currentUser, notifications, actions } = useApp();
-  const insets = useSafeAreaInsets();
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [selectedRating, setSelectedRating] = useState<Rating | null>(null);
@@ -170,7 +168,7 @@ export default function MyRatingsScreen() {
               <Ionicons name="star-outline" size={64} color="#D1D5DB" />
               <Text style={styles.emptyStateTitle}>No ratings yet</Text>
               <Text style={styles.emptyStateText}>
-                You haven't rated any services yet. Complete a request to leave a rating.
+                You haven&apos;t rated any services yet. Complete a request to leave a rating.
               </Text>
             </View>
           )}

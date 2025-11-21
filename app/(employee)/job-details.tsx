@@ -18,7 +18,7 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useApp } from "../../lib/context/connected-app-provider";
-import type { Job, JobAdditionalCost, JobCompletionPhoto } from "../../lib/types";
+import type { Job } from "../../lib/types";
 
 export default function EmployeeJobDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -36,12 +36,12 @@ export default function EmployeeJobDetailsScreen() {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [showEstimateModal, setShowEstimateModal] = useState(false);
   const [estimateItemsDraft, setEstimateItemsDraft] = useState<
-    Array<{
+    {
       label: string;
       amount: string;
       description: string;
       category: "labor" | "parts" | "materials" | "fees" | "other";
-    }>
+    }[]
   >([]);
   const [estimateNotes, setEstimateNotes] = useState("");
   const [estimateLabelInput, setEstimateLabelInput] = useState("");
@@ -61,7 +61,7 @@ export default function EmployeeJobDetailsScreen() {
             <Ionicons name="alert-circle-outline" size={64} color="#EF4444" />
             <Text style={styles.errorTitle}>Job Not Found</Text>
             <Text style={styles.errorText}>
-              The job you're looking for doesn't exist or has been removed.
+              The job you&apos;re looking for doesn&apos;t exist or has been removed.
             </Text>
             <TouchableOpacity
               style={styles.backButton}
@@ -192,6 +192,7 @@ export default function EmployeeJobDetailsScreen() {
       );
       setShowEstimateModal(false);
     } catch (error: any) {
+      console.error("Failed to submit job estimate:", error);
       Alert.alert(
         "Error",
         error?.message || "Failed to submit estimate. Please try again.",
@@ -213,6 +214,7 @@ export default function EmployeeJobDetailsScreen() {
               await actions.startEmployeeJob?.(job.id);
               Alert.alert("Success", "Job started successfully!");
             } catch (error) {
+              console.error("Failed to start employee job:", error);
               Alert.alert("Error", "Failed to start job. Please try again.");
             }
           },
@@ -253,6 +255,7 @@ export default function EmployeeJobDetailsScreen() {
       await actions.uploadEmployeeJobPhoto?.(job.id, asset.uri, caption);
       Alert.alert("Photo Added", "Your completion photo has been uploaded.");
     } catch (error) {
+      console.error("Failed to upload completion photo:", error);
       Alert.alert("Error", "Failed to upload photo. Please try again.");
     } finally {
       setUploadingPhoto(false);
@@ -289,6 +292,7 @@ export default function EmployeeJobDetailsScreen() {
               setCostDescription("");
               setShowAddCostModal(false);
             } catch (error) {
+              console.error("Failed to add additional cost:", error);
               Alert.alert(
                 "Error",
                 "Failed to add additional cost. Please try again.",
@@ -336,6 +340,7 @@ export default function EmployeeJobDetailsScreen() {
               setShowCompleteModal(false);
               setCompletionNotes("");
             } catch (error) {
+              console.error("Failed to complete job:", error);
               Alert.alert("Error", "Failed to complete job. Please try again.");
             }
           },
@@ -566,7 +571,7 @@ export default function EmployeeJobDetailsScreen() {
                   </Text>
                 </View>
                 <Text style={styles.estimateTotal}>
-                  Total: AED {estimate.subtotal.toLocaleString()}
+                  Total: AED {(estimate.subtotal || 0).toLocaleString()}
                 </Text>
               </View>
 
@@ -582,7 +587,7 @@ export default function EmployeeJobDetailsScreen() {
                       ) : null}
                     </View>
                     <Text style={styles.estimateItemAmount}>
-                      AED {item.amount.toLocaleString()}
+                      AED {(item.amount || 0).toLocaleString()}
                     </Text>
                   </View>
                 ))}
@@ -712,7 +717,7 @@ export default function EmployeeJobDetailsScreen() {
                         {cost.description}
                       </Text>
                       <Text style={styles.costAmount}>
-                        AED {cost.amount.toLocaleString()}
+                        AED {(cost.amount || 0).toLocaleString()}
                       </Text>
                     </View>
                     <View style={styles.costFooter}>
@@ -843,7 +848,7 @@ export default function EmployeeJobDetailsScreen() {
                       <View style={styles.estimateDraftInfo}>
                         <Text style={styles.estimateDraftLabel}>{item.label}</Text>
                         <Text style={styles.estimateDraftMeta}>
-                          AED {parseFloat(item.amount).toLocaleString()} •{" "}
+                          AED {(parseFloat(item.amount) || 0).toLocaleString()} •{" "}
                           {item.category}
                         </Text>
                         {item.description ? (

@@ -59,7 +59,7 @@ interface RequestsActions {
 }
 
 // Requests Context Type
-interface RequestsContextType extends RequestsState {
+export interface RequestsContextType extends RequestsState {
   actions: RequestsActions;
 }
 

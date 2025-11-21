@@ -20,17 +20,16 @@ import { EntityTable } from "../../components/admin/EntityTable";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
+import { getUserErrorMessage } from "../../lib/services/api/errors";
 import type {
-  AppError,
   Building,
+  BuildingEmployee,
   BuildingStatus,
   BuildingUnit,
-  BuildingEmployee,
   ServiceProviderProfile,
-  VisitorLog,
   UnitType,
+  VisitorLog
 } from "../../lib/types";
-import { getUserErrorMessage } from "../../lib/services/api/errors";
 import { filterNotificationsByUser, formatDate } from "../../lib/utils/helpers";
 
 const MANAGEMENT_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
@@ -53,9 +52,10 @@ export default function BuildingsScreen() {
   const isManagement = currentUser?.role === "management";
   const hasScopedBuildings =
     currentUser?.role === "management" || currentUser?.role === "super_admin";
-  const managedBuildingIds = hasScopedBuildings
-    ? actions.getManagedBuildingIds?.() ?? []
-    : [];
+  const managedBuildingIds = useMemo(
+    () => (hasScopedBuildings ? actions.getManagedBuildingIds?.() ?? [] : []),
+    [actions, hasScopedBuildings],
+  );
   const canManageBuildings = ["admin", "super_admin"].includes(
     currentUser?.role ?? "",
   );
@@ -352,107 +352,208 @@ export default function BuildingsScreen() {
             .filter(Boolean) as ReactElement[])
         : [];
 
+    const occupancyRate = buildingUnitsData.length > 0 
+      ? Math.round((occupiedUnits / buildingUnitsData.length) * 100)
+      : 0;
+
+    const statusColors = getStatusColor(detailsBuilding.status);
+
     return (
-      <View style={styles.modalContent}>
-        <View style={styles.modalHeader}>
-          <View>
-            <Text style={styles.modalTitle}>{detailsBuilding.name}</Text>
-            <Text style={styles.modalSubtitle}>
-              {detailsBuilding.address}, {detailsBuilding.city}
-            </Text>
+      <SafeAreaView style={styles.detailsModalContainer}>
+        {/* Fixed Header with Gradient */}
+        <View style={styles.detailsModalHeader}>
+          <View style={styles.detailsHeaderTop}>
+            <TouchableOpacity 
+              onPress={closeDetailsModal} 
+              style={styles.detailsCloseButton}
+            >
+              <Ionicons name="close-circle" size={32} color="#FFFFFF" />
+            </TouchableOpacity>
+            <View style={[styles.detailsStatusBadge, { backgroundColor: statusColors.bg }]}>
+              <Text style={[styles.detailsStatusText, { color: statusColors.text }]}>
+                {detailsBuilding.status.toUpperCase()}
+              </Text>
+            </View>
           </View>
-          <TouchableOpacity onPress={closeDetailsModal} style={styles.closeButton}>
-            <Ionicons name="close" size={24} color="#6B7280" />
-          </TouchableOpacity>
+          
+          <View style={styles.detailsHeaderContent}>
+            <View style={styles.buildingIconContainer}>
+              <Ionicons name="business" size={32} color="#2563EB" />
+            </View>
+            <Text style={styles.detailsBuildingName}>{detailsBuilding.name}</Text>
+            <View style={styles.detailsLocationRow}>
+              <Ionicons name="location" size={16} color="#9CA3AF" />
+              <Text style={styles.detailsLocation}>
+                {detailsBuilding.address}, {detailsBuilding.city}
+              </Text>
+            </View>
+          </View>
         </View>
 
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.modalScrollContent}
+          contentContainerStyle={styles.detailsModalScrollContent}
         >
-          <View style={styles.managerRow}>
-            <Text style={styles.sectionTitle}>Building Manager</Text>
-            <Text style={styles.detailMeta}>
-              {detailsBuilding.managerName || "Not assigned"}
-            </Text>
+          {/* Manager Card */}
+          <Animated.View entering={FadeInDown.delay(50).duration(300)} style={styles.detailsManagerCard}>
+            <View style={styles.detailsManagerHeader}>
+              <View style={styles.detailsManagerIconWrapper}>
+                <Ionicons name="person-circle" size={24} color="#2563EB" />
+              </View>
+              <View style={styles.detailsManagerInfo}>
+                <Text style={styles.detailsManagerLabel}>Building Manager</Text>
+                <Text style={styles.detailsManagerName}>
+                  {detailsBuilding.managerName || "Not assigned"}
+                </Text>
+              </View>
+            </View>
             {canManageBuildings && (
               <TouchableOpacity
-                style={styles.assignButton}
+                style={styles.detailsAssignButton}
                 onPress={() => {
                   setShowDetailsModal(false);
                   openManagerModal(detailsBuilding);
                 }}
               >
-                <Ionicons name="people-outline" size={16} color="#FFFFFF" />
-                <Text style={styles.assignButtonText}>
-                  {detailsBuilding.managerName ? "Reassign Manager" : "Assign Manager"}
+                <Ionicons name="people-outline" size={18} color="#2563EB" />
+                <Text style={styles.detailsAssignButtonText}>
+                  {detailsBuilding.managerName ? "Change" : "Assign"}
                 </Text>
               </TouchableOpacity>
             )}
-          </View>
+          </Animated.View>
 
-          <View style={styles.summaryRow}>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryValue}>{buildingUnitsData.length}</Text>
-              <Text style={styles.summaryLabel}>Total Units</Text>
+          {/* Stats Grid */}
+          <Animated.View entering={FadeInDown.delay(100).duration(300)} style={styles.detailsStatsGrid}>
+            <View style={[styles.detailsStatCard, styles.detailsStatCardPrimary]}>
+              <View style={styles.detailsStatIconWrapper}>
+                <Ionicons name="home" size={24} color="#2563EB" />
+              </View>
+              <Text style={styles.detailsStatValue}>{buildingUnitsData.length}</Text>
+              <Text style={styles.detailsStatLabel}>Total Units</Text>
             </View>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryValue}>{occupiedUnits}</Text>
-              <Text style={styles.summaryLabel}>Occupied</Text>
+            
+            <View style={[styles.detailsStatCard, styles.detailsStatCardSuccess]}>
+              <View style={styles.detailsStatIconWrapper}>
+                <Ionicons name="checkmark-circle" size={24} color="#10B981" />
+              </View>
+              <Text style={styles.detailsStatValue}>{occupiedUnits}</Text>
+              <Text style={styles.detailsStatLabel}>Occupied</Text>
+              <View style={styles.detailsOccupancyBar}>
+                <View style={[styles.detailsOccupancyFill, { width: `${occupancyRate}%` }]} />
+              </View>
+              <Text style={styles.detailsOccupancyText}>{occupancyRate}% Occupancy</Text>
             </View>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryValue}>{vacantUnits}</Text>
-              <Text style={styles.summaryLabel}>Vacant</Text>
+            
+            <View style={[styles.detailsStatCard, styles.detailsStatCardInfo]}>
+              <View style={styles.detailsStatIconWrapper}>
+                <Ionicons name="key" size={24} color="#3B82F6" />
+              </View>
+              <Text style={styles.detailsStatValue}>{vacantUnits}</Text>
+              <Text style={styles.detailsStatLabel}>Vacant</Text>
             </View>
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryValue}>{maintenanceUnits}</Text>
-              <Text style={styles.summaryLabel}>Maintenance</Text>
+            
+            <View style={[styles.detailsStatCard, styles.detailsStatCardWarning]}>
+              <View style={styles.detailsStatIconWrapper}>
+                <Ionicons name="construct" size={24} color="#F59E0B" />
+              </View>
+              <Text style={styles.detailsStatValue}>{maintenanceUnits}</Text>
+              <Text style={styles.detailsStatLabel}>Maintenance</Text>
             </View>
-          </View>
+          </Animated.View>
 
-          <View style={styles.detailSection}>
-            <Text style={styles.sectionTitle}>Unit Inventory</Text>
-            {buildingUnitsData.length > 0 ? (
-              buildingUnitsData.map(renderUnitItem)
-            ) : (
-              <Text style={styles.emptyDetailText}>No units recorded yet.</Text>
-            )}
-          </View>
+          {/* Units Section */}
+          <Animated.View entering={FadeInDown.delay(150).duration(300)} style={styles.detailsSection}>
+            <View style={styles.detailsSectionHeader}>
+              <Ionicons name="grid" size={20} color="#1F2937" />
+              <Text style={styles.detailsSectionTitle}>Unit Inventory</Text>
+              <View style={styles.detailsCountBadge}>
+                <Text style={styles.detailsCountBadgeText}>{buildingUnitsData.length}</Text>
+              </View>
+            </View>
+            <View style={styles.detailsSectionContent}>
+              {buildingUnitsData.length > 0 ? (
+                buildingUnitsData.slice(0, 10).map(renderUnitItem)
+              ) : (
+                <View style={styles.detailsEmptyState}>
+                  <Ionicons name="home-outline" size={40} color="#D1D5DB" />
+                  <Text style={styles.detailsEmptyText}>No units recorded yet</Text>
+                </View>
+              )}
+              {buildingUnitsData.length > 10 && (
+                <Text style={styles.detailsShowMoreText}>
+                  + {buildingUnitsData.length - 10} more units
+                </Text>
+              )}
+            </View>
+          </Animated.View>
 
-          <View style={styles.detailSection}>
-            <Text style={styles.sectionTitle}>Building Employees</Text>
-            {employees.length > 0 ? (
-              employees.map(renderEmployeeItem)
-            ) : (
-              <Text style={styles.emptyDetailText}>
-                No employees assigned to this building.
-              </Text>
-            )}
-          </View>
+          {/* Employees Section */}
+          <Animated.View entering={FadeInDown.delay(200).duration(300)} style={styles.detailsSection}>
+            <View style={styles.detailsSectionHeader}>
+              <Ionicons name="people" size={20} color="#1F2937" />
+              <Text style={styles.detailsSectionTitle}>Building Employees</Text>
+              <View style={styles.detailsCountBadge}>
+                <Text style={styles.detailsCountBadgeText}>{employees.length}</Text>
+              </View>
+            </View>
+            <View style={styles.detailsSectionContent}>
+              {employees.length > 0 ? (
+                employees.map(renderEmployeeItem)
+              ) : (
+                <View style={styles.detailsEmptyState}>
+                  <Ionicons name="people-outline" size={40} color="#D1D5DB" />
+                  <Text style={styles.detailsEmptyText}>No employees assigned</Text>
+                </View>
+              )}
+            </View>
+          </Animated.View>
 
-          <View style={styles.detailSection}>
-            <Text style={styles.sectionTitle}>Service Providers</Text>
-            {providerCards.length > 0 ? (
-              providerCards
-            ) : (
-              <Text style={styles.emptyDetailText}>
-                No service provider ratings available.
-              </Text>
-            )}
-          </View>
+          {/* Service Providers Section */}
+          <Animated.View entering={FadeInDown.delay(250).duration(300)} style={styles.detailsSection}>
+            <View style={styles.detailsSectionHeader}>
+              <Ionicons name="construct" size={20} color="#1F2937" />
+              <Text style={styles.detailsSectionTitle}>Service Providers</Text>
+              <View style={styles.detailsCountBadge}>
+                <Text style={styles.detailsCountBadgeText}>{providerCards.length}</Text>
+              </View>
+            </View>
+            <View style={styles.detailsSectionContent}>
+              {providerCards.length > 0 ? (
+                providerCards
+              ) : (
+                <View style={styles.detailsEmptyState}>
+                  <Ionicons name="hammer-outline" size={40} color="#D1D5DB" />
+                  <Text style={styles.detailsEmptyText}>No service providers yet</Text>
+                </View>
+              )}
+            </View>
+          </Animated.View>
 
-          <View style={styles.detailSection}>
-            <Text style={styles.sectionTitle}>Recent Visitor & Delivery Logs</Text>
-            {visitorEntries.length > 0 ? (
-              visitorEntries.slice(0, 5).map(renderVisitorLogItem)
-            ) : (
-              <Text style={styles.emptyDetailText}>
-                No visitor or delivery activity recorded.
-              </Text>
-            )}
-          </View>
+          {/* Visitor Logs Section */}
+          <Animated.View entering={FadeInDown.delay(300).duration(300)} style={styles.detailsSection}>
+            <View style={styles.detailsSectionHeader}>
+              <Ionicons name="log-in" size={20} color="#1F2937" />
+              <Text style={styles.detailsSectionTitle}>Recent Visitors & Deliveries</Text>
+              <View style={styles.detailsCountBadge}>
+                <Text style={styles.detailsCountBadgeText}>{visitorEntries.length}</Text>
+              </View>
+            </View>
+            <View style={styles.detailsSectionContent}>
+              {visitorEntries.length > 0 ? (
+                visitorEntries.slice(0, 5).map(renderVisitorLogItem)
+              ) : (
+                <View style={styles.detailsEmptyState}>
+                  <Ionicons name="log-in-outline" size={40} color="#D1D5DB" />
+                  <Text style={styles.detailsEmptyText}>No visitor activity recorded</Text>
+                </View>
+              )}
+            </View>
+          </Animated.View>
+
+          <View style={{ height: 32 }} />
         </ScrollView>
-      </View>
+      </SafeAreaView>
     );
   };
 
@@ -817,14 +918,12 @@ export default function BuildingsScreen() {
       <Modal
         visible={showDetailsModal}
         transparent
-        animationType="fade"
+        animationType="slide"
         onRequestClose={closeDetailsModal}
       >
-        <View style={styles.modalOverlay}>
-          <Animated.View entering={FadeIn.duration(200)} style={[styles.modalContent, { width: "90%", maxHeight: "85%" }]}>
-            {renderDetailsModalContent()}
-          </Animated.View>
-        </View>
+        <Animated.View entering={FadeIn.duration(200)} style={styles.detailsModalFullScreen}>
+          {renderDetailsModalContent()}
+        </Animated.View>
       </Modal>
     </SafeAreaView>
   );
@@ -1105,5 +1204,267 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#FFFFFF",
+  },
+  // Enhanced Details Modal Styles
+  detailsModalFullScreen: {
+    flex: 1,
+    backgroundColor: "#F9FAFB",
+  },
+  detailsModalContainer: {
+    flex: 1,
+    backgroundColor: "#F9FAFB",
+  },
+  detailsModalHeader: {
+    backgroundColor: "#2563EB",
+    paddingTop: 20,
+    paddingBottom: 24,
+    paddingHorizontal: 24,
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
+    shadowColor: "#2563EB",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  detailsHeaderTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  detailsCloseButton: {
+    padding: 4,
+  },
+  detailsStatusBadge: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  detailsStatusText: {
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+  },
+  detailsHeaderContent: {
+    alignItems: "center",
+  },
+  buildingIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  detailsBuildingName: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  detailsLocationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  detailsLocation: {
+    fontSize: 14,
+    color: "#DBEAFE",
+  },
+  detailsModalScrollContent: {
+    padding: 20,
+    paddingBottom: 40,
+  },
+  detailsManagerCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  detailsManagerHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    flex: 1,
+  },
+  detailsManagerIconWrapper: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#EFF6FF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  detailsManagerInfo: {
+    flex: 1,
+  },
+  detailsManagerLabel: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginBottom: 2,
+  },
+  detailsManagerName: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#111827",
+  },
+  detailsAssignButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#EFF6FF",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+  },
+  detailsAssignButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#2563EB",
+  },
+  detailsStatsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    marginBottom: 20,
+  },
+  detailsStatCard: {
+    flexBasis: "48%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  detailsStatCardPrimary: {
+    backgroundColor: "#EFF6FF",
+    borderColor: "#BFDBFE",
+  },
+  detailsStatCardSuccess: {
+    backgroundColor: "#ECFDF5",
+    borderColor: "#A7F3D0",
+  },
+  detailsStatCardInfo: {
+    backgroundColor: "#EFF6FF",
+    borderColor: "#BFDBFE",
+  },
+  detailsStatCardWarning: {
+    backgroundColor: "#FEF3C7",
+    borderColor: "#FDE68A",
+  },
+  detailsStatIconWrapper: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
+  detailsStatValue: {
+    fontSize: 28,
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: 4,
+  },
+  detailsStatLabel: {
+    fontSize: 13,
+    color: "#6B7280",
+  },
+  detailsOccupancyBar: {
+    height: 6,
+    backgroundColor: "#E5E7EB",
+    borderRadius: 3,
+    marginTop: 8,
+    overflow: "hidden",
+  },
+  detailsOccupancyFill: {
+    height: "100%",
+    backgroundColor: "#10B981",
+    borderRadius: 3,
+  },
+  detailsOccupancyText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#059669",
+    marginTop: 4,
+  },
+  detailsSection: {
+    marginBottom: 24,
+  },
+  detailsSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 12,
+  },
+  detailsSectionTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#1F2937",
+    flex: 1,
+  },
+  detailsCountBadge: {
+    backgroundColor: "#2563EB",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  detailsCountBadgeText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  detailsSectionContent: {
+    gap: 10,
+  },
+  detailsEmptyState: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 40,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  detailsEmptyText: {
+    fontSize: 14,
+    color: "#9CA3AF",
+    marginTop: 8,
+  },
+  detailsShowMoreText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#2563EB",
+    textAlign: "center",
+    paddingVertical: 12,
+    backgroundColor: "#EFF6FF",
+    borderRadius: 8,
+    marginTop: 4,
   },
 });

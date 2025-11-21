@@ -231,6 +231,7 @@ export class ApiErrorNormalizer {
 export const normalizeApiError = ApiErrorNormalizer.normalize;
 export const normalizeApiSuccess = ApiErrorNormalizer.normalizeSuccess;
 export const transformApiResponse = ApiErrorNormalizer.transformResponse;
-export const getUserErrorMessage = ApiErrorNormalizer.getUserMessage;
+export const getUserErrorMessage = (error: any) =>
+  ApiErrorNormalizer.getUserMessage(error);
 export const isRetryableError = ApiErrorNormalizer.isRetryable;
 export const isAuthenticationError = ApiErrorNormalizer.isAuthError;

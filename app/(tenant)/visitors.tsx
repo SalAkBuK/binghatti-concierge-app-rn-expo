@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Alert,
   Dimensions,
@@ -13,7 +13,7 @@ import {
   View,
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AnimatedButton } from "../../components/ui/AnimatedButton";
 import { HeaderBar } from "../../components/ui/HeaderBar";
@@ -28,7 +28,6 @@ type FilterStatus = "all" | VisitorStatus;
 
 export default function VisitorsScreen() {
   const { currentUser, notifications, actions } = useApp();
-  const insets = useSafeAreaInsets();
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -109,6 +108,7 @@ export default function VisitorsScreen() {
               await actions.cancelVisitor(visitor.id);
               Alert.alert("Success", "Visitor registration cancelled");
             } catch (error) {
+              console.error("Failed to cancel visitor registration:", error);
               Alert.alert("Error", "Failed to cancel visitor registration");
             }
           },

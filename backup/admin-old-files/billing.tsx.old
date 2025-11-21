@@ -1,0 +1,1113 @@
+import { Ionicons } from "@expo/vector-icons";
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Image,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+  useWindowDimensions,
+} from "react-native";
+import Animated, { FadeInDown } from "react-native-reanimated";
+import { SafeAreaView } from "react-native-safe-area-context";
+
+import { HeaderBar } from "../../components/ui/HeaderBar";
+import { SideMenu } from "../../components/ui/SideMenu";
+import { useApp } from "../../lib/context/connected-app-provider";
+import { BillingApiService } from "../../lib/services/api/billing";
+import type { MeterReading, BillSummary, Building } from "../../lib/types";
+import { filterNotificationsByUser } from "../../lib/utils/helpers";
+
+const ADMIN_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
+
+const billingService = new BillingApiService();
+
+type TabType = "meter-readings" | "bills";
+
+export default function BillingScreen() {
+  const { currentUser, notifications, actions } = useApp();
+  const { getBuildings } = actions;
+  const { width } = useWindowDimensions();
+  const [showSideMenu, setShowSideMenu] = useState(false);
+  const [selectedTab, setSelectedTab] = useState<TabType>("meter-readings");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  // Meter Readings state
+  const [meterReadings, setMeterReadings] = useState<MeterReading[]>([]);
+  const [selectedReading, setSelectedReading] = useState<MeterReading | null>(null);
+  const [showReadingModal, setShowReadingModal] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+
+  // Bills state
+  const [bills, setBills] = useState<BillSummary[]>([]);
+  const [selectedBill, setSelectedBill] = useState<BillSummary | null>(null);
+  const [showBillModal, setShowBillModal] = useState(false);
+  const [billStatusFilter, setBillStatusFilter] = useState<string>("all");
+
+  const [selectedBuildingId, setSelectedBuildingId] = useState<string>("all");
+
+  const pagePadding = Math.max(16, Math.min(28, width * 0.05));
+  const isCompact = width < 768;
+
+  const allBuildings = useMemo(() => getBuildings(), [getBuildings]);
+
+  // Load data
+  useEffect(() => {
+    loadData();
+  }, [selectedBuildingId, statusFilter, billStatusFilter, selectedTab]);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      if (selectedTab === "meter-readings") {
+        const response = await billingService.getMeterReadings(
+          selectedBuildingId !== "all" ? selectedBuildingId : undefined,
+          statusFilter !== "all" ? statusFilter : undefined
+        );
+        if (response.success && response.data) {
+          setMeterReadings(response.data);
+        }
+      } else {
+        const response = await billingService.getBills(
+          selectedBuildingId !== "all" ? selectedBuildingId : undefined,
+          billStatusFilter !== "all" ? billStatusFilter : undefined
+        );
+        if (response.success && response.data) {
+          setBills(response.data);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to load billing data:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyReading = async (readingId: string, status: "verified" | "rejected", reason?: string) => {
+    try {
+      const response = await billingService.verifyMeterReading({
+        readingId,
+        verifiedBy: currentUser?.id || "admin",
+        verifiedByName: currentUser?.name || "Admin",
+        status,
+        rejectionReason: reason,
+      });
+
+      if (response.success) {
+        Alert.alert("Success", `Meter reading ${status} successfully`);
+        setShowReadingModal(false);
+        loadData();
+      }
+    } catch (error) {
+      Alert.alert("Error", "Failed to verify meter reading");
+    }
+  };
+
+  const handleExportCSV = async () => {
+    try {
+      const response = await billingService.exportBillsToCSV(
+        selectedBuildingId !== "all" ? selectedBuildingId : undefined
+      );
+
+      if (response.success) {
+        Alert.alert("Success", "Bills exported to CSV successfully");
+      }
+    } catch (error) {
+      Alert.alert("Error", "Failed to export CSV");
+    }
+  };
+
+  const filteredMeterReadings = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return meterReadings.filter((reading) => {
+      if (!query) return true;
+      const haystack = `${reading.unitNumber} ${reading.tenantName} ${reading.meterType}`.toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [meterReadings, searchQuery]);
+
+  const filteredBills = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return bills.filter((bill) => {
+      if (!query) return true;
+      const haystack = `${bill.unitNumber} ${bill.tenantName} ${bill.billingPeriod}`.toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [bills, searchQuery]);
+
+  const userNotifications = filterNotificationsByUser(
+    notifications || [],
+    currentUser?.id,
+  );
+  const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
+
+  return (
+    <SafeAreaView style={styles.container} edges={["top"]}>
+      <HeaderBar
+        title="Billing & Meter Readings"
+        onMenuPress={() => setShowSideMenu(true)}
+        onNotificationPress={() => {}}
+        hasUnreadNotifications={hasUnreadNotifications}
+        notificationRoute={ADMIN_NOTIFICATION_ROUTE}
+      />
+
+      {showSideMenu && (
+        <SideMenu
+          isVisible={showSideMenu}
+          onClose={() => setShowSideMenu(false)}
+        />
+      )}
+
+      <ScrollView style={styles.scrollView}>
+        <View style={[styles.content, { padding: pagePadding }]}>
+          {/* Tabs */}
+          <View style={styles.tabs}>
+            <TouchableOpacity
+              style={[styles.tab, selectedTab === "meter-readings" && styles.activeTab]}
+              onPress={() => setSelectedTab("meter-readings")}
+            >
+              <Ionicons
+                name="speedometer-outline"
+                size={20}
+                color={selectedTab === "meter-readings" ? "#00796B" : "#666"}
+              />
+              <Text style={[styles.tabText, selectedTab === "meter-readings" && styles.activeTabText]}>
+                Meter Readings
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tab, selectedTab === "bills" && styles.activeTab]}
+              onPress={() => setSelectedTab("bills")}
+            >
+              <Ionicons
+                name="receipt-outline"
+                size={20}
+                color={selectedTab === "bills" ? "#00796B" : "#666"}
+              />
+              <Text style={[styles.tabText, selectedTab === "bills" && styles.activeTabText]}>
+                Bills
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Filters */}
+          <View style={styles.filters}>
+            {/* Building Filter */}
+            <View style={styles.filterItem}>
+              <Text style={styles.filterLabel}>Building:</Text>
+              <View style={styles.pickerContainer}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <TouchableOpacity
+                    style={[
+                      styles.filterChip,
+                      selectedBuildingId === "all" && styles.activeFilterChip,
+                    ]}
+                    onPress={() => setSelectedBuildingId("all")}
+                  >
+                    <Text
+                      style={[
+                        styles.filterChipText,
+                        selectedBuildingId === "all" && styles.activeFilterChipText,
+                      ]}
+                    >
+                      All Buildings
+                    </Text>
+                  </TouchableOpacity>
+                  {allBuildings.map((building) => (
+                    <TouchableOpacity
+                      key={building.id}
+                      style={[
+                        styles.filterChip,
+                        selectedBuildingId === building.id && styles.activeFilterChip,
+                      ]}
+                      onPress={() => setSelectedBuildingId(building.id)}
+                    >
+                      <Text
+                        style={[
+                          styles.filterChipText,
+                          selectedBuildingId === building.id && styles.activeFilterChipText,
+                        ]}
+                      >
+                        {building.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            </View>
+
+            {/* Status Filter */}
+            {selectedTab === "meter-readings" && (
+              <View style={styles.filterItem}>
+                <Text style={styles.filterLabel}>Status:</Text>
+                <View style={styles.pickerContainer}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    {["all", "pending", "verified", "rejected"].map((status) => (
+                      <TouchableOpacity
+                        key={status}
+                        style={[
+                          styles.filterChip,
+                          statusFilter === status && styles.activeFilterChip,
+                        ]}
+                        onPress={() => setStatusFilter(status)}
+                      >
+                        <Text
+                          style={[
+                            styles.filterChipText,
+                            statusFilter === status && styles.activeFilterChipText,
+                          ]}
+                        >
+                          {status.charAt(0).toUpperCase() + status.slice(1)}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              </View>
+            )}
+
+            {selectedTab === "bills" && (
+              <View style={styles.filterItem}>
+                <Text style={styles.filterLabel}>Status:</Text>
+                <View style={styles.pickerContainer}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    {["all", "pending", "partial", "paid", "overdue"].map((status) => (
+                      <TouchableOpacity
+                        key={status}
+                        style={[
+                          styles.filterChip,
+                          billStatusFilter === status && styles.activeFilterChip,
+                        ]}
+                        onPress={() => setBillStatusFilter(status)}
+                      >
+                        <Text
+                          style={[
+                            styles.filterChipText,
+                            billStatusFilter === status && styles.activeFilterChipText,
+                          ]}
+                        >
+                          {status.charAt(0).toUpperCase() + status.slice(1)}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              </View>
+            )}
+
+            {/* Search */}
+            <View style={styles.searchContainer}>
+              <Ionicons name="search" size={20} color="#999" />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search..."
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholderTextColor="#999"
+              />
+            </View>
+
+            {/* Export Button (Bills only) */}
+            {selectedTab === "bills" && (
+              <TouchableOpacity style={styles.exportButton} onPress={handleExportCSV}>
+                <Ionicons name="download-outline" size={20} color="#fff" />
+                <Text style={styles.exportButtonText}>Export CSV</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Content */}
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#00796B" />
+            </View>
+          ) : selectedTab === "meter-readings" ? (
+            <View style={styles.listContainer}>
+              {filteredMeterReadings.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="speedometer-outline" size={64} color="#ccc" />
+                  <Text style={styles.emptyStateText}>No meter readings found</Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={filteredMeterReadings}
+                  keyExtractor={(item) => item.id}
+                  renderItem={({ item, index }) => (
+                    <Animated.View
+                      entering={FadeInDown.delay(index * 50)}
+                      style={styles.card}
+                    >
+                      <TouchableOpacity
+                        onPress={() => {
+                          setSelectedReading(item);
+                          setShowReadingModal(true);
+                        }}
+                      >
+                        <View style={styles.cardHeader}>
+                          <View>
+                            <Text style={styles.cardTitle}>
+                              Unit {item.unitNumber} - {item.buildingName}
+                            </Text>
+                            <Text style={styles.cardSubtitle}>{item.tenantName}</Text>
+                          </View>
+                          <View
+                            style={[
+                              styles.statusBadge,
+                              item.status === "verified" && styles.verifiedBadge,
+                              item.status === "rejected" && styles.rejectedBadge,
+                              item.status === "pending" && styles.pendingBadge,
+                            ]}
+                          >
+                            <Text style={styles.statusBadgeText}>
+                              {item.status.toUpperCase()}
+                            </Text>
+                          </View>
+                        </View>
+                        <View style={styles.cardRow}>
+                          <Text style={styles.cardLabel}>Meter Type:</Text>
+                          <Text style={styles.cardValue}>
+                            {item.meterType.toUpperCase()}
+                          </Text>
+                        </View>
+                        <View style={styles.cardRow}>
+                          <Text style={styles.cardLabel}>Reading:</Text>
+                          <Text style={styles.cardValue}>
+                            {item.currentReading} {item.unit}
+                          </Text>
+                        </View>
+                        {item.consumption && (
+                          <View style={styles.cardRow}>
+                            <Text style={styles.cardLabel}>Consumption:</Text>
+                            <Text style={styles.cardValue}>
+                              {item.consumption} {item.unit}
+                            </Text>
+                          </View>
+                        )}
+                        <View style={styles.cardRow}>
+                          <Text style={styles.cardLabel}>Reading Date:</Text>
+                          <Text style={styles.cardValue}>
+                            {new Date(item.readingDate).toLocaleDateString()}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    </Animated.View>
+                  )}
+                  scrollEnabled={false}
+                />
+              )}
+            </View>
+          ) : (
+            <View style={styles.listContainer}>
+              {filteredBills.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="receipt-outline" size={64} color="#ccc" />
+                  <Text style={styles.emptyStateText}>No bills found</Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={filteredBills}
+                  keyExtractor={(item) => item.id}
+                  renderItem={({ item, index }) => (
+                    <Animated.View
+                      entering={FadeInDown.delay(index * 50)}
+                      style={styles.card}
+                    >
+                      <TouchableOpacity
+                        onPress={() => {
+                          setSelectedBill(item);
+                          setShowBillModal(true);
+                        }}
+                      >
+                        <View style={styles.cardHeader}>
+                          <View>
+                            <Text style={styles.cardTitle}>
+                              Unit {item.unitNumber} - {item.buildingName}
+                            </Text>
+                            <Text style={styles.cardSubtitle}>{item.tenantName}</Text>
+                          </View>
+                          <View
+                            style={[
+                              styles.statusBadge,
+                              item.status === "paid" && styles.verifiedBadge,
+                              item.status === "overdue" && styles.rejectedBadge,
+                              item.status === "pending" && styles.pendingBadge,
+                              item.status === "partial" && styles.partialBadge,
+                            ]}
+                          >
+                            <Text style={styles.statusBadgeText}>
+                              {item.status.toUpperCase()}
+                            </Text>
+                          </View>
+                        </View>
+                        <View style={styles.cardRow}>
+                          <Text style={styles.cardLabel}>Period:</Text>
+                          <Text style={styles.cardValue}>{item.billingPeriod}</Text>
+                        </View>
+                        <View style={styles.cardRow}>
+                          <Text style={styles.cardLabel}>Total Amount:</Text>
+                          <Text style={[styles.cardValue, styles.amountText]}>
+                            AED {item.totalAmount.toFixed(2)}
+                          </Text>
+                        </View>
+                        {item.balanceAmount !== undefined && item.balanceAmount > 0 && (
+                          <View style={styles.cardRow}>
+                            <Text style={styles.cardLabel}>Balance:</Text>
+                            <Text style={[styles.cardValue, styles.balanceText]}>
+                              AED {item.balanceAmount.toFixed(2)}
+                            </Text>
+                          </View>
+                        )}
+                        <View style={styles.cardRow}>
+                          <Text style={styles.cardLabel}>Due Date:</Text>
+                          <Text style={styles.cardValue}>
+                            {new Date(item.dueDate).toLocaleDateString()}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    </Animated.View>
+                  )}
+                  scrollEnabled={false}
+                />
+              )}
+            </View>
+          )}
+        </View>
+      </ScrollView>
+
+      {/* Meter Reading Detail Modal */}
+      {selectedReading && (
+        <Modal
+          visible={showReadingModal}
+          animationType="slide"
+          transparent
+          onRequestClose={() => setShowReadingModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, isCompact && styles.modalContentCompact]}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Meter Reading Details</Text>
+                <TouchableOpacity onPress={() => setShowReadingModal(false)}>
+                  <Ionicons name="close" size={24} color="#333" />
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={styles.modalBody}>
+                <Text style={styles.detailLabel}>Building & Unit</Text>
+                <Text style={styles.detailValue}>
+                  {selectedReading.buildingName} - Unit {selectedReading.unitNumber}
+                </Text>
+
+                <Text style={styles.detailLabel}>Tenant</Text>
+                <Text style={styles.detailValue}>{selectedReading.tenantName}</Text>
+
+                <Text style={styles.detailLabel}>Meter Type</Text>
+                <Text style={styles.detailValue}>
+                  {selectedReading.meterType.toUpperCase()}
+                </Text>
+
+                <Text style={styles.detailLabel}>Current Reading</Text>
+                <Text style={styles.detailValue}>
+                  {selectedReading.currentReading} {selectedReading.unit}
+                </Text>
+
+                {selectedReading.previousReading && (
+                  <>
+                    <Text style={styles.detailLabel}>Previous Reading</Text>
+                    <Text style={styles.detailValue}>
+                      {selectedReading.previousReading} {selectedReading.unit}
+                    </Text>
+                  </>
+                )}
+
+                {selectedReading.consumption && (
+                  <>
+                    <Text style={styles.detailLabel}>Consumption</Text>
+                    <Text style={styles.detailValue}>
+                      {selectedReading.consumption} {selectedReading.unit}
+                    </Text>
+                  </>
+                )}
+
+                <Text style={styles.detailLabel}>Reading Date</Text>
+                <Text style={styles.detailValue}>
+                  {new Date(selectedReading.readingDate).toLocaleString()}
+                </Text>
+
+                <Text style={styles.detailLabel}>Submitted By</Text>
+                <Text style={styles.detailValue}>{selectedReading.submittedByName}</Text>
+
+                {selectedReading.photoUrl && (
+                  <>
+                    <Text style={styles.detailLabel}>Photo Verification</Text>
+                    <Image
+                      source={{ uri: selectedReading.photoUrl }}
+                      style={styles.photoPreview}
+                      resizeMode="contain"
+                    />
+                  </>
+                )}
+
+                {selectedReading.notes && (
+                  <>
+                    <Text style={styles.detailLabel}>Notes</Text>
+                    <Text style={styles.detailValue}>{selectedReading.notes}</Text>
+                  </>
+                )}
+
+                {selectedReading.status === "pending" && (
+                  <View style={styles.actionButtons}>
+                    <TouchableOpacity
+                      style={[styles.actionButton, styles.approveButton]}
+                      onPress={() => handleVerifyReading(selectedReading.id, "verified")}
+                    >
+                      <Ionicons name="checkmark-circle" size={20} color="#fff" />
+                      <Text style={styles.actionButtonText}>Verify</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.actionButton, styles.rejectButton]}
+                      onPress={() => {
+                        Alert.prompt(
+                          "Reject Reading",
+                          "Please provide a reason for rejection:",
+                          (reason) => handleVerifyReading(selectedReading.id, "rejected", reason)
+                        );
+                      }}
+                    >
+                      <Ionicons name="close-circle" size={20} color="#fff" />
+                      <Text style={styles.actionButtonText}>Reject</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Bill Detail Modal */}
+      {selectedBill && (
+        <Modal
+          visible={showBillModal}
+          animationType="slide"
+          transparent
+          onRequestClose={() => setShowBillModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, isCompact && styles.modalContentCompact]}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Bill Details</Text>
+                <TouchableOpacity onPress={() => setShowBillModal(false)}>
+                  <Ionicons name="close" size={24} color="#333" />
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={styles.modalBody}>
+                <Text style={styles.detailLabel}>Building & Unit</Text>
+                <Text style={styles.detailValue}>
+                  {selectedBill.buildingName} - Unit {selectedBill.unitNumber}
+                </Text>
+
+                <Text style={styles.detailLabel}>Tenant</Text>
+                <Text style={styles.detailValue}>{selectedBill.tenantName}</Text>
+
+                <Text style={styles.detailLabel}>Billing Period</Text>
+                <Text style={styles.detailValue}>{selectedBill.billingPeriod}</Text>
+
+                <View style={styles.billBreakdown}>
+                  <Text style={styles.breakdownTitle}>Charges Breakdown:</Text>
+
+                  <View style={styles.breakdownRow}>
+                    <Text style={styles.breakdownLabel}>Rent</Text>
+                    <Text style={styles.breakdownValue}>
+                      AED {selectedBill.rentAmount.toFixed(2)}
+                    </Text>
+                  </View>
+
+                  {selectedBill.gasCharges !== undefined && selectedBill.gasCharges > 0 && (
+                    <View style={styles.breakdownRow}>
+                      <Text style={styles.breakdownLabel}>Gas</Text>
+                      <Text style={styles.breakdownValue}>
+                        AED {selectedBill.gasCharges.toFixed(2)}
+                      </Text>
+                    </View>
+                  )}
+
+                  {selectedBill.waterCharges !== undefined && selectedBill.waterCharges > 0 && (
+                    <View style={styles.breakdownRow}>
+                      <Text style={styles.breakdownLabel}>Water</Text>
+                      <Text style={styles.breakdownValue}>
+                        AED {selectedBill.waterCharges.toFixed(2)}
+                      </Text>
+                    </View>
+                  )}
+
+                  {selectedBill.electricityCharges !== undefined && selectedBill.electricityCharges > 0 && (
+                    <View style={styles.breakdownRow}>
+                      <Text style={styles.breakdownLabel}>Electricity</Text>
+                      <Text style={styles.breakdownValue}>
+                        AED {selectedBill.electricityCharges.toFixed(2)}
+                      </Text>
+                    </View>
+                  )}
+
+                  {selectedBill.maintenanceCharges !== undefined && selectedBill.maintenanceCharges > 0 && (
+                    <View style={styles.breakdownRow}>
+                      <Text style={styles.breakdownLabel}>Maintenance</Text>
+                      <Text style={styles.breakdownValue}>
+                        AED {selectedBill.maintenanceCharges.toFixed(2)}
+                      </Text>
+                    </View>
+                  )}
+
+                  {selectedBill.otherCharges !== undefined && selectedBill.otherCharges > 0 && (
+                    <View style={styles.breakdownRow}>
+                      <Text style={styles.breakdownLabel}>Other</Text>
+                      <Text style={styles.breakdownValue}>
+                        AED {selectedBill.otherCharges.toFixed(2)}
+                      </Text>
+                    </View>
+                  )}
+
+                  <View style={[styles.breakdownRow, styles.totalRow]}>
+                    <Text style={styles.totalLabel}>Total</Text>
+                    <Text style={styles.totalValue}>
+                      AED {selectedBill.totalAmount.toFixed(2)}
+                    </Text>
+                  </View>
+
+                  {selectedBill.paidAmount !== undefined && selectedBill.paidAmount > 0 && (
+                    <View style={styles.breakdownRow}>
+                      <Text style={styles.breakdownLabel}>Paid</Text>
+                      <Text style={[styles.breakdownValue, styles.paidText]}>
+                        AED {selectedBill.paidAmount.toFixed(2)}
+                      </Text>
+                    </View>
+                  )}
+
+                  {selectedBill.balanceAmount !== undefined && selectedBill.balanceAmount > 0 && (
+                    <View style={styles.breakdownRow}>
+                      <Text style={styles.breakdownLabel}>Balance</Text>
+                      <Text style={[styles.breakdownValue, styles.balanceText]}>
+                        AED {selectedBill.balanceAmount.toFixed(2)}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                <Text style={styles.detailLabel}>Due Date</Text>
+                <Text style={styles.detailValue}>
+                  {new Date(selectedBill.dueDate).toLocaleDateString()}
+                </Text>
+
+                {selectedBill.paidDate && (
+                  <>
+                    <Text style={styles.detailLabel}>Paid Date</Text>
+                    <Text style={styles.detailValue}>
+                      {new Date(selectedBill.paidDate).toLocaleDateString()}
+                    </Text>
+                  </>
+                )}
+
+                {selectedBill.paymentMethod && (
+                  <>
+                    <Text style={styles.detailLabel}>Payment Method</Text>
+                    <Text style={styles.detailValue}>{selectedBill.paymentMethod}</Text>
+                  </>
+                )}
+
+                {selectedBill.transactionId && (
+                  <>
+                    <Text style={styles.detailLabel}>Transaction ID</Text>
+                    <Text style={styles.detailValue}>{selectedBill.transactionId}</Text>
+                  </>
+                )}
+
+                {selectedBill.notes && (
+                  <>
+                    <Text style={styles.detailLabel}>Notes</Text>
+                    <Text style={styles.detailValue}>{selectedBill.notes}</Text>
+                  </>
+                )}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+      )}
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#f5f5f5",
+  },
+  scrollView: {
+    flex: 1,
+  },
+  content: {
+    paddingBottom: 24,
+  },
+  tabs: {
+    flexDirection: "row",
+    marginBottom: 16,
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    padding: 4,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  tab: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+    gap: 8,
+  },
+  activeTab: {
+    backgroundColor: "#E0F2F1",
+  },
+  tabText: {
+    fontSize: 14,
+    color: "#666",
+    fontWeight: "500",
+  },
+  activeTabText: {
+    color: "#00796B",
+    fontWeight: "600",
+  },
+  filters: {
+    marginBottom: 16,
+    gap: 12,
+  },
+  filterItem: {
+    gap: 8,
+  },
+  filterLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+  },
+  pickerContainer: {
+    flexDirection: "row",
+  },
+  filterChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: "#ddd",
+  },
+  activeFilterChip: {
+    backgroundColor: "#00796B",
+    borderColor: "#00796B",
+  },
+  filterChipText: {
+    fontSize: 14,
+    color: "#666",
+    fontWeight: "500",
+  },
+  activeFilterChipText: {
+    color: "#fff",
+  },
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+      },
+      android: {
+        elevation: 1,
+      },
+    }),
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: "#333",
+  },
+  exportButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#00796B",
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    gap: 8,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
+  },
+  exportButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  loadingContainer: {
+    paddingVertical: 48,
+    alignItems: "center",
+  },
+  listContainer: {
+    gap: 12,
+  },
+  emptyState: {
+    paddingVertical: 48,
+    alignItems: "center",
+  },
+  emptyStateText: {
+    fontSize: 16,
+    color: "#999",
+    marginTop: 16,
+  },
+  card: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 12,
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 4,
+  },
+  cardSubtitle: {
+    fontSize: 14,
+    color: "#666",
+  },
+  statusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: "#E0E0E0",
+  },
+  pendingBadge: {
+    backgroundColor: "#FFF3E0",
+  },
+  verifiedBadge: {
+    backgroundColor: "#E8F5E9",
+  },
+  rejectedBadge: {
+    backgroundColor: "#FFEBEE",
+  },
+  partialBadge: {
+    backgroundColor: "#FFF9C4",
+  },
+  statusBadgeText: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#666",
+  },
+  cardRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: 6,
+  },
+  cardLabel: {
+    fontSize: 14,
+    color: "#666",
+  },
+  cardValue: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#333",
+  },
+  amountText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#00796B",
+  },
+  balanceText: {
+    color: "#D32F2F",
+    fontWeight: "600",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 16,
+  },
+  modalContent: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    width: "100%",
+    maxWidth: 600,
+    maxHeight: "90%",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
+  },
+  modalContentCompact: {
+    maxWidth: "100%",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#333",
+  },
+  modalBody: {
+    padding: 20,
+  },
+  detailLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#666",
+    marginTop: 16,
+    marginBottom: 4,
+    textTransform: "uppercase",
+  },
+  detailValue: {
+    fontSize: 16,
+    color: "#333",
+  },
+  photoPreview: {
+    width: "100%",
+    height: 200,
+    borderRadius: 8,
+    marginTop: 8,
+    backgroundColor: "#f0f0f0",
+  },
+  actionButtons: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 24,
+  },
+  actionButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 8,
+  },
+  approveButton: {
+    backgroundColor: "#4CAF50",
+  },
+  rejectButton: {
+    backgroundColor: "#F44336",
+  },
+  actionButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  billBreakdown: {
+    backgroundColor: "#f5f5f5",
+    borderRadius: 8,
+    padding: 16,
+    marginTop: 16,
+  },
+  breakdownTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 12,
+  },
+  breakdownRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: 8,
+  },
+  breakdownLabel: {
+    fontSize: 14,
+    color: "#666",
+  },
+  breakdownValue: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#333",
+  },
+  totalRow: {
+    borderTopWidth: 1,
+    borderTopColor: "#ddd",
+    marginTop: 8,
+    paddingTop: 12,
+  },
+  totalLabel: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#333",
+  },
+  totalValue: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#00796B",
+  },
+  paidText: {
+    color: "#4CAF50",
+  },
+});

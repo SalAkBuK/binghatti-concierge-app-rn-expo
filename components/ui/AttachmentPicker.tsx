@@ -9,17 +9,12 @@ import {
   Alert,
   ActivityIndicator,
   ScrollView,
-  Dimensions,
 } from "react-native";
 import {
   pickImageFromCamera,
-  pickImageFromGallery,
   pickMultipleImagesFromGallery,
   IMAGE_CONFIG,
-  formatFileSize,
 } from "../../lib/utils/imageUtils";
-
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 interface AttachmentPickerProps {
   attachments: string[];

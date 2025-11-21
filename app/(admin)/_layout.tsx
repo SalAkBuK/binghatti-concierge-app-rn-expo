@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Tabs } from "expo-router";
-import React from "react";
+import { Tabs, router } from "expo-router";
+import React, { useEffect } from "react";
 import { Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -8,12 +8,40 @@ import { useApp } from "../../lib/context/connected-app-provider";
 
 export default function AdminLayout() {
   const insets = useSafeAreaInsets();
-  const { currentUser } = useApp();
-  const isManagement = currentUser?.role === "management";
+  const { isAuthenticated, currentUser } = useApp();
+  const isAdmin =
+    currentUser?.role === "admin" || currentUser?.role === "super_admin";
+  const hiddenTabOptions = {
+    href: null as const,
+    tabBarItemStyle: { display: "none" as const },
+  };
 
   // Debug: Log current user role
   console.log("🔍 AdminLayout - Current User Role:", currentUser?.role);
-  console.log("🔍 AdminLayout - isManagement:", isManagement);
+  console.log("🔍 AdminLayout - isAdmin:", isAdmin);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.replace("/auth" as any);
+    }
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    // Redirect non-admin users back to home
+    if (isAuthenticated && currentUser && !isAdmin) {
+      console.log("🔍 AdminLayout - Non-admin user detected, redirecting to /");
+      router.replace("/" as any);
+    }
+  }, [isAuthenticated, currentUser, isAdmin]);
+
+  // Only allow admin and super_admin users
+  if (!isAuthenticated || !currentUser) {
+    return null;
+  }
+
+  if (!isAdmin) {
+    return null;
+  }
 
   return (
     <Tabs
@@ -44,11 +72,11 @@ export default function AdminLayout() {
         },
       }}
     >
-      {/* Dashboard/Operations - Always visible */}
+      {/* Dashboard - Admin only */}
       <Tabs.Screen
         name="index"
         options={{
-          title: isManagement ? "Operations" : "Dashboard",
+          title: "Dashboard",
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
               name={focused ? "grid" : "grid-outline"}
@@ -61,168 +89,83 @@ export default function AdminLayout() {
 
       {/* Users - Admin only */}
       <Tabs.Screen
-        name="users"
-        options={
-          isManagement
-            ? { href: null }
-            : {
-                title: "Users",
-                tabBarIcon: ({ color, focused }) => (
-                  <Ionicons
-                    name={focused ? "people" : "people-outline"}
-                    size={24}
-                    color={color}
-                  />
-                ),
-              }
-        }
+        name="users/index"
+        options={{
+          title: "Users",
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? "people" : "people-outline"}
+              size={24}
+              color={color}
+            />
+          ),
+        }}
       />
 
       {/* Buildings - Admin only */}
       <Tabs.Screen
-        name="buildings"
-        options={
-          isManagement
-            ? { href: null }
-            : {
-                title: "Buildings",
-                tabBarIcon: ({ color, focused }) => (
-                  <Ionicons
-                    name={focused ? "business" : "business-outline"}
-                    size={24}
-                    color={color}
-                  />
-                ),
-              }
-        }
+        name="buildings/index"
+        options={{
+          title: "Buildings",
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? "business" : "business-outline"}
+              size={24}
+              color={color}
+            />
+          ),
+        }}
       />
 
       {/* Unit Types - Admin only */}
       <Tabs.Screen
-        name="unit-types"
-        options={
-          isManagement
-            ? { href: null }
-            : {
-                title: "Unit Types",
-                tabBarIcon: ({ color, focused }) => (
-                  <Ionicons
-                    name={focused ? "layers" : "layers-outline"}
-                    size={24}
-                    color={color}
-                  />
-                ),
-              }
-        }
+        name="unit-types/index"
+        options={{
+          title: "Unit Types",
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? "layers" : "layers-outline"}
+              size={24}
+              color={color}
+            />
+          ),
+        }}
       />
 
       {/* More - Admin only */}
       <Tabs.Screen
         name="more"
-        options={
-          isManagement
-            ? { href: null }
-            : {
-                title: "More",
-                tabBarIcon: ({ color, focused }) => (
-                  <Ionicons
-                    name={
-                      focused
-                        ? "ellipsis-horizontal-circle"
-                        : "ellipsis-horizontal-circle-outline"
-                    }
-                    size={24}
-                    color={color}
-                  />
-                ),
+        options={{
+          title: "More",
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={
+                focused
+                  ? "ellipsis-horizontal-circle"
+                  : "ellipsis-horizontal-circle-outline"
               }
-        }
+              size={24}
+              color={color}
+            />
+          ),
+        }}
       />
 
-      {/* Tenants - Management only */}
-      <Tabs.Screen
-        name="tenants"
-        options={
-          isManagement
-            ? {
-                title: "Tenants",
-                tabBarIcon: ({ color, focused }) => (
-                  <Ionicons
-                    name={focused ? "people" : "people-outline"}
-                    size={24}
-                    color={color}
-                  />
-                ),
-              }
-            : { href: null }
-        }
-      />
+      {/* Hidden tabs - These are now in (management) route group */}
+      <Tabs.Screen name="tenants/index" options={hiddenTabOptions} />
+      <Tabs.Screen name="requests/index" options={hiddenTabOptions} />
+      <Tabs.Screen name="workforce/index" options={hiddenTabOptions} />
+      <Tabs.Screen name="activity" options={hiddenTabOptions} />
 
-      {/* Requests - Management only (Admin accesses via More) */}
-      <Tabs.Screen
-        name="requests"
-        options={
-          isManagement
-            ? {
-                title: "Requests",
-                tabBarIcon: ({ color, focused }) => (
-                  <Ionicons
-                    name={focused ? "clipboard" : "clipboard-outline"}
-                    size={24}
-                    color={color}
-                  />
-                ),
-              }
-            : { href: null }
-        }
-      />
-
-      {/* Workforce - Management only */}
-      <Tabs.Screen
-        name="workforce"
-        options={
-          isManagement
-            ? {
-                title: "Workforce",
-                tabBarIcon: ({ color, focused }) => (
-                  <Ionicons
-                    name={focused ? "briefcase" : "briefcase-outline"}
-                    size={24}
-                    color={color}
-                  />
-                ),
-              }
-            : { href: null }
-        }
-      />
-
-      {/* Activity - Management only */}
-      <Tabs.Screen
-        name="activity"
-        options={
-          isManagement
-            ? {
-                title: "Activity",
-                tabBarIcon: ({ color, focused }) => (
-                  <Ionicons
-                    name={focused ? "notifications" : "notifications-outline"}
-                    size={24}
-                    color={color}
-                  />
-                ),
-              }
-            : { href: null }
-        }
-      />
-
-      {/* Jobs - Hidden from bottom nav (Admin accesses via More) */}
-      <Tabs.Screen name="jobs" options={{ href: null }} />
-
-      {/* Permissions - Hidden from bottom nav (Admin accesses via More) */}
-      <Tabs.Screen name="permissions" options={{ href: null }} />
-
-      {/* Service Providers - Hidden from bottom nav (Admin accesses via More) */}
-      <Tabs.Screen name="service-providers" options={{ href: null }} />
+      {/* Hidden from bottom nav - All accessible via More tab */}
+      <Tabs.Screen name="jobs/index" options={hiddenTabOptions} />
+      <Tabs.Screen name="permissions" options={hiddenTabOptions} />
+      <Tabs.Screen name="service-providers/index" options={hiddenTabOptions} />
+      <Tabs.Screen name="billing/index" options={hiddenTabOptions} />
+      <Tabs.Screen name="maintenance/index" options={hiddenTabOptions} />
+      <Tabs.Screen name="broadcast-notifications/index" options={hiddenTabOptions} />
+      <Tabs.Screen name="visitors/index" options={hiddenTabOptions} />
+      <Tabs.Screen name="parcels/index" options={hiddenTabOptions} />
     </Tabs>
   );
 }

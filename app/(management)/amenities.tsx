@@ -1,7 +1,9 @@
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo, useState } from "react";
 import {
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -16,29 +18,83 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
-import type { Building, BuildingAmenityConfig } from "../../lib/types";
 import { getUserErrorMessage } from "../../lib/services/api/errors";
+import type { Building, BuildingAmenityConfig } from "../../lib/types";
 import { filterNotificationsByUser } from "../../lib/utils/helpers";
 
 const MANAGEMENT_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
 
 export default function ManagementAmenitiesScreen() {
   const { currentUser, notifications, actions, amenityConfigs } = useApp();
-  const { getBuildings, getManagedBuildings, updateAmenityConfig } = actions;
+  const { getBuildings, getManagedBuildings, updateAmenityConfig, createAmenityConfig } = actions;
   const { width } = useWindowDimensions();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [selectedConfig, setSelectedConfig] =
     useState<BuildingAmenityConfig | null>(null);
   const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
+  const [showAddAmenityModal, setShowAddAmenityModal] = useState(false);
   const [maintenanceForm, setMaintenanceForm] = useState({
     startDate: "",
     endDate: "",
     reason: "routine",
     notes: "",
   });
+  const [newAmenityForm, setNewAmenityForm] = useState({
+    buildingId: "",
+    amenityName: "",
+    bookingWindowDays: 14,
+    maxDurationMinutes: 60,
+    maxConcurrentBookings: 1,
+    rules: [] as string[],
+  });
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [datePickerMode, setDatePickerMode] = useState<"date" | "time">("date");
+  const [editingDateField, setEditingDateField] = useState<"start" | "end">("start");
+
+  const openDatePicker = (field: "start" | "end", mode: "date" | "time" = "date") => {
+    setEditingDateField(field);
+    setDatePickerMode(mode);
+    setShowDatePicker(true);
+  };
+
+  const handleDateChange = (event: any, selectedDate?: Date) => {
+    if (Platform.OS === "android") {
+      setShowDatePicker(false);
+    }
+
+    if (event.type === "dismissed") {
+      return;
+    }
+
+    if (selectedDate) {
+      const fieldKey = editingDateField === "start" ? "startDate" : "endDate";
+      const currentDate = new Date(maintenanceForm[fieldKey] || new Date());
+
+      if (datePickerMode === "date") {
+        currentDate.setFullYear(selectedDate.getFullYear());
+        currentDate.setMonth(selectedDate.getMonth());
+        currentDate.setDate(selectedDate.getDate());
+      } else {
+        currentDate.setHours(selectedDate.getHours());
+        currentDate.setMinutes(selectedDate.getMinutes());
+      }
+
+      setMaintenanceForm({
+        ...maintenanceForm,
+        [fieldKey]: currentDate.toISOString(),
+      });
+
+      // On Android, after selecting date, show time picker
+      if (Platform.OS === "android" && datePickerMode === "date") {
+        setTimeout(() => {
+          setDatePickerMode("time");
+          setShowDatePicker(true);
+        }, 100);
+      }
+    }
+  };
 
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
-  const isCompact = width < 900;
   const managedBuildings = useMemo(
     () => getManagedBuildings?.() ?? getBuildings(),
     [getManagedBuildings, getBuildings],
@@ -72,7 +128,7 @@ export default function ManagementAmenitiesScreen() {
   const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
 
   const toggleAmenityStatus = async (config: BuildingAmenityConfig) => {
-    const nextStatus = config.status === "active" ? "maintenance" : "active";
+    const nextStatus = config.status === "active" ? "inactive" : "active";
     try {
       await updateAmenityConfig(config.id, { status: nextStatus });
     } catch (error) {
@@ -118,6 +174,40 @@ export default function ManagementAmenitiesScreen() {
     }
   };
 
+  const handleAddAmenity = async () => {
+    if (!newAmenityForm.amenityName.trim() || !newAmenityForm.buildingId) {
+      return;
+    }
+
+    try {
+      await createAmenityConfig?.({
+        buildingId: newAmenityForm.buildingId,
+        amenityName: newAmenityForm.amenityName,
+        bookingWindowDays: newAmenityForm.bookingWindowDays,
+        maxDurationMinutes: newAmenityForm.maxDurationMinutes,
+        maxConcurrentBookings: newAmenityForm.maxConcurrentBookings,
+        rules: newAmenityForm.rules.map((label, index) => ({
+          id: `rule-${Date.now()}-${index}`,
+          label,
+          isActive: true,
+        })),
+        status: "active",
+      });
+      
+      setShowAddAmenityModal(false);
+      setNewAmenityForm({
+        buildingId: managedBuildings.length === 1 ? managedBuildings[0].id : "",
+        amenityName: "",
+        bookingWindowDays: 14,
+        maxDurationMinutes: 60,
+        maxConcurrentBookings: 1,
+        rules: [],
+      });
+    } catch (error) {
+      console.warn("Failed to add amenity:", getUserErrorMessage(error));
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
@@ -132,6 +222,29 @@ export default function ManagementAmenitiesScreen() {
           onSideMenuToggle={setShowSideMenu}
           notificationRoute={MANAGEMENT_NOTIFICATION_ROUTE}
         />
+
+        <Animated.View
+          entering={FadeInDown.delay(20).duration(260)}
+          style={styles.addButtonContainer}
+        >
+          <TouchableOpacity
+            style={styles.addButton}
+            onPress={() => {
+              setNewAmenityForm({
+                buildingId: managedBuildings.length === 1 ? managedBuildings[0].id : selectedBuildingId !== "all" ? selectedBuildingId : "",
+                amenityName: "",
+                bookingWindowDays: 14,
+                maxDurationMinutes: 60,
+                maxConcurrentBookings: 1,
+                rules: [],
+              });
+              setShowAddAmenityModal(true);
+            }}
+          >
+            <Ionicons name="add-circle" size={20} color="#FFFFFF" />
+            <Text style={styles.addButtonText}>Add Amenity</Text>
+          </TouchableOpacity>
+        </Animated.View>
 
         {managedBuildings.length > 1 ? (
           <Animated.View
@@ -204,30 +317,57 @@ export default function ManagementAmenitiesScreen() {
                         {building?.name || "Unknown building"}
                       </Text>
                     </View>
-                    <TouchableOpacity
-                      style={styles.statusPill}
-                      onPress={() => toggleAmenityStatus(config)}
-                    >
-                      <Ionicons
-                        name={
-                          config.status === "active"
-                            ? "checkmark-circle"
-                            : "construct"
-                        }
-                        size={14}
-                        color={config.status === "active" ? "#10B981" : "#F59E0B"}
-                      />
-                      <Text
+                    <View style={styles.statusActions}>
+                      <TouchableOpacity
                         style={[
-                          styles.statusPillText,
-                          config.status === "active"
-                            ? styles.statusActive
-                            : styles.statusMaintenance,
+                          styles.statusPill,
+                          config.status === "active" && styles.statusPillActive,
+                          config.status === "inactive" && styles.statusPillInactive,
+                          config.status === "maintenance" && styles.statusPillMaintenance,
                         ]}
+                        onPress={() => toggleAmenityStatus(config)}
                       >
-                        {config.status === "active" ? "Active" : "Maintenance"}
-                      </Text>
-                    </TouchableOpacity>
+                        <Ionicons
+                          name={
+                            config.status === "active"
+                              ? "checkmark-circle"
+                              : config.status === "maintenance"
+                              ? "construct"
+                              : "close-circle"
+                          }
+                          size={14}
+                          color={
+                            config.status === "active"
+                              ? "#10B981"
+                              : config.status === "maintenance"
+                              ? "#F59E0B"
+                              : "#EF4444"
+                          }
+                        />
+                        <Text
+                          style={[
+                            styles.statusPillText,
+                            config.status === "active" && styles.statusActive,
+                            config.status === "maintenance" && styles.statusMaintenance,
+                            config.status === "inactive" && styles.statusInactive,
+                          ]}
+                        >
+                          {config.status === "active"
+                            ? "Active"
+                            : config.status === "maintenance"
+                            ? "Maintenance"
+                            : "Inactive"}
+                        </Text>
+                      </TouchableOpacity>
+                      {config.status !== "maintenance" && (
+                        <TouchableOpacity
+                          style={styles.maintenanceIconButton}
+                          onPress={() => openMaintenanceModal(config)}
+                        >
+                          <Ionicons name="hammer-outline" size={18} color="#F59E0B" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
                   </View>
 
                   <View style={styles.configMetaRow}>
@@ -297,6 +437,190 @@ export default function ManagementAmenitiesScreen() {
         }}
       />
 
+      {/* Add Amenity Modal */}
+      <Modal
+        visible={showAddAmenityModal}
+        animationType="slide"
+        onRequestClose={() => setShowAddAmenityModal(false)}
+      >
+        <SafeAreaView style={styles.maintenanceModalContainer}>
+          <View style={styles.maintenanceModalHeader}>
+            <TouchableOpacity onPress={() => setShowAddAmenityModal(false)}>
+              <Ionicons name="close" size={28} color="#111827" />
+            </TouchableOpacity>
+            <Text style={styles.maintenanceModalTitle}>Add New Amenity</Text>
+            <View style={{ width: 28 }} />
+          </View>
+
+          <ScrollView
+            style={styles.maintenanceModalContent}
+            contentContainerStyle={styles.maintenanceModalContentContainer}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.formSection}>
+              <Text style={styles.formLabel}>Building *</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.buildingChips}
+              >
+                {managedBuildings.map((building) => (
+                  <TouchableOpacity
+                    key={building.id}
+                    style={[
+                      styles.reasonChip,
+                      newAmenityForm.buildingId === building.id && styles.reasonChipActive,
+                    ]}
+                    onPress={() =>
+                      setNewAmenityForm({ ...newAmenityForm, buildingId: building.id })
+                    }
+                  >
+                    <Text
+                      style={[
+                        styles.reasonChipText,
+                        newAmenityForm.buildingId === building.id &&
+                          styles.reasonChipTextActive,
+                      ]}
+                    >
+                      {building.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            <View style={styles.formSection}>
+              <Text style={styles.formLabel}>Amenity Name *</Text>
+              <TextInput
+                style={styles.notesTextarea}
+                value={newAmenityForm.amenityName}
+                onChangeText={(text) =>
+                  setNewAmenityForm({ ...newAmenityForm, amenityName: text })
+                }
+                placeholder="e.g., Swimming Pool, Gym, Tennis Court..."
+                placeholderTextColor="#9CA3AF"
+              />
+            </View>
+
+            <View style={styles.formSection}>
+              <Text style={styles.formLabel}>Booking Window (Days)</Text>
+              <View style={styles.numberInputRow}>
+                <TouchableOpacity
+                  style={styles.numberButton}
+                  onPress={() =>
+                    setNewAmenityForm({
+                      ...newAmenityForm,
+                      bookingWindowDays: Math.max(1, newAmenityForm.bookingWindowDays - 1),
+                    })
+                  }
+                >
+                  <Ionicons name="remove" size={20} color="#2563EB" />
+                </TouchableOpacity>
+                <Text style={styles.numberValue}>{newAmenityForm.bookingWindowDays} days</Text>
+                <TouchableOpacity
+                  style={styles.numberButton}
+                  onPress={() =>
+                    setNewAmenityForm({
+                      ...newAmenityForm,
+                      bookingWindowDays: newAmenityForm.bookingWindowDays + 1,
+                    })
+                  }
+                >
+                  <Ionicons name="add" size={20} color="#2563EB" />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.formSection}>
+              <Text style={styles.formLabel}>Slot Duration (Minutes)</Text>
+              <View style={styles.numberInputRow}>
+                <TouchableOpacity
+                  style={styles.numberButton}
+                  onPress={() =>
+                    setNewAmenityForm({
+                      ...newAmenityForm,
+                      maxDurationMinutes: Math.max(15, newAmenityForm.maxDurationMinutes - 15),
+                    })
+                  }
+                >
+                  <Ionicons name="remove" size={20} color="#2563EB" />
+                </TouchableOpacity>
+                <Text style={styles.numberValue}>{newAmenityForm.maxDurationMinutes} min</Text>
+                <TouchableOpacity
+                  style={styles.numberButton}
+                  onPress={() =>
+                    setNewAmenityForm({
+                      ...newAmenityForm,
+                      maxDurationMinutes: newAmenityForm.maxDurationMinutes + 15,
+                    })
+                  }
+                >
+                  <Ionicons name="add" size={20} color="#2563EB" />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.formSection}>
+              <Text style={styles.formLabel}>Max Concurrent Bookings</Text>
+              <View style={styles.numberInputRow}>
+                <TouchableOpacity
+                  style={styles.numberButton}
+                  onPress={() =>
+                    setNewAmenityForm({
+                      ...newAmenityForm,
+                      maxConcurrentBookings: Math.max(1, newAmenityForm.maxConcurrentBookings - 1),
+                    })
+                  }
+                >
+                  <Ionicons name="remove" size={20} color="#2563EB" />
+                </TouchableOpacity>
+                <Text style={styles.numberValue}>{newAmenityForm.maxConcurrentBookings}</Text>
+                <TouchableOpacity
+                  style={styles.numberButton}
+                  onPress={() =>
+                    setNewAmenityForm({
+                      ...newAmenityForm,
+                      maxConcurrentBookings: newAmenityForm.maxConcurrentBookings + 1,
+                    })
+                  }
+                >
+                  <Ionicons name="add" size={20} color="#2563EB" />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.infoBox}>
+              <Ionicons name="information-circle" size={22} color="#2563EB" />
+              <Text style={styles.infoText}>
+                This amenity will be available for all residents in the selected building. You
+                can add specific rules and configure maintenance windows after creation.
+              </Text>
+            </View>
+          </ScrollView>
+
+          <View style={styles.maintenanceModalFooter}>
+            <TouchableOpacity
+              style={styles.cancelMaintenanceButton}
+              onPress={() => setShowAddAmenityModal(false)}
+            >
+              <Text style={styles.cancelMaintenanceText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.scheduleMaintenanceButton,
+                (!newAmenityForm.amenityName.trim() || !newAmenityForm.buildingId) &&
+                  styles.scheduleMaintenanceButtonDisabled,
+              ]}
+              onPress={handleAddAmenity}
+              disabled={!newAmenityForm.amenityName.trim() || !newAmenityForm.buildingId}
+            >
+              <Ionicons name="add-circle" size={20} color="#FFF" />
+              <Text style={styles.scheduleMaintenanceText}>Create Amenity</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </Modal>
+
       {/* Maintenance Scheduling Modal */}
       <Modal
         visible={showMaintenanceModal}
@@ -331,35 +655,65 @@ export default function ManagementAmenitiesScreen() {
 
             <View style={styles.formSection}>
               <Text style={styles.formLabel}>Start Date & Time</Text>
-              <View style={styles.dateDisplay}>
-                <Ionicons name="calendar-outline" size={20} color="#2563EB" />
-                <Text style={styles.dateText}>
-                  {new Date(maintenanceForm.startDate).toLocaleString("en-US", {
-                    weekday: "short",
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </Text>
+              <View style={styles.datePickerRow}>
+                <TouchableOpacity
+                  style={[styles.dateDisplay, styles.datePickerButton]}
+                  onPress={() => openDatePicker("start", "date")}
+                >
+                  <Ionicons name="calendar-outline" size={20} color="#2563EB" />
+                  <Text style={styles.dateText}>
+                    {new Date(maintenanceForm.startDate).toLocaleDateString("en-US", {
+                      weekday: "short",
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.dateDisplay, styles.timePickerButton]}
+                  onPress={() => openDatePicker("start", "time")}
+                >
+                  <Ionicons name="time-outline" size={20} color="#2563EB" />
+                  <Text style={styles.dateText}>
+                    {new Date(maintenanceForm.startDate).toLocaleTimeString("en-US", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </Text>
+                </TouchableOpacity>
               </View>
             </View>
 
             <View style={styles.formSection}>
               <Text style={styles.formLabel}>End Date & Time</Text>
-              <View style={styles.dateDisplay}>
-                <Ionicons name="calendar-outline" size={20} color="#2563EB" />
-                <Text style={styles.dateText}>
-                  {new Date(maintenanceForm.endDate).toLocaleString("en-US", {
-                    weekday: "short",
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </Text>
+              <View style={styles.datePickerRow}>
+                <TouchableOpacity
+                  style={[styles.dateDisplay, styles.datePickerButton]}
+                  onPress={() => openDatePicker("end", "date")}
+                >
+                  <Ionicons name="calendar-outline" size={20} color="#2563EB" />
+                  <Text style={styles.dateText}>
+                    {new Date(maintenanceForm.endDate).toLocaleDateString("en-US", {
+                      weekday: "short",
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.dateDisplay, styles.timePickerButton]}
+                  onPress={() => openDatePicker("end", "time")}
+                >
+                  <Ionicons name="time-outline" size={20} color="#2563EB" />
+                  <Text style={styles.dateText}>
+                    {new Date(maintenanceForm.endDate).toLocaleTimeString("en-US", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </Text>
+                </TouchableOpacity>
               </View>
             </View>
 
@@ -428,6 +782,21 @@ export default function ManagementAmenitiesScreen() {
               <Text style={styles.scheduleMaintenanceText}>Schedule Maintenance</Text>
             </TouchableOpacity>
           </View>
+
+          {showDatePicker && (
+            <DateTimePicker
+              value={new Date(
+                editingDateField === "start"
+                  ? maintenanceForm.startDate
+                  : maintenanceForm.endDate
+              )}
+              mode={datePickerMode}
+              is24Hour={false}
+              display={Platform.OS === "ios" ? "spinner" : "default"}
+              onChange={handleDateChange}
+              minimumDate={editingDateField === "end" ? new Date(maintenanceForm.startDate) : new Date()}
+            />
+          )}
         </SafeAreaView>
       </Modal>
     </SafeAreaView>
@@ -871,5 +1240,96 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
     color: "#FFFFFF",
+  },
+  scheduleMaintenanceButtonDisabled: {
+    backgroundColor: "#9CA3AF",
+    opacity: 0.6,
+  },
+  addButtonContainer: {
+    marginTop: 16,
+  },
+  addButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#2563EB",
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    shadowColor: "#2563EB",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  addButtonText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  statusActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  statusPillActive: {
+    backgroundColor: "#D1FAE5",
+  },
+  statusPillInactive: {
+    backgroundColor: "#FEE2E2",
+  },
+  statusPillMaintenance: {
+    backgroundColor: "#FEF3C7",
+  },
+  statusInactive: {
+    color: "#DC2626",
+  },
+  maintenanceIconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#FEF3C7",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  numberInputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#FFFFFF",
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  numberButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#EFF6FF",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+  },
+  numberValue: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#111827",
+  },
+  buildingChips: {
+    gap: 10,
+    paddingVertical: 4,
+  },
+  datePickerRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  datePickerButton: {
+    flex: 2,
+  },
+  timePickerButton: {
+    flex: 1,
   },
 });

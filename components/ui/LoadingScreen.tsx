@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { View, StyleSheet, Text, Dimensions } from "react-native";
+import { View, StyleSheet, Text } from "react-native";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -11,8 +11,6 @@ import Animated, {
 import { LinearGradient } from "expo-linear-gradient";
 // Uncomment the line below when you add a Lottie animation file
 // import LottieView from 'lottie-react-native';
-
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 interface LoadingScreenProps {
   message?: string;

@@ -9,10 +9,10 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View
+  View,
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import ChevronIcon from "../../components/icons/ChevronIcon";
 import { AnimatedButton } from "../../components/ui/AnimatedButton";
@@ -29,9 +29,8 @@ type FilterStatus = "all" | RequestStatus;
 
 export default function RequestsScreen() {
   const { requests, currentUser, notifications, actions, jobs } = useApp();
-  const insets = useSafeAreaInsets();
   const [refreshing, setRefreshing] = useState<boolean>(false);
-  const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
+  const filterStatus: FilterStatus = "all";
   const [isLoading, setIsLoading] = useState(true);
   const [showSideMenu, setShowSideMenu] = useState(false);
 
@@ -104,21 +103,6 @@ export default function RequestsScreen() {
         return { bg: "#fee2e2", text: "#dc2626" };
       default:
         return { bg: "#f3f4f6", text: "#6b7280" };
-    }
-  };
-
-  const getPriorityColor = (priority: Request["priority"]) => {
-    switch (priority) {
-      case "urgent":
-        return "#dc2626";
-      case "high":
-        return "#ea580c";
-      case "medium":
-        return "#d97706";
-      case "low":
-        return "#65a30d";
-      default:
-        return "#6b7280";
     }
   };
 

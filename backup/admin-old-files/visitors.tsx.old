@@ -1,0 +1,918 @@
+import { Ionicons } from "@expo/vector-icons";
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Image,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+  useWindowDimensions,
+} from "react-native";
+import Animated, { FadeInDown } from "react-native-reanimated";
+import { SafeAreaView } from "react-native-safe-area-context";
+
+import { HeaderBar } from "../../components/ui/HeaderBar";
+import { SideMenu } from "../../components/ui/SideMenu";
+import { useApp } from "../../lib/context/connected-app-provider";
+import { VisitorsApiService } from "../../lib/services/api/visitors";
+import type { Visitor, Building } from "../../lib/types";
+import { filterNotificationsByUser } from "../../lib/utils/helpers";
+
+const ADMIN_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
+
+const visitorsService = new VisitorsApiService();
+
+export default function VisitorsScreen() {
+  const { currentUser, notifications, actions } = useApp();
+  const { getBuildings } = actions;
+  const { width } = useWindowDimensions();
+  const [showSideMenu, setShowSideMenu] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  // State
+  const [visitors, setVisitors] = useState<Visitor[]>([]);
+  const [selectedVisitor, setSelectedVisitor] = useState<Visitor | null>(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [selectedBuildingId, setSelectedBuildingId] = useState<string>("all");
+
+  const pagePadding = Math.max(16, Math.min(28, width * 0.05));
+  const isCompact = width < 768;
+
+  const allBuildings = useMemo(() => getBuildings(), [getBuildings]);
+
+  // Load data
+  useEffect(() => {
+    loadVisitors();
+  }, [selectedBuildingId, statusFilter]);
+
+  const loadVisitors = async () => {
+    setLoading(true);
+    try {
+      const response = await visitorsService.getAllVisitors(
+        selectedBuildingId !== "all" ? selectedBuildingId : undefined,
+        statusFilter !== "all" ? statusFilter : undefined
+      );
+      if (response.success && response.data) {
+        setVisitors(response.data);
+      }
+    } catch (error) {
+      console.error("Failed to load visitors:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCheckIn = async (visitorId: string) => {
+    try {
+      const response = await visitorsService.checkInVisitor(visitorId, currentUser?.id || "admin");
+      if (response.success) {
+        Alert.alert("Success", "Visitor checked in successfully");
+        setShowDetailModal(false);
+        loadVisitors();
+      }
+    } catch (error) {
+      Alert.alert("Error", "Failed to check in visitor");
+    }
+  };
+
+  const handleCheckOut = async (visitorId: string) => {
+    try {
+      const response = await visitorsService.checkOutVisitor(
+        visitorId,
+        currentUser?.id || "admin"
+      );
+      if (response.success) {
+        Alert.alert("Success", "Visitor checked out successfully");
+        setShowDetailModal(false);
+        loadVisitors();
+      }
+    } catch (error) {
+      Alert.alert("Error", "Failed to check out visitor");
+    }
+  };
+
+  const handleCancelVisitor = async (visitorId: string) => {
+    Alert.alert("Cancel Visitor", "Are you sure you want to cancel this visitor registration?", [
+      { text: "No", style: "cancel" },
+      {
+        text: "Yes, Cancel",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            const response = await visitorsService.cancelVisitor(visitorId, "Cancelled by admin");
+            if (response.success) {
+              Alert.alert("Success", "Visitor registration cancelled");
+              setShowDetailModal(false);
+              loadVisitors();
+            }
+          } catch (error) {
+            Alert.alert("Error", "Failed to cancel visitor");
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleExportCSV = async () => {
+    try {
+      const response = await visitorsService.exportVisitorsToCSV(
+        selectedBuildingId !== "all" ? selectedBuildingId : undefined
+      );
+
+      if (response.success) {
+        Alert.alert("Success", "Visitors exported to CSV successfully");
+      }
+    } catch (error) {
+      Alert.alert("Error", "Failed to export CSV");
+    }
+  };
+
+  const filteredVisitors = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return visitors.filter((visitor) => {
+      if (!query) return true;
+      const haystack = `${visitor.visitorName} ${visitor.unitNumber} ${visitor.visitorPhone}`.toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [visitors, searchQuery]);
+
+  const stats = useMemo(() => {
+    const expected = visitors.filter((v) => v.status === "expected").length;
+    const arrived = visitors.filter((v) => v.status === "arrived").length;
+    const departed = visitors.filter((v) => v.status === "departed").length;
+    return { expected, arrived, departed };
+  }, [visitors]);
+
+  const userNotifications = filterNotificationsByUser(notifications || [], currentUser?.id);
+  const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
+
+  const getStatusColor = (status: Visitor["status"]) => {
+    const colorMap = {
+      expected: "#FF9800",
+      arrived: "#4CAF50",
+      departed: "#9E9E9E",
+      cancelled: "#F44336",
+    };
+    return colorMap[status] || "#9E9E9E";
+  };
+
+  const getStatusIcon = (status: Visitor["status"]) => {
+    const iconMap = {
+      expected: "time-outline",
+      arrived: "checkmark-circle-outline",
+      departed: "exit-outline",
+      cancelled: "close-circle-outline",
+    };
+    return iconMap[status] || "help-circle-outline";
+  };
+
+  return (
+    <SafeAreaView style={styles.container} edges={["top"]}>
+      <HeaderBar
+        title="Visitors (Portfolio)"
+        onMenuPress={() => setShowSideMenu(true)}
+        onNotificationPress={() => {}}
+        hasUnreadNotifications={hasUnreadNotifications}
+        notificationRoute={ADMIN_NOTIFICATION_ROUTE}
+      />
+
+      {showSideMenu && <SideMenu isVisible={showSideMenu} onClose={() => setShowSideMenu(false)} />}
+
+      <ScrollView style={styles.scrollView}>
+        <View style={[styles.content, { padding: pagePadding }]}>
+          {/* Stats Cards */}
+          <View style={styles.statsContainer}>
+            <View style={styles.statCard}>
+              <Ionicons name="time-outline" size={24} color="#FF9800" />
+              <Text style={styles.statValue}>{stats.expected}</Text>
+              <Text style={styles.statLabel}>Expected</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Ionicons name="checkmark-circle-outline" size={24} color="#4CAF50" />
+              <Text style={styles.statValue}>{stats.arrived}</Text>
+              <Text style={styles.statLabel}>Arrived</Text>
+            </View>
+            <View style={styles.statCard}>
+              <Ionicons name="exit-outline" size={24} color="#9E9E9E" />
+              <Text style={styles.statValue}>{stats.departed}</Text>
+              <Text style={styles.statLabel}>Departed</Text>
+            </View>
+          </View>
+
+          {/* Filters */}
+          <View style={styles.filters}>
+            {/* Building Filter */}
+            <View style={styles.filterItem}>
+              <Text style={styles.filterLabel}>Building:</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    selectedBuildingId === "all" && styles.activeFilterChip,
+                  ]}
+                  onPress={() => setSelectedBuildingId("all")}
+                >
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      selectedBuildingId === "all" && styles.activeFilterChipText,
+                    ]}
+                  >
+                    All Buildings
+                  </Text>
+                </TouchableOpacity>
+                {allBuildings.map((building) => (
+                  <TouchableOpacity
+                    key={building.id}
+                    style={[
+                      styles.filterChip,
+                      selectedBuildingId === building.id && styles.activeFilterChip,
+                    ]}
+                    onPress={() => setSelectedBuildingId(building.id)}
+                  >
+                    <Text
+                      style={[
+                        styles.filterChipText,
+                        selectedBuildingId === building.id && styles.activeFilterChipText,
+                      ]}
+                    >
+                      {building.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            {/* Status Filter */}
+            <View style={styles.filterItem}>
+              <Text style={styles.filterLabel}>Status:</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                {["all", "expected", "arrived", "departed", "cancelled"].map((status) => (
+                  <TouchableOpacity
+                    key={status}
+                    style={[
+                      styles.filterChip,
+                      statusFilter === status && styles.activeFilterChip,
+                    ]}
+                    onPress={() => setStatusFilter(status)}
+                  >
+                    <Text
+                      style={[
+                        styles.filterChipText,
+                        statusFilter === status && styles.activeFilterChipText,
+                      ]}
+                    >
+                      {status.charAt(0).toUpperCase() + status.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            {/* Search */}
+            <View style={styles.searchContainer}>
+              <Ionicons name="search" size={20} color="#999" />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search visitors..."
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholderTextColor="#999"
+              />
+            </View>
+
+            {/* Export Button */}
+            <TouchableOpacity style={styles.exportButton} onPress={handleExportCSV}>
+              <Ionicons name="download-outline" size={20} color="#fff" />
+              <Text style={styles.exportButtonText}>Export CSV</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Content */}
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#00796B" />
+            </View>
+          ) : (
+            <View style={styles.listContainer}>
+              {filteredVisitors.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="people-outline" size={64} color="#ccc" />
+                  <Text style={styles.emptyStateText}>No visitors found</Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={filteredVisitors}
+                  keyExtractor={(item) => item.id}
+                  renderItem={({ item, index }) => (
+                    <Animated.View entering={FadeInDown.delay(index * 50)} style={styles.card}>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setSelectedVisitor(item);
+                          setShowDetailModal(true);
+                        }}
+                      >
+                        <View style={styles.cardHeader}>
+                          <View style={styles.cardHeaderLeft}>
+                            <View
+                              style={[
+                                styles.statusIcon,
+                                { backgroundColor: getStatusColor(item.status) + "20" },
+                              ]}
+                            >
+                              <Ionicons
+                                name={getStatusIcon(item.status) as any}
+                                size={24}
+                                color={getStatusColor(item.status)}
+                              />
+                            </View>
+                            <View style={styles.cardHeaderText}>
+                              <Text style={styles.cardTitle}>{item.visitorName}</Text>
+                              <Text style={styles.cardSubtitle}>
+                                Unit {item.unitNumber} • {item.visitPurpose}
+                              </Text>
+                            </View>
+                          </View>
+                          <View
+                            style={[
+                              styles.statusBadge,
+                              { backgroundColor: getStatusColor(item.status) },
+                            ]}
+                          >
+                            <Text style={styles.statusBadgeText}>
+                              {item.status.toUpperCase()}
+                            </Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.cardDetails}>
+                          <View style={styles.detailRow}>
+                            <Ionicons name="call-outline" size={16} color="#666" />
+                            <Text style={styles.detailText}>{item.visitorPhone}</Text>
+                          </View>
+                          <View style={styles.detailRow}>
+                            <Ionicons name="calendar-outline" size={16} color="#666" />
+                            <Text style={styles.detailText}>
+                              {new Date(item.expectedArrivalTime).toLocaleString()}
+                            </Text>
+                          </View>
+                          {item.actualArrivalTime && (
+                            <View style={styles.detailRow}>
+                              <Ionicons name="log-in-outline" size={16} color="#4CAF50" />
+                              <Text style={[styles.detailText, { color: "#4CAF50" }]}>
+                                Checked in: {new Date(item.actualArrivalTime).toLocaleString()}
+                              </Text>
+                            </View>
+                          )}
+                          {item.actualDepartureTime && (
+                            <View style={styles.detailRow}>
+                              <Ionicons name="log-out-outline" size={16} color="#9E9E9E" />
+                              <Text style={[styles.detailText, { color: "#9E9E9E" }]}>
+                                Departed: {new Date(item.actualDepartureTime).toLocaleString()}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+
+                        <View style={styles.cardFooter}>
+                          <View style={styles.qrContainer}>
+                            <Ionicons name="qr-code-outline" size={16} color="#00796B" />
+                            <Text style={styles.qrCodeText}>{item.visitorCode}</Text>
+                          </View>
+                        </View>
+                      </TouchableOpacity>
+                    </Animated.View>
+                  )}
+                  scrollEnabled={false}
+                />
+              )}
+            </View>
+          )}
+        </View>
+      </ScrollView>
+
+      {/* Detail Modal */}
+      {selectedVisitor && (
+        <Modal
+          visible={showDetailModal}
+          animationType="slide"
+          transparent
+          onRequestClose={() => setShowDetailModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, isCompact && styles.modalContentCompact]}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Visitor Details</Text>
+                <TouchableOpacity onPress={() => setShowDetailModal(false)}>
+                  <Ionicons name="close" size={24} color="#333" />
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={styles.modalBody}>
+                <View
+                  style={[
+                    styles.statusBadgeLarge,
+                    { backgroundColor: getStatusColor(selectedVisitor.status) },
+                  ]}
+                >
+                  <Text style={styles.statusBadgeLargeText}>
+                    {selectedVisitor.status.toUpperCase()}
+                  </Text>
+                </View>
+
+                <Text style={styles.detailLabel}>Visitor Name</Text>
+                <Text style={styles.detailValue}>{selectedVisitor.visitorName}</Text>
+
+                <Text style={styles.detailLabel}>Unit</Text>
+                <Text style={styles.detailValue}>Unit {selectedVisitor.unitNumber}</Text>
+
+                <Text style={styles.detailLabel}>Phone</Text>
+                <Text style={styles.detailValue}>{selectedVisitor.visitorPhone}</Text>
+
+                <Text style={styles.detailLabel}>ID Type</Text>
+                <Text style={styles.detailValue}>
+                  {selectedVisitor.visitorIdType.replace("_", " ").toUpperCase()}
+                </Text>
+
+                <Text style={styles.detailLabel}>ID Number</Text>
+                <Text style={styles.detailValue}>{selectedVisitor.visitorIdNumber}</Text>
+
+                {selectedVisitor.idPhotoUrl && (
+                  <>
+                    <Text style={styles.detailLabel}>ID Photo</Text>
+                    <Image
+                      source={{ uri: selectedVisitor.idPhotoUrl }}
+                      style={styles.idPhoto}
+                      resizeMode="contain"
+                    />
+                  </>
+                )}
+
+                <Text style={styles.detailLabel}>Visit Purpose</Text>
+                <Text style={styles.detailValue}>{selectedVisitor.visitPurpose}</Text>
+
+                <Text style={styles.detailLabel}>Expected Arrival</Text>
+                <Text style={styles.detailValue}>
+                  {new Date(selectedVisitor.expectedArrivalTime).toLocaleString()}
+                </Text>
+
+                <Text style={styles.detailLabel}>Expected Departure</Text>
+                <Text style={styles.detailValue}>
+                  {new Date(selectedVisitor.expectedDepartureTime).toLocaleString()}
+                </Text>
+
+                {selectedVisitor.actualArrivalTime && (
+                  <>
+                    <Text style={styles.detailLabel}>Actual Check-In</Text>
+                    <View style={styles.checkInInfo}>
+                      <Ionicons name="checkmark-circle" size={20} color="#4CAF50" />
+                      <Text style={styles.checkInText}>
+                        {new Date(selectedVisitor.actualArrivalTime).toLocaleString()}
+                        {selectedVisitor.checkedInBy && ` by ${selectedVisitor.checkedInBy}`}
+                      </Text>
+                    </View>
+                  </>
+                )}
+
+                {selectedVisitor.actualDepartureTime && (
+                  <>
+                    <Text style={styles.detailLabel}>Actual Check-Out</Text>
+                    <View style={styles.checkOutInfo}>
+                      <Ionicons name="log-out-outline" size={20} color="#9E9E9E" />
+                      <Text style={styles.checkOutText}>
+                        {new Date(selectedVisitor.actualDepartureTime).toLocaleString()}
+                        {selectedVisitor.checkedOutBy && ` by ${selectedVisitor.checkedOutBy}`}
+                      </Text>
+                    </View>
+                  </>
+                )}
+
+                <Text style={styles.detailLabel}>Visitor Code</Text>
+                <View style={styles.qrCodeLarge}>
+                  <Ionicons name="qr-code" size={48} color="#00796B" />
+                  <Text style={styles.qrCodeLargeText}>{selectedVisitor.visitorCode}</Text>
+                </View>
+
+                {selectedVisitor.status === "expected" && (
+                  <View style={styles.actionButtons}>
+                    <TouchableOpacity
+                      style={[styles.actionButton, styles.checkInButton]}
+                      onPress={() => handleCheckIn(selectedVisitor.id)}
+                    >
+                      <Ionicons name="log-in" size={20} color="#fff" />
+                      <Text style={styles.actionButtonText}>Check In</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.actionButton, styles.cancelButton]}
+                      onPress={() => handleCancelVisitor(selectedVisitor.id)}
+                    >
+                      <Ionicons name="close-circle" size={20} color="#fff" />
+                      <Text style={styles.actionButtonText}>Cancel</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {selectedVisitor.status === "arrived" && (
+                  <View style={styles.actionButtons}>
+                    <TouchableOpacity
+                      style={[styles.actionButton, styles.checkOutButton]}
+                      onPress={() => handleCheckOut(selectedVisitor.id)}
+                    >
+                      <Ionicons name="log-out" size={20} color="#fff" />
+                      <Text style={styles.actionButtonText}>Check Out</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+      )}
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#f5f5f5",
+  },
+  scrollView: {
+    flex: 1,
+  },
+  content: {
+    paddingBottom: 24,
+  },
+  statsContainer: {
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 16,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 16,
+    alignItems: "center",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  statValue: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#333",
+    marginTop: 8,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: "#666",
+    marginTop: 4,
+  },
+  filters: {
+    marginBottom: 16,
+    gap: 12,
+  },
+  filterItem: {
+    gap: 8,
+  },
+  filterLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+  },
+  filterChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: "#ddd",
+  },
+  activeFilterChip: {
+    backgroundColor: "#00796B",
+    borderColor: "#00796B",
+  },
+  filterChipText: {
+    fontSize: 14,
+    color: "#666",
+    fontWeight: "500",
+  },
+  activeFilterChipText: {
+    color: "#fff",
+  },
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+      },
+      android: {
+        elevation: 1,
+      },
+    }),
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: "#333",
+  },
+  exportButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#00796B",
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    gap: 8,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
+  },
+  exportButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  loadingContainer: {
+    paddingVertical: 48,
+    alignItems: "center",
+  },
+  listContainer: {
+    gap: 12,
+  },
+  emptyState: {
+    paddingVertical: 48,
+    alignItems: "center",
+  },
+  emptyStateText: {
+    fontSize: 16,
+    color: "#999",
+    marginTop: 16,
+  },
+  card: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 12,
+  },
+  cardHeaderLeft: {
+    flexDirection: "row",
+    flex: 1,
+    gap: 12,
+    alignItems: "center",
+  },
+  statusIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cardHeaderText: {
+    flex: 1,
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 4,
+  },
+  cardSubtitle: {
+    fontSize: 14,
+    color: "#666",
+  },
+  statusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statusBadgeText: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#fff",
+  },
+  cardDetails: {
+    gap: 8,
+    marginBottom: 12,
+  },
+  detailRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  detailText: {
+    fontSize: 13,
+    color: "#666",
+  },
+  cardFooter: {
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#f0f0f0",
+  },
+  qrContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  qrCodeText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#00796B",
+    letterSpacing: 1,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 16,
+  },
+  modalContent: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    width: "100%",
+    maxWidth: 600,
+    maxHeight: "90%",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
+  },
+  modalContentCompact: {
+    maxWidth: "100%",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#333",
+  },
+  modalBody: {
+    padding: 20,
+  },
+  statusBadgeLarge: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    alignSelf: "flex-start",
+    marginBottom: 16,
+  },
+  statusBadgeLargeText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#fff",
+  },
+  detailLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#666",
+    marginTop: 16,
+    marginBottom: 4,
+    textTransform: "uppercase",
+  },
+  detailValue: {
+    fontSize: 16,
+    color: "#333",
+  },
+  idPhoto: {
+    width: "100%",
+    height: 200,
+    borderRadius: 8,
+    marginTop: 8,
+    backgroundColor: "#f0f0f0",
+  },
+  checkInInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#E8F5E9",
+    padding: 12,
+    borderRadius: 8,
+  },
+  checkInText: {
+    flex: 1,
+    fontSize: 14,
+    color: "#4CAF50",
+  },
+  checkOutInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#F5F5F5",
+    padding: 12,
+    borderRadius: 8,
+  },
+  checkOutText: {
+    flex: 1,
+    fontSize: 14,
+    color: "#666",
+  },
+  qrCodeLarge: {
+    alignItems: "center",
+    backgroundColor: "#E0F2F1",
+    padding: 24,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  qrCodeLargeText: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#00796B",
+    letterSpacing: 2,
+    marginTop: 12,
+  },
+  actionButtons: {
+    gap: 12,
+    marginTop: 24,
+  },
+  actionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 8,
+  },
+  checkInButton: {
+    backgroundColor: "#4CAF50",
+  },
+  checkOutButton: {
+    backgroundColor: "#2196F3",
+  },
+  cancelButton: {
+    backgroundColor: "#F44336",
+  },
+  actionButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+});

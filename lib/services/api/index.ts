@@ -6,6 +6,13 @@ import { NotificationsApiService } from "./notifications";
 import { UsersApiService } from "./users";
 import { AdminApiService } from "./admin";
 import { EmployeeApiService } from "./employee";
+import { ParcelsApiService } from "./parcels";
+import { ShiftsApiService } from "./shifts";
+import { MaintenanceApiService } from "./maintenance";
+import { BillingApiService } from "./billing";
+import { MaintenanceSchedulerApiService } from "./maintenance-scheduler";
+import { BroadcastApiService } from "./broadcast";
+import { VisitorsApiService } from "./visitors";
 import type { ApiService } from "./types";
 
 export class MainApiService implements ApiService {
@@ -14,6 +21,13 @@ export class MainApiService implements ApiService {
   public users: UsersApiService;
   public admin: AdminApiService;
   public employee: EmployeeApiService;
+  public parcels: ParcelsApiService;
+  public shifts: ShiftsApiService;
+  public maintenance: MaintenanceApiService;
+  public billing: BillingApiService;
+  public maintenanceScheduler: MaintenanceSchedulerApiService;
+  public broadcast: BroadcastApiService;
+  public visitors: VisitorsApiService;
   private authService: AuthApiService;
 
   constructor() {
@@ -23,6 +37,13 @@ export class MainApiService implements ApiService {
     this.users = new UsersApiService();
     this.admin = new AdminApiService();
     this.employee = new EmployeeApiService();
+    this.parcels = new ParcelsApiService();
+    this.shifts = new ShiftsApiService();
+    this.maintenance = new MaintenanceApiService();
+    this.billing = new BillingApiService();
+    this.maintenanceScheduler = new MaintenanceSchedulerApiService();
+    this.broadcast = new BroadcastApiService();
+    this.visitors = new VisitorsApiService();
   }
 
   // Auth methods (delegated to AuthApiService)
@@ -84,6 +105,13 @@ export class MainApiService implements ApiService {
     await this.users.setAuthToken(token);
     await this.admin.setAuthToken(token);
     await this.employee.setAuthToken(token);
+    await this.parcels.setAuthToken(token);
+    await this.shifts.setAuthToken(token);
+    await this.maintenance.setAuthToken(token);
+    await this.billing.setAuthToken(token);
+    await this.maintenanceScheduler.setAuthToken(token);
+    await this.broadcast.setAuthToken(token);
+    await this.visitors.setAuthToken(token);
   }
 
   async clearAuthToken(): Promise<void> {
@@ -94,6 +122,13 @@ export class MainApiService implements ApiService {
     await this.users.clearAuthToken();
     await this.admin.clearAuthToken();
     await this.employee.clearAuthToken();
+    await this.parcels.clearAuthToken();
+    await this.shifts.clearAuthToken();
+    await this.maintenance.clearAuthToken();
+    await this.billing.clearAuthToken();
+    await this.maintenanceScheduler.clearAuthToken();
+    await this.broadcast.clearAuthToken();
+    await this.visitors.clearAuthToken();
   }
 
   async getAuthToken(): Promise<string | null> {
@@ -122,6 +157,13 @@ export { NotificationsApiService } from "./notifications";
 export { UsersApiService } from "./users";
 export { AdminApiService } from "./admin";
 export { EmployeeApiService } from "./employee";
+export { ParcelsApiService } from "./parcels";
+export { ShiftsApiService } from "./shifts";
+export { MaintenanceApiService } from "./maintenance";
+export { BillingApiService } from "./billing";
+export { MaintenanceSchedulerApiService } from "./maintenance-scheduler";
+export { BroadcastApiService } from "./broadcast";
+export { VisitorsApiService } from "./visitors";
 export { BaseApiService } from "./base";
 
 // Default export

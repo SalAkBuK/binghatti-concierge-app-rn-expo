@@ -18,9 +18,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
-import { filterNotificationsByUser } from "../../lib/utils/helpers";
-
-const NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
 
 const SPECIALTY_OPTIONS = [
   { id: "plumbing", label: "Plumbing", icon: "water" as const },
@@ -34,7 +31,7 @@ const SPECIALTY_OPTIONS = [
 ];
 
 export default function ServiceAreasScreen() {
-  const { currentUser, notifications, buildings, actions } = useApp();
+  const { currentUser, actions } = useApp();
   const { width } = useWindowDimensions();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -45,22 +42,33 @@ export default function ServiceAreasScreen() {
 
   // Get service provider's assigned buildings
   const serviceProviderId = currentUser?.profile?.serviceProviderId || `sp-profile-${currentUser?.id}`;
-  const assignments = actions.getServiceProviderBuildingAssignments?.(serviceProviderId) || [];
+  
+  const assignments = useMemo(
+    () => actions.getServiceProviderBuildingAssignments?.(serviceProviderId) || [],
+    [actions, serviceProviderId]
+  );
+  
+  const allBuildings = useMemo(
+    () => actions.getBuildings?.() || [],
+    [actions]
+  );
 
-  // Get only assigned buildings
+  // Get assigned buildings with their activation status
   const assignedBuildings = useMemo(() => {
     const assignedBuildingIds = assignments.map((a) => a.buildingId);
-    return (buildings || []).filter((b) => assignedBuildingIds.includes(b.id));
-  }, [buildings, assignments]);
+    return allBuildings.filter((b) => assignedBuildingIds.includes(b.id));
+  }, [allBuildings, assignments]);
+
+  // Track active/inactive status for each building
+  const [buildingStatus, setBuildingStatus] = useState<Record<string, boolean>>(() => {
+    const initialStatus: Record<string, boolean> = {};
+    assignments.forEach((assignment) => {
+      initialStatus[assignment.buildingId] = assignment.status === "active";
+    });
+    return initialStatus;
+  });
 
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
-  const isTablet = width >= 768;
-
-  const userNotifications = filterNotificationsByUser(
-    notifications || [],
-    currentUser?.id
-  );
-  const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
 
   // Filter assigned buildings by search query
   const filteredBuildings = useMemo(() => {
@@ -89,6 +97,17 @@ export default function ServiceAreasScreen() {
       return newSet;
     });
   };
+
+  const toggleBuildingStatus = (buildingId: string) => {
+    setBuildingStatus((prev) => {
+      const newStatus = { ...prev };
+      newStatus[buildingId] = !prev[buildingId];
+      return newStatus;
+    });
+  };
+
+  // Calculate active buildings count
+  const activeCount = Object.values(buildingStatus).filter(Boolean).length;
 
   const handleSaveChanges = () => {
     Alert.alert(
@@ -199,10 +218,14 @@ export default function ServiceAreasScreen() {
               <Text style={styles.statLabel}>Assigned Buildings</Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>
-                {assignments.filter((a) => a.status === "active").length}
-              </Text>
+              <Text style={styles.statValue}>{activeCount}</Text>
               <Text style={styles.statLabel}>Active</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>
+                {assignments.length - activeCount}
+              </Text>
+              <Text style={styles.statLabel}>Paused</Text>
             </View>
           </View>
 
@@ -228,29 +251,55 @@ export default function ServiceAreasScreen() {
             <View style={styles.buildingsList}>
               {filteredBuildings.map((building, index) => {
                 const assignment = assignments.find((a) => a.buildingId === building.id);
+                const isActive = buildingStatus[building.id] ?? true;
                 return (
                   <Animated.View
                     key={building.id}
                     entering={FadeInDown.duration(400).delay(300 + index * 50)}
-                    style={styles.buildingCard}
+                    style={[
+                      styles.buildingCard,
+                      !isActive && styles.buildingCardInactive,
+                    ]}
                   >
                     <View style={styles.buildingIcon}>
                       <Ionicons
                         name="business"
                         size={24}
-                        color="#3B82F6"
+                        color={isActive ? "#3B82F6" : "#94A3B8"}
                       />
                     </View>
                     <View style={styles.buildingInfo}>
-                      <Text style={styles.buildingName}>{building.name}</Text>
+                      <View style={styles.buildingHeader}>
+                        <View style={styles.buildingTitleRow}>
+                          <Text style={[
+                            styles.buildingName,
+                            !isActive && styles.buildingNameInactive,
+                          ]}>
+                            {building.name}
+                          </Text>
+                          {!isActive && (
+                            <View style={styles.pausedBadge}>
+                              <Ionicons name="pause-circle" size={14} color="#F59E0B" />
+                              <Text style={styles.pausedBadgeText}>Paused</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Switch
+                          value={isActive}
+                          onValueChange={() => toggleBuildingStatus(building.id)}
+                          trackColor={{ false: "#E5E7EB", true: "#93C5FD" }}
+                          thumbColor={isActive ? "#3B82F6" : "#9CA3AF"}
+                          ios_backgroundColor="#E5E7EB"
+                        />
+                      </View>
                       <Text style={styles.buildingLocation}>
-                        {building.location || "No location"}
+                        {building.address || "No location"}
                       </Text>
                       <View style={styles.buildingMeta}>
                         <View style={styles.buildingMetaItem}>
-                          <Ionicons name="people-outline" size={14} color="#64748B" />
+                          <Ionicons name="home-outline" size={14} color="#64748B" />
                           <Text style={styles.buildingMetaText}>
-                            {building.units?.length || 0} units
+                            {building.totalUnits || 0} units
                           </Text>
                         </View>
                         {assignment && (
@@ -279,6 +328,14 @@ export default function ServiceAreasScreen() {
                           ))}
                         </View>
                       )}
+                      {!isActive && (
+                        <View style={styles.infoBox}>
+                          <Ionicons name="information-circle" size={16} color="#F59E0B" />
+                          <Text style={styles.infoBoxText}>
+                            Requests from this building are paused
+                          </Text>
+                        </View>
+                      )}
                     </View>
                   </Animated.View>
                 );
@@ -290,7 +347,7 @@ export default function ServiceAreasScreen() {
               <Text style={styles.emptyStateText}>
                 {searchQuery
                   ? "No buildings found matching your search"
-                  : "No buildings available"}
+                  : "No buildings assigned yet"}
               </Text>
             </View>
           )}
@@ -483,6 +540,10 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 1,
   },
+  buildingCardInactive: {
+    backgroundColor: "#F8FAFC",
+    opacity: 0.7,
+  },
   buildingIcon: {
     width: 48,
     height: 48,
@@ -494,11 +555,39 @@ const styles = StyleSheet.create({
   buildingInfo: {
     flex: 1,
   },
+  buildingHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 4,
+  },
+  buildingTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flex: 1,
+  },
   buildingName: {
     fontSize: 15,
     fontWeight: "600",
     color: "#1E293B",
-    marginBottom: 4,
+  },
+  buildingNameInactive: {
+    color: "#94A3B8",
+  },
+  pausedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  pausedBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#F59E0B",
   },
   buildingLocation: {
     fontSize: 12,
@@ -536,6 +625,22 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "600",
     color: "#1D4ED8",
+  },
+  infoBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    marginTop: 10,
+  },
+  infoBoxText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#F59E0B",
+    flex: 1,
   },
   emptyState: {
     alignItems: "center",

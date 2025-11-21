@@ -17,9 +17,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
-import { filterNotificationsByUser } from "../../lib/utils/helpers";
-
-const NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
 
 export default function ProfileScreen() {
   const { currentUser, actions, notifications } = useApp();
@@ -55,13 +52,6 @@ export default function ProfileScreen() {
   });
 
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
-  const isTablet = width >= 768;
-
-  const userNotifications = filterNotificationsByUser(
-    notifications || [],
-    currentUser?.id
-  );
-  const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
 
   const handleSaveProfile = () => {
     if (!formData.name.trim() || !formData.email.trim()) {

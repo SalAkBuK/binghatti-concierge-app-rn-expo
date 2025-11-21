@@ -11,6 +11,16 @@ import type {
   ErrorHandler,
 } from "./types";
 
+// Helper to create timeout signal (compatible with Hermes/React Native)
+function createTimeoutSignal(ms: number): { signal: AbortSignal; cleanup: () => void } {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ms);
+  return {
+    signal: controller.signal,
+    cleanup: () => clearTimeout(timeoutId),
+  };
+}
+
 export class BaseApiService {
   private config: ApiConfig;
   private authToken: string | null = null;
@@ -157,13 +167,16 @@ export class BaseApiService {
       const url = this.buildUrl(modifiedConfig.url);
       const headers = await this.buildHeaders(modifiedConfig.headers);
 
+      // Create timeout signal (compatible with Hermes/React Native)
+      const { signal, cleanup } = createTimeoutSignal(
+        modifiedConfig.timeout || this.config.timeout,
+      );
+
       // Prepare fetch options
       const fetchOptions: RequestInit = {
         method: modifiedConfig.method,
         headers,
-        signal: AbortSignal.timeout(
-          modifiedConfig.timeout || this.config.timeout,
-        ),
+        signal,
       };
 
       // Add body for non-GET requests
@@ -184,7 +197,12 @@ export class BaseApiService {
       }
 
       // Make the request
-      const response = await fetch(finalUrl, fetchOptions);
+      let response: Response;
+      try {
+        response = await fetch(finalUrl, fetchOptions);
+      } finally {
+        cleanup(); // Clear timeout to prevent memory leaks
+      }
 
       // Check if response is ok
       if (!response.ok) {

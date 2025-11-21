@@ -25,7 +25,6 @@ export default function JobDetailsScreen() {
   const job = jobs?.find((j) => j.id === id);
 
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
-  const isTablet = width >= 768;
 
   if (!job) {
     return (
@@ -35,7 +34,7 @@ export default function JobDetailsScreen() {
             <Ionicons name="alert-circle-outline" size={64} color="#EF4444" />
             <Text style={styles.errorTitle}>Job Not Found</Text>
             <Text style={styles.errorText}>
-              The job you're looking for doesn't exist or has been removed.
+              The job you&apos;re looking for doesn&apos;t exist or has been removed.
             </Text>
             <TouchableOpacity
               style={styles.backButton}
@@ -54,7 +53,7 @@ export default function JobDetailsScreen() {
   const handleApproveEstimate = () => {
     Alert.alert(
       "Approve Estimate",
-      "Approve the employee's proposed estimate and share it with the tenant?",
+      "Approve the employee&apos;s proposed estimate and share it with the tenant?",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -64,6 +63,7 @@ export default function JobDetailsScreen() {
               await actions.reviewJobEstimateAsProvider?.(job.id, "approve");
               Alert.alert("Estimate Approved", "The tenant will be notified.");
             } catch (error: any) {
+              console.error("Failed to approve estimate:", error);
               Alert.alert(
                 "Error",
                 error?.message ||
@@ -104,6 +104,7 @@ export default function JobDetailsScreen() {
                 "The employee has been notified to revise the estimate.",
               );
             } catch (error: any) {
+              console.error("Failed to reject estimate:", error);
               Alert.alert(
                 "Error",
                 error?.message ||
@@ -130,6 +131,7 @@ export default function JobDetailsScreen() {
               await actions.updateJob?.(job.id, { status: "assigned" });
               Alert.alert("Success", "Job accepted successfully!");
             } catch (error) {
+              console.error("Failed to accept job:", error);
               Alert.alert("Error", "Failed to accept job. Please try again.");
             }
           },
@@ -153,6 +155,7 @@ export default function JobDetailsScreen() {
               Alert.alert("Rejected", "Job has been rejected.");
               router.back();
             } catch (error) {
+              console.error("Failed to reject job:", error);
               Alert.alert("Error", "Failed to reject job. Please try again.");
             }
           },
@@ -174,6 +177,7 @@ export default function JobDetailsScreen() {
               await actions.approveJobAdditionalCost?.(job.id, cost.id);
               Alert.alert("Success", "Cost approved successfully!");
             } catch (error) {
+              console.error("Failed to approve additional cost:", error);
               Alert.alert(
                 "Error",
                 "Failed to approve additional cost. Please try again.",
@@ -204,6 +208,7 @@ export default function JobDetailsScreen() {
                 );
                 Alert.alert("Rejected", "Cost has been rejected.");
               } catch (error) {
+                console.error("Failed to reject additional cost:", error);
                 Alert.alert(
                   "Error",
                   "Failed to reject additional cost. Please try again.",
@@ -220,7 +225,7 @@ export default function JobDetailsScreen() {
   const handleOverrideCompletion = () => {
     Alert.prompt(
       "Override Completion",
-      "The tenant hasn't responded. Provide a reason for overriding:",
+      "The tenant hasn&apos;t responded. Provide a reason for overriding:",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -234,6 +239,7 @@ export default function JobDetailsScreen() {
                   "Job marked as complete without tenant approval.",
                 );
               } catch (error) {
+                console.error("Failed to override completion:", error);
                 Alert.alert(
                   "Error",
                   "Failed to override completion. Please try again.",
@@ -657,7 +663,7 @@ export default function JobDetailsScreen() {
                     <View style={styles.costStatusApproved}>
                       <Ionicons name="checkmark-circle" size={16} color="#10B981" />
                       <Text style={styles.costStatusApprovedText}>
-                        Approved {cost.approvedAt ? `on ${new Date(cost.approvedAt).toLocaleDateString()}` : ''}
+                        Approved {cost.approvedAt ? `on ${new Date(cost.approvedAt).toLocaleDateString()}` : ""}
                       </Text>
                     </View>
                   )}

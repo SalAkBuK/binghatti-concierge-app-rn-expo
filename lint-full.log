@@ -1,0 +1,144 @@
+
+> binghatti-concierge-app-rn-expo@1.0.0 lint
+> expo lint
+
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/app/(employee)/earnings.tsx
+   69:9  warning  The 'allJobs' logical expression could make the dependencies of useMemo Hook (at line 75) change on every render. Move it inside the useMemo callback. Alternatively, wrap the initialization of 'allJobs' in its own useMemo() Hook          react-hooks/exhaustive-deps
+  200:9  warning  The 'getPeriodLabel' function makes the dependencies of useCallback Hook (at line 447) change on every render. Move it inside the useCallback callback. Alternatively, wrap the definition of 'getPeriodLabel' in its own useCallback() Hook  react-hooks/exhaustive-deps
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/app/(employee)/index.tsx
+  42:9  warning  The 'allJobs' logical expression could make the dependencies of useMemo Hook (at line 49) change on every render. Move it inside the useMemo callback. Alternatively, wrap the initialization of 'allJobs' in its own useMemo() Hook  react-hooks/exhaustive-deps
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/app/(employee)/job-details.tsx
+  39:5  warning  Array type using 'Array<T>' is forbidden. Use 'T[]' instead  @typescript-eslint/array-type
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/app/(employee)/jobs.tsx
+  63:9  warning  The 'allJobs' logical expression could make the dependencies of useMemo Hook (at line 66) change on every render. Move it inside the useMemo callback. Alternatively, wrap the initialization of 'allJobs' in its own useMemo() Hook  react-hooks/exhaustive-deps
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/app/(employee)/messages.tsx
+  158:6  warning  React Hook useEffect has a missing dependency: 'messages'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/app/(employee)/profile.tsx
+  44:20  warning  'error' is defined but never used  @typescript-eslint/no-unused-vars
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/app/(employee)/schedule.tsx
+   46:9  warning  The 'allJobs' logical expression could make the dependencies of useMemo Hook (at line 49) change on every render. Move it inside the useMemo callback. Alternatively, wrap the initialization of 'allJobs' in its own useMemo() Hook  react-hooks/exhaustive-deps
+  203:6  warning  React Hook useCallback has a missing dependency: 'isSelected'. Either include it or remove the dependency array                                                                                                                       react-hooks/exhaustive-deps
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/app/(management)/amenities.tsx
+  98:9  warning  'isCompact' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/app/(management)/billing/index.tsx
+   63:6   warning  React Hook useEffect has a missing dependency: 'loadData'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  107:14  warning  'error' is defined but never used                                                                            @typescript-eslint/no-unused-vars
+  121:14  warning  'error' is defined but never used                                                                            @typescript-eslint/no-unused-vars
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/app/(management)/buildings.tsx
+  55:9  warning  The 'managedBuildingIds' conditional could make the dependencies of useMemo Hook (at line 92) change on every render. Move it inside the useMemo callback. Alternatively, wrap the initialization of 'managedBuildingIds' in its own useMemo() Hook  react-hooks/exhaustive-deps
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/app/(management)/index.tsx
+  123:5  warning  React Hook useMemo has a missing dependency: 'actions'. Either include it or remove the dependency array                                                                                                                                                                                                           react-hooks/exhaustive-deps
+  165:6  warning  React Hook useEffect has missing dependencies: 'broadcastScope.length', 'managedBuildings', and 'selectedBuildingId'. Either include them or remove the dependency array. You can also replace multiple useState variables with useReducer if 'setBroadcastScope' needs the current value of 'selectedBuildingId'  react-hooks/exhaustive-deps
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/app/(management)/jobs.tsx
+  48:9  warning  The 'managedBuildingIds' conditional could make the dependencies of useMemo Hook (at line 60) change on every render. Move it inside the useMemo callback. Alternatively, wrap the initialization of 'managedBuildingIds' in its own useMemo() Hook  react-hooks/exhaustive-deps
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/app/(management)/managers/index.tsx
+    5:3   warning  'FlatList' is defined but never used            @typescript-eslint/no-unused-vars
+   22:15  warning  'Building' is defined but never used            @typescript-eslint/no-unused-vars
+   43:9   warning  'isCompact' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  143:14  warning  'error' is defined but never used               @typescript-eslint/no-unused-vars
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/app/(management)/requests.tsx
+   66:10  warning  'isUpdatingStatus' is assigned a value but never used    @typescript-eslint/no-unused-vars
+   73:9   warning  'isAdmin' is assigned a value but never used             @typescript-eslint/no-unused-vars
+   75:9   warning  'isManagement' is assigned a value but never used        @typescript-eslint/no-unused-vars
+  230:9   warning  'handleStatusUpdate' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/app/(management)/units.tsx
+  188:9  warning  'unitTypeSummary' is assigned a value but never used         @typescript-eslint/no-unused-vars
+  202:9  warning  'hasUnreadNotifications' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/app/(management)/visitors/index.tsx
+    9:3   warning  'Image' is defined but never used                                                                                            @typescript-eslint/no-unused-vars
+   14:3   warning  'StyleSheet' is defined but never used                                                                                       @typescript-eslint/no-unused-vars
+   23:36  warning  '/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/lib/types/index.ts' imported multiple times  import/no-duplicates
+   28:30  warning  '/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/lib/types/index.ts' imported multiple times  import/no-duplicates
+   74:6   warning  React Hook useEffect has a missing dependency: 'loadVisitors'. Either include it or remove the dependency array              react-hooks/exhaustive-deps
+  101:14  warning  'error' is defined but never used                                                                                            @typescript-eslint/no-unused-vars
+  117:14  warning  'error' is defined but never used                                                                                            @typescript-eslint/no-unused-vars
+  136:20  warning  'error' is defined but never used                                                                                            @typescript-eslint/no-unused-vars
+  153:14  warning  'error' is defined but never used                                                                                            @typescript-eslint/no-unused-vars
+  239:14  warning  'error' is defined but never used                                                                                            @typescript-eslint/no-unused-vars
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/app/(management)/workforce.tsx
+  30:23  warning  Array type using 'Array<T>' is forbidden. Use 'T[]' instead  @typescript-eslint/array-type
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/app/(modals)/amenity-booking-form.tsx
+   22:24  warning  'AmenityBooking' is defined but never used                                                                  @typescript-eslint/no-unused-vars
+   27:7   warning  'mockAmenities' is assigned a value but never used                                                          @typescript-eslint/no-unused-vars
+  189:11  warning  'currentUser' is assigned a value but never used                                                            @typescript-eslint/no-unused-vars
+  222:6   warning  React Hook useEffect has a missing dependency: 'actions'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/app/(modals)/approve-job-completion.tsx
+   23:11  warning  'currentUser' is assigned a value but never used  @typescript-eslint/no-unused-vars
+   70:22  warning  'error' is defined but never used                 @typescript-eslint/no-unused-vars
+  115:22  warning  'error' is defined but never used                 @typescript-eslint/no-unused-vars
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/app/(modals)/notice-details.tsx
+  7:3  warning  'Dimensions' is defined but never used  @typescript-eslint/no-unused-vars
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/app/(modals)/register-visitor.tsx
+  133:9  warning  'generateVisitorCode' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/app/(modals)/request-details.tsx
+    7:3   warning  'Dimensions' is defined but never used                                                                            @typescript-eslint/no-unused-vars
+   40:10  warning  'showFeedbackForm' is assigned a value but never used                                                             @typescript-eslint/no-unused-vars
+   50:6   warning  React Hook useMemo has a missing dependency: 'selectedRequest'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  289:9   warning  'handleSubmitFeedback' is assigned a value but never used                                                         @typescript-eslint/no-unused-vars
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/app/(modals)/request-provider-access.tsx
+  17:15  warning  'ServiceProviderProfile' is defined but never used  @typescript-eslint/no-unused-vars
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/app/(serviceProvider)/jobs.tsx
+  56:9  warning  'isTablet' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/app/(serviceProvider)/profile.tsx
+  22:33  warning  'notifications' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/app/(serviceProvider)/schedule.tsx
+   24:6  warning  'ViewMode' is defined but never used                                                                             @typescript-eslint/no-unused-vars
+  100:6  warning  React Hook useMemo has a missing dependency: 'getJobsForDate'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/app/(tenant)/_layout.tsx
+  12:7   warning  'normalizeRole' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  22:11  warning  'userRole' is assigned a value but never used       @typescript-eslint/no-unused-vars
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/app/(tenant)/index.tsx
+  5:3  warning  'Alert' is defined but never used  @typescript-eslint/no-unused-vars
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/app/(tenant)/profile.tsx
+  140:14  warning  'error' is defined but never used  @typescript-eslint/no-unused-vars
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/components/notifications/NotificationsTabBar.tsx
+  34:6  warning  React Hook useEffect has a missing dependency: 'translateX'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/components/ui/AnimatedBellIcon.tsx
+  98:6  warning  React Hook useEffect has missing dependencies: 'animateDotAppear', 'animateDotDisappear', 'startPulseAnimation', and 'stopPulseAnimation'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/components/ui/LoadingScreen.tsx
+  57:6  warning  React Hook useEffect has missing dependencies: 'opacity', 'rotate', and 'scale'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/components/ui/SideMenu.tsx
+  556:6  warning  React Hook useEffect has missing dependencies: 'menuScale', 'overlayOpacity', and 'translateX'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/components/ui/SkeletonCard.tsx
+  38:6  warning  React Hook useEffect has a missing dependency: 'animatedValue'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/mnt/c/Users/13463/OneDrive/Documents/CodeFier/binghatti-concierge-app-rn-expo/components/ui/SkeletonText.tsx
+  36:6  warning  React Hook useEffect has a missing dependency: 'animatedValue'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+✖ 66 problems (0 errors, 66 warnings)
+  0 errors and 3 warnings potentially fixable with the `--fix` option.
+
