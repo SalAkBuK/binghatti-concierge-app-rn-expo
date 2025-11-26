@@ -13,6 +13,12 @@ import { ADMIN_NOTIFICATION_ROUTE } from "./_constants";
 import { useServiceProvidersData } from "./_hooks/useServiceProvidersData";
 import { styles } from "./_styles";
 import type { CreateProviderFormState } from "./_types";
+import {
+  useMountLog,
+  useRenderLog,
+  useScreenFocusLog,
+  measure,
+} from "../../../utils/adminProfiler";
 
 const createInitialFormState = (): CreateProviderFormState => ({
   name: "",
@@ -23,6 +29,11 @@ const createInitialFormState = (): CreateProviderFormState => ({
 });
 
 export default function ServiceProvidersManagementScreen() {
+  // Profiler hooks - track lifecycle and performance
+  useMountLog("Admin/ServiceProviders");
+  useRenderLog("Admin/ServiceProviders");
+  useScreenFocusLog("Admin/ServiceProviders");
+
   const { width } = useWindowDimensions();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<ServiceProviderProfile | null>(null);
@@ -258,6 +269,7 @@ export default function ServiceProvidersManagementScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView
         style={[styles.scrollView, { paddingHorizontal: pagePadding }]}
+        contentContainerStyle={styles.scrollViewContent}
         showsVerticalScrollIndicator={false}
       >
         <HeaderBar

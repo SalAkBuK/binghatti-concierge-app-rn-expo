@@ -14,7 +14,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AttachmentPicker } from "../../components/ui/AttachmentPicker";
 import { HeaderBar } from "../../components/ui/HeaderBar";
@@ -32,6 +32,7 @@ interface ValidationErrors {
 
 export default function NewRequestScreen() {
   const { currentUser, notifications, actions, loading } = useApp();
+  const insets = useSafeAreaInsets();
 
   const [newRequest, setNewRequest] = useState<CreateRequestDTO>({
     type: "maintenance",
@@ -173,6 +174,7 @@ export default function NewRequestScreen() {
         <ScrollView
           style={styles.scrollView}
           keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingBottom: 160 + insets.bottom }}
         >
           {/* Navigation Header */}
           <HeaderBar

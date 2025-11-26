@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -58,11 +58,7 @@ export default function BillingScreen() {
   const isCompact = width < 768;
 
   // Load data
-  useEffect(() => {
-    loadData();
-  }, [selectedBuildingId, statusFilter, billStatusFilter, selectedTab]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       if (selectedTab === "meter-readings") {
@@ -87,7 +83,11 @@ export default function BillingScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [billStatusFilter, selectedBuildingId, selectedTab, statusFilter]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const handleVerifyReading = async (readingId: string, status: "verified" | "rejected", reason?: string) => {
     try {

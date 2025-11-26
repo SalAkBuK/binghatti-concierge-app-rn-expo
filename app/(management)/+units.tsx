@@ -13,7 +13,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import Animated, { FadeInDown, FadeIn } from "react-native-reanimated";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
@@ -51,6 +51,7 @@ export default function ManagementUnitsScreen() {
     useApp();
   const { getBuildings, getManagedBuildings, updateUnit, createUnit } = actions;
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [statusFilter, setStatusFilter] = useState<UnitStatusFilter>("all");
   const [selectedUnit, setSelectedUnit] = useState<BuildingUnit | null>(null);
@@ -184,11 +185,6 @@ export default function ManagementUnitsScreen() {
       ).length,
     };
   }, [filteredUnits]);
-
-  const userNotifications = filterNotificationsByUser(
-    notifications || [],
-    currentUser?.id,
-  );
 
   const buildingFilterOptions = useMemo(() => {
     const scope = isManagement ? managedBuildings : allBuildings;
@@ -409,6 +405,10 @@ export default function ManagementUnitsScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView
         style={[styles.scrollView, { paddingHorizontal: pagePadding }]}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: 160 + insets.bottom },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         <HeaderBar
@@ -638,7 +638,10 @@ export default function ManagementUnitsScreen() {
       {/* Floating Action Button */}
       {managedBuildings.length > 0 && (
         <TouchableOpacity
-          style={styles.fab}
+          style={[
+            styles.fab,
+            { bottom: Math.max(96, 48 + insets.bottom) },
+          ]}
           onPress={() => {
             if (managedBuildings.length === 1) {
               handleBuildingSelect(managedBuildings[0].id);
@@ -1154,6 +1157,9 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
+  scrollContent: {
+    paddingBottom: 160,
+  },
   summaryRow: {
     flexDirection: "row",
     gap: 16,
@@ -1236,7 +1242,7 @@ const styles = StyleSheet.create({
   unitGrid: {
     marginTop: 20,
     gap: 16,
-    paddingBottom: 100,
+    paddingBottom: 120,
   },
   unitCard: {
     backgroundColor: "#FFFFFF",

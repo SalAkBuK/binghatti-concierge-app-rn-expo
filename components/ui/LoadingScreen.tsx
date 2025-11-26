@@ -54,7 +54,7 @@ export function LoadingScreen({
       -1,
       false,
     );
-  }, []);
+  }, [opacity, rotate, scale]);
 
   const animatedLogoStyle = useAnimatedStyle(() => {
     return {

@@ -14,7 +14,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useApp } from "../../lib/context/connected-app-provider";
-import type { ServiceProviderProfile, ProviderAccessRequest } from "../../lib/types";
+import type { ProviderAccessRequest } from "../../lib/types";
 
 export default function RequestProviderAccessModal() {
   const insets = useSafeAreaInsets();

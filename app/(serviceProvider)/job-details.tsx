@@ -12,7 +12,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useApp } from "../../lib/context/connected-app-provider";
 import type { Job, JobAdditionalCost } from "../../lib/types";
@@ -21,6 +21,7 @@ export default function JobDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { jobs, actions } = useApp();
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
 
   const job = jobs?.find((j) => j.id === id);
 
@@ -294,6 +295,7 @@ export default function JobDetailsScreen() {
     <SafeAreaView style={styles.container} edges={["top"]}>
       <ScrollView
         style={[styles.scrollView, { paddingHorizontal: pagePadding }]}
+        contentContainerStyle={{ paddingBottom: 160 + insets.bottom }}
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}

@@ -8,18 +8,9 @@ import ProfileIcon from "../../components/icons/ProfileIcon";
 import RequestsTabIcon from "../../components/icons/RequestsTabIcon";
 
 import { useApp } from "../../lib/context/connected-app-provider";
-// Role normalization helper
-const normalizeRole = (r: string) => {
-  if (!r) return "tenant";
-  const s = String(r).trim().toLowerCase().replace(/\s+/g, "_");
-  if (["administrator", "admin_user", "sysadmin"].includes(s)) return "admin";
-  if (["service-provider", "serviceprovider"].includes(s))
-    return "service_provider";
-  return s;
-};
 
 export default function TabLayout() {
-  const { userRole, isAuthenticated } = useApp();
+  const { isAuthenticated } = useApp();
   const insets = useSafeAreaInsets();
 
   // Only render tabs if authenticated
@@ -34,6 +25,11 @@ export default function TabLayout() {
         tabBarInactiveTintColor: "#8296C4",
         headerShown: false,
         tabBarStyle: {
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          width: '100%',
           backgroundColor: "#FFFFFF",
           borderTopWidth: 0,
           paddingBottom: Platform.OS === "ios" ? insets.bottom : 8,

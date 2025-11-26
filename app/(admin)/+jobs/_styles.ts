@@ -40,7 +40,7 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
   },
   jobsContainer: {
-    paddingBottom: 20,
+    paddingBottom: 120, // Extra space for bottom tab bar and safe area
   },
   jobCardWrapper: {
     marginBottom: 12,

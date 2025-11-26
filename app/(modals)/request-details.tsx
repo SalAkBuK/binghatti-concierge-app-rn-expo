@@ -4,7 +4,6 @@ import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Dimensions,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -33,11 +32,6 @@ export default function RequestDetailsScreen() {
     description: selectedRequest?.description || "",
     priority: selectedRequest?.priority || ("medium" as const),
   });
-  const [feedback, setFeedback] = useState({
-    rating: 0,
-    comment: "",
-  });
-  const [showFeedbackForm, setShowFeedbackForm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showImageViewer, setShowImageViewer] = useState(false);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
@@ -47,7 +41,7 @@ export default function RequestDetailsScreen() {
       return undefined;
     }
     return jobs.find((item) => item.requestId === selectedRequest.id);
-  }, [jobs, selectedRequest?.id]);
+  }, [jobs, selectedRequest]);
 
   // Helper functions
   const getStatusColor = (status: Request["status"]) => {
@@ -283,24 +277,6 @@ export default function RequestDetailsScreen() {
       console.error("Error updating request:", err);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleSubmitFeedback = async () => {
-    if (feedback.rating === 0) {
-      Alert.alert("Error", "Please select a rating");
-      return;
-    }
-
-    try {
-      // In a real app, this would submit feedback to the server
-      console.log("Submitting feedback:", feedback);
-      Alert.alert("Success", "Thank you for your feedback!");
-      setShowFeedbackForm(false);
-      setFeedback({ rating: 0, comment: "" });
-    } catch (err) {
-      Alert.alert("Error", "Failed to submit feedback");
-      console.error("Error submitting feedback:", err);
     }
   };
 

@@ -16,6 +16,11 @@ import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
 import { filterNotificationsByUser } from "../../lib/utils/helpers";
+import {
+  useMountLog,
+  useRenderLog,
+  useScreenFocusLog,
+} from "../../utils/adminProfiler";
 
 const ADMIN_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
 
@@ -128,6 +133,11 @@ const MENU_ITEMS: MenuItem[] = [
 ];
 
 export default function AdminMoreScreen() {
+  // Profiler hooks - track lifecycle and performance
+  useMountLog("Admin/More");
+  useRenderLog("Admin/More");
+  useScreenFocusLog("Admin/More");
+
   const { currentUser, notifications } = useApp();
   const { width } = useWindowDimensions();
   const router = useRouter();
@@ -149,6 +159,7 @@ export default function AdminMoreScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView
         style={[styles.scrollView, { paddingHorizontal: pagePadding }]}
+        contentContainerStyle={styles.scrollViewContent}
         showsVerticalScrollIndicator={false}
       >
         <HeaderBar
@@ -220,6 +231,9 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+  },
+  scrollViewContent: {
+    paddingBottom: 100, // Extra space for bottom tab bar
   },
   menuGrid: {
     marginTop: 24,

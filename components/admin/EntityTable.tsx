@@ -24,25 +24,62 @@ interface Column<T> {
 interface EntityTableProps<T> {
   data: T[];
   columns: Column<T>[];
+  getId?: (item: T) => string | number;
   onRowPress?: (item: T) => void;
   loading?: boolean;
   emptyMessage?: string;
   searchPlaceholder?: string;
   onSearch?: (query: string) => void;
-  keyExtractor: (item: T) => string;
+  keyExtractor?: (item: T, index: number) => string;
   refreshing?: boolean;
   onRefresh?: () => void;
+}
+
+/**
+ * Universal key extractor that safely handles any entity type
+ * Works for Admin, Management, and all other roles
+ *
+ * Priority order for key generation:
+ * 1. item.id (if valid string/number)
+ * 2. item.email (common identifier)
+ * 3. item.name (fallback)
+ * 4. index (last resort - stable for static lists)
+ */
+function defaultKeyExtractor<T>(item: T, index: number): string {
+  const entity = item as any;
+
+  // Try ID first
+  if (entity.id != null && entity.id !== undefined && entity.id !== '' && entity.id !== 'NaN') {
+    const idString = String(entity.id);
+    if (idString !== 'NaN' && idString !== 'undefined' && idString !== 'null') {
+      return idString;
+    }
+  }
+
+  // Try email
+  if (entity.email && typeof entity.email === 'string' && entity.email.length > 0) {
+    return `email_${entity.email}`;
+  }
+
+  // Try name
+  if (entity.name && typeof entity.name === 'string' && entity.name.length > 0) {
+    return `name_${entity.name}_${index}`;
+  }
+
+  // Fallback to index (stable for static lists)
+  return `index_${index}`;
 }
 
 export function EntityTable<T>({
   data,
   columns,
+  getId,
   onRowPress,
   loading = false,
   emptyMessage = "No data available",
   searchPlaceholder = "Search...",
   onSearch,
-  keyExtractor,
+  keyExtractor = defaultKeyExtractor,
   refreshing = false,
   onRefresh,
 }: EntityTableProps<T>) {
@@ -56,44 +93,82 @@ export function EntityTable<T>({
     onSearch?.(query);
   };
 
-  const renderItem = ({ item, index }: { item: T; index: number }) => (
-    <Animated.View entering={FadeInDown.delay(index * 50).duration(400)}>
-      <AnimatedButton
-        style={[styles.row, isCompact && styles.rowCompact]}
-        onPress={() => onRowPress?.(item)}
-        disabled={!onRowPress}
-      >
-        {columns.map((column) => {
-          const baseStyle =
-            column.width && !isCompact ? { width: column.width } : { flex: 1 };
-          const responsiveStyle = isCompact
-            ? {
-                minWidth: cellMinWidth,
-                flexBasis: cellMinWidth,
-                marginRight: 0,
-                marginBottom: 12,
-              }
-            : {};
+  // Wrap keyExtractor to add validation and logging
+  const safeKeyExtractor = (item: T, index: number): string => {
+    try {
+      const primaryKey = getId ? getId(item) : undefined;
+      const key = primaryKey !== undefined && primaryKey !== null && `${primaryKey}` !== "NaN"
+        ? String(primaryKey)
+        : keyExtractor(item, index);
 
-          return (
-            <View
-              key={column.key}
-              style={[styles.cell, baseStyle, responsiveStyle]}
-            >
-              {column.render(item)}
-            </View>
-          );
-        })}
-        {onRowPress && (
-          <Ionicons
-            name="chevron-forward"
-            size={20}
-            color="#6B7280"
-            style={isCompact ? styles.chevronIconCompact : undefined}
-          />
-        )}
-      </AnimatedButton>
-    </Animated.View>
+      // Validate the key
+      if (!key || key === 'undefined' || key === 'null' || key === 'NaN') {
+        console.warn('[EntityTable] Invalid key generated:', key, 'for item:', item);
+        return defaultKeyExtractor(item, index);
+      }
+
+      return key;
+    } catch (error) {
+      console.error('[EntityTable] Error in keyExtractor:', error, 'for item:', item);
+      return defaultKeyExtractor(item, index);
+    }
+  };
+
+  const renderItem = React.useCallback(
+    ({ item, index }: { item: T; index: number }) => {
+      // Only animate first 15 items to prevent memory accumulation and lag
+      // Cap animation delay to max 300ms to avoid stacked delays
+      const shouldAnimate = index < 15;
+      const animationDelay = shouldAnimate ? Math.min(index * 20, 300) : 0;
+
+      const content = (
+        <AnimatedButton
+          style={[styles.row, isCompact && styles.rowCompact]}
+          onPress={() => onRowPress?.(item)}
+          disabled={!onRowPress}
+        >
+          {columns.map((column) => {
+            const baseStyle =
+              column.width && !isCompact ? { width: column.width } : { flex: 1 };
+            const responsiveStyle = isCompact
+              ? {
+                  minWidth: cellMinWidth,
+                  flexBasis: cellMinWidth,
+                  marginRight: 0,
+                  marginBottom: 12,
+                }
+              : {};
+
+            return (
+              <View
+                key={column.key}
+                style={[styles.cell, baseStyle, responsiveStyle]}
+              >
+                {column.render(item)}
+              </View>
+            );
+          })}
+          {onRowPress && (
+            <Ionicons
+              name="chevron-forward"
+              size={20}
+              color="#6B7280"
+              style={isCompact ? styles.chevronIconCompact : undefined}
+            />
+          )}
+        </AnimatedButton>
+      );
+
+      // Only wrap first 15 items with animation
+      return shouldAnimate ? (
+        <Animated.View entering={FadeInDown.delay(animationDelay).duration(300)}>
+          {content}
+        </Animated.View>
+      ) : (
+        <View>{content}</View>
+      );
+    },
+    [cellMinWidth, columns, isCompact, onRowPress],
   );
 
   return (
@@ -156,7 +231,7 @@ export function EntityTable<T>({
         <FlatList
           data={data}
           renderItem={renderItem}
-          keyExtractor={keyExtractor}
+          keyExtractor={safeKeyExtractor}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContent}
           refreshControl={
@@ -217,7 +292,7 @@ const styles = StyleSheet.create({
     width: 20,
   },
   listContent: {
-    paddingBottom: 20,
+    paddingBottom: 100, // Extra space for bottom tab bar (74px + safe area insets)
   },
   row: {
     flexDirection: "row",

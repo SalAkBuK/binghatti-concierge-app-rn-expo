@@ -1,17 +1,15 @@
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
 import { Picker } from "@react-native-picker/picker";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -20,12 +18,11 @@ import {
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
-import type { VisitorIdType } from "../../../lib/types";
+import type { Visitor, VisitorIdType } from "../../../lib/types";
 
 import { HeaderBar } from "../../../components/ui/HeaderBar";
 import { SideMenu } from "../../../components/ui/SideMenu";
 import { VisitorsApiService } from "../../../lib/services/api/visitors";
-import type { Visitor } from "../../../lib/types";
 
 import { VisitorDetailModal } from "./_components/VisitorDetailModal";
 import { MANAGEMENT_NOTIFICATION_ROUTE, getStatusColor, getStatusIcon } from "./_constants";
@@ -69,11 +66,7 @@ export default function VisitorsScreen() {
   const isCompact = width < 768;
 
   // Load data
-  useEffect(() => {
-    loadVisitors();
-  }, [selectedBuildingId, statusFilter]);
-
-  const loadVisitors = async () => {
+  const loadVisitors = useCallback(async () => {
     setLoading(true);
     try {
       const response = await visitorsService.getAllVisitors(
@@ -88,7 +81,11 @@ export default function VisitorsScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedBuildingId, statusFilter]);
+
+  useEffect(() => {
+    loadVisitors();
+  }, [loadVisitors]);
 
   const handleCheckIn = async (visitorId: string) => {
     try {
@@ -98,7 +95,7 @@ export default function VisitorsScreen() {
         setShowDetailModal(false);
         loadVisitors();
       }
-    } catch (error) {
+    } catch {
       Alert.alert("Error", "Failed to check in visitor");
     }
   };
@@ -114,7 +111,7 @@ export default function VisitorsScreen() {
         setShowDetailModal(false);
         loadVisitors();
       }
-    } catch (error) {
+    } catch {
       Alert.alert("Error", "Failed to check out visitor");
     }
   };
@@ -133,7 +130,7 @@ export default function VisitorsScreen() {
               setShowDetailModal(false);
               loadVisitors();
             }
-          } catch (error) {
+          } catch {
             Alert.alert("Error", "Failed to cancel visitor");
           }
         },
@@ -150,7 +147,7 @@ export default function VisitorsScreen() {
       if (response.success) {
         Alert.alert("Success", "Visitors exported to CSV successfully");
       }
-    } catch (error) {
+    } catch {
       Alert.alert("Error", "Failed to export CSV");
     }
   };
@@ -236,7 +233,7 @@ export default function VisitorsScreen() {
           ]
         );
       }
-    } catch (error) {
+    } catch {
       Alert.alert("Error", "Failed to register visitor");
     } finally {
       setIsSubmitting(false);

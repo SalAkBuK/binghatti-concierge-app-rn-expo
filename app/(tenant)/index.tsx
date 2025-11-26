@@ -2,7 +2,6 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
-  Alert,
   Dimensions,
   ScrollView,
   StyleSheet,
@@ -11,7 +10,7 @@ import {
   View,
 } from "react-native";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import BuildingIcon from "../../components/icons/BuildingIcon";
 import FireIcon from "../../components/icons/FireIcon";
@@ -38,6 +37,7 @@ export default function TenantHomeScreen() {
   } = useApp();
   const [isLoading, setIsLoading] = useState(true);
   const [showSideMenu, setShowSideMenu] = useState(false);
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -173,6 +173,7 @@ export default function TenantHomeScreen() {
       {/* Scrollable Content */}
       <ScrollView
         style={styles.scrollableContent}
+        contentContainerStyle={{ paddingBottom: 160 + insets.bottom }}
         showsVerticalScrollIndicator={false}
       >
         {/* Building Notices Section */}

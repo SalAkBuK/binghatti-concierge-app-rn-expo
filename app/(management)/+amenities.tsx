@@ -212,6 +212,7 @@ export default function ManagementAmenitiesScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView
         style={[styles.scrollView, { paddingHorizontal: pagePadding }]}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
         <HeaderBar
@@ -888,6 +889,9 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
+  scrollContent: {
+    paddingBottom: 120,
+  },
   filterRow: {
     marginTop: 12,
   },
@@ -914,7 +918,7 @@ const styles = StyleSheet.create({
   configList: {
     marginTop: 20,
     gap: 16,
-    paddingBottom: 48,
+    paddingBottom: 120,
   },
   configCard: {
     backgroundColor: "#FFFFFF",

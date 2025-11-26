@@ -14,6 +14,11 @@ export default function BuildingEmployeeLayout() {
         tabBarActiveTintColor: "#2563EB",
         tabBarInactiveTintColor: "#94A3B8",
         tabBarStyle: {
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          width: '100%',
           backgroundColor: "#FFFFFF",
           borderTopWidth: 0,
           paddingBottom: Platform.OS === "ios" ? insets.bottom : 8,

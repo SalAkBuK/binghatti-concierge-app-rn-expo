@@ -8,6 +8,9 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
+  scrollViewContent: {
+    paddingBottom: 100, // Extra space for bottom tab bar
+  },
   controlsRow: {
     flexDirection: "row",
     alignItems: "center",

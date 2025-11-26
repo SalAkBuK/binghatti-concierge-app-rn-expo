@@ -17,6 +17,12 @@ import { useBuildingsData } from "./_hooks/useBuildingsData";
 import { styles } from "./_components/_styles";
 import type { BuildingFormState } from "./_types";
 import { getStatusColor } from "./utils/buildingHelpers";
+import {
+  useMountLog,
+  useRenderLog,
+  useScreenFocusLog,
+  measure,
+} from "../../../utils/adminProfiler";
 
 const createInitialFormState = (): BuildingFormState => ({
   name: "",
@@ -47,6 +53,11 @@ const createInitialFormState = (): BuildingFormState => ({
 });
 
 export default function BuildingsScreen() {
+  // Profiler hooks - track lifecycle and performance
+  useMountLog("Admin/Buildings");
+  useRenderLog("Admin/Buildings");
+  useScreenFocusLog("Admin/Buildings");
+
   const {
     actions,
     unitTypes,
@@ -73,11 +84,13 @@ export default function BuildingsScreen() {
 
   const filteredBuildings = useMemo(
     () =>
-      buildings.filter(
-        (building) =>
-          !searchQuery.trim() ||
-          building.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          building.address.toLowerCase().includes(searchQuery.toLowerCase()),
+      measure("Build Admin/Buildings filteredBuildings", () =>
+        buildings.filter(
+          (building) =>
+            !searchQuery.trim() ||
+            building.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            building.address.toLowerCase().includes(searchQuery.toLowerCase()),
+        )
       ),
     [buildings, searchQuery],
   );
@@ -381,7 +394,6 @@ export default function BuildingsScreen() {
             emptyMessage="No buildings found"
             searchPlaceholder="Search buildings..."
             onSearch={setSearchQuery}
-            keyExtractor={(building) => building.id}
             refreshing={refreshing}
             onRefresh={onRefresh}
           />

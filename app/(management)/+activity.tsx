@@ -9,7 +9,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
@@ -26,6 +26,7 @@ export default function ActivityFeedScreen() {
   const { currentUser, notifications, analytics, actions } = useApp();
   const { width } = useWindowDimensions();
   const [showSideMenu, setShowSideMenu] = useState(false);
+  const insets = useSafeAreaInsets();
 
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
   const isCompact = width < 900;
@@ -95,6 +96,10 @@ export default function ActivityFeedScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView
         style={[styles.scrollView, { paddingHorizontal: pagePadding }]}
+        contentContainerStyle={[
+          styles.scrollViewContent,
+          { paddingBottom: 160 + insets.bottom },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         <HeaderBar
@@ -258,6 +263,9 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+  },
+  scrollViewContent: {
+    paddingBottom: 160,
   },
   summaryRow: {
     flexDirection: "row",

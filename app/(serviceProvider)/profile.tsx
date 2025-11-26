@@ -13,14 +13,15 @@ import {
   useWindowDimensions,
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
 
 export default function ProfileScreen() {
-  const { currentUser, actions, notifications } = useApp();
+  const { currentUser, actions } = useApp();
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
@@ -131,6 +132,7 @@ export default function ProfileScreen() {
     <SafeAreaView style={styles.container} edges={["top"]}>
       <ScrollView
         style={[styles.scrollView, { paddingHorizontal: pagePadding }]}
+        contentContainerStyle={{ paddingBottom: 160 + insets.bottom }}
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}

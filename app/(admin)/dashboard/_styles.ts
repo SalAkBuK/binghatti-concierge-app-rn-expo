@@ -8,6 +8,9 @@ export const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
+  scrollViewContent: {
+    paddingBottom: 100, // Extra space for bottom tab bar
+  },
   banner: {
     flexDirection: "row",
     alignItems: "flex-start",

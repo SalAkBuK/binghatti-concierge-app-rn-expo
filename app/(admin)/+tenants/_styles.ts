@@ -95,6 +95,7 @@ export const styles = StyleSheet.create({
   listContainer: {
     marginTop: 20,
     gap: 14,
+    paddingBottom: 200,
   },
   tenantCard: {
     backgroundColor: "#FFFFFF",

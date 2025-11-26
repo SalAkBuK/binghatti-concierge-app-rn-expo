@@ -130,14 +130,6 @@ export default function RegisterVisitorScreen() {
     handleInputChange("visitorPhone", prefix + numbers);
   };
 
-  const generateVisitorCode = (): string => {
-    const date = new Date().toISOString().split("T")[0].replace(/-/g, "");
-    const random = Math.floor(Math.random() * 1000)
-      .toString()
-      .padStart(3, "0");
-    return `VST-${date}-${random}`;
-  };
-
   const handleSubmit = async (): Promise<void> => {
     const errors = validateForm();
 

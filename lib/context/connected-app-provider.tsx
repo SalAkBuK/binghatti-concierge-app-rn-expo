@@ -11,6 +11,7 @@ import { useVisitorModule } from "./modules/visitors";
 import { useRatingsModule } from "./modules/ratings";
 import { usePropertyModule } from "./modules/property";
 import { useJobModule } from "./modules/jobs";
+import { measure } from "../../utils/adminProfiler";
 import type {
   Building,
   UnitType,
@@ -137,6 +138,34 @@ export const useApp = () => {
     getBookingsByBuilding,
   } = amenityActions;
 
+  // CRITICAL PERFORMANCE FIX: Memoize amenity actions to prevent new object creation
+  const memoizedAmenityActions = React.useMemo(
+    () => ({
+      getAmenities,
+      getAmenityById,
+      getAmenityConfigs,
+      getAmenityConfigsByBuilding,
+      updateAmenityConfig,
+      createAmenityConfig,
+      createBooking,
+      getBookings,
+      cancelBooking,
+      getBookingsByBuilding,
+    }),
+    [
+      getAmenities,
+      getAmenityById,
+      getAmenityConfigs,
+      getAmenityConfigsByBuilding,
+      updateAmenityConfig,
+      createAmenityConfig,
+      createBooking,
+      getBookings,
+      cancelBooking,
+      getBookingsByBuilding,
+    ]
+  );
+
   const {
     state: { visitors, visitorPasses, visitorLogs },
     actions: visitorActions,
@@ -158,6 +187,44 @@ export const useApp = () => {
     getVisitorLogsByBuilding,
     getVisitorsByBuilding,
   } = visitorActions;
+
+  // CRITICAL PERFORMANCE FIX: Memoize visitor actions to prevent new object creation
+  const memoizedVisitorActions = React.useMemo(
+    () => ({
+      registerVisitor,
+      getVisitors,
+      cancelVisitor,
+      appendVisitorPass,
+      getVisitorPasses,
+      getVisitorPassesByBuilding,
+      approveVisitorPass,
+      rejectVisitorPass,
+      markVisitorPassCheckIn,
+      markVisitorPassComplete,
+      cancelVisitorPass,
+      addVisitorLog,
+      updateVisitorLog,
+      getVisitorLogsByBuilding,
+      getVisitorsByBuilding,
+    }),
+    [
+      registerVisitor,
+      getVisitors,
+      cancelVisitor,
+      appendVisitorPass,
+      getVisitorPasses,
+      getVisitorPassesByBuilding,
+      approveVisitorPass,
+      rejectVisitorPass,
+      markVisitorPassCheckIn,
+      markVisitorPassComplete,
+      cancelVisitorPass,
+      addVisitorLog,
+      updateVisitorLog,
+      getVisitorLogsByBuilding,
+      getVisitorsByBuilding,
+    ]
+  );
 
   const {
     state: propertyState,
@@ -239,7 +306,10 @@ export const useApp = () => {
     upsertRatingSummary,
   } = ratingsActions;
 
-  const getUsers = useCallback(() => Object.values(auth.users), [auth.users]);
+  const getUsers = useCallback(
+    () => measure("getUsers: Object.values(auth.users)", () => Object.values(auth.users)),
+    [auth.users]
+  );
 
   const createUser = useCallback(
     async (userData: CreateUserDTO): Promise<User> => {
@@ -250,10 +320,19 @@ export const useApp = () => {
         return Promise.reject(new Error("Only admins can create users"));
       }
 
-      return new Promise((resolve) => {
+      return new Promise((resolve, reject) => {
         setTimeout(() => {
+          const generatedId = generateId(Object.values(auth.users));
+
+          // Validate generated ID
+          if (isNaN(generatedId) || generatedId < 1) {
+            console.error("[createUser] generateId returned invalid ID:", generatedId);
+            reject(new Error("Failed to generate valid user ID"));
+            return;
+          }
+
           const newUser: User = {
-            id: generateId(Object.values(auth.users)).toString(),
+            id: generatedId.toString(),
             email: userData.email,
             name: userData.name,
             role: userData.role,
@@ -266,6 +345,8 @@ export const useApp = () => {
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           };
+
+          console.log("[createUser] Created new user with ID:", newUser.id);
 
           auth.actions.addUser(userData.email, newUser);
 
@@ -547,61 +628,63 @@ export const useApp = () => {
     [rolePermissions],
   );
 
-  return {
-    // Auth state
-    isAuthenticated: auth.isAuthenticated,
-    currentUser: auth.currentUser,
-    userRole: auth.userRole,
-    users: auth.users,
+  // CRITICAL PERFORMANCE FIX: Memoize the entire return object to prevent unnecessary re-renders
+  return React.useMemo(
+    () => ({
+      // Auth state
+      isAuthenticated: auth.isAuthenticated,
+      currentUser: auth.currentUser,
+      userRole: auth.userRole,
+      users: auth.users,
 
-    // Request state
-    requests: requests.requests,
-    selectedRequest: requests.selectedRequest,
+      // Request state
+      requests: requests.requests,
+      selectedRequest: requests.selectedRequest,
 
-    // Notification state
-    notifications: notifications.notifications,
-    unreadCount: notifications.unreadCount,
+      // Notification state
+      notifications: notifications.notifications,
+      unreadCount: notifications.unreadCount,
 
-    // Notices state
-    notices: notices.notices,
-    selectedNotice: notices.selectedNotice,
-    activeNoticesCount: notices.activeNoticesCount,
-    maintenanceNotices: notices.notices, // Legacy compatibility
+      // Notices state
+      notices: notices.notices,
+      selectedNotice: notices.selectedNotice,
+      activeNoticesCount: notices.activeNoticesCount,
+      maintenanceNotices: notices.notices, // Legacy compatibility
 
-    // New state - Amenities, Bookings, Visitors, Ratings
-    amenities,
-    amenityConfigs,
-    bookings,
-    visitors,
-    visitorPasses,
-    ratings,
+      // New state - Amenities, Bookings, Visitors, Ratings
+      amenities,
+      amenityConfigs,
+      bookings,
+      visitors,
+      visitorPasses,
+      ratings,
 
-    // Admin state - Buildings, Jobs, Analytics, Permissions
-    buildings,
-    jobs,
-    analytics,
-    rolePermissions,
-    unitTypes,
-    buildingUnits,
-    leases,
-    buildingEmployees,
-    serviceProviders,
-    providerAccessRequests,
-    visitorLogs,
-    ratingSummaries,
+      // Admin state - Buildings, Jobs, Analytics, Permissions
+      buildings,
+      jobs,
+      analytics,
+      rolePermissions,
+      unitTypes,
+      buildingUnits,
+      leases,
+      buildingEmployees,
+      serviceProviders,
+      providerAccessRequests,
+      visitorLogs,
+      ratingSummaries,
 
-    // Combined loading state
-    loading:
-      auth.loading ||
-      requests.loading ||
-      notifications.loading ||
-      notices.loading,
+      // Combined loading state
+      loading:
+        auth.loading ||
+        requests.loading ||
+        notifications.loading ||
+        notices.loading,
 
-    // Combined error state
-    error: auth.error || requests.error || notifications.error || notices.error,
+      // Combined error state
+      error: auth.error || requests.error || notifications.error || notices.error,
 
-    // All actions
-    actions: {
+      // All actions
+      actions: {
       // Auth actions
       setAuth: auth.actions.setAuth,
       login: auth.actions.login,
@@ -821,7 +904,155 @@ export const useApp = () => {
         // Legacy navigation helper - can be implemented as needed
       },
     },
-  };
+  }),
+  [
+    // Auth dependencies
+    auth.isAuthenticated,
+    auth.currentUser,
+    auth.userRole,
+    auth.users,
+    auth.loading,
+    auth.error,
+    auth.actions,
+    // Request dependencies
+    requests.requests,
+    requests.selectedRequest,
+    requests.loading,
+    requests.error,
+    requests.actions,
+    // Notification dependencies
+    notifications.notifications,
+    notifications.unreadCount,
+    notifications.loading,
+    notifications.error,
+    notifications.actions,
+    // Notice dependencies
+    notices.notices,
+    notices.selectedNotice,
+    notices.activeNoticesCount,
+    notices.loading,
+    notices.error,
+    notices.actions,
+    // Module state dependencies
+    amenities,
+    amenityConfigs,
+    bookings,
+    visitors,
+    visitorPasses,
+    ratings,
+    buildings,
+    jobs,
+    analytics,
+    rolePermissions,
+    unitTypes,
+    buildingUnits,
+    leases,
+    buildingEmployees,
+    serviceProviders,
+    providerAccessRequests,
+    visitorLogs,
+    ratingSummaries,
+    // Action dependencies
+    getUsers,
+    createUser,
+    updateUser,
+    deleteUser,
+    getBuildings,
+    getBuildingById,
+    createBuilding,
+    updateBuilding,
+    deleteBuilding,
+    getManagedBuildingIds,
+    getManagedBuildings,
+    getJobs,
+    getJobById,
+    createJob,
+    updateJobStatus,
+    bulkUpdateJobStatus,
+    assignJob,
+    getAnalytics,
+    getManagementAnalytics,
+    getPermissions,
+    getPermissionsByRole,
+    getRequestsByBuilding,
+    getBookings,
+    cancelBooking,
+    getBookingsByBuilding,
+    getVisitors,
+    getVisitorsByBuilding,
+    // Additional action dependencies
+    getUnitTypes,
+    getUnitTypeById,
+    createUnitType,
+    updateUnitType,
+    deleteUnitType,
+    getUnitsByBuilding,
+    getUnitById,
+    createUnit,
+    updateUnit,
+    deleteUnit,
+    getBuildingEmployees,
+    getBuildingEmployeeByUserId,
+    getBuildingEmployeeScope,
+    addBuildingEmployee,
+    updateBuildingEmployee,
+    removeBuildingEmployee,
+    getServiceProviders,
+    createServiceProvider,
+    getServiceProviderBuildingAssignments,
+    getServiceProvidersForBuilding,
+    assignServiceProviderToBuilding,
+    removeServiceProviderFromBuilding,
+    updateServiceProviderAssignment,
+    createProviderAccessRequest,
+    updateProviderAccessRequest,
+    approveProviderAccessRequest,
+    rejectProviderAccessRequest,
+    resolveServiceProviderIdentity,
+    getLeases,
+    getLeaseById,
+    getLeasesByBuilding,
+    getLeasesByTenant,
+    createLease,
+    updateLease,
+    terminateLease,
+    createVisitorPass,
+    getVisitorPasses,
+    getVisitorPassesByBuilding,
+    approveVisitorPass,
+    rejectVisitorPass,
+    markVisitorPassCheckIn,
+    markVisitorPassComplete,
+    cancelVisitorPass,
+    getVisitorLogsByBuilding,
+    addVisitorLog,
+    updateVisitorLog,
+    submitRating,
+    getRatings,
+    getRatingByRequestId,
+    getRatingSummaries,
+    upsertRatingSummary,
+    assignJobToBuildingEmployee,
+    queueJobAssignment,
+    promoteQueuedJobAssignment,
+    updateJob,
+    acceptEmployeeJob,
+    declineEmployeeJob,
+    startEmployeeJob,
+    uploadEmployeeJobPhoto,
+    addEmployeeJobAdditionalCost,
+    completeEmployeeJob,
+    submitJobEstimate,
+    assignEmployeeToJob,
+    approveJobAdditionalCost,
+    rejectJobAdditionalCost,
+    overrideJobCompletion,
+    reviewJobEstimateAsProvider,
+    approveTenantJobCompletion,
+    rejectTenantJobCompletion,
+    reviewJobEstimateAsTenant,
+  ]
+);
 };
 
 // Re-export individual hooks

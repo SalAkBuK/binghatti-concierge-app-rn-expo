@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { View, StyleSheet, ViewStyle } from "react-native";
 import Animated, {
   useSharedValue,
@@ -29,21 +29,21 @@ export function AnimatedBellIcon({
   const dotOpacity = useSharedValue(hasUnreadNotifications ? 1 : 0);
 
   // Green dot animations
-  const animateDotAppear = () => {
+  const animateDotAppear = useCallback(() => {
     dotScale.value = withSequence(
       withTiming(1.3, { duration: 200 }),
       withTiming(1, { duration: 200 })
     );
     dotOpacity.value = withTiming(1, { duration: 300 });
-  };
+  }, [dotOpacity, dotScale]);
 
-  const animateDotDisappear = () => {
+  const animateDotDisappear = useCallback(() => {
     dotScale.value = withTiming(0, { duration: 200 });
     dotOpacity.value = withTiming(0, { duration: 200 });
-  };
+  }, [dotOpacity, dotScale]);
 
   // Continuous pulse effect for unread notifications
-  const startPulseAnimation = () => {
+  const startPulseAnimation = useCallback(() => {
     dotScale.value = withRepeat(
       withSequence(
         withTiming(1.1, { duration: 1000 }),
@@ -52,12 +52,12 @@ export function AnimatedBellIcon({
       -1,
       true
     );
-  };
+  }, [dotScale]);
 
-  const stopPulseAnimation = () => {
+  const stopPulseAnimation = useCallback(() => {
     // Cancel the repeat animation by setting a final value
     dotScale.value = dotScale.value;
-  };
+  }, [dotScale]);
 
   // Effect to handle notification state changes
   useEffect(() => {
@@ -95,7 +95,13 @@ export function AnimatedBellIcon({
         clearInterval(animationIntervalRef.current);
       }
     };
-  }, [hasUnreadNotifications]);
+  }, [
+    animateDotAppear,
+    animateDotDisappear,
+    hasUnreadNotifications,
+    startPulseAnimation,
+    stopPulseAnimation,
+  ]);
 
   // Green dot animation style
   const dotAnimatedStyle = useAnimatedStyle(() => {

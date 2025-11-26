@@ -9,7 +9,7 @@ export const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    paddingBottom: 24,
+    paddingBottom: 120,
   },
   tabs: {
     flexDirection: "row",
@@ -144,6 +144,7 @@ export const styles = StyleSheet.create({
   },
   listContainer: {
     gap: 12,
+    paddingBottom: 120,
   },
   emptyState: {
     paddingVertical: 48,
@@ -276,6 +277,9 @@ export const styles = StyleSheet.create({
   },
   modalBody: {
     padding: 20,
+  },
+  modalBodyContent: {
+    paddingBottom: 72,
   },
   detailLabel: {
     fontSize: 12,

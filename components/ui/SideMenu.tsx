@@ -547,7 +547,7 @@ const managementMenu: MenuItem[] = [
       cancelAnimation(overlayOpacity);
       cancelAnimation(menuScale);
     };
-  }, [isVisible]);
+  }, [isVisible, menuScale, overlayOpacity, translateX]);
 
   // Animated styles
   const menuAnimatedStyle = useAnimatedStyle<ViewStyle>(() => {

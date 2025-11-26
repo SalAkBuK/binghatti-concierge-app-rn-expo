@@ -2,9 +2,10 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Picker } from "@react-native-picker/picker";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
     Alert,
+    BackHandler,
     KeyboardAvoidingView,
     Platform,
     ScrollView,
@@ -28,6 +29,17 @@ interface FormData {
   role: string;
 }
 
+interface FormErrors {
+  email?: string;
+  password?: string;
+  name?: string;
+  phone?: string;
+}
+
+// Validation constants
+const MIN_PASSWORD_LENGTH = 8;
+const PHONE_REGEX = /^\+?[0-9]{10,15}$/; // Allows optional + and 10-15 digits
+
 export default function AuthScreen() {
   const { actions } = useApp();
   const [isSignUp, setIsSignUp] = useState(false);
@@ -38,18 +50,95 @@ export default function AuthScreen() {
     phone: "",
     role: "tenant",
   });
+  const [errors, setErrors] = useState<FormErrors>({});
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const placeholderColor = "#94A3B8";
 
-  const handleSubmit = async () => {
-    if (!formData.email || !formData.password) {
-      Alert.alert("Error", "Please fill in all required fields");
-      return;
+  // Handle hardware back button
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => {
+        if (isSignUp) {
+          // If in sign-up mode, toggle back to login mode
+          setIsSignUp(false);
+          return true; // Prevent default back navigation
+        }
+        // If in login mode, allow default behavior (exit app or go back)
+        return false;
+      }
+    );
+
+    return () => backHandler.remove();
+  }, [isSignUp]);
+
+  // Validation functions
+  const validateEmail = (email: string): string | undefined => {
+    if (!email || !email.trim()) {
+      return "Email is required";
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return "Enter a valid email address";
+    }
+    return undefined;
+  };
+
+  const validatePassword = (password: string): string | undefined => {
+    if (!password || !password.trim()) {
+      return "Password is required";
+    }
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      return `Password must be at least ${MIN_PASSWORD_LENGTH} characters long`;
+    }
+    return undefined;
+  };
+
+  const validateName = (name: string): string | undefined => {
+    if (!name || !name.trim()) {
+      return "Username is required";
+    }
+    if (name.trim().length < 2) {
+      return "Username must be at least 2 characters";
+    }
+    return undefined;
+  };
+
+  const validatePhone = (phone: string): string | undefined => {
+    if (!phone || !phone.trim()) {
+      return "Phone number is required";
+    }
+    // Remove spaces and dashes for validation
+    const cleanPhone = phone.replace(/[\s-]/g, "");
+    if (!PHONE_REGEX.test(cleanPhone)) {
+      return "Enter a valid phone number (10-15 digits)";
+    }
+    return undefined;
+  };
+
+  const validateForm = (): boolean => {
+    const newErrors: FormErrors = {};
+
+    // Common validations
+    newErrors.email = validateEmail(formData.email);
+    newErrors.password = validatePassword(formData.password);
+
+    // Sign-up specific validations
+    if (isSignUp) {
+      newErrors.name = validateName(formData.name);
+      newErrors.phone = validatePhone(formData.phone);
     }
 
-    if (isSignUp && !formData.name) {
-      Alert.alert("Error", "Please enter your full name");
+    setErrors(newErrors);
+
+    // Return true if no errors
+    return !Object.values(newErrors).some((error) => error !== undefined);
+  };
+
+  const handleSubmit = async () => {
+    // Validate form
+    if (!validateForm()) {
       return;
     }
 
@@ -57,20 +146,34 @@ export default function AuthScreen() {
     try {
       if (isSignUp) {
         await actions.register({
-          email: formData.email,
+          email: formData.email.trim(),
           password: formData.password,
-          name: formData.name,
-          phone: formData.phone,
-          role: formData.role, // Pass the selected role
+          name: formData.name.trim(),
+          phone: formData.phone.trim(),
+          role: formData.role,
         } as any);
         Alert.alert(
           "Success",
           "Account created successfully! Please sign in.",
-          [{ text: "OK", onPress: () => setIsSignUp(false) }],
+          [{
+            text: "OK",
+            onPress: () => {
+              setIsSignUp(false);
+              // Clear form data
+              setFormData({
+                email: "",
+                password: "",
+                name: "",
+                phone: "",
+                role: "tenant",
+              });
+              setErrors({});
+            }
+          }],
         );
       } else {
         await actions.login({
-          email: formData.email,
+          email: formData.email.trim(),
           password: formData.password,
         });
 
@@ -89,6 +192,10 @@ export default function AuthScreen() {
 
   const updateFormData = (key: keyof FormData, value: string) => {
     setFormData((prev) => ({ ...prev, [key]: value }));
+    // Clear error for this field when user starts typing
+    if (errors[key as keyof FormErrors]) {
+      setErrors((prev) => ({ ...prev, [key]: undefined }));
+    }
   };
 
   const handleClearCache = async () => {
@@ -133,6 +240,17 @@ export default function AuthScreen() {
           contentContainerStyle={styles.scrollContainer}
           keyboardShouldPersistTaps="handled"
         >
+          {/* Back button - only show in sign-up mode */}
+          {isSignUp && (
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => setIsSignUp(false)}
+            >
+              <Ionicons name="arrow-back" size={24} color="#2563eb" />
+              <Text style={styles.backButtonText}>Back to Login</Text>
+            </TouchableOpacity>
+          )}
+
           <View style={styles.logoContainer}>
             <View style={styles.logoCircle}>
               <Ionicons name="business" size={32} color="#2563eb" />
@@ -153,19 +271,31 @@ export default function AuthScreen() {
               <>
                 <View style={styles.inputContainer}>
                   <TextInput
-                    style={styles.input}
-                    placeholder="Full Name"
+                    style={[
+                      styles.input,
+                      errors.name && styles.inputError
+                    ]}
+                    placeholder="Full Name (Username)"
                     placeholderTextColor={placeholderColor}
                     value={formData.name}
                     onChangeText={(text) => updateFormData("name", text)}
                     autoCapitalize="words"
                     textContentType="name"
                   />
+                  {errors.name && (
+                    <View style={styles.errorContainer}>
+                      <Ionicons name="alert-circle" size={14} color="#ef4444" />
+                      <Text style={styles.errorText}>{errors.name}</Text>
+                    </View>
+                  )}
                 </View>
 
                 <View style={styles.inputContainer}>
                   <TextInput
-                    style={styles.input}
+                    style={[
+                      styles.input,
+                      errors.phone && styles.inputError
+                    ]}
                     placeholder="Phone Number"
                     placeholderTextColor={placeholderColor}
                     value={formData.phone}
@@ -173,13 +303,23 @@ export default function AuthScreen() {
                     keyboardType="phone-pad"
                     textContentType="telephoneNumber"
                   />
+                  {errors.phone && (
+                    <View style={styles.errorContainer}>
+                      <Ionicons name="alert-circle" size={14} color="#ef4444" />
+                      <Text style={styles.errorText}>{errors.phone}</Text>
+                    </View>
+                  )}
                 </View>
 
                 <View style={styles.pickerContainer}>
+                  <Text style={styles.pickerLabel}>Select Role</Text>
                   <Picker
                     selectedValue={formData.role}
-                    onValueChange={(value) => updateFormData("role", value)}
-                    style={styles.picker}
+                    onValueChange={(value) => updateFormData("role", value as string)}
+                    style={[styles.picker, styles.pickerText]}
+                    itemStyle={styles.pickerText}
+                    dropdownIconColor="#6b7280"
+                    mode="dropdown"
                   >
                     <Picker.Item label="Tenant" value="tenant" />
                     <Picker.Item
@@ -196,7 +336,10 @@ export default function AuthScreen() {
 
             <View style={styles.inputContainer}>
               <TextInput
-                style={styles.input}
+                style={[
+                  styles.input,
+                  errors.email && styles.inputError
+                ]}
                 placeholder="Email"
                 placeholderTextColor={placeholderColor}
                 value={formData.email}
@@ -206,11 +349,20 @@ export default function AuthScreen() {
                 autoCapitalize="none"
                 autoCorrect={false}
               />
+              {errors.email && (
+                <View style={styles.errorContainer}>
+                  <Ionicons name="alert-circle" size={14} color="#ef4444" />
+                  <Text style={styles.errorText}>{errors.email}</Text>
+                </View>
+              )}
             </View>
 
             <View style={styles.inputContainer}>
               <TextInput
-                style={styles.input}
+                style={[
+                  styles.input,
+                  errors.password && styles.inputError
+                ]}
                 placeholder="Password"
                 placeholderTextColor={placeholderColor}
                 value={formData.password}
@@ -230,6 +382,12 @@ export default function AuthScreen() {
                   color="#6b7280"
                 />
               </TouchableOpacity>
+              {errors.password && (
+                <View style={styles.errorContainer}>
+                  <Ionicons name="alert-circle" size={14} color="#ef4444" />
+                  <Text style={styles.errorText}>{errors.password}</Text>
+                </View>
+              )}
             </View>
 
             <AnimatedButton style={styles.submitButton} onPress={handleSubmit}>
@@ -275,6 +433,17 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: "center",
     padding: 20,
+  },
+  backButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 16,
+    gap: 8,
+  },
+  backButtonText: {
+    color: "#2563eb",
+    fontSize: 16,
+    fontWeight: "600",
   },
   logoContainer: {
     alignItems: "center",
@@ -325,6 +494,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     backgroundColor: "white",
   },
+  inputError: {
+    borderColor: "#ef4444",
+    borderWidth: 2,
+  },
+  errorContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 6,
+    gap: 4,
+  },
+  errorText: {
+    color: "#ef4444",
+    fontSize: 12,
+    flex: 1,
+  },
   passwordToggle: {
     position: "absolute",
     right: 12,
@@ -337,9 +521,23 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 16,
     backgroundColor: "white",
+    paddingHorizontal: 8,
+    paddingTop: 4,
+  },
+  pickerLabel: {
+    fontSize: 12,
+    color: "#6b7280",
+    marginBottom: 2,
+    marginLeft: 4,
+    fontWeight: "500",
   },
   picker: {
     height: 50,
+    color: "#111827",
+  },
+  pickerText: {
+    color: "#111827",
+    fontSize: 16,
   },
   submitButton: {
     backgroundColor: "#2563eb",

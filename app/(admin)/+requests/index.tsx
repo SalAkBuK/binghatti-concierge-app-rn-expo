@@ -17,8 +17,18 @@ import { ADMIN_NOTIFICATION_ROUTE } from "./_constants";
 import { useRequestsData } from "./_hooks/useRequestsData";
 import type { StatusFilter } from "./_constants";
 import { styles } from "./_styles";
+import {
+  useMountLog,
+  useRenderLog,
+  useScreenFocusLog,
+} from "../../../utils/adminProfiler";
 
 export default function RequestsManagementScreen() {
+  // Profiler hooks - track lifecycle and performance
+  useMountLog("Admin/Requests");
+  useRenderLog("Admin/Requests");
+  useScreenFocusLog("Admin/Requests");
+
   const { width } = useWindowDimensions();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -145,6 +155,7 @@ export default function RequestsManagementScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView
         style={[styles.scrollView, { paddingHorizontal: pagePadding }]}
+        contentContainerStyle={styles.scrollViewContent}
         keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />

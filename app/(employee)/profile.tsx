@@ -41,7 +41,7 @@ export default function SPEmployeeProfileScreen() {
           try {
             await actions.logout?.();
             router.replace("/auth");
-          } catch (error) {
+          } catch {
             Alert.alert("Error", "Failed to logout. Please try again.");
           }
         },

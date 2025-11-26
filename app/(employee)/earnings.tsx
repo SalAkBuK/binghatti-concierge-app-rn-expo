@@ -449,6 +449,7 @@ export default function EmployeeEarningsScreen() {
       overallStats,
       stats,
       periodLabel,
+      periodFilter,
       statusFilter,
       searchQuery,
       sortedEarnings.length,

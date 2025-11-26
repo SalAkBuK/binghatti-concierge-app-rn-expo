@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   RefreshControl,
   ScrollView,
@@ -9,7 +9,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import Animated, { FadeInDown } from "react-native-reanimated";
+import Animated, { FadeInDown, useReducedMotion } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AnalyticsSection } from "../../components/admin/AnalyticsSection";
@@ -23,8 +23,19 @@ import { formatDate, formatDateTime } from "../../lib/utils/helpers";
 import { ADMIN_NOTIFICATION_ROUTE } from "./dashboard/_constants";
 import { useDashboardData } from "./dashboard/_hooks/useDashboardData";
 import { styles } from "./dashboard/_styles";
+import {
+  useMountLog,
+  useRenderLog,
+  useScreenFocusLog,
+  measure,
+} from "../../utils/adminProfiler";
 
 export default function AdminDashboard() {
+  // Profiler hooks - track lifecycle and performance
+  useMountLog("Admin/Dashboard");
+  useRenderLog("Admin/Dashboard");
+  useScreenFocusLog("Admin/Dashboard");
+
   const {
     currentUser,
     analytics,
@@ -37,9 +48,22 @@ export default function AdminDashboard() {
   const { width } = useWindowDimensions();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const reduceMotionEnabled = useReducedMotion();
 
   const pagePadding = Math.max(16, Math.min(32, width * 0.05));
   const isCompact = width < 768;
+  const shouldAnimate = !reduceMotionEnabled && !isCompact;
+
+  const getEnteringAnimation = useCallback(
+    (delay = 0) =>
+      shouldAnimate ? FadeInDown.delay(delay).duration(260) : undefined,
+    [shouldAnimate],
+  );
+
+  const scrollViewStyle = useMemo(
+    () => [styles.scrollView, { paddingHorizontal: pagePadding }],
+    [pagePadding],
+  );
 
   const [selectedBuildingId, setSelectedBuildingId] = useState<string | null>(
     isManagement && managedBuildings.length ? managedBuildings[0].id : null,
@@ -74,49 +98,51 @@ export default function AdminDashboard() {
       : null;
 
   const managementTiles = useMemo(() => {
-    if (!managementSnapshot) return [];
-    const openRequests =
-      (managementSnapshot.metrics.pendingRequests || 0) +
-      (managementSnapshot.metrics.inProgressRequests || 0);
+    return measure("Build Admin/Dashboard managementTiles", () => {
+      if (!managementSnapshot) return [];
+      const openRequests =
+        (managementSnapshot.metrics.pendingRequests || 0) +
+        (managementSnapshot.metrics.inProgressRequests || 0);
 
-    return [
-      {
-        title: "Open Requests",
-        value: openRequests,
-        icon: "clipboard-outline" as const,
-        iconColor: "#F97316",
-      },
-      {
-        title: "Jobs In Progress",
-        value: managementSnapshot.metrics.jobsInProgress,
-        icon: "construct-outline" as const,
-        iconColor: "#2563EB",
-      },
-      {
-        title: "Bookings Today",
-        value: managementSnapshot.metrics.bookingsToday,
-        icon: "calendar-outline" as const,
-        iconColor: "#10B981",
-      },
-      {
-        title: "Visitors Today",
-        value: managementSnapshot.metrics.visitorsToday,
-        icon: "people-outline" as const,
-        iconColor: "#8B5CF6",
-      },
-      {
-        title: "Completion Rate",
-        value: `${managementSnapshot.metrics.completionRate}%`,
-        icon: "speedometer-outline" as const,
-        iconColor: "#0EA5E9",
-      },
-      {
-        title: "Occupancy",
-        value: `${managementSnapshot.metrics.occupancyRate}%`,
-        icon: "business-outline" as const,
-        iconColor: "#7C3AED",
-      },
-    ];
+      return [
+        {
+          title: "Open Requests",
+          value: openRequests,
+          icon: "clipboard-outline" as const,
+          iconColor: "#F97316",
+        },
+        {
+          title: "Jobs In Progress",
+          value: managementSnapshot.metrics.jobsInProgress,
+          icon: "construct-outline" as const,
+          iconColor: "#2563EB",
+        },
+        {
+          title: "Bookings Today",
+          value: managementSnapshot.metrics.bookingsToday,
+          icon: "calendar-outline" as const,
+          iconColor: "#10B981",
+        },
+        {
+          title: "Visitors Today",
+          value: managementSnapshot.metrics.visitorsToday,
+          icon: "people-outline" as const,
+          iconColor: "#8B5CF6",
+        },
+        {
+          title: "Completion Rate",
+          value: `${managementSnapshot.metrics.completionRate}%`,
+          icon: "speedometer-outline" as const,
+          iconColor: "#0EA5E9",
+        },
+        {
+          title: "Occupancy",
+          value: `${managementSnapshot.metrics.occupancyRate}%`,
+          icon: "business-outline" as const,
+          iconColor: "#7C3AED",
+        },
+      ];
+    });
   }, [managementSnapshot]);
 
   const requestsToday = managementSnapshot?.lists.requestsToday ?? [];
@@ -125,57 +151,86 @@ export default function AdminDashboard() {
   const activeJobs = managementSnapshot?.lists.activeJobs ?? [];
 
   const performanceBanner = useMemo(() => {
-    if (analytics.completionRate >= 85) {
-      return {
-        icon: "shield-checkmark",
-        toneColor: "#047857",
-        background: "#ECFDF5",
-        border: "#A7F3D0",
-        headline: "Operations are healthy",
-        body: "Job completion is trending upward and response times remain within SLA.",
-      };
-    }
+    return measure("Build Admin/Dashboard performanceBanner", () => {
+      if (analytics.completionRate >= 85) {
+        return {
+          icon: "shield-checkmark",
+          toneColor: "#047857",
+          background: "#ECFDF5",
+          border: "#A7F3D0",
+          headline: "Operations are healthy",
+          body: "Job completion is trending upward and response times remain within SLA.",
+        };
+      }
 
-    if (analytics.completionRate >= 70) {
-      return {
-        icon: "alert-circle",
-        toneColor: "#F59E0B",
-        background: "#FFFBEB",
-        border: "#FDE68A",
-        headline: "Keep an eye on completion rate",
-        body: "Response times are slowing slightly. Consider redistributing work orders.",
-      };
-    }
+      if (analytics.completionRate >= 70) {
+        return {
+          icon: "alert-circle",
+          toneColor: "#F59E0B",
+          background: "#FFFBEB",
+          border: "#FDE68A",
+          headline: "Keep an eye on completion rate",
+          body: "Response times are slowing slightly. Consider redistributing work orders.",
+        };
+      }
 
-    return {
-      icon: "warning",
-      toneColor: "#DC2626",
-      background: "#FEF2F2",
-      border: "#FECACA",
-      headline: "Action required",
-      body: "Completion rate dipped below target. Investigate overdue jobs immediately.",
-    };
+      return {
+        icon: "warning",
+        toneColor: "#DC2626",
+        background: "#FEF2F2",
+        border: "#FECACA",
+        headline: "Action required",
+        body: "Completion rate dipped below target. Investigate overdue jobs immediately.",
+      };
+    });
   }, [analytics.completionRate]);
 
+  const performanceBannerStyles = useMemo(
+    () => ({
+      container: [
+        styles.banner,
+        {
+          backgroundColor: performanceBanner.background,
+          borderColor: performanceBanner.border,
+        },
+      ],
+      icon: [
+        styles.bannerIconWrapper,
+        { backgroundColor: performanceBanner.toneColor + "15" },
+      ],
+      headline: [
+        styles.bannerHeadline,
+        { color: performanceBanner.toneColor },
+      ],
+    }),
+    [performanceBanner],
+  );
+
   const bookingsTrend = useMemo(
-    () => [6, 7, 5, 9, 8, 10, analytics.bookingsToday],
+    () => measure("Build Admin/Dashboard bookingsTrend", () =>
+      [6, 7, 5, 9, 8, 10, analytics.bookingsToday]
+    ),
     [analytics.bookingsToday],
   );
 
   const completionTrend = useMemo(
-    () => [65, 68, 70, 72, 74, 76, analytics.completionRate],
+    () => measure("Build Admin/Dashboard completionTrend", () =>
+      [65, 68, 70, 72, 74, 76, analytics.completionRate]
+    ),
     [analytics.completionRate],
   );
 
   const occupancyTrend = useMemo(
-    () => [88.4, 89.3, 90.1, 90.9, 91.5, 92.0, analytics.occupancyRate],
+    () => measure("Build Admin/Dashboard occupancyTrend", () =>
+      [88.4, 89.3, 90.1, 90.9, 91.5, 92.0, analytics.occupancyRate]
+    ),
     [analytics.occupancyRate],
   );
 
-  const onRefresh = async () => {
+  const onRefresh = useCallback(() => {
     setRefreshing(true);
     setTimeout(() => setRefreshing(false), 1000);
-  };
+  }, []);
 
   const renderManagementView = () => {
     if (!managementSnapshot) {
@@ -198,10 +253,7 @@ export default function AdminDashboard() {
 
     return (
       <>
-        <Animated.View
-          entering={FadeInDown.duration(300)}
-          style={styles.managementIntro}
-        >
+        <Animated.View entering={getEnteringAnimation()} style={styles.managementIntro}>
           <Text style={styles.managementGreeting}>
             Welcome back, {currentUser?.name || "Manager"}
           </Text>
@@ -242,7 +294,7 @@ export default function AdminDashboard() {
           </ScrollView>
         ) : null}
 
-        <Animated.View entering={FadeInDown.delay(60).duration(300)}>
+        <Animated.View entering={getEnteringAnimation(60)}>
           <AnalyticsSection
             title={
               managementSnapshot.building
@@ -265,7 +317,7 @@ export default function AdminDashboard() {
           </AnalyticsSection>
         </Animated.View>
 
-        <Animated.View entering={FadeInDown.delay(100).duration(300)}>
+        <Animated.View entering={getEnteringAnimation(100)}>
           <AnalyticsSection
             title="Today's Requests"
             subtitle="New tenant submissions in the last 24 hours"
@@ -293,7 +345,7 @@ export default function AdminDashboard() {
           </AnalyticsSection>
         </Animated.View>
 
-        <Animated.View entering={FadeInDown.delay(140).duration(300)}>
+        <Animated.View entering={getEnteringAnimation(140)}>
           <AnalyticsSection
             title="Upcoming Amenity Bookings"
             subtitle="Reservations scheduled for the next few days"
@@ -332,7 +384,7 @@ export default function AdminDashboard() {
           </AnalyticsSection>
         </Animated.View>
 
-        <Animated.View entering={FadeInDown.delay(180).duration(300)}>
+        <Animated.View entering={getEnteringAnimation(180)}>
           <AnalyticsSection
             title="Expected Visitors"
             subtitle="Who is scheduled to arrive today"
@@ -362,14 +414,14 @@ export default function AdminDashboard() {
           </AnalyticsSection>
         </Animated.View>
 
-        <Animated.View entering={FadeInDown.delay(220).duration(300)}>
+        <Animated.View entering={getEnteringAnimation(220)}>
           <AnalyticsSection
             title="Active Jobs"
             subtitle="Maintenance tasks currently in motion"
             actionSlot={
               activeJobs.length > 0 ? (
                 <TouchableOpacity
-                  onPress={() => router.push(`${managementBaseRoute}/jobs`)}
+                  onPress={() => router.push(`${managementBaseRoute}/jobs` as any)}
                 >
                   <Text style={styles.viewAllLink}>View jobs</Text>
                 </TouchableOpacity>
@@ -405,21 +457,10 @@ export default function AdminDashboard() {
   const renderAdminView = () => (
     <>
       <Animated.View
-        entering={FadeInDown.duration(300)}
-        style={[
-          styles.banner,
-          {
-            backgroundColor: performanceBanner.background,
-            borderColor: performanceBanner.border,
-          },
-        ]}
+        entering={getEnteringAnimation()}
+        style={performanceBannerStyles.container}
       >
-        <View
-          style={[
-            styles.bannerIconWrapper,
-            { backgroundColor: performanceBanner.toneColor + "15" },
-          ]}
-        >
+        <View style={performanceBannerStyles.icon}>
           <Ionicons
             name={performanceBanner.icon as keyof typeof Ionicons.glyphMap}
             size={20}
@@ -428,10 +469,7 @@ export default function AdminDashboard() {
         </View>
         <View style={styles.bannerCopy}>
           <Text
-            style={[
-              styles.bannerHeadline,
-              { color: performanceBanner.toneColor },
-            ]}
+            style={performanceBannerStyles.headline}
           >
             {performanceBanner.headline}
           </Text>
@@ -439,7 +477,7 @@ export default function AdminDashboard() {
         </View>
       </Animated.View>
 
-      <Animated.View entering={FadeInDown.delay(80).duration(300)}>
+      <Animated.View entering={getEnteringAnimation(80)}>
         <AnalyticsSection
           title="Performance Overview"
           subtitle="Snapshot of live KPIs across the portfolio"
@@ -494,7 +532,7 @@ export default function AdminDashboard() {
         </AnalyticsSection>
       </Animated.View>
 
-      <Animated.View entering={FadeInDown.delay(120).duration(300)}>
+      <Animated.View entering={getEnteringAnimation(120)}>
         <AnalyticsSection
           title="Activity Trends"
           subtitle="Trailing 7-day trend across key signals"
@@ -536,7 +574,7 @@ export default function AdminDashboard() {
         </AnalyticsSection>
       </Animated.View>
 
-      <Animated.View entering={FadeInDown.delay(160).duration(300)}>
+      <Animated.View entering={getEnteringAnimation(160)}>
         <AnalyticsSection
           title="Operational Snapshot"
           subtitle="Where to focus next"
@@ -592,7 +630,7 @@ export default function AdminDashboard() {
         </AnalyticsSection>
       </Animated.View>
 
-      <Animated.View entering={FadeInDown.delay(200).duration(300)}>
+      <Animated.View entering={getEnteringAnimation(200)}>
         <AnalyticsSection
           title="Top Service Providers"
           subtitle="Performance over the last 30 days"
@@ -633,7 +671,7 @@ export default function AdminDashboard() {
         </AnalyticsSection>
       </Animated.View>
 
-      <Animated.View entering={FadeInDown.delay(240).duration(300)}>
+      <Animated.View entering={getEnteringAnimation(240)}>
         <AnalyticsSection title="Recent Activity Timeline">
           <View style={styles.timeline}>
             {analytics.recentActivity.slice(0, 6).map((activity, index) => {
@@ -676,7 +714,8 @@ export default function AdminDashboard() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
-        style={[styles.scrollView, { paddingHorizontal: pagePadding }]}
+        style={scrollViewStyle}
+        contentContainerStyle={styles.scrollViewContent}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
@@ -760,4 +799,3 @@ const getTimelineIcon = (
       return "time-outline";
   }
 };
-

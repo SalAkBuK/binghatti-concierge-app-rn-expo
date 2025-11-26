@@ -12,7 +12,7 @@ import {
   View,
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import ChevronIcon from "../../components/icons/ChevronIcon";
 import { AnimatedButton } from "../../components/ui/AnimatedButton";
@@ -33,6 +33,7 @@ export default function RequestsScreen() {
   const filterStatus: FilterStatus = "all";
   const [isLoading, setIsLoading] = useState(true);
   const [showSideMenu, setShowSideMenu] = useState(false);
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     // Simulate minimum loading time for smooth animation
@@ -224,6 +225,7 @@ export default function RequestsScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView
         style={styles.scrollView}
+        contentContainerStyle={{ paddingBottom: 160 + insets.bottom }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }

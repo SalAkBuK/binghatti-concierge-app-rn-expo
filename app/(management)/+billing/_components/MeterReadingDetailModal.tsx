@@ -37,7 +37,11 @@ export function MeterReadingDetailModal({
               <Ionicons name="close" size={24} color="#333" />
             </TouchableOpacity>
           </View>
-          <ScrollView style={styles.modalBody}>
+          <ScrollView
+            style={styles.modalBody}
+            contentContainerStyle={styles.modalBodyContent}
+            showsVerticalScrollIndicator={false}
+          >
             <Text style={styles.detailLabel}>Building & Unit</Text>
             <Text style={styles.detailValue}>
               {reading.buildingName} - Unit {reading.unitNumber}

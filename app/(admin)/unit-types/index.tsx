@@ -19,8 +19,19 @@ import { UnitTypeFormModal } from "./_components/UnitTypeFormModal";
 import { ADMIN_NOTIFICATION_ROUTE } from "./_constants";
 import { useUnitTypesData } from "./_hooks/useUnitTypesData";
 import { styles } from "./_styles";
+import {
+  useMountLog,
+  useRenderLog,
+  useScreenFocusLog,
+  measure,
+} from "../../../utils/adminProfiler";
 
 export default function UnitTypesScreen() {
+  // Profiler hooks - track lifecycle and performance
+  useMountLog("Admin/UnitTypes");
+  useRenderLog("Admin/UnitTypes");
+  useScreenFocusLog("Admin/UnitTypes");
+
   const { allUnitTypes, hasUnreadNotifications, canManageUnitTypes, actions } =
     useUnitTypesData();
   const { width } = useWindowDimensions();
@@ -46,14 +57,16 @@ export default function UnitTypesScreen() {
   });
 
   const filteredUnitTypes = useMemo(() => {
-    if (!searchQuery.trim()) return allUnitTypes;
-    const query = searchQuery.toLowerCase();
-    return allUnitTypes.filter(
-      (type) =>
-        type.name.toLowerCase().includes(query) ||
-        type.bedrooms.toString().includes(query) ||
-        type.bathrooms.toString().includes(query),
-    );
+    return measure("Build Admin/UnitTypes filteredUnitTypes", () => {
+      if (!searchQuery.trim()) return allUnitTypes;
+      const query = searchQuery.toLowerCase();
+      return allUnitTypes.filter(
+        (type) =>
+          type.name.toLowerCase().includes(query) ||
+          type.bedrooms.toString().includes(query) ||
+          type.bathrooms.toString().includes(query),
+      );
+    });
   }, [allUnitTypes, searchQuery]);
 
   const onRefresh = async () => {
@@ -307,7 +320,6 @@ export default function UnitTypesScreen() {
             emptyMessage="No unit types found"
             searchPlaceholder="Search unit types..."
             onSearch={setSearchQuery}
-            keyExtractor={(unitType) => unitType.id}
             refreshing={refreshing}
             onRefresh={onRefresh}
           />

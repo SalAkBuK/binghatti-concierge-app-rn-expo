@@ -9,7 +9,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { HeaderBar } from "../../../components/ui/HeaderBar";
 import { SideMenu } from "../../../components/ui/SideMenu";
@@ -19,8 +19,19 @@ import { TenantDetailsModal } from "./_components/TenantDetailsModal";
 import { ADMIN_NOTIFICATION_ROUTE } from "./_constants";
 import { useTenantsData } from "./_hooks/useTenantsData";
 import { styles } from "./_styles";
+import {
+  useMountLog,
+  useRenderLog,
+  useScreenFocusLog,
+  measure,
+} from "../../../utils/adminProfiler";
 
 export default function TenantsScreen() {
+  // Profiler hooks - track lifecycle and performance
+  useMountLog("Admin/Tenants");
+  useRenderLog("Admin/Tenants");
+  useScreenFocusLog("Admin/Tenants");
+
   const {
     allBuildings,
     managedBuildings,
@@ -30,6 +41,7 @@ export default function TenantsScreen() {
     isManagement,
   } = useTenantsData();
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [selectedTenant, setSelectedTenant] = useState<User | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -63,67 +75,71 @@ export default function TenantsScreen() {
     });
   }, [isManagement, managedBuildings]);
 
+  const tenantIndex = useMemo(
+    () =>
+      tenants.map((tenant) => {
+        const buildingId = tenant.profile?.buildingId || "";
+        const apartment = tenant.profile?.apartment || "";
+        const tower = tenant.profile?.tower || "";
+        const haystack = `${tenant.name} ${tenant.email} ${apartment} ${tower}`.toLowerCase();
+        return { tenant, buildingId, apartment, haystack };
+      }),
+    [tenants],
+  );
+
   const filteredTenants = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
+    return measure("Build Admin/Tenants filteredTenants", () => {
+      const query = searchQuery.trim().toLowerCase();
+      const buildingScope = isManagement && managedBuildings.length ? managedBuildings : null;
 
-    return tenants
-      .filter((tenant) => {
-        const tenantBuildingId = tenant.profile?.buildingId;
-
-        if (selectedBuildingId !== "all" && tenantBuildingId !== selectedBuildingId) {
-          return false;
-        }
-
-        if (isManagement && managedBuildings.length) {
-          if (!tenantBuildingId) return false;
-          const inScope = managedBuildings.some(
-            (building) => building.id === tenantBuildingId,
-          );
-          if (!inScope) return false;
-        }
-
-        if (!query) return true;
-
-        const haystack = `${tenant.name} ${tenant.email} ${tenant.profile?.apartment || ""} ${tenant.profile?.tower || ""}`
-          .toLowerCase();
-
-        return haystack.includes(query);
-      })
-      .sort((a, b) => {
-        const aUnit = a.profile?.apartment || "";
-        const bUnit = b.profile?.apartment || "";
-        return aUnit.localeCompare(bUnit);
-      });
-  }, [tenants, searchQuery, selectedBuildingId, isManagement, managedBuildings]);
+      return tenantIndex
+        .filter((item) => {
+          if (!item.buildingId) return false;
+          if (selectedBuildingId !== "all" && item.buildingId !== selectedBuildingId) {
+            return false;
+          }
+          if (buildingScope) {
+            const inScope = buildingScope.some((building) => building.id === item.buildingId);
+            if (!inScope) return false;
+          }
+          if (!query) return true;
+          return item.haystack.includes(query);
+        })
+        .sort((a, b) => a.apartment.localeCompare(b.apartment))
+        .map((item) => item.tenant);
+    });
+  }, [tenantIndex, searchQuery, selectedBuildingId, isManagement, managedBuildings]);
 
   const occupancySnapshot = useMemo(() => {
-    const buildingsScope =
-      selectedBuildingId !== "all" && buildingMap.get(selectedBuildingId)
-        ? [buildingMap.get(selectedBuildingId)!]
-        : managedBuildings.length
-          ? managedBuildings
-          : allBuildings;
+    return measure("Build Admin/Tenants occupancySnapshot", () => {
+      const buildingsScope =
+        selectedBuildingId !== "all" && buildingMap.get(selectedBuildingId)
+          ? [buildingMap.get(selectedBuildingId)!]
+          : managedBuildings.length
+            ? managedBuildings
+            : allBuildings;
 
-    const totals = buildingsScope.reduce(
-      (acc, building) => ({
-        totalUnits: acc.totalUnits + building.totalUnits,
-        occupiedUnits: acc.occupiedUnits + building.occupiedUnits,
-      }),
-      { totalUnits: 0, occupiedUnits: 0 },
-    );
+      const totals = buildingsScope.reduce(
+        (acc, building) => ({
+          totalUnits: acc.totalUnits + building.totalUnits,
+          occupiedUnits: acc.occupiedUnits + building.occupiedUnits,
+        }),
+        { totalUnits: 0, occupiedUnits: 0 },
+      );
 
-    const vacantUnits = Math.max(totals.totalUnits - totals.occupiedUnits, 0);
-    const occupancyRate =
-      totals.totalUnits > 0
-        ? Math.round((totals.occupiedUnits / totals.totalUnits) * 100)
-        : 0;
+      const vacantUnits = Math.max(totals.totalUnits - totals.occupiedUnits, 0);
+      const occupancyRate =
+        totals.totalUnits > 0
+          ? Math.round((totals.occupiedUnits / totals.totalUnits) * 100)
+          : 0;
 
-    return {
-      totalUnits: totals.totalUnits,
-      occupiedUnits: totals.occupiedUnits,
-      vacantUnits,
-      occupancyRate,
-    };
+      return {
+        totalUnits: totals.totalUnits,
+        occupiedUnits: totals.occupiedUnits,
+        vacantUnits,
+        occupancyRate,
+      };
+    });
   }, [selectedBuildingId, buildingMap, managedBuildings, allBuildings]);
 
   const buildingFilterOptions = useMemo(() => {
@@ -142,6 +158,10 @@ export default function TenantsScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView
         style={[styles.scrollView, { paddingHorizontal: pagePadding }]}
+        contentContainerStyle={[
+          styles.scrollViewContent,
+          { paddingBottom: 200 + insets.bottom },
+        ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >

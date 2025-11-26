@@ -1,3 +1,5 @@
+import { useMemo } from "react";
+
 import { useApp } from "../../../../lib/context/connected-app-provider";
 import type { User } from "../../../../lib/types";
 import { filterNotificationsByUser } from "../../../../lib/utils/helpers";
@@ -15,22 +17,35 @@ export interface UseDashboardDataResult {
 }
 
 export function useDashboardData(): UseDashboardDataResult {
+  // PERFORMANCE FIX: Extract only what we need from useApp()
   const { currentUser, notifications, actions } = useApp();
 
-  const isManagement = currentUser?.role === "management";
-  const managementBaseRoute = isManagement ? "/(management)" : "/(admin)";
+  // PERFORMANCE FIX: Memoize computed values to prevent re-computation
+  const isManagement = useMemo(
+    () => currentUser?.role === "management",
+    [currentUser?.role]
+  );
 
+  const managementBaseRoute = useMemo(
+    () => (isManagement ? "/(management)" : "/(admin)"),
+    [isManagement]
+  );
+
+  // These functions are now memoized in useApp(), so calling them directly is safe
   const analytics = actions.getAnalytics();
 
-  const managedBuildings = isManagement
-    ? actions.getManagedBuildings?.() ?? []
-    : [];
-
-  const userNotifications = filterNotificationsByUser(
-    notifications || [],
-    currentUser?.id,
+  const managedBuildings = useMemo(
+    () => (isManagement ? actions.getManagedBuildings?.() ?? [] : []),
+    [isManagement, actions.getManagedBuildings]
   );
-  const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
+
+  const hasUnreadNotifications = useMemo(() => {
+    const userNotifications = filterNotificationsByUser(
+      notifications || [],
+      currentUser?.id,
+    );
+    return userNotifications.some((notif) => !notif.read);
+  }, [notifications, currentUser?.id]);
 
   return {
     currentUser,

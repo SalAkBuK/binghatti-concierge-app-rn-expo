@@ -9,7 +9,7 @@ export const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    paddingBottom: 24,
+    paddingBottom: 100, // Extra space for bottom tab bar
   },
   tabs: {
     flexDirection: "row",
@@ -144,6 +144,7 @@ export const styles = StyleSheet.create({
   },
   listContainer: {
     gap: 12,
+    paddingBottom: 120,
   },
   emptyState: {
     paddingVertical: 48,

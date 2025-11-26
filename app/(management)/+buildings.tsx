@@ -641,7 +641,6 @@ export default function BuildingsScreen() {
             emptyMessage="No buildings found"
             searchPlaceholder="Search buildings..."
             onSearch={setSearchQuery}
-            keyExtractor={(building) => building.id}
             refreshing={refreshing}
             onRefresh={onRefresh}
           />
@@ -955,7 +954,6 @@ const styles = StyleSheet.create({
   },
   tableContainer: {
     flex: 1,
-    marginBottom: 20,
   },
   cellText: {
     fontSize: 14,

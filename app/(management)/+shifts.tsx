@@ -650,7 +650,10 @@ export default function ShiftsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView style={[styles.scrollView, { paddingHorizontal: pagePadding }]}>
+      <ScrollView
+        style={[styles.scrollView, { paddingHorizontal: pagePadding }]}
+        contentContainerStyle={styles.scrollContent}
+      >
         <HeaderBar
           title="Shift Management"
           subtitle="Manage employee work schedules"
@@ -965,6 +968,9 @@ const styles = StyleSheet.create({
     marginTop: 16,
     marginBottom: 24,
     gap: 12,
+  },
+  scrollContent: {
+    paddingBottom: 160,
   },
   shiftCard: {
     backgroundColor: "#FFFFFF",

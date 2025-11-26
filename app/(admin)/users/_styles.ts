@@ -26,7 +26,6 @@ const styles = StyleSheet.create({
   },
   tableContainer: {
     flex: 1,
-    marginBottom: 20,
   },
   cellText: {
     fontSize: 14,

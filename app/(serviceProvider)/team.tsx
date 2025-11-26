@@ -15,7 +15,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
@@ -42,6 +42,7 @@ export default function TeamScreen() {
   const { jobId } = useLocalSearchParams<{ jobId?: string }>();
   const { currentUser, notifications, actions, jobs, users } = useApp();
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
@@ -272,6 +273,7 @@ export default function TeamScreen() {
 
         <ScrollView
           style={styles.scrollView}
+          contentContainerStyle={{ paddingBottom: 160 + insets.bottom }}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />

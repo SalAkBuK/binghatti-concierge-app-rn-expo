@@ -19,140 +19,10 @@ import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useApp } from "../../lib/context/connected-app-provider";
-import type { Amenity, AmenityBooking } from "../../lib/types";
+import type { Amenity } from "../../lib/types";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
-// Mock amenity data (same as in amenities.tsx)
-const mockAmenities: Amenity[] = [
-  {
-    id: "amenity-1",
-    buildingId: "building-1",
-    amenityType: "pool",
-    name: "Rooftop Swimming Pool",
-    description: "Olympic-size rooftop pool with stunning city views",
-    capacity: 30,
-    operatingHours: {
-      monday: { open: "06:00", close: "22:00" },
-      tuesday: { open: "06:00", close: "22:00" },
-      wednesday: { open: "06:00", close: "22:00" },
-      thursday: { open: "06:00", close: "22:00" },
-      friday: { open: "06:00", close: "22:00" },
-      saturday: { open: "08:00", close: "20:00" },
-      sunday: { open: "08:00", close: "20:00" },
-    },
-    bookingDurationMinutes: 60,
-    maxAdvanceBookingDays: 7,
-    status: "active",
-    imageUrl: "https://via.placeholder.com/300x200?text=Pool",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: "amenity-2",
-    buildingId: "building-1",
-    amenityType: "gym",
-    name: "Fitness Center",
-    description: "Fully equipped modern fitness center with cardio and weights",
-    capacity: 20,
-    operatingHours: {
-      monday: { open: "05:00", close: "23:00" },
-      tuesday: { open: "05:00", close: "23:00" },
-      wednesday: { open: "05:00", close: "23:00" },
-      thursday: { open: "05:00", close: "23:00" },
-      friday: { open: "05:00", close: "23:00" },
-      saturday: { open: "06:00", close: "22:00" },
-      sunday: { open: "06:00", close: "22:00" },
-    },
-    bookingDurationMinutes: 90,
-    maxAdvanceBookingDays: 3,
-    status: "active",
-    imageUrl: "https://via.placeholder.com/300x200?text=Gym",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: "amenity-4",
-    buildingId: "building-1",
-    amenityType: "theater",
-    name: "Private Cinema",
-    description: "Private cinema with premium sound system and comfortable seating",
-    capacity: 15,
-    operatingHours: {
-      monday: { open: "12:00", close: "23:00" },
-      tuesday: { open: "12:00", close: "23:00" },
-      wednesday: { open: "12:00", close: "23:00" },
-      thursday: { open: "12:00", close: "23:00" },
-      friday: { open: "12:00", close: "23:00" },
-      saturday: { open: "10:00", close: "23:00" },
-      sunday: { open: "10:00", close: "23:00" },
-    },
-    bookingDurationMinutes: 120,
-    maxAdvanceBookingDays: 14,
-    status: "active",
-    imageUrl: "https://via.placeholder.com/300x200?text=Cinema",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: "amenity-5",
-    buildingId: "building-1",
-    amenityType: "bbq",
-    name: "BBQ & Outdoor Lounge",
-    description: "Rooftop BBQ area with outdoor seating and lounge",
-    capacity: 25,
-    operatingHours: {
-      monday: { open: "11:00", close: "22:00" },
-      tuesday: { open: "11:00", close: "22:00" },
-      wednesday: { open: "11:00", close: "22:00" },
-      thursday: { open: "11:00", close: "22:00" },
-      friday: { open: "11:00", close: "23:00" },
-      saturday: { open: "10:00", close: "23:00" },
-      sunday: { open: "10:00", close: "22:00" },
-    },
-    bookingDurationMinutes: 180,
-    maxAdvanceBookingDays: 7,
-    status: "active",
-    imageUrl: "https://via.placeholder.com/300x200?text=BBQ",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: "amenity-6",
-    buildingId: "building-1",
-    amenityType: "playground",
-    name: "Kids Playground",
-    description: "Safe and fun playground for children of all ages",
-    capacity: 40,
-    operatingHours: {
-      monday: { open: "07:00", close: "20:00" },
-      tuesday: { open: "07:00", close: "20:00" },
-      wednesday: { open: "07:00", close: "20:00" },
-      thursday: { open: "07:00", close: "20:00" },
-      friday: { open: "07:00", close: "20:00" },
-      saturday: { open: "07:00", close: "20:00" },
-      sunday: { open: "07:00", close: "20:00" },
-    },
-    bookingDurationMinutes: 60,
-    maxAdvanceBookingDays: 3,
-    status: "active",
-    imageUrl: "https://via.placeholder.com/300x200?text=Playground",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-];
-
-// Helper function to calculate end time based on start time and duration
-const calculateEndTime = (startTime: string, durationMinutes: number): string => {
-  const [hours, minutes] = startTime.split(":").map(Number);
-  let endMinutes = minutes + durationMinutes;
-  let endHours = hours + Math.floor(endMinutes / 60);
-  endMinutes = endMinutes % 60;
-
-  return `${String(endHours).padStart(2, "0")}:${String(endMinutes).padStart(2, "0")}`;
-};
-
-// Generate mock time slots
 const generateTimeSlots = (
   openTime: string,
   closeTime: string,
@@ -186,7 +56,7 @@ const generateTimeSlots = (
 
 export default function AmenityBookingFormScreen() {
   const params = useLocalSearchParams();
-  const { currentUser, amenities, actions } = useApp();
+  const { amenities, actions } = useApp();
   const amenityId = params.amenityId as string;
 
   const [amenity, setAmenity] = useState<Amenity | null>(null);
@@ -219,7 +89,7 @@ export default function AmenityBookingFormScreen() {
         setTimeSlots(slots);
       }
     }
-  }, [amenityId, selectedDate, amenities]);
+  }, [actions, amenityId, selectedDate, amenities]);
 
   const handleDateChange = (event: any, date?: Date) => {
     setShowDatePicker(Platform.OS === "ios");

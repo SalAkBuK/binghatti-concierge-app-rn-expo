@@ -19,6 +19,11 @@ import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
 import type { Permission, RolePermissions, UserRole } from "../../lib/types";
 import { filterNotificationsByUser } from "../../lib/utils/helpers";
+import {
+  useMountLog,
+  useRenderLog,
+  useScreenFocusLog,
+} from "../../utils/adminProfiler";
 
 const ADMIN_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
 
@@ -29,6 +34,11 @@ interface PermissionChanges {
 }
 
 export default function PermissionsScreen() {
+  // Profiler hooks - track lifecycle and performance
+  useMountLog("Admin/Permissions");
+  useRenderLog("Admin/Permissions");
+  useScreenFocusLog("Admin/Permissions");
+
   const { currentUser, notifications, actions } = useApp();
   const { width } = useWindowDimensions();
   const [showSideMenu, setShowSideMenu] = useState(false);
@@ -475,6 +485,6 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
   },
   bottomPadding: {
-    height: 40,
+    height: 100, // Extra space for bottom tab bar
   },
 });

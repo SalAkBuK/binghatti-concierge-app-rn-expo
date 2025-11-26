@@ -35,7 +35,7 @@ export function SkeletonCard({
       -1,
       true,
     );
-  }, []);
+  }, [animatedValue]);
 
   const animatedStyle = useAnimatedStyle(() => {
     const opacity = interpolate(animatedValue.value, [0, 1], [0.3, 0.7]);

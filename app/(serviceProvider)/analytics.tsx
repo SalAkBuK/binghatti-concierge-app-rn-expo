@@ -10,7 +10,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
@@ -20,6 +20,7 @@ type TimePeriod = "week" | "month" | "year";
 export default function AnalyticsScreen() {
   const { currentUser, jobs } = useApp();
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>("month");
 
@@ -118,6 +119,7 @@ export default function AnalyticsScreen() {
     <SafeAreaView style={styles.container} edges={["top"]}>
       <ScrollView
         style={[styles.scrollView, { paddingHorizontal: pagePadding }]}
+        contentContainerStyle={{ paddingBottom: 160 + insets.bottom }}
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}

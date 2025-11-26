@@ -1093,7 +1093,7 @@ const styles = StyleSheet.create({
   },
   contentWrapper: {
     flex: 1,
-    paddingBottom: 56,
+    paddingBottom: 120,
   },
   banner: {
     flexDirection: "row",

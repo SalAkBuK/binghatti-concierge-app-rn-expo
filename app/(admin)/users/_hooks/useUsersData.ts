@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import { useApp } from "../../../../lib/context/connected-app-provider";
 import type { User } from "../../../../lib/types";
 import { filterNotificationsByUser } from "../../../../lib/utils/helpers";
+import { measure } from "../../../../utils/adminProfiler";
 
 export function useUsersData() {
   const { currentUser, notifications, actions } = useApp();
@@ -35,24 +36,32 @@ export function useUsersData() {
   }, [actions, allBuildings, isManagement]);
 
   const scopedUsers = useMemo(() => {
-    if (!isManagement) return allUsers;
-    if (!managedBuildingIds.length) {
-      return allUsers.filter((user) => user.id === currentUser?.id);
-    }
+    return measure("useUsersData: compute scopedUsers", () => {
+      let filtered: User[];
 
-    return allUsers.filter((user: User) => {
-      if (
-        user.role === "tenant" ||
-        user.role === "employee" ||
-        user.role === "service_provider"
-      ) {
-        const buildingId = user.profile?.buildingId;
-        return buildingId ? managedBuildingIds.includes(buildingId) : false;
+      if (!isManagement) {
+        filtered = allUsers;
+      } else if (!managedBuildingIds.length) {
+        filtered = allUsers.filter((user) => user.id === currentUser?.id);
+      } else {
+        filtered = allUsers.filter((user: User) => {
+          if (
+            user.role === "tenant" ||
+            user.role === "employee" ||
+            user.role === "service_provider"
+          ) {
+            const buildingId = user.profile?.buildingId;
+            return buildingId ? managedBuildingIds.includes(buildingId) : false;
+          }
+          if (user.role === "management") {
+            return user.id === currentUser?.id;
+          }
+          return false;
+        });
       }
-      if (user.role === "management") {
-        return user.id === currentUser?.id;
-      }
-      return false;
+
+      // Filter out users with invalid IDs
+      return filtered.filter((user) => user.id != null && user.id !== undefined && user.id !== '');
     });
   }, [allUsers, currentUser?.id, isManagement, managedBuildingIds]);
 

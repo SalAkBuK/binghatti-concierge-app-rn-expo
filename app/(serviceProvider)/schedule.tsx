@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   RefreshControl,
   ScrollView,
@@ -11,7 +11,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
@@ -21,11 +21,10 @@ import { filterNotificationsByUser } from "../../lib/utils/helpers";
 
 const NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
 
-type ViewMode = "month" | "week" | "day";
-
 export default function ScheduleScreen() {
   const { currentUser, notifications, jobs } = useApp();
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [refreshing, setRefreshing] = useState(false);
@@ -81,23 +80,26 @@ export default function ScheduleScreen() {
   }, [selectedDate]);
 
   // Get jobs for a specific date
-  const getJobsForDate = (date: Date): Job[] => {
-    if (date.getTime() === 0) return [];
-    return myJobs.filter((job) => {
-      if (!job.scheduledDate) return false;
-      const jobDate = new Date(job.scheduledDate);
-      return (
-        jobDate.getDate() === date.getDate() &&
-        jobDate.getMonth() === date.getMonth() &&
-        jobDate.getFullYear() === date.getFullYear()
-      );
-    });
-  };
+  const getJobsForDate = useCallback(
+    (date: Date): Job[] => {
+      if (date.getTime() === 0) return [];
+      return myJobs.filter((job) => {
+        if (!job.scheduledDate) return false;
+        const jobDate = new Date(job.scheduledDate);
+        return (
+          jobDate.getDate() === date.getDate() &&
+          jobDate.getMonth() === date.getMonth() &&
+          jobDate.getFullYear() === date.getFullYear()
+        );
+      });
+    },
+    [myJobs],
+  );
 
   // Get jobs for selected date
   const selectedDateJobs = useMemo(() => {
     return getJobsForDate(selectedDate);
-  }, [selectedDate, myJobs]);
+  }, [getJobsForDate, selectedDate]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -162,6 +164,7 @@ export default function ScheduleScreen() {
 
         <ScrollView
           style={styles.scrollView}
+          contentContainerStyle={{ paddingBottom: 160 + insets.bottom }}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />

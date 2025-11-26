@@ -11,7 +11,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
@@ -25,6 +25,7 @@ export default function ManagementTenantsScreen() {
   const { currentUser, notifications, actions, leases } = useApp();
   const { getBuildings, getManagedBuildings, getUsers } = actions;
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [selectedTenant, setSelectedTenant] = useState<User | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -172,6 +173,10 @@ export default function ManagementTenantsScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView
         style={[styles.scrollView, { paddingHorizontal: pagePadding }]}
+        contentContainerStyle={[
+          styles.scrollViewContent,
+          { paddingBottom: 200 + insets.bottom },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         <HeaderBar

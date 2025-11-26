@@ -14,8 +14,19 @@ import { ADMIN_NOTIFICATION_ROUTE } from "./_constants";
 import { useJobsData } from "./_hooks/useJobsData";
 import { styles } from "./_styles";
 import type { FilterType } from "./_types";
+import {
+  useMountLog,
+  useRenderLog,
+  useScreenFocusLog,
+  measure,
+} from "../../../utils/adminProfiler";
 
 export default function JobsScreen() {
+  // Profiler hooks - track lifecycle and performance
+  useMountLog("Admin/Jobs");
+  useRenderLog("Admin/Jobs");
+  useScreenFocusLog("Admin/Jobs");
+
   const { width } = useWindowDimensions();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -25,8 +36,10 @@ export default function JobsScreen() {
   const { scopedJobs, hasUnreadNotifications } = useJobsData();
 
   const filteredJobs = useMemo(() => {
-    if (filterType === "all") return scopedJobs;
-    return scopedJobs.filter((job) => job.status === filterType);
+    return measure("Build Admin/Jobs filteredJobs", () => {
+      if (filterType === "all") return scopedJobs;
+      return scopedJobs.filter((job) => job.status === filterType);
+    });
   }, [filterType, scopedJobs]);
 
   const onRefresh = async () => {

@@ -27,7 +27,7 @@ import { getUserErrorMessage } from "../../lib/services/api/errors";
 import { filterNotificationsByUser } from "../../lib/utils/helpers";
 
 const MANAGEMENT_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
-const SHIFT_SEQUENCE: Array<NonNullable<BuildingEmployee["shift"]>> = [
+const SHIFT_SEQUENCE: NonNullable<BuildingEmployee["shift"]>[] = [
   "morning",
   "evening",
   "night",
@@ -264,6 +264,7 @@ export default function WorkforceManagementScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView
         style={[styles.scrollView, { paddingHorizontal: pagePadding }]}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
@@ -744,6 +745,9 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 160,
   },
   summaryRow: {
     flexDirection: "row",

@@ -20,8 +20,18 @@ import { ADMIN_NOTIFICATION_ROUTE, SHIFT_SEQUENCE } from "./_constants";
 import { useWorkforceData } from "./_hooks/useWorkforceData";
 import { styles } from "./_styles";
 import type { EmployeeFormData } from "./_types";
+import {
+  useMountLog,
+  useRenderLog,
+  useScreenFocusLog,
+} from "../../../utils/adminProfiler";
 
 export default function WorkforceManagementScreen() {
+  // Profiler hooks - track lifecycle and performance
+  useMountLog("Admin/Workforce");
+  useRenderLog("Admin/Workforce");
+  useScreenFocusLog("Admin/Workforce");
+
   const { width } = useWindowDimensions();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -182,6 +192,7 @@ export default function WorkforceManagementScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView
         style={[styles.scrollView, { paddingHorizontal: pagePadding }]}
+        contentContainerStyle={styles.scrollViewContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >

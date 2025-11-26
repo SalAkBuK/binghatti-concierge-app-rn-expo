@@ -10,7 +10,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
@@ -66,6 +66,7 @@ const MENU_ITEMS: MenuItem[] = [
 export default function MoreScreen() {
   const { currentUser, notifications } = useApp();
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [showSideMenu, setShowSideMenu] = useState(false);
 
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
@@ -85,6 +86,7 @@ export default function MoreScreen() {
     <SafeAreaView style={styles.container} edges={["top"]}>
       <ScrollView
         style={[styles.scrollView, { paddingHorizontal: pagePadding }]}
+        contentContainerStyle={{ paddingBottom: 160 + insets.bottom }}
         showsVerticalScrollIndicator={false}
       >
         <HeaderBar

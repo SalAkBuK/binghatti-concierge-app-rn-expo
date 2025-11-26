@@ -17,12 +17,21 @@ export interface UseTenantsDataResult {
 }
 
 export function useTenantsData(): UseTenantsDataResult {
+  // PERFORMANCE FIX: Extract only what we need from useApp()
+  // This reduces re-renders when unrelated context state changes
   const { currentUser, notifications, actions } = useApp();
   const { getBuildings, getManagedBuildings, getUsers } = actions;
 
-  const isManagement = currentUser?.role === "management";
+  const isManagement = useMemo(
+    () => currentUser?.role === "management",
+    [currentUser?.role]
+  );
 
-  const allBuildings = useMemo(() => getBuildings(), [getBuildings]);
+  // PERFORMANCE FIX: Call getBuildings/getUsers directly instead of in useMemo
+  // The functions themselves are memoized in useApp now
+  const allBuildings = getBuildings();
+  const allUsers = getUsers();
+
   const managedBuildings = useMemo(() => {
     if (!isManagement) return allBuildings;
     return getManagedBuildings?.() ?? [];
@@ -36,18 +45,18 @@ export function useTenantsData(): UseTenantsDataResult {
     return map;
   }, [allBuildings]);
 
-  const allUsers = useMemo(() => getUsers(), [getUsers]);
-
   const tenants = useMemo(
     () => allUsers.filter((user) => user.role === "tenant"),
     [allUsers],
   );
 
-  const userNotifications = filterNotificationsByUser(
-    notifications || [],
-    currentUser?.id,
-  );
-  const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
+  const hasUnreadNotifications = useMemo(() => {
+    const userNotifications = filterNotificationsByUser(
+      notifications || [],
+      currentUser?.id,
+    );
+    return userNotifications.some((notif) => !notif.read);
+  }, [notifications, currentUser?.id]);
 
   return {
     currentUser,

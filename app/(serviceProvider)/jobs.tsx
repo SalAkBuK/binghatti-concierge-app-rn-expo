@@ -12,7 +12,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
@@ -45,6 +45,7 @@ const PRIORITY_OPTIONS: { label: string; value: JobPriority }[] = [
 export default function JobsScreen() {
   const { currentUser, notifications, actions } = useApp();
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -53,8 +54,6 @@ export default function JobsScreen() {
   const [showFilters, setShowFilters] = useState(false);
 
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
-  const isTablet = width >= 768;
-
   const userNotifications = filterNotificationsByUser(
     notifications || [],
     currentUser?.id
@@ -281,6 +280,7 @@ export default function JobsScreen() {
         {/* Jobs List */}
         <ScrollView
           style={styles.jobsList}
+          contentContainerStyle={{ paddingBottom: 160 + insets.bottom }}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />

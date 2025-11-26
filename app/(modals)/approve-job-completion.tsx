@@ -20,7 +20,7 @@ import { useApp } from "../../lib/context/connected-app-provider";
 
 export default function ApproveJobCompletionScreen() {
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
-  const { currentUser, actions, jobs } = useApp();
+  const { actions, jobs } = useApp();
   const [approvalNotes, setApprovalNotes] = useState("");
   const [rejectionReason, setRejectionReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -67,7 +67,7 @@ export default function ApproveJobCompletionScreen() {
               );
               setApprovalNotes("");
               setRejectionReason("");
-            } catch (error) {
+            } catch {
               Alert.alert(
                 "Error",
                 "Failed to approve job completion. Please try again."
@@ -112,7 +112,7 @@ export default function ApproveJobCompletionScreen() {
                 [{ text: "OK", onPress: () => router.back() }],
               );
               setRejectionReason("");
-            } catch (error) {
+            } catch {
               Alert.alert(
                 "Error",
                 "Failed to reject completion. Please try again."

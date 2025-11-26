@@ -31,7 +31,7 @@ export function NotificationsTabBar({
       duration: 250,
       easing: Easing.bezier(0.4, 0, 0.2, 1),
     });
-  }, [activeTab]);
+  }, [activeTab, translateX]);
 
   const indicatorStyle = useAnimatedStyle(() => {
     return {

@@ -56,10 +56,15 @@ export const getRoleHomeView = (role: User["role"]): string => {
 export const generateId = (
   existingItems: { id: string | number }[],
 ): number => {
-  const ids = existingItems.map((item) =>
-    typeof item.id === "string" ? parseInt(item.id) : item.id,
-  );
-  return Math.max(...ids, 0) + 1;
+  const ids = existingItems
+    .map((item) => {
+      if (item.id == null) return NaN;
+      const parsed = typeof item.id === "string" ? parseInt(item.id, 10) : item.id;
+      return isNaN(parsed) ? NaN : parsed;
+    })
+    .filter((id) => !isNaN(id));
+
+  return ids.length > 0 ? Math.max(...ids) + 1 : 1;
 };
 
 // Format date for display

@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -15,6 +15,12 @@ import { ADMIN_NOTIFICATION_ROUTE } from "./_constants";
 import { useUsersData } from "./_hooks/useUsersData";
 import { styles } from "./_styles";
 import type { UserFormState } from "./_types";
+import {
+  useMountLog,
+  useRenderLog,
+  useScreenFocusLog,
+  measure,
+} from "../../../utils/adminProfiler";
 
 const createInitialFormState = (buildingId: string): UserFormState => ({
   name: "",
@@ -30,6 +36,11 @@ const createInitialFormState = (buildingId: string): UserFormState => ({
 });
 
 export default function UsersScreen() {
+  // Profiler hooks - track lifecycle and performance
+  useMountLog("Admin/Users");
+  useRenderLog("Admin/Users");
+  useScreenFocusLog("Admin/Users");
+
   const {
     actions,
     scopedUsers,
@@ -59,10 +70,10 @@ export default function UsersScreen() {
   };
 
   // Handle user row press
-  const handleUserPress = (user: User) => {
+  const handleUserPress = useCallback((user: User) => {
     setSelectedUser(user);
     setShowUserInfoModal(true);
-  };
+  }, []);
 
   useEffect(() => {
     setFormData((prev) => {
@@ -73,14 +84,16 @@ export default function UsersScreen() {
 
   // Filter users based on search
   const filteredUsers = useMemo(() => {
-    if (!searchQuery.trim()) return scopedUsers;
-    const query = searchQuery.toLowerCase();
-    return scopedUsers.filter(
-      (user) =>
-        user.name.toLowerCase().includes(query) ||
-        user.email.toLowerCase().includes(query) ||
-        user.role.toLowerCase().includes(query),
-    );
+    return measure("Build Admin/Users filteredUsers", () => {
+      if (!searchQuery.trim()) return scopedUsers;
+      const query = searchQuery.toLowerCase();
+      return scopedUsers.filter(
+        (user) =>
+          user.name.toLowerCase().includes(query) ||
+          user.email.toLowerCase().includes(query) ||
+          user.role.toLowerCase().includes(query),
+      );
+    });
   }, [scopedUsers, searchQuery]);
 
   // Calculate unread notifications
@@ -89,7 +102,7 @@ export default function UsersScreen() {
     setTimeout(() => setRefreshing(false), 1000);
   };
 
-  const getRoleBadgeColor = (role: UserRole) => {
+  const getRoleBadgeColor = useCallback((role: UserRole) => {
     const colors = {
       admin: { bg: "#FEE2E2", text: "#DC2626" },
       super_admin: { bg: "#FECACA", text: "#B91C1C" },
@@ -99,7 +112,7 @@ export default function UsersScreen() {
       employee: { bg: "#FEF3C7", text: "#92400E" },
     };
     return colors[role] || colors.tenant;
-  };
+  }, []);
 
   const handleDeleteUser = async (userId: string) => {
     try {
@@ -178,39 +191,43 @@ export default function UsersScreen() {
     }
   };
 
-  const columns = [
-    {
-      key: "name",
-      label: "Name",
-      render: (user: User) => <Text style={styles.cellText}>{user.name}</Text>,
-      width: isCompact ? undefined : Math.min(280, width * 0.3),
-    },
-    {
-      key: "email",
-      label: "Email",
-      render: (user: User) => (
-        <Text style={styles.cellTextSmall} numberOfLines={1}>
-          {user.email}
-        </Text>
-      ),
-      width: isCompact ? undefined : Math.min(320, width * 0.35),
-    },
-    {
-      key: "role",
-      label: "Role",
-      render: (user: User) => {
-        const roleColors = getRoleBadgeColor(user.role);
-        return (
-          <View style={[styles.roleBadge, { backgroundColor: roleColors.bg }]}>
-            <Text style={[styles.roleBadgeText, { color: roleColors.text }]}>
-              {user.role.toUpperCase()}
+  const columns = useMemo(
+    () =>
+      measure("Build Admin/Users columns", () => [
+        {
+          key: "name",
+          label: "Name",
+          render: (user: User) => <Text style={styles.cellText}>{user.name}</Text>,
+          width: isCompact ? undefined : Math.min(280, width * 0.3),
+        },
+        {
+          key: "email",
+          label: "Email",
+          render: (user: User) => (
+            <Text style={styles.cellTextSmall} numberOfLines={1}>
+              {user.email}
             </Text>
-          </View>
-        );
-      },
-      width: isCompact ? undefined : 120,
-    },
-  ];
+          ),
+          width: isCompact ? undefined : Math.min(320, width * 0.35),
+        },
+        {
+          key: "role",
+          label: "Role",
+          render: (user: User) => {
+            const roleColors = getRoleBadgeColor(user.role);
+            return (
+              <View style={[styles.roleBadge, { backgroundColor: roleColors.bg }]}>
+                <Text style={[styles.roleBadgeText, { color: roleColors.text }]}>
+                  {user.role.toUpperCase()}
+                </Text>
+              </View>
+            );
+          },
+          width: isCompact ? undefined : 120,
+        },
+      ]),
+    [getRoleBadgeColor, isCompact, width],
+  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -245,11 +262,11 @@ export default function UsersScreen() {
           <EntityTable
             data={filteredUsers}
             columns={columns}
+            getId={(user) => user.id || user.email}
             onRowPress={handleUserPress}
             emptyMessage="No users found"
             searchPlaceholder="Search by name, email, or role..."
             onSearch={setSearchQuery}
-            keyExtractor={(user) => user.id}
             refreshing={refreshing}
             onRefresh={onRefresh}
           />

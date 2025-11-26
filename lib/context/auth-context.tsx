@@ -224,11 +224,46 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         users && typeof users === "object"
           ? (users as Record<string, User>)
           : {};
-      const mergedUsers = { ...DEFAULT_USERS, ...incomingUsers };
+
+      // Sanitize users: filter out any with invalid IDs and regenerate if needed
+      const sanitizedIncoming: Record<string, User> = {};
+      let nextId = 1;
+
+      Object.entries(incomingUsers).forEach(([email, user]) => {
+        // Check if user has a valid ID
+        const hasValidId = user.id != null &&
+                          user.id !== undefined &&
+                          user.id !== '' &&
+                          user.id !== 'NaN' &&
+                          !isNaN(Number(user.id)) ||
+                          (typeof user.id === 'string' && user.id.length > 0 && user.id !== 'NaN');
+
+        if (hasValidId) {
+          sanitizedIncoming[email] = user;
+          // Track highest numeric ID
+          const numericId = typeof user.id === 'string' ? parseInt(user.id, 10) : user.id;
+          if (!isNaN(numericId) && numericId >= nextId) {
+            nextId = numericId + 1;
+          }
+        } else {
+          // Regenerate ID for invalid users
+          console.warn(`[AuthProvider] User ${email} has invalid ID:`, user.id, "- regenerating");
+          sanitizedIncoming[email] = {
+            ...user,
+            id: String(nextId++),
+          };
+        }
+      });
+
+      const mergedUsers = { ...DEFAULT_USERS, ...sanitizedIncoming };
 
       console.log(
         "[AuthProvider] Users loaded from AsyncStorage:",
         Object.keys(incomingUsers),
+      );
+      console.log(
+        "[AuthProvider] Sanitized users:",
+        Object.keys(sanitizedIncoming),
       );
       console.log(
         "[AuthProvider] Users after merging defaults:",
@@ -239,9 +274,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         type: AUTH_ACTIONS.SET_USERS,
         payload: mergedUsers,
       });
-      if (
-        Object.keys(mergedUsers).length !== Object.keys(incomingUsers).length
-      ) {
+
+      // Save sanitized users back to storage if we had to clean any
+      if (Object.keys(mergedUsers).length !== Object.keys(incomingUsers).length ||
+          Object.keys(sanitizedIncoming).length !== Object.keys(incomingUsers).length) {
         setUsers(mergedUsers);
       }
       setIsInitialized(true);
@@ -429,8 +465,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
 
         // Create new user with provided role (default to tenant)
+        const generatedId = generateId(Object.values(state.users));
+
+        // Validate generated ID
+        if (isNaN(generatedId) || generatedId < 1) {
+          console.error("[Auth] generateId returned invalid ID:", generatedId);
+          throw new Error("Failed to generate valid user ID");
+        }
+
         const newUser: User = {
-          id: generateId(Object.values(state.users)).toString(),
+          id: generatedId.toString(),
           email: userData.email,
           name: userData.name,
           role: (userData as any).role || "tenant", // Use role from signup or default to tenant
@@ -444,6 +488,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
+
+        console.log("[Auth] Created new user with ID:", newUser.id);
 
         // Add user to users record
         actions.addUser(userData.email, newUser);

@@ -1,8 +1,8 @@
+import type { BottomTabNavigationOptions } from "@react-navigation/bottom-tabs";
 import { Tabs, router } from "expo-router";
 import React, { useEffect, useMemo, useRef } from "react";
 import { Platform, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import type { BottomTabNavigationOptions } from "@react-navigation/bottom-tabs";
 
 import BusinessTabIcon from "../../components/icons/BusinessTabIcon";
 import GridTabIcon from "../../components/icons/GridTabIcon";

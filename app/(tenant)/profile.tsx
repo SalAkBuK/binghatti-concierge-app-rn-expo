@@ -13,7 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
@@ -41,6 +41,7 @@ interface ValidationErrors {
 }
 
 export default function ProfileScreen() {
+  const insets = useSafeAreaInsets();
   const { currentUser, notifications, actions } = useApp();
 
   const [profileData, setProfileData] = useState<ProfileFormData>({
@@ -137,7 +138,7 @@ export default function ProfileScreen() {
 
       Alert.alert("Success", "Profile updated successfully!");
       setIsEditing(false);
-    } catch (error) {
+    } catch {
       Alert.alert("Error", "Failed to update profile. Please try again.");
     } finally {
       setIsSaving(false);
@@ -204,6 +205,7 @@ export default function ProfileScreen() {
         <ScrollView
           style={styles.scrollView}
           keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingBottom: 160 + insets.bottom }}
         >
           {/* Navigation Header */}
           <HeaderBar

@@ -19,10 +19,20 @@ import {
   filterNotificationsByUser,
   formatDateTime,
 } from "../../lib/utils/helpers";
+import {
+  useMountLog,
+  useRenderLog,
+  useScreenFocusLog,
+} from "../../utils/adminProfiler";
 
 const ADMIN_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
 
 export default function ActivityFeedScreen() {
+  // Profiler hooks - track lifecycle and performance
+  useMountLog("Admin/Activity");
+  useRenderLog("Admin/Activity");
+  useScreenFocusLog("Admin/Activity");
+
   const { currentUser, notifications, analytics, actions } = useApp();
   const { width } = useWindowDimensions();
   const [showSideMenu, setShowSideMenu] = useState(false);
@@ -95,6 +105,7 @@ export default function ActivityFeedScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView
         style={[styles.scrollView, { paddingHorizontal: pagePadding }]}
+        contentContainerStyle={styles.scrollViewContent}
         showsVerticalScrollIndicator={false}
       >
         <HeaderBar
@@ -242,8 +253,6 @@ export default function ActivityFeedScreen() {
             )}
           </View>
         </Animated.View>
-
-        <View style={{ height: 48 }} />
       </ScrollView>
 
       <SideMenu isVisible={showSideMenu} onClose={() => setShowSideMenu(false)} />
@@ -258,6 +267,9 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+  },
+  scrollViewContent: {
+    paddingBottom: 160, // Extra space for bottom tab bar
   },
   summaryRow: {
     flexDirection: "row",
