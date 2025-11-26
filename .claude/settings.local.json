@@ -25,7 +25,19 @@
       "Bash(dir /b \"app\\(admin)\" 2)",
       "Bash(mkdir:*)",
       "Bash(dir /s /b /ad \"C:\\Users\\13463\\OneDrive\\Documents\\CodeFier\\binghatti-concierge-app-rn-expo\\app\\(admin)\")",
-      "Bash(powershell:*)"
+      "Bash(powershell:*)",
+      "Bash(npx expo-doctor)",
+      "Bash(npm run typecheck:*)",
+      "Bash(dir:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run doctor:*)",
+      "Bash(adb install:*)",
+      "Bash(ren units.tsx +units.tsx)",
+      "Bash(ren amenities.tsx +amenities.tsx)",
+      "Bash(ren buildings.tsx +buildings.tsx)",
+      "Bash(ren workforce.tsx +workforce.tsx)",
+      "Bash(ren activity.tsx +activity.tsx)",
+      "Bash(ren shifts.tsx +shifts.tsx)"
     ],
     "deny": [],
     "ask": []

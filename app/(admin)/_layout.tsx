@@ -1,9 +1,13 @@
-import { Ionicons } from "@expo/vector-icons";
 import { Tabs, router } from "expo-router";
 import React, { useEffect } from "react";
 import { Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import BusinessTabIcon from "../../components/icons/BusinessTabIcon";
+import GridTabIcon from "../../components/icons/GridTabIcon";
+import LayersTabIcon from "../../components/icons/LayersTabIcon";
+import MoreTabIcon from "../../components/icons/MoreTabIcon";
+import PeopleTabIcon from "../../components/icons/PeopleTabIcon";
 import { useApp } from "../../lib/context/connected-app-provider";
 
 export default function AdminLayout() {
@@ -11,10 +15,6 @@ export default function AdminLayout() {
   const { isAuthenticated, currentUser } = useApp();
   const isAdmin =
     currentUser?.role === "admin" || currentUser?.role === "super_admin";
-  const hiddenTabOptions = {
-    href: null as const,
-    tabBarItemStyle: { display: "none" as const },
-  };
 
   // Debug: Log current user role
   console.log("🔍 AdminLayout - Current User Role:", currentUser?.role);
@@ -78,11 +78,7 @@ export default function AdminLayout() {
         options={{
           title: "Dashboard",
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? "grid" : "grid-outline"}
-              size={24}
-              color={color}
-            />
+            <GridTabIcon color={color} focused={focused} size={24} />
           ),
         }}
       />
@@ -93,11 +89,7 @@ export default function AdminLayout() {
         options={{
           title: "Users",
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? "people" : "people-outline"}
-              size={24}
-              color={color}
-            />
+            <PeopleTabIcon color={color} focused={focused} size={24} />
           ),
         }}
       />
@@ -108,11 +100,7 @@ export default function AdminLayout() {
         options={{
           title: "Buildings",
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? "business" : "business-outline"}
-              size={24}
-              color={color}
-            />
+            <BusinessTabIcon color={color} focused={focused} size={24} />
           ),
         }}
       />
@@ -123,11 +111,7 @@ export default function AdminLayout() {
         options={{
           title: "Unit Types",
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? "layers" : "layers-outline"}
-              size={24}
-              color={color}
-            />
+            <LayersTabIcon color={color} focused={focused} size={24} />
           ),
         }}
       />
@@ -138,34 +122,24 @@ export default function AdminLayout() {
         options={{
           title: "More",
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={
-                focused
-                  ? "ellipsis-horizontal-circle"
-                  : "ellipsis-horizontal-circle-outline"
-              }
-              size={24}
-              color={color}
-            />
+            <MoreTabIcon color={color} focused={focused} size={24} />
           ),
         }}
       />
 
-      {/* Hidden tabs - These are now in (management) route group */}
-      <Tabs.Screen name="tenants/index" options={hiddenTabOptions} />
-      <Tabs.Screen name="requests/index" options={hiddenTabOptions} />
-      <Tabs.Screen name="workforce/index" options={hiddenTabOptions} />
-      <Tabs.Screen name="activity" options={hiddenTabOptions} />
-
-      {/* Hidden from bottom nav - All accessible via More tab */}
-      <Tabs.Screen name="jobs/index" options={hiddenTabOptions} />
-      <Tabs.Screen name="permissions" options={hiddenTabOptions} />
-      <Tabs.Screen name="service-providers/index" options={hiddenTabOptions} />
-      <Tabs.Screen name="billing/index" options={hiddenTabOptions} />
-      <Tabs.Screen name="maintenance/index" options={hiddenTabOptions} />
-      <Tabs.Screen name="broadcast-notifications/index" options={hiddenTabOptions} />
-      <Tabs.Screen name="visitors/index" options={hiddenTabOptions} />
-      <Tabs.Screen name="parcels/index" options={hiddenTabOptions} />
+      {/* Hidden routes - not shown in tab bar (+ prefix tells Expo Router to exclude from tabs) */}
+      <Tabs.Screen name="+tenants/index" options={{ href: null }} />
+      <Tabs.Screen name="+requests/index" options={{ href: null }} />
+      <Tabs.Screen name="+workforce/index" options={{ href: null }} />
+      <Tabs.Screen name="+activity" options={{ href: null }} />
+      <Tabs.Screen name="+jobs/index" options={{ href: null }} />
+      <Tabs.Screen name="+permissions" options={{ href: null }} />
+      <Tabs.Screen name="+service-providers/index" options={{ href: null }} />
+      <Tabs.Screen name="+billing/index" options={{ href: null }} />
+      <Tabs.Screen name="+maintenance/index" options={{ href: null }} />
+      <Tabs.Screen name="+broadcast-notifications/index" options={{ href: null }} />
+      <Tabs.Screen name="+visitors/index" options={{ href: null }} />
+      <Tabs.Screen name="+parcels/index" options={{ href: null }} />
     </Tabs>
   );
 }

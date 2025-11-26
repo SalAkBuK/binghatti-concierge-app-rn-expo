@@ -56,7 +56,10 @@
       "reactCompiler": true
     },
     "extra": {
-      "router": {},
+      "router": {
+        "origin": false,
+        "unstable_src": "./app"
+      },
       "eas": {
         "projectId": "f3ec88c4-b646-4db2-9fcc-3865c79f9fe3"
       }

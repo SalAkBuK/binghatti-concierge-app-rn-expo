@@ -1,4 +1,6 @@
-import type { StatusFilter } from "./types";
+import type { StatusFilter } from "./_types";
+
+export type { StatusFilter };
 
 export const ADMIN_NOTIFICATION_ROUTE = "/(modals)/admin-notifications" as const;
 

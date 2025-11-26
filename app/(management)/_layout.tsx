@@ -1,9 +1,13 @@
-import { Ionicons } from "@expo/vector-icons";
 import { Tabs, router } from "expo-router";
 import React, { useEffect } from "react";
 import { Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import ClipboardTabIcon from "../../components/icons/ClipboardTabIcon";
+import ConstructTabIcon from "../../components/icons/ConstructTabIcon";
+import GridTabIcon from "../../components/icons/GridTabIcon";
+import MoreTabIcon from "../../components/icons/MoreTabIcon";
+import PeopleTabIcon from "../../components/icons/PeopleTabIcon";
 import { useApp } from "../../lib/context/connected-app-provider";
 
 export default function ManagementLayout() {
@@ -12,8 +16,8 @@ export default function ManagementLayout() {
   const isManagement = currentUser?.role === "management";
 
   // Debug: Log current user role
-  console.log("🔍 ManagementLayout - Current User Role:", currentUser?.role);
-  console.log("🔍 ManagementLayout - isManagement:", isManagement);
+  console.log("ManagementLayout - Current User Role:", currentUser?.role);
+  console.log("ManagementLayout - isManagement:", isManagement);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -24,7 +28,7 @@ export default function ManagementLayout() {
   useEffect(() => {
     // Redirect non-management users back to home
     if (isAuthenticated && currentUser && !isManagement) {
-      console.log("🔍 ManagementLayout - Non-management user detected, redirecting to /");
+      console.log("ManagementLayout - Non-management user detected, redirecting to /");
       router.replace("/" as any);
     }
   }, [isAuthenticated, currentUser, isManagement]);
@@ -72,11 +76,7 @@ export default function ManagementLayout() {
         options={{
           title: "Operations",
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? "grid" : "grid-outline"}
-              size={24}
-              color={color}
-            />
+            <GridTabIcon color={color} focused={focused} size={24} />
           ),
         }}
       />
@@ -85,11 +85,7 @@ export default function ManagementLayout() {
         options={{
           title: "Requests",
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? "clipboard" : "clipboard-outline"}
-              size={24}
-              color={color}
-            />
+            <ClipboardTabIcon color={color} focused={focused} size={24} />
           ),
         }}
       />
@@ -98,11 +94,7 @@ export default function ManagementLayout() {
         options={{
           title: "Jobs",
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? "construct" : "construct-outline"}
-              size={24}
-              color={color}
-            />
+            <ConstructTabIcon color={color} focused={focused} size={24} />
           ),
         }}
       />
@@ -111,11 +103,7 @@ export default function ManagementLayout() {
         options={{
           title: "Tenants",
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? "people" : "people-outline"}
-              size={24}
-              color={color}
-            />
+            <PeopleTabIcon color={color} focused={focused} size={24} />
           ),
         }}
       />
@@ -124,81 +112,22 @@ export default function ManagementLayout() {
         options={{
           title: "More",
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? "ellipsis-horizontal-circle" : "ellipsis-horizontal-circle-outline"}
-              size={24}
-              color={color}
-            />
+            <MoreTabIcon color={color} focused={focused} size={24} />
           ),
         }}
       />
-      {/* Hidden tabs - accessible via navigation but not shown in tab bar */}
-      <Tabs.Screen
-        name="units"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="amenities"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="visitors/index"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="buildings"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="workforce"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="activity"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="parcels/index"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="shifts"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="maintenance/index"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="billing/index"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="managers/index"
-        options={{
-          href: null,
-        }}
-      />
+      {/* Hidden routes - not shown in tab bar (+ prefix tells Expo Router to exclude from tabs) */}
+      <Tabs.Screen name="+units" options={{ href: null }} />
+      <Tabs.Screen name="+amenities" options={{ href: null }} />
+      <Tabs.Screen name="+visitors/index" options={{ href: null }} />
+      <Tabs.Screen name="+buildings" options={{ href: null }} />
+      <Tabs.Screen name="+workforce" options={{ href: null }} />
+      <Tabs.Screen name="+activity" options={{ href: null }} />
+      <Tabs.Screen name="+parcels/index" options={{ href: null }} />
+      <Tabs.Screen name="+shifts" options={{ href: null }} />
+      <Tabs.Screen name="+maintenance/index" options={{ href: null }} />
+      <Tabs.Screen name="+billing/index" options={{ href: null }} />
+      <Tabs.Screen name="+managers/index" options={{ href: null }} />
     </Tabs>
   );
 }

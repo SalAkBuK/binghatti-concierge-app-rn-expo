@@ -13,10 +13,10 @@ All credentials are for **development/testing only** and work with the mock data
 
 Use ANY password for these accounts.
 
-| Email             | Name            | Role   | Building | Unit | Phone            |
-| ----------------- | --------------- | ------ | -------- | ---- | ---------------- |
-| tenant@demo.com   | Ahmed Al-Rashid | tenant | Tower A  | 1205 | +971 50 123 4567 |
-| tenant1@email.com | Sarah Mohammed  | tenant | Tower B  | 804  | +971 50 234 5678 |
+| Email             | Name           | Role   | Building         | Unit | Phone            |
+| ----------------- | -------------- | ------ | ---------------- | ---- | ---------------- |
+| tnt               | Tower A        | 1205   | +971 50 123 4567 |
+| tenant1@email.com | Sarah Mohammed | tenant | Tower B          | 804  | +971 50 234 5678 |
 
 **Emergency Contacts:**
 

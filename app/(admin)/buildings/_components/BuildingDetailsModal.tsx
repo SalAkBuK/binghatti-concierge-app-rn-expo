@@ -265,7 +265,7 @@ export function BuildingDetailsModal({
               <TouchableOpacity
                 style={styles.detailsAssignButton}
                 onPress={() => {
-                  setShowDetailsModal(false);
+                  onClose();
                   onAssignManager(building);
                 }}
               >

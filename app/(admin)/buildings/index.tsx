@@ -7,7 +7,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { EntityTable } from "../../../components/admin/EntityTable";
 import { HeaderBar } from "../../../components/ui/HeaderBar";
 import { SideMenu } from "../../../components/ui/SideMenu";
-import type { Building, BuildingStatus, BuildingType } from "../../../lib/types";
+import type { Building, BuildingStatus, BuildingType, UnitBreakdown } from "../../../lib/types";
 
 import { AssignManagerModal } from "./_components/AssignManagerModal";
 import { BuildingDetailsModal } from "./_components/BuildingDetailsModal";

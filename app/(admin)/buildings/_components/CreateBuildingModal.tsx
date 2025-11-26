@@ -4,7 +4,7 @@ import React from "react";
 import { ActivityIndicator, Modal, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
 import Animated, { FadeIn } from "react-native-reanimated";
 
-import type { User } from "../../../../lib/types";
+import type { BuildingStatus, User } from "../../../../lib/types";
 import { BUILDING_AMENITY_OPTIONS, BUILDING_TYPES, UAE_EMIRATES } from "../_constants";
 import { styles } from "./_styles";
 import type { BuildingFormState } from "../_types";

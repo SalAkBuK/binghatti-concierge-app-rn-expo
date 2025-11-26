@@ -1,4 +1,4 @@
-import type { Building, ServiceProviderAccessRequest, ServiceProviderProfile } from "../../../lib/types";
+import type { Building, ProviderAccessRequest, ServiceProviderProfile } from "../../../lib/types";
 import type { useApp } from "../../../lib/context/connected-app-provider";
 
 export interface ProviderAssignmentState {
@@ -18,7 +18,7 @@ export interface CreateProviderFormState {
 
 export interface UseServiceProvidersDataResult {
   serviceProviders: ServiceProviderProfile[];
-  pendingRequests: ServiceProviderAccessRequest[];
+  pendingRequests: ProviderAccessRequest[];
   buildingOptions: Building[];
   managedBuildings: Building[];
   hasUnreadNotifications: boolean;
