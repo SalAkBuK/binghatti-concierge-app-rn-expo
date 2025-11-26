@@ -1,36 +1,49 @@
 import { Tabs, router } from "expo-router";
-import React, { useEffect } from "react";
-import { Platform } from "react-native";
+import React, { useEffect, useMemo, useRef } from "react";
+import { Platform, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import type { BottomTabNavigationOptions } from "@react-navigation/bottom-tabs";
 
 import BusinessTabIcon from "../../components/icons/BusinessTabIcon";
 import GridTabIcon from "../../components/icons/GridTabIcon";
 import LayersTabIcon from "../../components/icons/LayersTabIcon";
 import MoreTabIcon from "../../components/icons/MoreTabIcon";
 import PeopleTabIcon from "../../components/icons/PeopleTabIcon";
-import { useApp } from "../../lib/context/connected-app-provider";
+import { useAuth } from "../../lib/context/auth-context";
 
 export default function AdminLayout() {
-  const insets = useSafeAreaInsets();
-  const { isAuthenticated, currentUser } = useApp();
-  const isAdmin =
-    currentUser?.role === "admin" || currentUser?.role === "super_admin";
+  // Profiler hooks - track lifecycle and performance
 
-  // Debug: Log current user role
-  console.log("🔍 AdminLayout - Current User Role:", currentUser?.role);
-  console.log("🔍 AdminLayout - isAdmin:", isAdmin);
+  const insets = useSafeAreaInsets();
+
+  // Use auth context directly instead of useApp() to avoid re-renders from other contexts
+  const { isAuthenticated, currentUser } = useAuth();
+
+  // Compute isAdmin once and cache it
+  const isAdmin = useMemo(
+    () => currentUser?.role === "admin" || currentUser?.role === "super_admin",
+    [currentUser?.role]
+  );
+
+  // Use refs to prevent navigation loops
+  const hasRedirectedToAuth = useRef(false);
+  const hasRedirectedToHome = useRef(false);
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!isAuthenticated && !hasRedirectedToAuth.current) {
+      hasRedirectedToAuth.current = true;
       router.replace("/auth" as any);
+    } else if (isAuthenticated) {
+      hasRedirectedToAuth.current = false;
     }
   }, [isAuthenticated]);
 
   useEffect(() => {
-    // Redirect non-admin users back to home
-    if (isAuthenticated && currentUser && !isAdmin) {
-      console.log("🔍 AdminLayout - Non-admin user detected, redirecting to /");
+    if (isAuthenticated && currentUser && !isAdmin && !hasRedirectedToHome.current) {
+      hasRedirectedToHome.current = true;
       router.replace("/" as any);
+    } else if (isAdmin) {
+      hasRedirectedToHome.current = false;
     }
   }, [isAuthenticated, currentUser, isAdmin]);
 
@@ -43,88 +56,128 @@ export default function AdminLayout() {
     return null;
   }
 
+  const tabBarStyle: ViewStyle = useMemo(
+    () => ({
+      position: "absolute",
+      bottom: 0,
+      left: 0,
+      right: 0,
+      backgroundColor: "#FFFFFF",
+      borderTopWidth: 0,
+      paddingBottom: Platform.OS === "ios" ? insets.bottom : 8,
+      paddingTop: 12,
+      height: 74 + (Platform.OS === "ios" ? insets.bottom : 8),
+      shadowColor: "#9CAFD9",
+      shadowOffset: {
+        width: 0,
+        height: -3,
+      },
+      shadowOpacity: 0.102,
+      shadowRadius: 20,
+      elevation: 20,
+      opacity: 1,
+    }),
+    [insets.bottom],
+  );
+
+  const baseScreenOptions = useMemo<BottomTabNavigationOptions>(
+    () => ({
+      tabBarActiveTintColor: "#7034FF",
+      tabBarInactiveTintColor: "#8296C4",
+      headerShown: false,
+      tabBarStyle,
+      tabBarLabelStyle: {
+        fontSize: 12,
+        fontWeight: "700",
+        letterSpacing: 0,
+      },
+    }),
+    [tabBarStyle],
+  );
+
+  const dashboardOptions = useMemo(
+    () => ({
+      title: "Dashboard",
+      tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => (
+        <GridTabIcon color={color} focused={focused} size={24} />
+      ),
+    }),
+    [],
+  );
+
+  const usersOptions = useMemo(
+    () => ({
+      title: "Users",
+      tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => (
+        <PeopleTabIcon color={color} focused={focused} size={24} />
+      ),
+    }),
+    [],
+  );
+
+  const buildingsOptions = useMemo(
+    () => ({
+      title: "Buildings",
+      tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => (
+        <BusinessTabIcon color={color} focused={focused} size={24} />
+      ),
+    }),
+    [],
+  );
+
+  const unitTypesOptions = useMemo(
+    () => ({
+      title: "Unit Types",
+      tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => (
+        <LayersTabIcon color={color} focused={focused} size={24} />
+      ),
+    }),
+    [],
+  );
+
+  const moreOptions = useMemo(
+    () => ({
+      title: "More",
+      tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => (
+        <MoreTabIcon color={color} focused={focused} size={24} />
+      ),
+    }),
+    [],
+  );
+
   return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: "#7034FF",
-        tabBarInactiveTintColor: "#8296C4",
-        headerShown: false,
-        tabBarStyle: {
-          backgroundColor: "#FFFFFF",
-          borderTopWidth: 0,
-          paddingBottom: Platform.OS === "ios" ? insets.bottom : 8,
-          paddingTop: 12,
-          height: 74 + (Platform.OS === "ios" ? insets.bottom : 8),
-          shadowColor: "#9CAFD9",
-          shadowOffset: {
-            width: 0,
-            height: -3,
-          },
-          shadowOpacity: 0.102,
-          shadowRadius: 20,
-          elevation: 20,
-          opacity: 1,
-        },
-        tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: "700",
-          letterSpacing: 0,
-        },
-      }}
-    >
-      {/* Dashboard - Admin only */}
-      <Tabs.Screen
+    <>
+      <Tabs
+        screenOptions={baseScreenOptions}
+      >
+        {/* Dashboard - Admin only */}
+        <Tabs.Screen
         name="index"
-        options={{
-          title: "Dashboard",
-          tabBarIcon: ({ color, focused }) => (
-            <GridTabIcon color={color} focused={focused} size={24} />
-          ),
-        }}
+        options={dashboardOptions}
       />
 
       {/* Users - Admin only */}
       <Tabs.Screen
         name="users/index"
-        options={{
-          title: "Users",
-          tabBarIcon: ({ color, focused }) => (
-            <PeopleTabIcon color={color} focused={focused} size={24} />
-          ),
-        }}
+        options={usersOptions}
       />
 
       {/* Buildings - Admin only */}
       <Tabs.Screen
         name="buildings/index"
-        options={{
-          title: "Buildings",
-          tabBarIcon: ({ color, focused }) => (
-            <BusinessTabIcon color={color} focused={focused} size={24} />
-          ),
-        }}
+        options={buildingsOptions}
       />
 
       {/* Unit Types - Admin only */}
       <Tabs.Screen
         name="unit-types/index"
-        options={{
-          title: "Unit Types",
-          tabBarIcon: ({ color, focused }) => (
-            <LayersTabIcon color={color} focused={focused} size={24} />
-          ),
-        }}
+        options={unitTypesOptions}
       />
 
       {/* More - Admin only */}
       <Tabs.Screen
         name="more"
-        options={{
-          title: "More",
-          tabBarIcon: ({ color, focused }) => (
-            <MoreTabIcon color={color} focused={focused} size={24} />
-          ),
-        }}
+        options={moreOptions}
       />
 
       {/* Hidden routes - not shown in tab bar (+ prefix tells Expo Router to exclude from tabs) */}
@@ -140,6 +193,7 @@ export default function AdminLayout() {
       <Tabs.Screen name="+broadcast-notifications/index" options={{ href: null }} />
       <Tabs.Screen name="+visitors/index" options={{ href: null }} />
       <Tabs.Screen name="+parcels/index" options={{ href: null }} />
-    </Tabs>
+      </Tabs>
+    </>
   );
 }
