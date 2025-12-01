@@ -11,8 +11,12 @@ import {
 } from "react-native";
 import Animated, { FadeIn } from "react-native-reanimated";
 
+import { useApp } from "../../../../../lib/context/connected-app-provider";
 import type { Building } from "../../../../../lib/types";
-import { USER_ROLE_OPTIONS } from "../../_constants";
+import {
+  ADMIN_USER_ROLE_OPTIONS,
+  SUPER_ADMIN_USER_ROLE_OPTIONS,
+} from "../../_constants";
 import { styles } from "../../_styles";
 import type { UserFormState } from "../../_types";
 
@@ -25,6 +29,8 @@ interface CreateUserModalProps {
   isLoading: boolean;
   onClose: () => void;
   onSubmit: () => void;
+  modalTitle?: string;
+  submitLabel?: string;
 }
 
 export function CreateUserModal({
@@ -36,7 +42,17 @@ export function CreateUserModal({
   isLoading,
   onClose,
   onSubmit,
+  modalTitle,
+  submitLabel,
 }: CreateUserModalProps) {
+  const { currentUser } = useApp();
+  const isSuperAdmin = currentUser?.role === "super_admin";
+
+  // Determine which role options to show based on current user's role
+  const roleOptions = isSuperAdmin
+    ? SUPER_ADMIN_USER_ROLE_OPTIONS
+    : ADMIN_USER_ROLE_OPTIONS;
+
   const isLocationRole = formData.role === "tenant" || formData.role === "employee";
   const isTenant = formData.role === "tenant";
 
@@ -65,7 +81,7 @@ export function CreateUserModal({
       <View style={styles.modalOverlay}>
         <Animated.View entering={FadeIn.duration(200)} style={styles.modalContent}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Create New User</Text>
+            <Text style={styles.modalTitle}>{modalTitle || "Create New User"}</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
               <Ionicons name="close" size={24} color="#6B7280" />
             </TouchableOpacity>
@@ -108,7 +124,7 @@ export function CreateUserModal({
             <View style={styles.formGroup}>
               <Text style={styles.label}>Role *</Text>
               <View style={styles.roleButtons}>
-                {USER_ROLE_OPTIONS.map((role) => (
+                {roleOptions.map((role) => (
                   <TouchableOpacity
                     key={role}
                     style={[
@@ -284,7 +300,7 @@ export function CreateUserModal({
               ) : (
                 <>
                   <Ionicons name="checkmark" size={20} color="#FFFFFF" />
-                  <Text style={styles.submitButtonText}>Create User</Text>
+                  <Text style={styles.submitButtonText}>{submitLabel || "Create User"}</Text>
                 </>
               )}
             </TouchableOpacity>

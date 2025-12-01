@@ -7,6 +7,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { EntityTable } from "../../../components/admin/EntityTable";
 import { HeaderBar } from "../../../components/ui/HeaderBar";
 import { SideMenu } from "../../../components/ui/SideMenu";
+import { useApp } from "../../../lib/context/connected-app-provider";
 import type { User, UserRole } from "../../../lib/types";
 
 import { CreateUserModal } from "./_components/CreateUserModal";
@@ -41,6 +42,7 @@ export default function UsersScreen() {
   useRenderLog("Admin/Users");
   useScreenFocusLog("Admin/Users");
 
+  const { currentUser } = useApp();
   const {
     actions,
     scopedUsers,
@@ -57,6 +59,7 @@ export default function UsersScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [showUserInfoModal, setShowUserInfoModal] = useState(false);
   const [formData, setFormData] = useState<UserFormState>(() =>
@@ -131,6 +134,27 @@ export default function UsersScreen() {
       return;
     }
 
+    // NEW: Check if attempting to create admin user
+    const isCreatingAdmin = formData.role === "admin" || formData.role === "super_admin";
+    const isSuperAdmin = currentUser?.role === "super_admin";
+
+    if (isCreatingAdmin && !isSuperAdmin) {
+      Alert.alert(
+        "Permission Denied",
+        "Only super administrators can create admin users."
+      );
+      return;
+    }
+
+    // Additional check: prevent creating super_admin (even for super_admin users)
+    if (formData.role === "super_admin") {
+      Alert.alert(
+        "Permission Denied",
+        "Creating super admin users is not allowed."
+      );
+      return;
+    }
+
     // Validate tenant-specific fields
     if (formData.role === "tenant") {
       if (!formData.buildingId) {
@@ -171,24 +195,49 @@ export default function UsersScreen() {
         profile.floor = formData.floor || undefined;
       }
 
-      await actions.createUser({
+      const payload = {
         name: formData.name,
         email: formData.email,
         phone: formData.phone,
         role: formData.role,
         profile,
-      });
+      };
 
-      Alert.alert("Success", "User created successfully");
+      if (editingUser) {
+        await actions.adminUpdateUser?.(editingUser.id, payload as any);
+      } else {
+        await actions.createUser(payload as any);
+      }
+
+      Alert.alert("Success", editingUser ? "User updated successfully" : "User created successfully");
       setShowCreateModal(false);
       // Reset form
       setFormData(createInitialFormState(defaultBuildingId));
+      setEditingUser(null);
     } catch (error) {
       console.error("Failed to create user:", error);
-      Alert.alert("Error", "Failed to create user");
+      Alert.alert("Error", "Failed to save user");
     } finally {
       setIsCreating(false);
     }
+  };
+
+  const startEditUser = (user: User) => {
+    setEditingUser(user);
+    setShowCreateModal(true);
+    const profile = user.profile || {};
+    setFormData({
+      name: user.name || "",
+      email: user.email || "",
+      phone: user.phone || "",
+      role: user.role as UserRole,
+      buildingId: profile.buildingId || defaultBuildingId,
+      tower: profile.tower || "",
+      floor: profile.floor || "",
+      apartment: profile.apartment || "",
+      emergencyContact: profile.emergencyContact || "",
+      emergencyPhone: profile.emergencyPhone || "",
+    });
   };
 
   const columns = useMemo(
@@ -246,7 +295,11 @@ export default function UsersScreen() {
           <Animated.View entering={FadeInDown.delay(50).duration(400)}>
             <TouchableOpacity
               style={styles.createButton}
-              onPress={() => setShowCreateModal(true)}
+              onPress={() => {
+                setEditingUser(null);
+                setFormData(createInitialFormState(defaultBuildingId));
+                setShowCreateModal(true);
+              }}
             >
               <Ionicons name="person-add" size={20} color="#FFFFFF" />
               <Text style={styles.createButtonText}>Create User</Text>
@@ -289,6 +342,8 @@ export default function UsersScreen() {
           isLoading={isCreating}
           onClose={() => setShowCreateModal(false)}
           onSubmit={handleCreateUser}
+          modalTitle={editingUser ? "Edit User" : "Create New User"}
+          submitLabel={editingUser ? "Save Changes" : "Create User"}
         />
       )}
 
@@ -302,6 +357,7 @@ export default function UsersScreen() {
         }}
         onDelete={canManageUsers ? handleDeleteUser : undefined}
         getBuildingName={getBuildingName}
+        onEdit={canManageUsers ? startEditUser : undefined}
       />
     </SafeAreaView>
   );

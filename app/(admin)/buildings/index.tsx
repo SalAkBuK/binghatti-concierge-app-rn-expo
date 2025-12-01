@@ -80,6 +80,7 @@ export default function BuildingsScreen() {
   const [detailsBuilding, setDetailsBuilding] = useState<Building | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showUnitBreakdown, setShowUnitBreakdown] = useState(false);
+  const [editingBuilding, setEditingBuilding] = useState<Building | null>(null);
   const [formData, setFormData] = useState<BuildingFormState>(createInitialFormState());
 
   const filteredBuildings = useMemo(
@@ -229,7 +230,7 @@ export default function BuildingsScreen() {
       const yearBuilt = formData.yearBuilt.trim() ? parseInt(formData.yearBuilt, 10) : undefined;
       const totalFloors = formData.totalFloors.trim() ? parseInt(formData.totalFloors, 10) : undefined;
 
-      await actions.createBuilding({
+      const payload = {
         name: formData.name,
         // UAE-specific fields
         emirate: formData.emirate,
@@ -252,15 +253,22 @@ export default function BuildingsScreen() {
         unitBreakdown,
         managerId: formData.managerId || undefined,
         amenities: formData.amenities.length ? formData.amenities : undefined,
-      });
+      };
 
-      Alert.alert("Success", "Building created successfully");
+      if (editingBuilding) {
+        await actions.updateBuilding(editingBuilding.id, payload as any);
+      } else {
+        await actions.createBuilding(payload as any);
+      }
+
+      Alert.alert("Success", editingBuilding ? "Building updated successfully" : "Building created successfully");
       setShowCreateModal(false);
       setShowUnitBreakdown(false);
       // Reset form
       setFormData(createInitialFormState());
+      setEditingBuilding(null);
     } catch (error: any) {
-      Alert.alert("Error", error?.message || "Failed to create building");
+      Alert.alert("Error", error?.message || "Failed to save building");
     } finally {
       setIsCreating(false);
     }
@@ -298,6 +306,39 @@ export default function BuildingsScreen() {
     setSelectedBuilding(building);
     setFormData((prev) => ({ ...prev, managerId: building.managerId || "" }));
     setShowManagerModal(true);
+  };
+
+  const startEditBuilding = (building: Building) => {
+    setEditingBuilding(building);
+    setShowUnitBreakdown(!!building.unitBreakdown);
+    setFormData({
+      name: building.name || "",
+      buildingType: (building.buildingType as BuildingType) || "residential",
+      developer: building.developer || "",
+      yearBuilt: building.yearBuilt ? String(building.yearBuilt) : "",
+      totalFloors: building.totalFloors ? String(building.totalFloors) : "",
+      status: (building.status as BuildingStatus) || "active",
+      emirate: building.emirate || building.city || "",
+      community: building.community || "",
+      street: building.street || "",
+      plotNumber: building.plotNumber || "",
+      buildingNumber: building.buildingNumber || "",
+      makaniNumber: building.makaniNumber || "",
+      address: building.address || "",
+      city: building.city || "",
+      country: building.country || "United Arab Emirates",
+      utilityPremisesNumber: building.utilityPremisesNumber || "",
+      totalUnits: building.totalUnits ? String(building.totalUnits) : "",
+      amenities: building.amenities || [],
+      studios: building.unitBreakdown?.studios ? String(building.unitBreakdown.studios) : "",
+      oneBedroom: building.unitBreakdown?.oneBedroom ? String(building.unitBreakdown.oneBedroom) : "",
+      twoBedroom: building.unitBreakdown?.twoBedroom ? String(building.unitBreakdown.twoBedroom) : "",
+      threeBedroom: building.unitBreakdown?.threeBedroom ? String(building.unitBreakdown.threeBedroom) : "",
+      fourPlusBedroom: building.unitBreakdown?.fourPlusBedroom ? String(building.unitBreakdown.fourPlusBedroom) : "",
+      commercial: building.unitBreakdown?.commercial ? String(building.unitBreakdown.commercial) : "",
+      managerId: building.managerId || "",
+    });
+    setShowCreateModal(true);
   };
 
   const openDetailsModal = (building: Building) => {
@@ -341,11 +382,12 @@ export default function BuildingsScreen() {
       key: "status",
       label: "Status",
       render: (building: Building) => {
-        const statusColors = getStatusColor(building.status);
+        const status = (building.status || "active") as BuildingStatus;
+        const statusColors = getStatusColor(status);
         return (
           <View style={[styles.statusBadge, { backgroundColor: statusColors.bg }]}>
             <Text style={[styles.statusText, { color: statusColors.text }]}>
-              {building.status.toUpperCase()}
+              {status.toUpperCase()}
             </Text>
           </View>
         );
@@ -371,7 +413,12 @@ export default function BuildingsScreen() {
           <Animated.View entering={FadeInDown.delay(50).duration(400)}>
             <TouchableOpacity
               style={styles.createButton}
-              onPress={() => setShowCreateModal(true)}
+              onPress={() => {
+                setEditingBuilding(null);
+                setFormData(createInitialFormState());
+                setShowUnitBreakdown(false);
+                setShowCreateModal(true);
+              }}
             >
               <Ionicons name="business" size={20} color="#FFFFFF" />
               <Text style={styles.createButtonText}>Create Building</Text>
@@ -440,6 +487,7 @@ export default function BuildingsScreen() {
         unitTypes={unitTypes}
         canManageBuildings={canManageBuildings}
         onAssignManager={openManagerModal}
+        onEditBuilding={startEditBuilding}
       />
     </SafeAreaView>
   );

@@ -1,6 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   Modal,
   ScrollView,
   StyleSheet,
@@ -21,6 +23,16 @@ import { filterNotificationsByUser } from "../../lib/utils/helpers";
 
 const MANAGEMENT_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
 
+interface TenantFormData {
+  name: string;
+  email: string;
+  phone: string;
+  buildingId: string;
+  tower: string;
+  floor: string;
+  apartment: string;
+}
+
 export default function ManagementTenantsScreen() {
   const { currentUser, notifications, actions, leases } = useApp();
   const { getBuildings, getManagedBuildings, getUsers } = actions;
@@ -29,6 +41,18 @@ export default function ManagementTenantsScreen() {
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [selectedTenant, setSelectedTenant] = useState<User | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingTenant, setEditingTenant] = useState<User | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formData, setFormData] = useState<TenantFormData>({
+    name: "",
+    email: "",
+    phone: "",
+    buildingId: "",
+    tower: "",
+    floor: "",
+    apartment: "",
+  });
 
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
   const isCompact = width < 768;
@@ -169,6 +193,120 @@ export default function ManagementTenantsScreen() {
     ? leaseByTenant.get(selectedTenant.id)
     : undefined;
 
+  // Reset form data when modal closes
+  useEffect(() => {
+    if (!showCreateModal && !editingTenant) {
+      setFormData({
+        name: "",
+        email: "",
+        phone: "",
+        buildingId: managedBuildings[0]?.id || "",
+        tower: "",
+        floor: "",
+        apartment: "",
+      });
+    }
+  }, [showCreateModal, editingTenant, managedBuildings]);
+
+  // Initialize form when editing
+  useEffect(() => {
+    if (editingTenant) {
+      setFormData({
+        name: editingTenant.name || "",
+        email: editingTenant.email || "",
+        phone: editingTenant.phone || "",
+        buildingId: editingTenant.profile?.buildingId || managedBuildings[0]?.id || "",
+        tower: editingTenant.profile?.tower || "",
+        floor: editingTenant.profile?.floor || "",
+        apartment: editingTenant.profile?.apartment || "",
+      });
+      setShowCreateModal(true);
+    }
+  }, [editingTenant, managedBuildings]);
+
+  const handleCreateTenant = async () => {
+    // Validate form
+    if (!formData.name.trim() || !formData.email.trim()) {
+      Alert.alert("Validation Error", "Name and email are required");
+      return;
+    }
+
+    if (!formData.buildingId) {
+      Alert.alert("Validation Error", "Building assignment is required");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const payload = {
+        name: formData.name.trim(),
+        email: formData.email.trim(),
+        phone: formData.phone.trim(),
+        role: "tenant" as const,
+        profile: {
+          buildingId: formData.buildingId,
+          tower: formData.tower.trim() || undefined,
+          floor: formData.floor.trim() || undefined,
+          apartment: formData.apartment.trim() || undefined,
+        },
+      };
+
+      if (editingTenant) {
+        await actions.adminUpdateUser?.(editingTenant.id, payload as any);
+        Alert.alert("Success", "Tenant updated successfully");
+      } else {
+        await actions.createUser(payload as any);
+        Alert.alert("Success", "Tenant created successfully");
+      }
+
+      setShowCreateModal(false);
+      setEditingTenant(null);
+      setFormData({
+        name: "",
+        email: "",
+        phone: "",
+        buildingId: managedBuildings[0]?.id || "",
+        tower: "",
+        floor: "",
+        apartment: "",
+      });
+    } catch (error) {
+      console.error("Failed to save tenant:", error);
+      Alert.alert("Error", editingTenant ? "Failed to update tenant" : "Failed to create tenant");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteTenant = async (tenantId: string) => {
+    Alert.alert(
+      "Delete Tenant",
+      "Are you sure you want to delete this tenant? This action cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await actions.adminDeleteUser?.(tenantId);
+              Alert.alert("Success", "Tenant deleted successfully");
+              setSelectedTenant(null);
+            } catch (error) {
+              console.error("Failed to delete tenant:", error);
+              Alert.alert("Error", "Failed to delete tenant");
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleEditTenant = (tenant: User) => {
+    setEditingTenant(tenant);
+    setSelectedTenant(null);
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
@@ -289,6 +427,13 @@ export default function ManagementTenantsScreen() {
               onChangeText={setSearchQuery}
             />
           </View>
+          <TouchableOpacity
+            style={styles.createButton}
+            onPress={() => setShowCreateModal(true)}
+          >
+            <Ionicons name="add" size={20} color="#FFFFFF" />
+            <Text style={styles.createButtonText}>Add Tenant</Text>
+          </TouchableOpacity>
         </Animated.View>
 
         <Animated.View
@@ -444,8 +589,175 @@ export default function ManagementTenantsScreen() {
                     </Text>
                   )}
                 </View>
+
+                {/* Action Buttons */}
+                <View style={styles.modalActions}>
+                  <TouchableOpacity
+                    style={styles.editButton}
+                    onPress={() => handleEditTenant(selectedTenant)}
+                  >
+                    <Ionicons name="create-outline" size={18} color="#FFFFFF" />
+                    <Text style={styles.editButtonText}>Edit Tenant</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.deleteButton}
+                    onPress={() => handleDeleteTenant(selectedTenant.id)}
+                  >
+                    <Ionicons name="trash-outline" size={18} color="#FFFFFF" />
+                    <Text style={styles.deleteButtonText}>Delete</Text>
+                  </TouchableOpacity>
+                </View>
               </>
             ) : null}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+
+      {/* Create/Edit Tenant Modal */}
+      <Modal
+        visible={showCreateModal}
+        animationType="slide"
+        onRequestClose={() => {
+          setShowCreateModal(false);
+          setEditingTenant(null);
+        }}
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity
+              onPress={() => {
+                setShowCreateModal(false);
+                setEditingTenant(null);
+              }}
+            >
+              <Ionicons name="close" size={24} color="#111827" />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>
+              {editingTenant ? "Edit Tenant" : "Create New Tenant"}
+            </Text>
+            <View style={{ width: 24 }} />
+          </View>
+          <ScrollView contentContainerStyle={styles.modalContent}>
+            <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>Name *</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="Enter tenant's full name"
+                value={formData.name}
+                onChangeText={(text) => setFormData((prev) => ({ ...prev, name: text }))}
+              />
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>Email *</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="Enter email address"
+                value={formData.email}
+                onChangeText={(text) => setFormData((prev) => ({ ...prev, email: text }))}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>Phone</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="Enter phone number"
+                value={formData.phone}
+                onChangeText={(text) => setFormData((prev) => ({ ...prev, phone: text }))}
+                keyboardType="phone-pad"
+              />
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>Building *</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.buildingSelector}
+              >
+                {managedBuildings.map((building) => (
+                  <TouchableOpacity
+                    key={building.id}
+                    style={[
+                      styles.buildingChip,
+                      formData.buildingId === building.id && styles.buildingChipActive,
+                    ]}
+                    onPress={() =>
+                      setFormData((prev) => ({ ...prev, buildingId: building.id }))
+                    }
+                  >
+                    <Text
+                      style={[
+                        styles.buildingChipText,
+                        formData.buildingId === building.id &&
+                          styles.buildingChipTextActive,
+                      ]}
+                    >
+                      {building.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            <View style={styles.formRow}>
+              <View style={[styles.formGroup, styles.formGroupHalf]}>
+                <Text style={styles.formLabel}>Tower</Text>
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="e.g., A, B, C"
+                  value={formData.tower}
+                  onChangeText={(text) => setFormData((prev) => ({ ...prev, tower: text }))}
+                />
+              </View>
+
+              <View style={[styles.formGroup, styles.formGroupHalf]}>
+                <Text style={styles.formLabel}>Floor</Text>
+                <TextInput
+                  style={styles.formInput}
+                  placeholder="e.g., 5, 12"
+                  value={formData.floor}
+                  onChangeText={(text) => setFormData((prev) => ({ ...prev, floor: text }))}
+                  keyboardType="number-pad"
+                />
+              </View>
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>Unit/Apartment</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="e.g., 501, A-1204"
+                value={formData.apartment}
+                onChangeText={(text) =>
+                  setFormData((prev) => ({ ...prev, apartment: text }))
+                }
+              />
+            </View>
+
+            <TouchableOpacity
+              style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
+              onPress={handleCreateTenant}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <>
+                  <Ionicons
+                    name={editingTenant ? "checkmark" : "add"}
+                    size={20}
+                    color="#FFFFFF"
+                  />
+                  <Text style={styles.submitButtonText}>
+                    {editingTenant ? "Save Changes" : "Create Tenant"}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
           </ScrollView>
         </SafeAreaView>
       </Modal>
@@ -460,6 +772,9 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+  },
+  scrollViewContent: {
+    paddingBottom: 40,
   },
   summaryRow: {
     flexDirection: "row",
@@ -519,8 +834,12 @@ const styles = StyleSheet.create({
   },
   searchRow: {
     marginTop: 20,
+    flexDirection: "row",
+    gap: 12,
+    alignItems: "center",
   },
   searchInputWrapper: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
@@ -535,6 +854,20 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     color: "#111827",
+  },
+  createButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#2563EB",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 999,
+  },
+  createButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#FFFFFF",
   },
   tenantList: {
     marginTop: 16,
@@ -712,5 +1045,107 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#4B5563",
     marginTop: 4,
+  },
+  modalActions: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 8,
+  },
+  editButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#2563EB",
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  editButtonText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#FFFFFF",
+  },
+  deleteButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#DC2626",
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  deleteButtonText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#FFFFFF",
+  },
+  formGroup: {
+    marginBottom: 20,
+  },
+  formLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#374151",
+    marginBottom: 8,
+  },
+  formInput: {
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 15,
+    color: "#111827",
+    backgroundColor: "#FFFFFF",
+  },
+  formRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  formGroupHalf: {
+    flex: 1,
+  },
+  buildingSelector: {
+    gap: 10,
+    paddingVertical: 4,
+  },
+  buildingChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#CBD5F5",
+    backgroundColor: "#F8FAFC",
+  },
+  buildingChipActive: {
+    backgroundColor: "#1D4ED8",
+    borderColor: "#1D4ED8",
+  },
+  buildingChipText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#1E293B",
+  },
+  buildingChipTextActive: {
+    color: "#FFFFFF",
+  },
+  submitButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#2563EB",
+    paddingVertical: 16,
+    borderRadius: 12,
+    marginTop: 12,
+  },
+  submitButtonDisabled: {
+    opacity: 0.6,
+  },
+  submitButtonText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#FFFFFF",
   },
 });

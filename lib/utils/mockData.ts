@@ -121,6 +121,7 @@ export const DEFAULT_USERS: Record<string, User> = {
     email: "admin@demo.com",
     name: "Admin User",
     role: "admin",
+    profileCompleted: false, // Will trigger profile setup on first login
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     profile: {

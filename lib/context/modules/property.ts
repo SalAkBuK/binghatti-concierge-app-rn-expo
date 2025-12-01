@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, useEffect } from "react";
 
 import type {
   Building,
@@ -27,6 +27,11 @@ import {
 import { generateId } from "../../utils";
 import type { AuthContextType } from "../auth-context";
 import type { NotificationsContextType } from "../notifications-context";
+import {
+  buildingsStorage,
+  unitTypesStorage,
+  serviceProvidersStorage,
+} from "../../services/storage/localStorageService";
 
 type AuthDependency = Pick<AuthContextType, "currentUser" | "users" | "actions">;
 type NotificationsDependency = Pick<NotificationsContextType, "actions">;
@@ -170,22 +175,119 @@ export const usePropertyModule = ({
   state: PropertyModuleState;
   actions: PropertyModuleActions;
 } => {
-  const [buildings, setBuildings] = useState<Building[]>(DEFAULT_BUILDINGS);
-  const [unitTypes, setUnitTypes] = useState<UnitType[]>(DEFAULT_UNIT_TYPES);
-  const [buildingUnits, setBuildingUnits] =
-    useState<BuildingUnit[]>(DEFAULT_BUILDING_UNITS);
-  const [leases, setLeases] = useState<Lease[]>(DEFAULT_LEASES);
-  const [buildingEmployees, setBuildingEmployees] =
-    useState<BuildingEmployee[]>(DEFAULT_BUILDING_EMPLOYEES);
-  const [serviceProviders, setServiceProviders] = useState<ServiceProviderProfile[]>(
-    DEFAULT_SERVICE_PROVIDERS_PROFILES,
-  );
+  // Initialize with empty arrays - data will be loaded from AsyncStorage or mock data
+  const [buildings, setBuildings] = useState<Building[]>([]);
+  const [unitTypes, setUnitTypes] = useState<UnitType[]>([]);
+  const [buildingUnits, setBuildingUnits] = useState<BuildingUnit[]>([]);
+  const [leases, setLeases] = useState<Lease[]>([]);
+  const [buildingEmployees, setBuildingEmployees] = useState<BuildingEmployee[]>([]);
+  const [serviceProviders, setServiceProviders] = useState<ServiceProviderProfile[]>([]);
   const [serviceProviderAssignments, setServiceProviderAssignments] =
-    useState<ServiceProviderBuildingAssignment[]>(
-      DEFAULT_SERVICE_PROVIDER_BUILDING_ASSIGNMENTS,
-    );
+    useState<ServiceProviderBuildingAssignment[]>([]);
   const [providerAccessRequests, setProviderAccessRequests] =
     useState<ProviderAccessRequest[]>([]);
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
+
+  // Load data from AsyncStorage on mount (per-user scope)
+  useEffect(() => {
+    const loadUserData = async () => {
+      if (!auth.currentUser?.id) return;
+
+      const userId = auth.currentUser.id;
+      console.log(`[PropertyModule] Loading data for user: ${userId}`);
+
+      try {
+        const [loadedBuildings, loadedUnitTypes, loadedServiceProviders] = await Promise.all([
+          buildingsStorage.load(userId),
+          unitTypesStorage.load(userId),
+          serviceProvidersStorage.load(userId),
+        ]);
+
+        // If storage is empty, initialize with mock data
+        const buildings = loadedBuildings.length > 0 ? loadedBuildings : DEFAULT_BUILDINGS;
+        const unitTypes = loadedUnitTypes.length > 0 ? loadedUnitTypes : DEFAULT_UNIT_TYPES;
+        const serviceProviders = loadedServiceProviders.length > 0 ? loadedServiceProviders : DEFAULT_SERVICE_PROVIDERS_PROFILES;
+
+        setBuildings(buildings);
+        setUnitTypes(unitTypes);
+        setServiceProviders(serviceProviders);
+
+        // Initialize in-memory data with mock defaults
+        // These are not persisted to storage as they can be regenerated
+        setBuildingUnits(DEFAULT_BUILDING_UNITS);
+        setLeases(DEFAULT_LEASES);
+        setBuildingEmployees(DEFAULT_BUILDING_EMPLOYEES);
+        setServiceProviderAssignments(DEFAULT_SERVICE_PROVIDER_BUILDING_ASSIGNMENTS);
+
+        // Save the default data to storage if it was empty
+        if (loadedBuildings.length === 0) {
+          await buildingsStorage.save(userId, buildings);
+        }
+        if (loadedUnitTypes.length === 0) {
+          await unitTypesStorage.save(userId, unitTypes);
+        }
+        if (loadedServiceProviders.length === 0) {
+          await serviceProvidersStorage.save(userId, serviceProviders);
+        }
+
+        setIsDataLoaded(true);
+
+        console.log(`[PropertyModule] Data loaded - Buildings: ${buildings.length}, Unit Types: ${unitTypes.length}, Service Providers: ${serviceProviders.length}, Units: ${DEFAULT_BUILDING_UNITS.length}, Leases: ${DEFAULT_LEASES.length}`);
+      } catch (error) {
+        console.error('[PropertyModule] Failed to load user data:', error);
+        // On error, use default mock data
+        setBuildings(DEFAULT_BUILDINGS);
+        setUnitTypes(DEFAULT_UNIT_TYPES);
+        setServiceProviders(DEFAULT_SERVICE_PROVIDERS_PROFILES);
+        setBuildingUnits(DEFAULT_BUILDING_UNITS);
+        setLeases(DEFAULT_LEASES);
+        setBuildingEmployees(DEFAULT_BUILDING_EMPLOYEES);
+        setServiceProviderAssignments(DEFAULT_SERVICE_PROVIDER_BUILDING_ASSIGNMENTS);
+        setIsDataLoaded(true);
+      }
+    };
+
+    loadUserData();
+  }, [auth.currentUser?.id]);
+
+  // Save buildings to AsyncStorage whenever they change
+  useEffect(() => {
+    const saveBuildings = async () => {
+      if (!auth.currentUser?.id || !isDataLoaded) return;
+      try {
+        await buildingsStorage.save(auth.currentUser.id, buildings);
+      } catch (error) {
+        console.error('[PropertyModule] Failed to save buildings:', error);
+      }
+    };
+    saveBuildings();
+  }, [buildings, auth.currentUser?.id, isDataLoaded]);
+
+  // Save unit types to AsyncStorage whenever they change
+  useEffect(() => {
+    const saveUnitTypes = async () => {
+      if (!auth.currentUser?.id || !isDataLoaded) return;
+      try {
+        await unitTypesStorage.save(auth.currentUser.id, unitTypes);
+      } catch (error) {
+        console.error('[PropertyModule] Failed to save unit types:', error);
+      }
+    };
+    saveUnitTypes();
+  }, [unitTypes, auth.currentUser?.id, isDataLoaded]);
+
+  // Save service providers to AsyncStorage whenever they change
+  useEffect(() => {
+    const saveServiceProviders = async () => {
+      if (!auth.currentUser?.id || !isDataLoaded) return;
+      try {
+        await serviceProvidersStorage.save(auth.currentUser.id, serviceProviders);
+      } catch (error) {
+        console.error('[PropertyModule] Failed to save service providers:', error);
+      }
+    };
+    saveServiceProviders();
+  }, [serviceProviders, auth.currentUser?.id, isDataLoaded]);
 
   const adjustBuildingCounts = useCallback(
     (buildingId: string, delta: { total?: number; occupied?: number }) => {

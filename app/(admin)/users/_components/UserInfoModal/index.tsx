@@ -19,6 +19,7 @@ interface UserInfoModalProps {
   onClose: () => void;
   onDelete?: (userId: string) => void;
   getBuildingName?: (buildingId: string) => string;
+  onEdit?: (user: User) => void;
 }
 
 const getRoleBadgeColor = (role: UserRole) => {
@@ -70,6 +71,7 @@ export function UserInfoModal({
   onClose,
   onDelete,
   getBuildingName,
+  onEdit,
 }: UserInfoModalProps) {
   if (!user) return null;
 
@@ -378,8 +380,23 @@ export function UserInfoModal({
                 <Text style={modalStyles.deleteButtonText}>Delete</Text>
               </TouchableOpacity>
             )}
+            {onEdit && (
+              <TouchableOpacity
+                style={[modalStyles.footerButton, { backgroundColor: "#2563EB" }]}
+                onPress={() => {
+                  onEdit(user);
+                  onClose();
+                }}
+              >
+                <Text style={modalStyles.footerButtonText}>Edit</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
-              style={[modalStyles.footerButton, canDelete && { flex: 1 }]}
+              style={[
+                modalStyles.footerButton,
+                (canDelete || onEdit) && { flex: 1 },
+                { backgroundColor: onEdit ? "#6B7280" : "#7034FF" },
+              ]}
               onPress={onClose}
             >
               <Text style={modalStyles.footerButtonText}>Close</Text>

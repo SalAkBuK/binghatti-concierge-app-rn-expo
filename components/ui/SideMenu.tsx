@@ -168,6 +168,57 @@ const navigateAndClose = (href: RouterPushInput | string) => {
     },
   ];
 
+  // Super Admin Menu - Full Super Admin Portal
+  const superAdminMenu: MenuItem[] = [
+    {
+      id: "superadmin-dashboard",
+      title: "Dashboard",
+      icon: "grid-outline",
+      action: () => navigateAndClose("/(superadmin)"),
+    },
+    {
+      id: "superadmin-admins",
+      title: "Admin Users",
+      icon: "shield-checkmark-outline",
+      action: () => navigateAndClose("/(superadmin)/admins"),
+    },
+    {
+      id: "superadmin-buildings",
+      title: "Buildings",
+      icon: "business-outline",
+      action: () => navigateAndClose("/(superadmin)/buildings"),
+    },
+    {
+      id: "superadmin-activity",
+      title: "System Activity",
+      icon: "notifications-outline",
+      action: () => navigateAndClose("/(superadmin)/activity"),
+    },
+    {
+      id: "divider-super-admin",
+      title: "",
+      icon: "remove",
+      action: () => {},
+    },
+    {
+      id: "superadmin-profile",
+      title: "My Profile",
+      icon: "person-outline",
+      action: () => navigateAndClose("/(superadmin)/profile"),
+    },
+    {
+      id: "logout",
+      title: "Sign Out",
+      icon: "log-out-outline",
+      color: "#ef4444",
+      action: () => {
+        closeMenu();
+        handleLogout();
+      },
+    },
+  ];
+
+  // Regular Admin Menu - Full access
   const adminMenu: MenuItem[] = [
   {
     id: "admin-dashboard",
@@ -192,12 +243,6 @@ const navigateAndClose = (href: RouterPushInput | string) => {
       title: "Service Providers",
       icon: "construct-outline",
       action: () => navigateAndClose("/(admin)/service-providers"),
-    },
-    {
-      id: "jobs",
-      title: "Jobs & Work Orders",
-      icon: "hammer-outline",
-      action: () => navigateAndClose("/(admin)/jobs"),
     },
     {
       id: "permissions",
@@ -488,17 +533,19 @@ const managementMenu: MenuItem[] = [
   ];
 
   const menuItems: MenuItem[] =
-    currentUser?.role === "admin" || currentUser?.role === "super_admin"
-      ? adminMenu
-      : currentUser?.role === "management"
-        ? managementMenu
-        : currentUser?.role === "building_employee"
-          ? buildingEmployeeMenu
-          : currentUser?.role === "service_provider"
-            ? serviceProviderMenu
-            : currentUser?.role === "employee"
-              ? employeeMenu
-              : tenantMenu;
+    currentUser?.role === "super_admin"
+      ? superAdminMenu
+      : currentUser?.role === "admin"
+        ? adminMenu
+        : currentUser?.role === "management"
+          ? managementMenu
+          : currentUser?.role === "building_employee"
+            ? buildingEmployeeMenu
+            : currentUser?.role === "service_provider"
+              ? serviceProviderMenu
+              : currentUser?.role === "employee"
+                ? employeeMenu
+                : tenantMenu;
 
   // Animation effects
   useEffect(() => {

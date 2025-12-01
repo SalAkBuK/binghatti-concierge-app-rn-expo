@@ -352,7 +352,7 @@ export default function RegisterVisitorScreen() {
               {showArrivalPicker && (
                 <DateTimePicker
                   value={formData.expectedArrivalTime}
-                  mode="datetime"
+                  mode={Platform.OS === "ios" ? "datetime" : "date"}
                   display={Platform.OS === "ios" ? "spinner" : "default"}
                   onChange={(event, selectedDate) => {
                     setShowArrivalPicker(Platform.OS === "ios");
@@ -392,7 +392,7 @@ export default function RegisterVisitorScreen() {
                   value={
                     formData.expectedDepartureTime || formData.expectedArrivalTime
                   }
-                  mode="datetime"
+                  mode={Platform.OS === "ios" ? "datetime" : "date"}
                   display={Platform.OS === "ios" ? "spinner" : "default"}
                   onChange={(event, selectedDate) => {
                     setShowDeparturePicker(Platform.OS === "ios");

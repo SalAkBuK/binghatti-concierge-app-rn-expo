@@ -26,6 +26,7 @@ interface BuildingDetailsModalProps {
   unitTypes?: UnitType[];
   canManageBuildings: boolean;
   onAssignManager: (building: Building) => void;
+  onEditBuilding: (building: Building) => void;
 }
 
 export function BuildingDetailsModal({
@@ -36,6 +37,7 @@ export function BuildingDetailsModal({
   unitTypes,
   canManageBuildings,
   onAssignManager,
+  onEditBuilding,
 }: BuildingDetailsModalProps) {
   const resolveUnitType = (id: string): UnitType | undefined => {
     return actions.getUnitTypeById?.(id) || unitTypes?.find((type) => type.id === id);
@@ -210,7 +212,8 @@ export function BuildingDetailsModal({
       ? Math.round((occupiedUnits / buildingUnitsData.length) * 100)
       : 0;
 
-    const statusColors = getStatusColor(building.status);
+    const status = (building.status || "active") as Building["status"];
+    const statusColors = getStatusColor(status);
 
     return (
       <SafeAreaView style={styles.detailsModalContainer}>
@@ -225,7 +228,7 @@ export function BuildingDetailsModal({
             </TouchableOpacity>
             <View style={[styles.detailsStatusBadge, { backgroundColor: statusColors.bg }]}>
               <Text style={[styles.detailsStatusText, { color: statusColors.text }]}>
-                {building.status.toUpperCase()}
+                {status.toUpperCase()}
               </Text>
             </View>
           </View>
@@ -250,11 +253,11 @@ export function BuildingDetailsModal({
         >
           {/* Manager Card */}
           <Animated.View entering={FadeInDown.delay(50).duration(300)} style={styles.detailsManagerCard}>
-            <View style={styles.detailsManagerHeader}>
-              <View style={styles.detailsManagerIconWrapper}>
-                <Ionicons name="person-circle" size={24} color="#7034FF" />
-              </View>
-              <View style={styles.detailsManagerInfo}>
+          <View style={styles.detailsManagerHeader}>
+            <View style={styles.detailsManagerIconWrapper}>
+              <Ionicons name="person-circle" size={24} color="#7034FF" />
+            </View>
+            <View style={styles.detailsManagerInfo}>
                 <Text style={styles.detailsManagerLabel}>Building Manager</Text>
                 <Text style={styles.detailsManagerName}>
                   {building.managerName || "Not assigned"}
@@ -263,16 +266,14 @@ export function BuildingDetailsModal({
             </View>
             {canManageBuildings && (
               <TouchableOpacity
-                style={styles.detailsAssignButton}
+                style={[styles.detailsAssignButton, { marginLeft: 8 }]}
                 onPress={() => {
                   onClose();
-                  onAssignManager(building);
+                  onEditBuilding(building);
                 }}
               >
-                <Ionicons name="people-outline" size={18} color="#7034FF" />
-                <Text style={styles.detailsAssignButtonText}>
-                  {building.managerName ? "Change" : "Assign"}
-                </Text>
+                <Ionicons name="create-outline" size={18} color="#7034FF" />
+                <Text style={styles.detailsAssignButtonText}>Edit</Text>
               </TouchableOpacity>
             )}
           </Animated.View>

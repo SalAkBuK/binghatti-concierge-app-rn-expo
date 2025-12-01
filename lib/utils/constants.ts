@@ -24,9 +24,9 @@ export const NAVIGATION_ITEMS = {
   ],
   super_admin: [
     { id: "super-admin-dashboard", icon: "home", label: "Dashboard" },
-    { id: "super-admin-users", icon: "users", label: "Users" },
+    { id: "super-admin-admins", icon: "shield-checkmark", label: "Admins" },
     { id: "super-admin-buildings", icon: "business", label: "Buildings" },
-    { id: "super-admin-analytics", icon: "bar-chart-3", label: "Analytics" },
+    { id: "super-admin-more", icon: "ellipsis-horizontal", label: "More" },
   ],
   service_provider: [
     { id: "provider-dashboard", icon: "home", label: "Dashboard" },
@@ -54,7 +54,7 @@ export const ROLE_HOME_VIEWS: Record<User["role"], string> = {
   tenant: "tenant-home",
   management: "management-dashboard",
   admin: "admin-dashboard",
-  super_admin: "super-admin-dashboard",
+  super_admin: "superadmin-dashboard",
   service_provider: "provider-dashboard",
   employee: "employee-dashboard",
   building_employee: "be-dashboard",

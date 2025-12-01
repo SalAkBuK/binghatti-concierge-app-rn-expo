@@ -17,6 +17,7 @@ export interface User {
   phone?: string;
   status?: UserStatus;
   profile?: UserProfile;
+  profileCompleted?: boolean; // Track if user has completed initial profile setup
   createdAt: string;
   updatedAt: string;
 }
@@ -26,6 +27,7 @@ export interface UserProfile {
   phone?: string;
   apartment?: string;
   tower?: string;
+  floor?: string;
   emergencyContact?: string;
   emergencyPhone?: string;
   avatar?: string;
@@ -41,6 +43,11 @@ export interface UserProfile {
   emiratesId?: string;
   passportNumber?: string;
   attachments?: string[]; // Profile pictures and documents
+  companyName?: string;
+  companyLogoUrl?: string;
+  companyWebsite?: string;
+  companyDescription?: string;
+  companyAddress?: string;
 }
 
 export interface Attachment {
@@ -1194,7 +1201,10 @@ export interface CreateUserDTO {
   profile?: {
     apartment?: string;
     tower?: string;
+    floor?: string;
     buildingId?: string;
+    emergencyContact?: string;
+    emergencyPhone?: string;
   };
 }
 

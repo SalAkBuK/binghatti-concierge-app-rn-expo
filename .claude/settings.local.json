@@ -37,7 +37,9 @@
       "Bash(ren buildings.tsx +buildings.tsx)",
       "Bash(ren workforce.tsx +workforce.tsx)",
       "Bash(ren activity.tsx +activity.tsx)",
-      "Bash(ren shifts.tsx +shifts.tsx)"
+      "Bash(ren shifts.tsx +shifts.tsx)",
+      "Bash(./gradlew tasks:*)",
+      "Bash(./gradlew:*)"
     ],
     "deny": [],
     "ask": []

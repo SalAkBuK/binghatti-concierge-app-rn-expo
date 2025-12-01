@@ -19,6 +19,8 @@ interface CreateBuildingModalProps {
   isLoading: boolean;
   onClose: () => void;
   onSubmit: () => void;
+  modalTitle?: string;
+  submitLabel?: string;
 }
 
 export function CreateBuildingModal({
@@ -31,6 +33,8 @@ export function CreateBuildingModal({
   isLoading,
   onClose,
   onSubmit,
+  modalTitle,
+  submitLabel,
 }: CreateBuildingModalProps) {
   return (
   <Modal
@@ -46,7 +50,7 @@ export function CreateBuildingModal({
       >
       {/* Modal Header */}
       <View style={styles.modalHeader}>
-        <Text style={styles.modalTitle}>Create New Building</Text>
+        <Text style={styles.modalTitle}>{modalTitle || "Create New Building"}</Text>
         <TouchableOpacity
           onPress={() => onClose()}
           style={styles.closeButton}
@@ -488,7 +492,7 @@ export function CreateBuildingModal({
           ) : (
             <>
               <Ionicons name="checkmark" size={20} color="#FFFFFF" />
-              <Text style={styles.submitButtonText}>Create Building</Text>
+              <Text style={styles.submitButtonText}>{submitLabel || "Create Building"}</Text>
             </>
           )}
         </TouchableOpacity>

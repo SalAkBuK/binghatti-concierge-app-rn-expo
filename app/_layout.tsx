@@ -48,6 +48,7 @@ export default function RootLayout() {
           <Stack.Screen name="(tenant)" options={{ headerShown: false }} />
           <Stack.Screen name="(management)" options={{ headerShown: false }} />
           <Stack.Screen name="(admin)" options={{ headerShown: false }} />
+          <Stack.Screen name="(superadmin)" options={{ headerShown: false }} />
           <Stack.Screen name="(serviceProvider)" options={{ headerShown: false }} />
           <Stack.Screen name="(employee)" options={{ headerShown: false }} />
           <Stack.Screen name="(buildingEmployee)" options={{ headerShown: false }} />

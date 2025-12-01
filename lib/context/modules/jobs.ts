@@ -1668,7 +1668,7 @@ export const useJobModule = ({
   const reviewJobEstimateAsTenant = useCallback(
     async (
       jobId: string,
-      payload: { decision: JobEstimateStatus; notes?: string },
+      payload: { decision: JobEstimateStatus | "approve" | "decline" | "approved" | "rejected"; notes?: string },
     ): Promise<Job> => {
       if (!auth.currentUser || auth.currentUser.role !== "tenant") {
         return Promise.reject(
@@ -1676,9 +1676,18 @@ export const useJobModule = ({
         );
       }
 
-      if (!["approved", "rejected"].includes(payload.decision)) {
+      const normalizedDecision =
+        payload.decision === "approve" || payload.decision === "approved" || payload.decision === "tenant_approved"
+          ? ("tenant_approved" as JobEstimateStatus)
+          : payload.decision === "decline" ||
+              payload.decision === "rejected" ||
+              payload.decision === "tenant_declined"
+            ? ("tenant_declined" as JobEstimateStatus)
+            : null;
+
+      if (!normalizedDecision) {
         return Promise.reject(
-          new Error("Invalid decision. Must be approved or rejected."),
+          new Error("Invalid decision. Must be approve/decline."),
         );
       }
 
@@ -1696,13 +1705,13 @@ export const useJobModule = ({
                 ...job,
                 estimate: {
                   ...job.estimate,
-                  status: payload.decision,
+                  status: normalizedDecision,
                   tenantDecisionBy: auth.currentUser!.id,
                   tenantDecisionByName:
                     auth.currentUser!.name || auth.currentUser!.email || "",
                   tenantDecisionAt: new Date().toISOString(),
                   rejectionReason:
-                    payload.decision === "rejected" ? payload.notes : undefined,
+                    normalizedDecision === "tenant_declined" ? payload.notes : undefined,
                 },
                 updatedAt: new Date().toISOString(),
               };
@@ -1720,26 +1729,26 @@ export const useJobModule = ({
           if (employeeRecipient) {
             notifications.actions.createNotification(
               employeeRecipient,
-              payload.decision === "approved"
+              normalizedDecision === "tenant_approved"
                 ? "Estimate Approved"
                 : "Estimate Declined",
-              payload.decision === "approved"
+              normalizedDecision === "tenant_approved"
                 ? `${auth.currentUser!.name || "Tenant"} approved the estimate for "${updatedJob.title}".`
                 : `${auth.currentUser!.name || "Tenant"} declined the estimate for "${updatedJob.title}".`,
-              payload.decision === "approved" ? "success" : "warning",
+              normalizedDecision === "tenant_approved" ? "success" : "warning",
             );
           }
 
           if (updatedJob.assignedTo) {
             notifications.actions.createNotification(
               updatedJob.assignedTo,
-              payload.decision === "approved"
+              normalizedDecision === "tenant_approved"
                 ? "Tenant Approved Estimate"
                 : "Tenant Declined Estimate",
-              payload.decision === "approved"
+              normalizedDecision === "tenant_approved"
                 ? `${auth.currentUser!.name || "Tenant"} approved the estimate for "${updatedJob.title}".`
                 : `${auth.currentUser!.name || "Tenant"} declined the estimate for "${updatedJob.title}".`,
-              payload.decision === "approved" ? "success" : "warning",
+              normalizedDecision === "tenant_approved" ? "success" : "warning",
             );
           }
 

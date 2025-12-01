@@ -79,6 +79,24 @@ export class AdminApiService extends BaseApiService {
   }
 
   async createUser(userData: CreateUserDTO): Promise<ApiResponse<User>> {
+    // Validate admin user creation permissions
+    if (userData.role === "admin" || userData.role === "super_admin") {
+      // This check will work with real backend
+      // For mock mode, we'll add a warning but allow it for testing
+      console.warn("⚠️ Creating admin user - ensure proper authorization on backend");
+
+      // When backend is ready, uncomment this:
+      // const currentUserRole = await this.getCurrentUserRole();
+      // if (currentUserRole !== 'super_admin') {
+      //   throw new Error('Permission denied: Only super administrators can create admin users');
+      // }
+
+      // Prevent super_admin creation entirely
+      if (userData.role === "super_admin") {
+        throw new Error("Permission denied: Creating super admin users is not allowed");
+      }
+    }
+
     if (USE_MOCK) {
       return new Promise((resolve) => {
         setTimeout(() => {
@@ -98,6 +116,13 @@ export class AdminApiService extends BaseApiService {
       throw error;
     }
   }
+
+  // Helper method to get current user role (for when backend is ready)
+  // private async getCurrentUserRole(): Promise<UserRole> {
+  //   // Implementation will depend on how auth token is decoded
+  //   // For now, placeholder
+  //   return 'admin';
+  // }
 
   async updateUser(id: string, updates: UpdateUserDTO): Promise<ApiResponse<User>> {
     if (USE_MOCK) {

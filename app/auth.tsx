@@ -1,11 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Picker } from "@react-native-picker/picker";
 import { router } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
     Alert,
-    BackHandler,
     KeyboardAvoidingView,
     Platform,
     ScrollView,
@@ -24,54 +22,26 @@ import { STORAGE_KEYS } from "../lib/utils/constants";
 interface FormData {
   email: string;
   password: string;
-  name: string;
-  phone: string;
-  role: string;
 }
 
 interface FormErrors {
   email?: string;
   password?: string;
-  name?: string;
-  phone?: string;
 }
 
 // Validation constants
 const MIN_PASSWORD_LENGTH = 8;
-const PHONE_REGEX = /^\+?[0-9]{10,15}$/; // Allows optional + and 10-15 digits
 
 export default function AuthScreen() {
   const { actions } = useApp();
-  const [isSignUp, setIsSignUp] = useState(false);
   const [formData, setFormData] = useState<FormData>({
     email: "",
     password: "",
-    name: "",
-    phone: "",
-    role: "tenant",
   });
   const [errors, setErrors] = useState<FormErrors>({});
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const placeholderColor = "#94A3B8";
-
-  // Handle hardware back button
-  useEffect(() => {
-    const backHandler = BackHandler.addEventListener(
-      "hardwareBackPress",
-      () => {
-        if (isSignUp) {
-          // If in sign-up mode, toggle back to login mode
-          setIsSignUp(false);
-          return true; // Prevent default back navigation
-        }
-        // If in login mode, allow default behavior (exit app or go back)
-        return false;
-      }
-    );
-
-    return () => backHandler.remove();
-  }, [isSignUp]);
 
   // Validation functions
   const validateEmail = (email: string): string | undefined => {
@@ -95,40 +65,12 @@ export default function AuthScreen() {
     return undefined;
   };
 
-  const validateName = (name: string): string | undefined => {
-    if (!name || !name.trim()) {
-      return "Username is required";
-    }
-    if (name.trim().length < 2) {
-      return "Username must be at least 2 characters";
-    }
-    return undefined;
-  };
-
-  const validatePhone = (phone: string): string | undefined => {
-    if (!phone || !phone.trim()) {
-      return "Phone number is required";
-    }
-    // Remove spaces and dashes for validation
-    const cleanPhone = phone.replace(/[\s-]/g, "");
-    if (!PHONE_REGEX.test(cleanPhone)) {
-      return "Enter a valid phone number (10-15 digits)";
-    }
-    return undefined;
-  };
-
   const validateForm = (): boolean => {
     const newErrors: FormErrors = {};
 
-    // Common validations
+    // Login validations
     newErrors.email = validateEmail(formData.email);
     newErrors.password = validatePassword(formData.password);
-
-    // Sign-up specific validations
-    if (isSignUp) {
-      newErrors.name = validateName(formData.name);
-      newErrors.phone = validatePhone(formData.phone);
-    }
 
     setErrors(newErrors);
 
@@ -144,42 +86,13 @@ export default function AuthScreen() {
 
     setLoading(true);
     try {
-      if (isSignUp) {
-        await actions.register({
-          email: formData.email.trim(),
-          password: formData.password,
-          name: formData.name.trim(),
-          phone: formData.phone.trim(),
-          role: formData.role,
-        } as any);
-        Alert.alert(
-          "Success",
-          "Account created successfully! Please sign in.",
-          [{
-            text: "OK",
-            onPress: () => {
-              setIsSignUp(false);
-              // Clear form data
-              setFormData({
-                email: "",
-                password: "",
-                name: "",
-                phone: "",
-                role: "tenant",
-              });
-              setErrors({});
-            }
-          }],
-        );
-      } else {
-        await actions.login({
-          email: formData.email.trim(),
-          password: formData.password,
-        });
+      await actions.login({
+        email: formData.email.trim(),
+        password: formData.password,
+      });
 
-        // Navigate back to index which will redirect based on user role
-        router.replace("/");
-      }
+      // Navigate back to index which will redirect based on user role
+      router.replace("/");
     } catch (error: any) {
       Alert.alert(
         "Error",
@@ -224,7 +137,7 @@ export default function AuthScreen() {
   if (loading) {
     return (
       <LoadingScreen
-        message={isSignUp ? "Creating account..." : "Signing in..."}
+        message="Signing in..."
         useLottie={false}
       />
     );
@@ -240,25 +153,12 @@ export default function AuthScreen() {
           contentContainerStyle={styles.scrollContainer}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Back button - only show in sign-up mode */}
-          {isSignUp && (
-            <TouchableOpacity
-              style={styles.backButton}
-              onPress={() => setIsSignUp(false)}
-            >
-              <Ionicons name="arrow-back" size={24} color="#2563eb" />
-              <Text style={styles.backButtonText}>Back to Login</Text>
-            </TouchableOpacity>
-          )}
-
           <View style={styles.logoContainer}>
             <View style={styles.logoCircle}>
               <Ionicons name="business" size={32} color="#2563eb" />
             </View>
             <Text style={styles.title}>Tower Desk</Text>
-            <Text style={styles.subtitle}>
-              {isSignUp ? "Create your account" : "Sign in to continue"}
-            </Text>
+            <Text style={styles.subtitle}>Sign in to continue</Text>
             {/* Demo Version Badge */}
             <View style={styles.demoBadge}>
               <Ionicons name="information-circle-outline" size={14} color="#f59e0b" />
@@ -267,72 +167,6 @@ export default function AuthScreen() {
           </View>
 
           <View style={styles.formContainer}>
-            {isSignUp && (
-              <>
-                <View style={styles.inputContainer}>
-                  <TextInput
-                    style={[
-                      styles.input,
-                      errors.name && styles.inputError
-                    ]}
-                    placeholder="Full Name (Username)"
-                    placeholderTextColor={placeholderColor}
-                    value={formData.name}
-                    onChangeText={(text) => updateFormData("name", text)}
-                    autoCapitalize="words"
-                    textContentType="name"
-                  />
-                  {errors.name && (
-                    <View style={styles.errorContainer}>
-                      <Ionicons name="alert-circle" size={14} color="#ef4444" />
-                      <Text style={styles.errorText}>{errors.name}</Text>
-                    </View>
-                  )}
-                </View>
-
-                <View style={styles.inputContainer}>
-                  <TextInput
-                    style={[
-                      styles.input,
-                      errors.phone && styles.inputError
-                    ]}
-                    placeholder="Phone Number"
-                    placeholderTextColor={placeholderColor}
-                    value={formData.phone}
-                    onChangeText={(text) => updateFormData("phone", text)}
-                    keyboardType="phone-pad"
-                    textContentType="telephoneNumber"
-                  />
-                  {errors.phone && (
-                    <View style={styles.errorContainer}>
-                      <Ionicons name="alert-circle" size={14} color="#ef4444" />
-                      <Text style={styles.errorText}>{errors.phone}</Text>
-                    </View>
-                  )}
-                </View>
-
-                <View style={styles.pickerContainer}>
-                  <Text style={styles.pickerLabel}>Select Role</Text>
-                  <Picker
-                    selectedValue={formData.role}
-                    onValueChange={(value) => updateFormData("role", value as string)}
-                    style={[styles.picker, styles.pickerText]}
-                    itemStyle={styles.pickerText}
-                    dropdownIconColor="#6b7280"
-                    mode="dropdown"
-                  >
-                    <Picker.Item label="Tenant" value="tenant" />
-                    <Picker.Item
-                      label="Service Provider"
-                      value="service_provider"
-                    />
-                    <Picker.Item label="Employee" value="employee" />
-                    <Picker.Item label="Management" value="management" />
-                    <Picker.Item label="Admin" value="admin" />
-                  </Picker>
-                </View>
-              </>
-            )}
 
             <View style={styles.inputContainer}>
               <TextInput
@@ -391,20 +225,7 @@ export default function AuthScreen() {
             </View>
 
             <AnimatedButton style={styles.submitButton} onPress={handleSubmit}>
-              <Text style={styles.submitButtonText}>
-                {isSignUp ? "Create Account" : "Sign In"}
-              </Text>
-            </AnimatedButton>
-
-            <AnimatedButton
-              style={styles.switchButton}
-              onPress={() => setIsSignUp(!isSignUp)}
-            >
-              <Text style={styles.switchButtonText}>
-                {isSignUp
-                  ? "Already have an account? Sign in"
-                  : "Don't have an account? Sign up"}
-              </Text>
+              <Text style={styles.submitButtonText}>Sign In</Text>
             </AnimatedButton>
 
             <TouchableOpacity
@@ -433,17 +254,6 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: "center",
     padding: 20,
-  },
-  backButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 16,
-    gap: 8,
-  },
-  backButtonText: {
-    color: "#2563eb",
-    fontSize: 16,
-    fontWeight: "600",
   },
   logoContainer: {
     alignItems: "center",
@@ -515,30 +325,6 @@ const styles = StyleSheet.create({
     top: 12,
     padding: 4,
   },
-  pickerContainer: {
-    borderWidth: 1,
-    borderColor: "#d1d5db",
-    borderRadius: 8,
-    marginBottom: 16,
-    backgroundColor: "white",
-    paddingHorizontal: 8,
-    paddingTop: 4,
-  },
-  pickerLabel: {
-    fontSize: 12,
-    color: "#6b7280",
-    marginBottom: 2,
-    marginLeft: 4,
-    fontWeight: "500",
-  },
-  picker: {
-    height: 50,
-    color: "#111827",
-  },
-  pickerText: {
-    color: "#111827",
-    fontSize: 16,
-  },
   submitButton: {
     backgroundColor: "#2563eb",
     borderRadius: 8,
@@ -550,14 +336,6 @@ const styles = StyleSheet.create({
     color: "white",
     fontSize: 16,
     fontWeight: "600",
-  },
-  switchButton: {
-    marginTop: 24,
-    alignItems: "center",
-  },
-  switchButtonText: {
-    color: "#2563eb",
-    fontSize: 14,
   },
   clearCacheButton: {
     flexDirection: "row",

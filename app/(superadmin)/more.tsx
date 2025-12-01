@@ -16,13 +16,8 @@ import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
 import { filterNotificationsByUser } from "../../lib/utils/helpers";
-import {
-  useMountLog,
-  useRenderLog,
-  useScreenFocusLog,
-} from "../../utils/adminProfiler";
 
-const ADMIN_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
+const SUPERADMIN_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
 
 type MenuItem = {
   id: string;
@@ -36,44 +31,23 @@ type MenuItem = {
 const MENU_ITEMS: MenuItem[] = [
   {
     id: "profile",
-    title: "Admin Profile",
-    subtitle: "Company logo and contact information",
+    title: "Super Admin Profile",
+    subtitle: "Your profile settings",
     icon: "person",
-    route: "/(admin)/profile",
-    color: "#2563EB",
-  },
-  {
-    id: "service-providers",
-    title: "Service Providers",
-    subtitle: "Manage vendors and building assignments",
-    icon: "business",
-    route: "/(admin)/service-providers",
-    color: "#06B6D4",
+    route: "/(superadmin)/profile",
+    color: "#7034FF",
   },
   {
     id: "activity",
-    title: "Activity",
+    title: "System Activity",
     subtitle: "Monitor system-wide activity logs",
     icon: "notifications",
-    route: "/(admin)/activity",
+    route: "/(superadmin)/activity",
     color: "#F59E0B",
-  },
-  {
-    id: "permissions",
-    title: "Permissions",
-    subtitle: "Configure role-based access control",
-    icon: "shield-checkmark",
-    route: "/(admin)/permissions",
-    color: "#8B5CF6",
   },
 ];
 
-export default function AdminMoreScreen() {
-  // Profiler hooks - track lifecycle and performance
-  useMountLog("Admin/More");
-  useRenderLog("Admin/More");
-  useScreenFocusLog("Admin/More");
-
+export default function SuperAdminMoreScreen() {
   const { currentUser, notifications } = useApp();
   const { width } = useWindowDimensions();
   const router = useRouter();
@@ -100,11 +74,11 @@ export default function AdminMoreScreen() {
       >
         <HeaderBar
           title="More"
-          subtitle="Additional admin tools and settings"
+          subtitle="Additional super admin tools and settings"
           hasUnreadNotifications={hasUnreadNotifications}
           showSideMenu={showSideMenu}
           onSideMenuToggle={setShowSideMenu}
-          notificationRoute={ADMIN_NOTIFICATION_ROUTE}
+          notificationRoute={SUPERADMIN_NOTIFICATION_ROUTE}
         />
 
         <Animated.View
@@ -142,12 +116,10 @@ export default function AdminMoreScreen() {
           <Text style={styles.sectionTitle}>Account</Text>
           <View style={styles.userInfoCard}>
             <View style={styles.userInfoRow}>
-              <Ionicons name="person-circle" size={48} color="#7034FF" />
+              <Ionicons name="shield-checkmark" size={48} color="#7034FF" />
               <View style={styles.userDetails}>
-                <Text style={styles.userName}>{currentUser?.name || "Admin User"}</Text>
-                <Text style={styles.userRole}>
-                  {currentUser?.role === "super_admin" ? "Super Admin" : "Admin"}
-                </Text>
+                <Text style={styles.userName}>{currentUser?.name || "Super Admin"}</Text>
+                <Text style={styles.userRole}>Super Admin</Text>
                 <Text style={styles.userEmail}>{currentUser?.email}</Text>
               </View>
             </View>
@@ -169,7 +141,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollViewContent: {
-    paddingBottom: 100, // Extra space for bottom tab bar
+    paddingBottom: 100,
   },
   menuGrid: {
     marginTop: 24,

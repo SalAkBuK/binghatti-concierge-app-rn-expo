@@ -8,6 +8,7 @@ export default function IndexScreen() {
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
 
   const adminHomeHref = "/(admin)" as Href;
+  const superAdminHomeHref = "/(superadmin)" as Href;
   const managementHomeHref = "/(management)" as Href;
   const serviceProviderHomeHref = "/(serviceProvider)" as Href;
   const employeeHomeHref = "/(employee)" as Href;
@@ -50,10 +51,17 @@ export default function IndexScreen() {
     return <Redirect href={managementHomeHref} />;
   }
 
-  if (
-    currentUser.role === "admin" ||
-    currentUser.role === "super_admin"
-  ) {
+  if (currentUser.role === "super_admin") {
+    console.log("[Index] Super admin user, redirecting to /(superadmin)");
+    return <Redirect href={superAdminHomeHref} />;
+  }
+
+  if (currentUser.role === "admin") {
+    // Check if admin has completed profile setup
+    if (!currentUser.profileCompleted) {
+      console.log("[Index] Admin profile not completed, redirecting to profile setup");
+      return <Redirect href="/(admin)/profile" />;
+    }
     console.log("[Index] Admin user, redirecting to /(admin)");
     return <Redirect href={adminHomeHref} />;
   }

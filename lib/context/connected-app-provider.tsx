@@ -321,7 +321,7 @@ export const useApp = () => {
       }
 
       return new Promise((resolve, reject) => {
-        setTimeout(() => {
+        setTimeout(async () => {
           const generatedId = generateId(Object.values(auth.users));
 
           // Validate generated ID
@@ -341,6 +341,10 @@ export const useApp = () => {
               phone: userData.phone,
               apartment: userData.apartment,
               tower: userData.tower,
+              buildingId: userData.profile?.buildingId,
+              floor: userData.profile?.floor,
+              emergencyContact: userData.profile?.emergencyContact,
+              emergencyPhone: userData.profile?.emergencyPhone,
             },
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
@@ -348,6 +352,7 @@ export const useApp = () => {
 
           console.log("[createUser] Created new user with ID:", newUser.id);
 
+          // Add user to auth context (this will persist to AsyncStorage via auth-context)
           auth.actions.addUser(userData.email, newUser);
 
           notifications.actions.createNotification(
