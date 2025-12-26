@@ -27,7 +27,7 @@ type StatCard = {
 };
 
 export default function SuperAdminDashboard() {
-  const { currentUser, notifications, users } = useApp();
+  const { currentUser, notifications, users, buildings } = useApp();
   const { width } = useWindowDimensions();
   const [showSideMenu, setShowSideMenu] = useState(false);
 
@@ -45,6 +45,7 @@ export default function SuperAdminDashboard() {
     const adminCount = allUsers.filter((u) => u.role === "admin").length;
     const totalUsers = allUsers.length;
     const activeUsers = allUsers.filter((u) => u.id).length; // Simplified check
+    const buildingsCount = buildings?.length || 0;
 
     const statCards: StatCard[] = [
       {
@@ -74,7 +75,7 @@ export default function SuperAdminDashboard() {
       {
         id: "buildings",
         label: "Buildings",
-        value: "N/A",
+        value: buildingsCount,
         icon: "business",
         color: "#F59E0B",
         bgColor: "#F59E0B15",
@@ -82,7 +83,7 @@ export default function SuperAdminDashboard() {
     ];
 
     return statCards;
-  }, [users]);
+  }, [users, buildings]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -166,18 +167,6 @@ export default function SuperAdminDashboard() {
               <Ionicons name="settings" size={28} color="#06B6D4" />
               <Text style={styles.actionText}>System Settings</Text>
             </View>
-          </View>
-        </Animated.View>
-
-        {/* Recent Activity Placeholder */}
-        <Animated.View
-          entering={FadeInDown.delay(600).duration(300)}
-          style={styles.activitySection}
-        >
-          <Text style={styles.sectionTitle}>Recent Activity</Text>
-          <View style={styles.activityCard}>
-            <Ionicons name="time-outline" size={48} color="#9CA3AF" />
-            <Text style={styles.activityPlaceholder}>No recent activity</Text>
           </View>
         </Animated.View>
       </ScrollView>
@@ -291,22 +280,5 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#111827",
     textAlign: "center",
-  },
-  activitySection: {
-    marginTop: 32,
-    marginBottom: 24,
-  },
-  activityCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 40,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    gap: 12,
-  },
-  activityPlaceholder: {
-    fontSize: 14,
-    color: "#9CA3AF",
   },
 });

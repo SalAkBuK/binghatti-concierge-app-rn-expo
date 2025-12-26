@@ -8,6 +8,24 @@ export const styles = StyleSheet.create({
   contentWrapper: {
     flex: 1,
   },
+  infoBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#EFF6FF",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    marginBottom: 20,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: "#DBEAFE",
+  },
+  infoBannerText: {
+    flex: 1,
+    fontSize: 14,
+    color: "#1E40AF",
+    lineHeight: 20,
+  },
   createButton: {
     flexDirection: "row",
     alignItems: "center",

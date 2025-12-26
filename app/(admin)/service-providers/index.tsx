@@ -9,31 +9,27 @@ import { SideMenu } from "../../../components/ui/SideMenu";
 import type { ServiceProviderProfile } from "../../../lib/types";
 import { AssignProviderModal } from "./_components/AssignProviderModal";
 import { CreateProviderModal } from "./_components/CreateProviderModal";
+import { EditProviderModal } from "./_components/EditProviderModal";
 import { ADMIN_NOTIFICATION_ROUTE } from "./_constants";
 import { useServiceProvidersData } from "./_hooks/useServiceProvidersData";
 import { styles } from "./_styles";
-import type { CreateProviderFormState } from "./_types";
-import {
-  useMountLog,
-  useRenderLog,
-  useScreenFocusLog,
-  measure,
-} from "../../../utils/adminProfiler";
+import type { CreateProviderFormState, EditProviderFormState } from "./_types";
 
 const createInitialFormState = (): CreateProviderFormState => ({
   name: "",
   email: "",
+  password: "",
   phone: "",
+  address: "",
+  nationality: "",
+  companyName: "",
   specialty: "",
+  jobTitle: "",
+  skills: "",
   buildingIds: [],
 });
 
 export default function ServiceProvidersManagementScreen() {
-  // Profiler hooks - track lifecycle and performance
-  useMountLog("Admin/ServiceProviders");
-  useRenderLog("Admin/ServiceProviders");
-  useScreenFocusLog("Admin/ServiceProviders");
-
   const { width } = useWindowDimensions();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<ServiceProviderProfile | null>(null);
@@ -42,11 +38,24 @@ export default function ServiceProvidersManagementScreen() {
   const [selectedSpecialties, setSelectedSpecialties] = useState<string[]>([]);
   const [assignmentNotes, setAssignmentNotes] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [createFormData, setCreateFormData] = useState<CreateProviderFormState>(
     createInitialFormState(),
   );
+  const [editFormData, setEditFormData] = useState<EditProviderFormState>({
+    name: "",
+    email: "",
+    phone: "",
+    address: "",
+    nationality: "",
+    companyName: "",
+    specialty: "",
+    jobTitle: "",
+    skills: "",
+  });
 
   const {
     serviceProviders,
@@ -85,6 +94,17 @@ export default function ServiceProvidersManagementScreen() {
     setShowAssignModal(true);
   };
 
+  const openEditModal = (provider: ServiceProviderProfile) => {
+    setSelectedProvider(provider);
+    setEditFormData({
+      name: provider.name || "",
+      email: provider.email || "",
+      phone: provider.phone || "",
+      specialty: provider.specialty || "",
+    });
+    setShowEditModal(true);
+  };
+
   const toggleBuilding = (buildingId: string) => {
     setSelectedBuildings((prev) => {
       const next = new Set(prev);
@@ -103,7 +123,34 @@ export default function ServiceProvidersManagementScreen() {
     );
   };
 
-  const handleSaveAssignments = () => {
+  const handleSaveEdit = async () => {
+    if (!selectedProvider) return;
+
+    if (!editFormData.name.trim() || !editFormData.email.trim() || !editFormData.specialty.trim()) {
+      Alert.alert("Validation", "Name, email, and specialty are required");
+      return;
+    }
+
+    setIsSavingEdit(true);
+    try {
+      await actions.updateServiceProvider?.(selectedProvider.id, {
+        name: editFormData.name.trim(),
+        email: editFormData.email.trim(),
+        phone: editFormData.phone.trim(),
+        specialty: editFormData.specialty.trim(),
+      });
+      Alert.alert("Success", "Service provider updated");
+      setShowEditModal(false);
+      setSelectedProvider(null);
+    } catch (error: any) {
+      console.error('[ServiceProviders] Failed to update provider:', error);
+      Alert.alert("Error", error?.message || "Failed to update provider");
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  const handleSaveAssignments = async () => {
     if (!selectedProvider || !currentUser) return;
 
     const providerAssignments =
@@ -115,30 +162,34 @@ export default function ServiceProvidersManagementScreen() {
     const toAdd = Array.from(selectedBuildings).filter((id) => !currentlyAssigned.has(id));
     const toRemove = Array.from(currentlyAssigned).filter((id) => !selectedBuildings.has(id));
 
-    toAdd.forEach((buildingId) => {
-      actions.assignServiceProviderToBuilding?.(
-        selectedProvider.id,
-        buildingId,
-        currentUser.id,
-        currentUser.name,
-        selectedSpecialties.length > 0 ? selectedSpecialties : [selectedProvider.specialty],
-        assignmentNotes || undefined,
-      );
-    });
-
-    toRemove.forEach((buildingId) => {
-      // Find the assignment ID for this provider + building combination
-      const assignment = providerAssignments.find(
-        (a) => a.buildingId === buildingId && a.status === "active"
-      );
-      if (assignment) {
-        actions.removeServiceProviderFromBuilding?.(assignment.id);
+    try {
+      // Process additions
+      for (const buildingId of toAdd) {
+        await actions.assignServiceProviderToBuilding?.(
+          selectedProvider.id,
+          buildingId,
+          { specialties: selectedSpecialties.length > 0 ? selectedSpecialties : [selectedProvider.specialty] }
+        );
       }
-    });
 
-    Alert.alert("Success", `Updated building assignments for ${selectedProvider.name}`);
-    setShowAssignModal(false);
-    setSelectedProvider(null);
+      // Process removals
+      for (const buildingId of toRemove) {
+        // Find the assignment ID for this provider + building combination
+        const assignment = providerAssignments.find(
+          (a) => a.buildingId === buildingId && a.status === "active"
+        );
+        if (assignment) {
+          await actions.removeServiceProviderFromBuilding?.(assignment.id);
+        }
+      }
+
+      Alert.alert("Success", `Updated building assignments for ${selectedProvider.name}`);
+      setShowAssignModal(false);
+      setSelectedProvider(null);
+    } catch (error: any) {
+      console.error('[ServiceProviders] Failed to update assignments:', error);
+      Alert.alert("Error", error?.message || "Failed to update building assignments");
+    }
   };
 
   const handleApproveRequest = (requestId: string) => {
@@ -177,8 +228,13 @@ export default function ServiceProvidersManagementScreen() {
   };
 
   const handleCreateProvider = async () => {
-    if (!createFormData.name.trim() || !createFormData.email.trim() || !createFormData.specialty) {
-      Alert.alert("Validation", "Name, email, and specialty are required");
+    if (
+      !createFormData.name.trim() ||
+      !createFormData.email.trim() ||
+      !createFormData.password.trim() ||
+      !createFormData.skills
+    ) {
+      Alert.alert("Validation", "Company, email, password, and skills are required");
       return;
     }
 
@@ -186,9 +242,16 @@ export default function ServiceProvidersManagementScreen() {
     try {
       await actions.createServiceProvider?.({
         name: createFormData.name,
+        fullName: createFormData.name,
         email: createFormData.email,
         phone: createFormData.phone,
-        specialty: createFormData.specialty,
+        password: createFormData.password,
+        address: createFormData.address,
+        nationality: createFormData.nationality,
+        companyName: createFormData.companyName || createFormData.name,
+        specialty: createFormData.skills || createFormData.specialty,
+        jobTitle: createFormData.jobTitle,
+        skills: createFormData.skills || createFormData.specialty,
         buildingIds: createFormData.buildingIds,
       });
       Alert.alert("Success", "Service provider created");
@@ -216,17 +279,30 @@ export default function ServiceProvidersManagementScreen() {
       style={styles.providerCard}
     >
       <View style={styles.providerHeaderRow}>
-        <View>
-          <Text style={styles.providerName}>{item.provider.name}</Text>
-          <Text style={styles.providerMeta}>{item.provider.specialty}</Text>
+        <View style={styles.providerInfo}>
+          <Text style={styles.providerName} numberOfLines={1} ellipsizeMode="tail">
+            {item.provider.name}
+          </Text>
+          <Text style={styles.providerMeta} numberOfLines={1} ellipsizeMode="tail">
+            {item.provider.specialty}
+          </Text>
         </View>
-        <TouchableOpacity
-          style={styles.manageButton}
-          onPress={() => openAssignModal(item.provider)}
-        >
-          <Ionicons name="settings" size={16} color="#4338CA" />
-          <Text style={styles.manageButtonText}>Manage</Text>
-        </TouchableOpacity>
+        <View style={styles.manageButtonsRow}>
+          <TouchableOpacity
+            style={styles.manageButton}
+            onPress={() => openEditModal(item.provider)}
+          >
+            <Ionicons name="create-outline" size={16} color="#4338CA" />
+            <Text style={styles.manageButtonText}>Edit</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.manageButton}
+            onPress={() => openAssignModal(item.provider)}
+          >
+            <Ionicons name="settings" size={16} color="#4338CA" />
+            <Text style={styles.manageButtonText}>Manage</Text>
+          </TouchableOpacity>
+        </View>
       </View>
       <View style={styles.providerStatsRow}>
         <View style={styles.statChip}>
@@ -355,6 +431,18 @@ export default function ServiceProvidersManagementScreen() {
         onChange={(updates) => setCreateFormData((prev) => ({ ...prev, ...updates }))}
         onClose={() => setShowCreateModal(false)}
         onSubmit={handleCreateProvider}
+      />
+
+      <EditProviderModal
+        visible={showEditModal}
+        formData={editFormData}
+        isSaving={isSavingEdit}
+        onChange={(updates) => setEditFormData((prev) => ({ ...prev, ...updates }))}
+        onClose={() => {
+          setShowEditModal(false);
+          setSelectedProvider(null);
+        }}
+        onSubmit={handleSaveEdit}
       />
     </SafeAreaView>
   );

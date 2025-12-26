@@ -51,23 +51,35 @@ export function SuperAdminTabBar() {
   };
 
   const isTabActive = (tabName: string, route: string) => {
-    // Normalize pathname and route by removing route group parentheses
-    const normalizedPathname = pathname.replace(/\([^)]+\)/g, "");
-    const normalizedRoute = route.replace(/\([^)]+\)/g, "");
+    // Normalize pathname and route by removing route group parentheses and /index suffix
+    const normalizedPathname = pathname
+      .replace(/\([^)]+\)/g, "")  // Remove route groups like (superadmin)
+      .replace(/\/+/g, "/")        // Clean up double slashes: // → /
+      .replace(/\/index$/, "");    // Remove trailing /index
+    const normalizedRoute = route
+      .replace(/\([^)]+\)/g, "")   // Remove route groups like (superadmin)
+      .replace(/\/+/g, "/")        // Clean up double slashes: // → /
+      .replace(/\/index$/, "");    // Remove trailing /index
 
     // Exact match for index route
     if (tabName === "index") {
       return (
         pathname === "/(superadmin)" ||
         pathname === "/(superadmin)/" ||
+        pathname === "/(superadmin)/index" ||
         pathname === "/" ||
         normalizedPathname === "/" ||
         normalizedPathname === ""
       );
     }
 
-    // Check if current path matches the tab route (support both formats)
-    return pathname.startsWith(route) || normalizedPathname.startsWith(normalizedRoute);
+    // Check if current path matches the tab route (support both formats and /index suffix)
+    return (
+      pathname.startsWith(route) ||
+      pathname === `${route}/index` ||
+      normalizedPathname === normalizedRoute ||
+      normalizedPathname.startsWith(normalizedRoute)
+    );
   };
 
   return (
@@ -75,8 +87,8 @@ export function SuperAdminTabBar() {
       style={[
         styles.container,
         {
-          paddingBottom: Platform.OS === "ios" ? insets.bottom : 8,
-          height: 74 + (Platform.OS === "ios" ? insets.bottom : 8),
+          paddingBottom: Math.max(insets.bottom, 8),
+          height: 74 + Math.max(insets.bottom, 8),
         },
       ]}
     >

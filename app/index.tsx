@@ -57,11 +57,6 @@ export default function IndexScreen() {
   }
 
   if (currentUser.role === "admin") {
-    // Check if admin has completed profile setup
-    if (!currentUser.profileCompleted) {
-      console.log("[Index] Admin profile not completed, redirecting to profile setup");
-      return <Redirect href="/(admin)/profile" />;
-    }
     console.log("[Index] Admin user, redirecting to /(admin)");
     return <Redirect href={adminHomeHref} />;
   }

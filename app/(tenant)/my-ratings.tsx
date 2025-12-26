@@ -1,3 +1,4 @@
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo, useState } from "react";
 import {
@@ -31,6 +32,7 @@ export default function MyRatingsScreen() {
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [selectedRating, setSelectedRating] = useState<Rating | null>(null);
   const [showImageViewer, setShowImageViewer] = useState(false);
+  const tabBarHeight = useBottomTabBarHeight();
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 
   // Get ratings from context
@@ -80,6 +82,7 @@ export default function MyRatingsScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView
         style={styles.scrollView}
+        contentContainerStyle={{ paddingBottom: tabBarHeight + 32 }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }

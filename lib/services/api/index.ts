@@ -13,6 +13,8 @@ import { BillingApiService } from "./billing";
 import { MaintenanceSchedulerApiService } from "./maintenance-scheduler";
 import { BroadcastApiService } from "./broadcast";
 import { VisitorsApiService } from "./visitors";
+import { BuildingsApiService } from "./buildings";
+import { TenantsApiService } from "./tenants";
 import type { ApiService } from "./types";
 
 export class MainApiService implements ApiService {
@@ -28,6 +30,8 @@ export class MainApiService implements ApiService {
   public maintenanceScheduler: MaintenanceSchedulerApiService;
   public broadcast: BroadcastApiService;
   public visitors: VisitorsApiService;
+  public buildings: BuildingsApiService;
+  public tenants: TenantsApiService;
   private authService: AuthApiService;
 
   constructor() {
@@ -44,6 +48,8 @@ export class MainApiService implements ApiService {
     this.maintenanceScheduler = new MaintenanceSchedulerApiService();
     this.broadcast = new BroadcastApiService();
     this.visitors = new VisitorsApiService();
+    this.buildings = new BuildingsApiService();
+    this.tenants = new TenantsApiService();
   }
 
   // Auth methods (delegated to AuthApiService)
@@ -61,6 +67,10 @@ export class MainApiService implements ApiService {
 
   async refreshToken() {
     return this.authService.refreshToken();
+  }
+
+  async resetPassword(data: any) {
+    return this.authService.resetPassword(data);
   }
 
   async getProfile() {
@@ -112,6 +122,8 @@ export class MainApiService implements ApiService {
     await this.maintenanceScheduler.setAuthToken(token);
     await this.broadcast.setAuthToken(token);
     await this.visitors.setAuthToken(token);
+    await this.buildings.setAuthToken(token);
+    await this.tenants.setAuthToken(token);
   }
 
   async clearAuthToken(): Promise<void> {
@@ -129,6 +141,8 @@ export class MainApiService implements ApiService {
     await this.maintenanceScheduler.clearAuthToken();
     await this.broadcast.clearAuthToken();
     await this.visitors.clearAuthToken();
+    await this.buildings.clearAuthToken();
+    await this.tenants.clearAuthToken();
   }
 
   async getAuthToken(): Promise<string | null> {
@@ -164,6 +178,8 @@ export { BillingApiService } from "./billing";
 export { MaintenanceSchedulerApiService } from "./maintenance-scheduler";
 export { BroadcastApiService } from "./broadcast";
 export { VisitorsApiService } from "./visitors";
+export { BuildingsApiService } from "./buildings";
+export { TenantsApiService } from "./tenants";
 export { BaseApiService } from "./base";
 
 // Default export

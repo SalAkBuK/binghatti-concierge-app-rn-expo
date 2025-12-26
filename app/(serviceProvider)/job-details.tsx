@@ -1,31 +1,232 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router, useLocalSearchParams } from "expo-router";
-import React from "react";
+import { router, useLocalSearchParams, useFocusEffect } from "expo-router";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
+  ActivityIndicator,
   Image,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
   useWindowDimensions,
 } from "react-native";
+import { BackHandler } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useApp } from "../../lib/context/connected-app-provider";
 import type { Job, JobAdditionalCost } from "../../lib/types";
+import { maintenanceApi } from "../../lib/services/api/maintenance";
 
 export default function JobDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { jobs, actions } = useApp();
+  const { jobs, actions, currentUser } = useApp();
+  const [remoteJob, setRemoteJob] = useState<Job | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [statusModalVisible, setStatusModalVisible] = useState(false);
+  const [statusUpdating, setStatusUpdating] = useState(false);
+  const [selectedStatusCode, setSelectedStatusCode] = useState<number | null>(null);
+  const [statusNote, setStatusNote] = useState("");
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
 
-  const job = jobs?.find((j) => j.id === id);
+  useFocusEffect(
+    React.useCallback(() => {
+      const onBackPress = () => {
+        router.push("/(serviceProvider)/jobs");
+        return true;
+      };
+      const sub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+      return () => sub.remove();
+    }, []),
+  );
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchJob = async () => {
+      if (!id || !currentUser?.id) return;
+      setLoading(true);
+      try {
+        const response = await maintenanceApi.getMaintenanceRequestById(id as string);
+        if (!isMounted) return;
+        const match = (response as any)?.data;
+        if (match) {
+          const statusCode = Number(
+            match.status ?? match.requestStatus ?? match.statusId ?? match.Status ?? 0,
+          );
+          let status: Job["status"];
+          switch (statusCode) {
+            case 5:
+              status = "completed";
+              break;
+            case 6:
+              status = "cancelled";
+              break;
+            case 3:
+              status = "in-progress";
+              break;
+            case 4:
+              status = "pending";
+              break;
+            case 2:
+              status = "assigned";
+              break;
+            case 1:
+            default:
+              status = "pending";
+          }
+          const priorityCode = Number(match.priority ?? match.priorityLevel ?? 0);
+          const priority =
+            priorityCode === 1
+              ? ("urgent" as Job["priority"])
+              : priorityCode === 2
+                ? ("high" as Job["priority"])
+                : priorityCode === 3
+                  ? ("medium" as Job["priority"])
+                  : ("low" as Job["priority"]);
+          setRemoteJob({
+            id: String(match.id || match.requestId || match.maintenanceId || id),
+            title: String(
+              match.title || match.requestTitle || match.issueTitle || "Maintenance Request",
+            ),
+            description: String(match.description || match.issueDescription || ""),
+            status,
+            priority,
+            buildingId: String(match.buildingId || ""),
+            buildingName: String(match.buildingName || match.building || "Unknown"),
+            unitNumber: match.unitNumber ? String(match.unitNumber) : "",
+            assignedTo: currentUser.id,
+            assignedToEmployeeId: match.assignedToEmployeeId
+              ? String(match.assignedToEmployeeId)
+              : undefined,
+            offerStatus: match.offerStatus || "accepted",
+            scheduledDate: match.scheduledDate || match.expectedVisitDate || match.createdAt,
+            completedDate: match.completedDate || match.closedAt || "",
+            createdAt: match.createdAt || match.createdOn || new Date().toISOString(),
+            actualCost: Number(match.actualCost || match.cost || 0),
+            estimatedCost: Number(match.estimatedCost || match.estimate || 0),
+          });
+          setSelectedStatusCode(statusCode || null);
+        }
+      } catch (error) {
+        console.error("[JobDetails] Failed to fetch job:", error);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    fetchJob();
+    return () => {
+      isMounted = false;
+    };
+  }, [id, currentUser?.id]);
+
+  const job = useMemo(() => jobs?.find((j) => j.id === id) || remoteJob, [jobs, id, remoteJob]);
+  const requestIdNum = Number(job?.id || id || 0);
+  const statusOptions = [
+    { code: 1, label: "Pending" },
+    { code: 2, label: "Assigned" },
+    { code: 3, label: "In Progress" },
+    { code: 4, label: "On Hold" },
+    { code: 5, label: "Completed" },
+    { code: 6, label: "Cancelled" },
+  ];
+
+  const handleUpdateStatus = async () => {
+    if (!requestIdNum || !currentUser?.id || !selectedStatusCode) return;
+    setStatusUpdating(true);
+    try {
+      await maintenanceApi.updateMaintenanceRequestStatus({
+        requestId: requestIdNum,
+        newStatus: selectedStatusCode,
+        changedById: Number(currentUser.id),
+        note: statusNote.trim() || undefined,
+      });
+
+      const statusCode = selectedStatusCode;
+      const priorityCode = Number(job?.priority ?? 0);
+      const priority =
+        priorityCode === 1
+          ? ("urgent" as Job["priority"])
+          : priorityCode === 2
+            ? ("high" as Job["priority"])
+            : priorityCode === 3
+              ? ("medium" as Job["priority"])
+              : ("low" as Job["priority"]);
+
+      let status: Job["status"];
+      switch (statusCode) {
+        case 5:
+          status = "completed";
+          break;
+        case 6:
+          status = "cancelled";
+          break;
+        case 3:
+          status = "in-progress";
+          break;
+        case 4:
+          status = "pending";
+          break;
+        case 2:
+          status = "assigned";
+          break;
+        case 1:
+        default:
+          status = "pending";
+      }
+
+      setRemoteJob((prev) =>
+        prev
+          ? { ...prev, status, priority }
+          : job
+            ? { ...job, status, priority }
+            : null,
+      );
+      Alert.alert("Status updated", "The request status has been updated.");
+      setStatusModalVisible(false);
+    } catch (error) {
+      console.error("[JobDetails] Failed to update status:", error);
+      Alert.alert("Error", "Could not update status. Please try again.");
+    } finally {
+      setStatusUpdating(false);
+    }
+  };
+
+  useEffect(() => {
+    if (job) {
+      const code =
+        job.status === "completed"
+          ? 5
+          : job.status === "cancelled"
+            ? 6
+            : job.status === "in-progress"
+              ? 3
+              : job.status === "assigned"
+                ? 2
+                : 1;
+      setSelectedStatusCode(code);
+    }
+  }, [job]);
 
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
+
+  if (loading && !job) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={[styles.content, { paddingHorizontal: pagePadding }]}>
+          <View style={styles.errorContainer}>
+            <ActivityIndicator size="large" color="#2563EB" />
+            <Text style={styles.errorText}>Loading job...</Text>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (!job) {
     return (
@@ -39,7 +240,7 @@ export default function JobDetailsScreen() {
             </Text>
             <TouchableOpacity
               style={styles.backButton}
-              onPress={() => router.back()}
+              onPress={() => router.push("/(serviceProvider)/jobs")}
             >
               <Text style={styles.backButtonText}>Go Back</Text>
             </TouchableOpacity>
@@ -119,51 +320,6 @@ export default function JobDetailsScreen() {
     );
   };
 
-  const handleAcceptJob = async () => {
-    Alert.alert(
-      "Accept Job",
-      "Are you sure you want to accept this job?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Accept",
-          onPress: async () => {
-            try {
-              await actions.updateJob?.(job.id, { status: "assigned" });
-              Alert.alert("Success", "Job accepted successfully!");
-            } catch (error) {
-              console.error("Failed to accept job:", error);
-              Alert.alert("Error", "Failed to accept job. Please try again.");
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const handleRejectJob = async () => {
-    Alert.alert(
-      "Reject Job",
-      "Are you sure you want to reject this job? This action cannot be undone.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Reject",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await actions.updateJob?.(job.id, { status: "cancelled" });
-              Alert.alert("Rejected", "Job has been rejected.");
-              router.back();
-            } catch (error) {
-              console.error("Failed to reject job:", error);
-              Alert.alert("Error", "Failed to reject job. Please try again.");
-            }
-          },
-        },
-      ]
-    );
-  };
 
   const handleApproveCost = (cost: JobAdditionalCost) => {
     Alert.alert(
@@ -360,14 +516,15 @@ export default function JobDetailsScreen() {
                 {job.scheduledDate ? formatDate(job.scheduledDate) : "ASAP"}
               </Text>
             </View>
-            <View style={styles.infoItem}>
-              <Ionicons name="cash-outline" size={20} color="#64748B" />
-              <Text style={styles.infoLabel}>Estimated Cost</Text>
-              <Text style={styles.infoValue}>
-                AED {job.estimatedCost?.toLocaleString() || "N/A"}
-              </Text>
-            </View>
           </View>
+
+          <TouchableOpacity
+            style={styles.statusUpdateButton}
+            onPress={() => setStatusModalVisible(true)}
+          >
+            <Ionicons name="swap-vertical" size={18} color="#FFFFFF" />
+            <Text style={styles.statusUpdateText}>Update Status</Text>
+          </TouchableOpacity>
         </Animated.View>
 
         {/* Estimate Proposal */}
@@ -508,7 +665,7 @@ export default function JobDetailsScreen() {
         )}
 
         {/* Tenant Info Card */}
-        {job.tenantName && (
+        {!!job.tenantName && (
           <Animated.View
             entering={FadeInDown.duration(400).delay(300)}
             style={styles.card}
@@ -531,7 +688,7 @@ export default function JobDetailsScreen() {
         )}
 
         {/* Assigned Employee Card */}
-        {job.assignedToEmployeeId && (
+        {!!job.assignedToEmployeeId && (
           <Animated.View
             entering={FadeInDown.duration(400).delay(350)}
             style={styles.card}
@@ -556,7 +713,7 @@ export default function JobDetailsScreen() {
                 </Text>
                 <Text style={styles.employeeRole}>Field Technician</Text>
               </View>
-              {job.startedAt && (
+              {!!job.startedAt && (
                 <View style={styles.employeeStatusBadge}>
                   <View style={styles.employeeStatusDot} />
                   <Text style={styles.employeeStatusText}>Active</Text>
@@ -604,7 +761,7 @@ export default function JobDetailsScreen() {
                     style={styles.photoImage}
                     resizeMode="cover"
                   />
-                  {photo.caption && (
+                  {!!photo.caption && (
                     <Text style={styles.photoCaption} numberOfLines={2}>
                       {photo.caption}
                     </Text>
@@ -731,32 +888,6 @@ export default function JobDetailsScreen() {
           </Animated.View>
         )}
 
-        {/* Actions for Pending Jobs */}
-        {job.status === "pending" && (
-          <Animated.View
-            entering={FadeInDown.duration(400).delay(400)}
-            style={styles.actionsCard}
-          >
-            <Text style={styles.cardTitle}>Job Actions</Text>
-            <View style={styles.actionButtons}>
-              <TouchableOpacity
-                style={[styles.actionButton, styles.acceptButton]}
-                onPress={handleAcceptJob}
-              >
-                <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
-                <Text style={styles.acceptButtonText}>Accept Job</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.actionButton, styles.rejectButton]}
-                onPress={handleRejectJob}
-              >
-                <Ionicons name="close-circle" size={20} color="#EF4444" />
-                <Text style={styles.rejectButtonText}>Reject</Text>
-              </TouchableOpacity>
-            </View>
-          </Animated.View>
-        )}
-
         {/* Completed Job Info */}
         {job.status === "completed" && (
           <Animated.View
@@ -767,7 +898,7 @@ export default function JobDetailsScreen() {
               <Ionicons name="checkmark-circle" size={32} color="#10B981" />
               <Text style={styles.completedTitle}>Job Completed</Text>
             </View>
-            {job.actualCost && (
+            {!!job.actualCost && (
               <View style={styles.completedInfo}>
                 <Text style={styles.completedLabel}>Final Cost:</Text>
                 <Text style={styles.completedValue}>
@@ -775,7 +906,7 @@ export default function JobDetailsScreen() {
                 </Text>
               </View>
             )}
-            {job.completionNotes && (
+            {!!job.completionNotes && (
               <View style={styles.completedNotes}>
                 <Text style={styles.completedLabel}>Notes:</Text>
                 <Text style={styles.completedNotesText}>
@@ -788,6 +919,67 @@ export default function JobDetailsScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      <Modal visible={statusModalVisible} transparent animationType="fade" onRequestClose={() => setStatusModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.statusModalCard}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>Update Status</Text>
+              <TouchableOpacity onPress={() => setStatusModalVisible(false)}>
+                <Ionicons name="close" size={22} color="#9CA3AF" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalHint}>Pick a new status for this request.</Text>
+            <View style={styles.statusOptions}>
+              {statusOptions.map((option) => {
+                const active = selectedStatusCode === option.code;
+                return (
+                  <TouchableOpacity
+                    key={option.code}
+                    style={[styles.statusOption, active && styles.statusOptionActive]}
+                    onPress={() => setSelectedStatusCode(option.code)}
+                  >
+                    <Text
+                      style={[
+                        styles.statusOptionText,
+                        active && styles.statusOptionTextActive,
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <Text style={styles.modalLabel}>Note (optional)</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Add a note"
+              placeholderTextColor="#9CA3AF"
+              value={statusNote}
+              onChangeText={setStatusNote}
+              multiline
+            />
+
+            <TouchableOpacity
+              style={[styles.primaryButton, statusUpdating && styles.primaryButtonDisabled]}
+              onPress={handleUpdateStatus}
+              disabled={statusUpdating || !selectedStatusCode}
+            >
+              {statusUpdating ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+                  <Text style={styles.primaryButtonText}>Save Status</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -891,6 +1083,22 @@ const styles = StyleSheet.create({
     color: "#64748B",
     lineHeight: 20,
     marginBottom: 20,
+  },
+  statusUpdateButton: {
+    marginTop: 12,
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: "#2563EB",
+  },
+  statusUpdateText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
   },
   infoGrid: {
     flexDirection: "row",
@@ -1090,21 +1298,6 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     color: "#64748B",
   },
-  actionsCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  actionButtons: {
-    flexDirection: "row",
-    gap: 12,
-  },
   actionButton: {
     flex: 1,
     flexDirection: "row",
@@ -1114,23 +1307,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     gap: 8,
   },
-  acceptButton: {
-    backgroundColor: "#10B981",
-  },
   acceptButtonText: {
     fontSize: 15,
     fontWeight: "700",
     color: "#FFFFFF",
-  },
-  rejectButton: {
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1.5,
-    borderColor: "#EF4444",
-  },
-  rejectButtonText: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#EF4444",
   },
   startButton: {
     backgroundColor: "#8B5CF6",
@@ -1274,6 +1454,80 @@ const styles = StyleSheet.create({
     color: "#64748B",
     marginTop: 8,
     lineHeight: 20,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  statusModalCard: {
+    width: "100%",
+    maxWidth: 480,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 20,
+  },
+  modalHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#1E293B",
+  },
+  modalHint: {
+    fontSize: 13,
+    color: "#64748B",
+    marginBottom: 12,
+  },
+  statusOptions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 16,
+  },
+  statusOption: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    backgroundColor: "#F8FAFC",
+  },
+  statusOptionActive: {
+    borderColor: "#2563EB",
+    backgroundColor: "#EFF6FF",
+  },
+  statusOptionText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#475569",
+  },
+  statusOptionTextActive: {
+    color: "#1D4ED8",
+  },
+  modalLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#1E293B",
+    marginBottom: 8,
+  },
+  modalInput: {
+    minHeight: 80,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 14,
+    color: "#1E293B",
+    backgroundColor: "#F8FAFC",
+    textAlignVertical: "top",
+    marginBottom: 16,
   },
   errorContainer: {
     alignItems: "center",

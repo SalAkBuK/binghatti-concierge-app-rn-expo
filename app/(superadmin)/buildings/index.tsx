@@ -16,8 +16,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { HeaderBar } from "../../../components/ui/HeaderBar";
 import { SideMenu } from "../../../components/ui/SideMenu";
 import { useApp } from "../../../lib/context/connected-app-provider";
-import { filterNotificationsByUser } from "../../../lib/utils/helpers";
 import type { Building } from "../../../lib/types";
+import { filterNotificationsByUser } from "../../../lib/utils/helpers";
 
 const SUPERADMIN_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
 
@@ -122,13 +122,13 @@ export default function SuperAdminBuildingsScreen() {
               </TouchableOpacity>
             )}
           </View>
-          <TouchableOpacity
+          {/* <TouchableOpacity
             style={styles.createButton}
             onPress={handleCreateBuilding}
           >
             <Ionicons name="add" size={20} color="#FFFFFF" />
             <Text style={styles.createButtonText}>Create Building</Text>
-          </TouchableOpacity>
+          </TouchableOpacity> */}
         </Animated.View>
 
         {/* Stats Card */}
@@ -225,7 +225,7 @@ export default function SuperAdminBuildingsScreen() {
                         </Text>
                       </View>
                     </View>
-                    <View style={styles.actionButtons}>
+                    {/* <View style={styles.actionButtons}>
                       <TouchableOpacity
                         style={styles.editButton}
                         onPress={() => handleEditBuilding(building)}
@@ -238,7 +238,7 @@ export default function SuperAdminBuildingsScreen() {
                       >
                         <Ionicons name="trash-outline" size={20} color="#EF4444" />
                       </TouchableOpacity>
-                    </View>
+                    </View> */}
                   </View>
                 </Animated.View>
               ))}

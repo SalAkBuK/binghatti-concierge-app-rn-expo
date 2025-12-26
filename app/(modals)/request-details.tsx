@@ -1,10 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   ScrollView,
@@ -13,18 +15,37 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  Image,
 } from "react-native";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { useApp } from "../../lib/context/connected-app-provider";
-import type { Job, Request } from "../../lib/types";
 import { ImageViewer } from "../../components/ui/ImageViewer";
+import { useApp } from "../../lib/context/connected-app-provider";
+import apiService from "../../lib/services/api";
+import { maintenanceApi } from "../../lib/services/api/maintenance";
+import type { Job, Request } from "../../lib/types";
 
 
 export default function RequestDetailsScreen() {
-  const { selectedRequest, actions, jobs } = useApp();
+  const { selectedRequest, actions, jobs, currentUser } = useApp();
+  const [fetchingDetails, setFetchingDetails] = useState(false);
+  const [detailTab, setDetailTab] = useState<"overview" | "comments">("overview");
+  const [comments, setComments] = useState<
+    {
+      id: string;
+      message: string;
+      createdAt: string;
+      author: string;
+      attachments?: string[];
+    }[]
+  >([]);
+  const [newComment, setNewComment] = useState("");
+  const [isPostingComment, setIsPostingComment] = useState(false);
+  const assignedUserIdRef = useRef<string | null>(null);
+  const assignedUserNameRef = useRef<string | null>(null);
+  const managerNamesRef = useRef<Record<string, string>>({});
+  const [managerNames, setManagerNames] = useState<Record<string, string>>({});
+  const [resolvedBuildingName, setResolvedBuildingName] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showEditMode, setShowEditMode] = useState(false);
   const [editForm, setEditForm] = useState({
@@ -36,18 +57,277 @@ export default function RequestDetailsScreen() {
   const [showImageViewer, setShowImageViewer] = useState(false);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 
+  // Check if this is a backend request (don't show jobs for backend requests)
+  const isBackendRequest = (selectedRequest as any)?._source === "backend";
+
   const job = useMemo(() => {
-    if (!selectedRequest) {
+    if (!selectedRequest || isBackendRequest) {
       return undefined;
     }
     return jobs.find((item) => item.requestId === selectedRequest.id);
-  }, [jobs, selectedRequest]);
+  }, [jobs, selectedRequest, isBackendRequest]);
+
+  // Fetch fresh request details from backend when modal opens
+  useEffect(() => {
+    const fetchDetails = async () => {
+      if (!selectedRequest?.id) return;
+      setFetchingDetails(true);
+      const buildingIdForManagers =
+        selectedRequest.buildingId ||
+        (selectedRequest as any).profile?.buildingId ||
+        currentUser?.profile?.buildingId;
+
+      if (buildingIdForManagers) {
+        const buildingIdNum =
+          typeof buildingIdForManagers === "string"
+            ? parseInt(String(buildingIdForManagers).replace(/\D/g, ""), 10)
+            : buildingIdForManagers;
+        if (Number.isFinite(buildingIdNum)) {
+          try {
+            const managersResponse = await apiService.admin.getBuildingManagers(buildingIdNum);
+            if (managersResponse.success && Array.isArray(managersResponse.data)) {
+              const mapped: Record<string, string> = {};
+              managersResponse.data.forEach((mgr: any) => {
+                const id = mgr.id ?? mgr.userId ?? mgr.managerId;
+                if (id != null) {
+                  mapped[String(id)] =
+                    mgr.fullName ||
+                    mgr.name ||
+                    mgr.email ||
+                    (mgr.userId ? `User ${mgr.userId}` : "Manager");
+                }
+              });
+              managerNamesRef.current = mapped;
+              setManagerNames(mapped);
+            }
+          } catch (managerErr) {
+            console.warn("[RequestDetails] Failed to fetch building managers", managerErr);
+          }
+        }
+      }
+
+      try {
+        const response = await maintenanceApi.getMaintenanceRequestById(selectedRequest.id);
+        if (response.success && response.data) {
+          const apiRequest = response.data;
+          const assignedUserId =
+            apiRequest.assignedTo?.id != null ? String(apiRequest.assignedTo.id) : null;
+          const assignedUserName =
+            apiRequest.assignedTo?.fullName ||
+            apiRequest.assignedTo?.email ||
+            (assignedUserId ? `User ${assignedUserId}` : selectedRequest.assignedTo);
+          assignedUserIdRef.current = assignedUserId;
+          assignedUserNameRef.current = assignedUserName || null;
+          const mapPriority = (priority: any): Request["priority"] => {
+            if (priority === 1 || priority === "1" || priority === "low") return "low";
+            if (priority === 2 || priority === "2" || priority === "medium") return "medium";
+            if (priority === 3 || priority === "3" || priority === "high") return "high";
+            if (priority === 4 || priority === "4" || priority === "urgent") return "urgent";
+            return selectedRequest.priority;
+          };
+
+          const updatedRequest: Request = {
+            ...selectedRequest,
+            id: String(apiRequest.id ?? selectedRequest.id),
+            title: apiRequest.title ?? selectedRequest.title,
+            description: apiRequest.description ?? selectedRequest.description,
+            status: normalizeStatus(apiRequest.status ?? selectedRequest.status),
+            priority: normalizePriority(apiRequest.priority ?? selectedRequest.priority),
+            attachments: normalizeAttachments(
+              apiRequest.attachments ?? selectedRequest.attachments,
+            ),
+            assignedTo:
+              assignedUserName ||
+              apiRequest.assignedToId ||
+              selectedRequest.assignedTo,
+            buildingId: apiRequest.buildingId ? String(apiRequest.buildingId) : selectedRequest.buildingId,
+            apartment: apiRequest.unitNumber ?? selectedRequest.apartment,
+            floor: apiRequest.floorNumber != null ? String(apiRequest.floorNumber) : selectedRequest.floor,
+            buildingName: apiRequest.buildingName ?? resolvedBuildingName ?? selectedRequest.buildingName,
+            updatedAt: apiRequest.updatedAt ?? selectedRequest.updatedAt,
+          };
+
+          actions.setSelectedRequest?.(updatedRequest);
+          if (Array.isArray(apiRequest.comments)) {
+            const mappedComments = apiRequest.comments
+              .map((comment: any, index: number) => {
+                const id = String(comment.id ?? `${apiRequest.id}-comment-${index}`);
+                const message = comment.commentText || comment.message || comment.text || "";
+                const createdAt = comment.createdAt || new Date().toISOString();
+                const author = resolveCommentAuthor(comment);
+                const attachments =
+                  Array.isArray(comment.attachments) && comment.attachments.length > 0
+                    ? comment.attachments
+                        .map(
+                          (att: any) =>
+                            att.fileUrl || att.url || att.uri || att.file_url || att.path || null,
+                        )
+                        .filter(Boolean) as string[]
+                    : undefined;
+                return { id, message, createdAt, author, attachments };
+              })
+              .sort(
+                (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+              );
+            setComments(mappedComments);
+          } else {
+            setComments([]);
+          }
+          if (updatedRequest.buildingName) {
+            setResolvedBuildingName(updatedRequest.buildingName);
+          }
+        }
+      } catch (error) {
+        console.error("[RequestDetails] Failed to fetch request details:", error);
+      } finally {
+        setFetchingDetails(false);
+      }
+    };
+
+    fetchDetails();
+  }, [selectedRequest?.id, resolveCommentAuthor]);
+
+  useEffect(() => {
+    setDetailTab("overview");
+    setNewComment("");
+    assignedUserIdRef.current = null;
+    assignedUserNameRef.current = null;
+    managerNamesRef.current = {};
+    setManagerNames({});
+  }, [selectedRequest?.id]);
+
+  // Resolve building name to mirror the welcome card display
+  useEffect(() => {
+    const resolveBuilding = async () => {
+      if (!selectedRequest) return;
+
+      // Prefer buildingName on the request
+      if ((selectedRequest as any).buildingName) {
+        setResolvedBuildingName((selectedRequest as any).buildingName);
+        return;
+      }
+
+      const buildingId =
+        (selectedRequest as any).buildingId ||
+        (selectedRequest as any).profile?.buildingId ||
+        currentUser?.profile?.buildingId;
+
+      if (!buildingId) return;
+
+      try {
+        const building = actions.getBuildingById?.(String(buildingId));
+        if (building?.name) {
+          setResolvedBuildingName(building.name);
+        }
+      } catch (error) {
+        console.warn("[RequestDetails] Failed to resolve building name", error);
+      }
+    };
+
+    resolveBuilding();
+  }, [selectedRequest, actions, currentUser?.profile?.buildingId]);
 
   // Helper functions
+  const normalizeStatus = (status: any): Request["status"] => {
+    if (!status) return "pending";
+    // Handle numeric status codes from backend (1=New, 2=Assigned, 3=InProgress, 4=OnHold, 5=Completed, 6=Cancelled)
+    const numeric = Number(status);
+    if (!Number.isNaN(numeric)) {
+      if (numeric === 1) return "pending";
+      if (numeric === 2 || numeric === 3) return "in-progress"; // Assigned / InProgress
+      if (numeric === 4) return "on-hold";
+      if (numeric === 5) return "completed";
+      if (numeric === 6) return "cancelled";
+    }
+
+    const normalized = String(status).toLowerCase().replace("_", "-");
+    if (normalized === "pending") return "pending";
+    if (normalized === "on-hold" || normalized === "onhold") return "on-hold";
+    if (normalized === "in-progress" || normalized === "inprogress" || normalized === "assigned") return "in-progress";
+    if (normalized === "completed" || normalized === "complete" || normalized === "done") return "completed";
+    if (normalized === "cancelled" || normalized === "canceled") return "cancelled";
+    return "pending";
+  };
+
+  const normalizePriority = (priority: any): Request["priority"] => {
+    if (!priority && priority !== 0) return "medium";
+    if (priority === 1 || priority === "1" || String(priority).toLowerCase() === "low") return "low";
+    if (priority === 2 || priority === "2" || String(priority).toLowerCase() === "medium") return "medium";
+    if (priority === 3 || priority === "3" || String(priority).toLowerCase() === "high") return "high";
+    if (priority === 4 || priority === "4" || String(priority).toLowerCase() === "urgent") return "urgent";
+    return "medium";
+  };
+
+  const normalizeAttachments = (attachments: any): string[] => {
+    if (!Array.isArray(attachments)) return [];
+    return attachments
+      .map((attachment) => {
+        if (!attachment) return null;
+        if (typeof attachment === "string") return attachment;
+        if (typeof attachment === "object") {
+          return (
+            attachment.fileUrl ||
+            attachment.url ||
+            attachment.uri ||
+            attachment.file_url ||
+            attachment.path ||
+            null
+          );
+        }
+        return null;
+      })
+      .filter((uri): uri is string => Boolean(uri));
+  };
+
+  const isImageUri = (uri: string) => /\.(png|jpe?g|gif|webp|bmp)$/i.test(uri);
+
+  const resolveCommentAuthor = useCallback((comment: any): string => {
+    const commentUserIdRaw = comment.userId ?? comment.user?.userId ?? "";
+    const commentUserId = commentUserIdRaw ? String(commentUserIdRaw) : "";
+    const currentUserId =
+      currentUser?.id !== undefined && currentUser?.id !== null
+        ? String(currentUser.id)
+        : null;
+
+    const directName =
+      comment.user?.fullName ||
+      comment.user?.name ||
+      comment.user?.email ||
+      comment.author;
+
+    if (currentUserId && commentUserId && currentUserId === commentUserId) {
+      return (
+        (currentUser as any)?.name ||
+        (currentUser as any)?.fullName ||
+        currentUser?.email ||
+        "You"
+      );
+    }
+
+    const assignedId = assignedUserIdRef.current;
+    if (
+      assignedId &&
+      commentUserId &&
+      commentUserId === assignedId
+    ) {
+      return assignedUserNameRef.current || selectedRequest?.assignedTo || "Assigned";
+    }
+
+    const managerName = managerNamesRef.current[commentUserId];
+    if (managerName) {
+      return managerName;
+    }
+
+    if (directName) return directName;
+    if (comment.user?.userId) return `User ${comment.user.userId}`;
+    return "User";
+  }, [currentUser, selectedRequest?.assignedTo]);
+
   const getStatusColor = (status: Request["status"]) => {
     const colors = {
       pending: { bg: "#FEF3C7", text: "#92400E", border: "#FDE68A" },
       "in-progress": { bg: "#DBEAFE", text: "#1E40AF", border: "#BFDBFE" },
+      "on-hold": { bg: "#FFE4E6", text: "#BE123C", border: "#FECDD3" },
       completed: { bg: "#D1FAE5", text: "#065F46", border: "#A7F3D0" },
       cancelled: { bg: "#F3F4F6", text: "#1F2937", border: "#E5E7EB" },
     };
@@ -68,6 +348,7 @@ export default function RequestDetailsScreen() {
     const icons = {
       pending: "time-outline",
       "in-progress": "sync-outline",
+      "on-hold": "pause-circle-outline",
       completed: "checkmark-circle-outline",
       cancelled: "close-circle-outline",
     } as const;
@@ -90,6 +371,7 @@ export default function RequestDetailsScreen() {
     const progress = {
       pending: 25,
       "in-progress": 75,
+      "on-hold": 60,
       completed: 100,
       cancelled: 0,
     };
@@ -252,13 +534,23 @@ export default function RequestDetailsScreen() {
 
     setLoading(true);
     try {
-      await actions.deleteRequest(selectedRequest.id);
-      setShowDeleteConfirm(false);
-      Alert.alert("Success", "Request deleted successfully");
-      router.back();
-    } catch (err) {
-      Alert.alert("Error", "Failed to delete request");
-      console.error("Error deleting request:", err);
+      console.log('[RequestDetails] Deleting maintenance request:', selectedRequest.id);
+      const response = await maintenanceApi.deleteMaintenanceRequest(selectedRequest.id);
+
+      if (response.success) {
+        setShowDeleteConfirm(false);
+        Alert.alert("Success", "Request cancelled successfully", [
+          {
+            text: "OK",
+            onPress: () => router.back(),
+          },
+        ]);
+      } else {
+        throw new Error(response.message || 'Failed to delete request');
+      }
+    } catch (err: any) {
+      console.error('[RequestDetails] Error deleting request:', err);
+      Alert.alert("Error", err.message || "Failed to cancel request. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -277,6 +569,61 @@ export default function RequestDetailsScreen() {
       console.error("Error updating request:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSubmitComment = async () => {
+    if (!selectedRequest || !newComment.trim() || !currentUser?.id) return;
+    const requestStatus = normalizeStatus(selectedRequest.status);
+    if (requestStatus === "cancelled" || requestStatus === "completed") return;
+
+    const requestIdNum = Number(selectedRequest.id);
+    const userIdNum =
+      typeof currentUser.id === "string"
+        ? parseInt(currentUser.id, 10)
+        : currentUser.id;
+
+    if (!Number.isFinite(requestIdNum) || !Number.isFinite(userIdNum)) {
+      Alert.alert("Error", "Missing request or user details.");
+      return;
+    }
+
+    setIsPostingComment(true);
+    try {
+      await maintenanceApi.addMaintenanceRequestComment({
+        requestId: requestIdNum,
+        userId: userIdNum,
+        commentText: newComment.trim(),
+      });
+      setNewComment("");
+      // Refresh comments
+      const refreshed = await maintenanceApi.getMaintenanceRequestById(selectedRequest.id);
+      if (refreshed.success && refreshed.data?.comments) {
+        const mappedComments = refreshed.data.comments
+          .map((comment: any, index: number) => {
+            const id = String(comment.id ?? `${selectedRequest.id}-comment-${index}`);
+            const message = comment.commentText || comment.message || comment.text || "";
+            const createdAt = comment.createdAt || new Date().toISOString();
+            const author = resolveCommentAuthor(comment);
+            const attachments =
+              Array.isArray(comment.attachments) && comment.attachments.length > 0
+                ? comment.attachments
+                    .map(
+                      (att: any) =>
+                        att.fileUrl || att.url || att.uri || att.file_url || att.path || null,
+                    )
+                    .filter(Boolean) as string[]
+                : undefined;
+            return { id, message, createdAt, author, attachments };
+          })
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        setComments(mappedComments);
+      }
+    } catch (error) {
+      console.error("[RequestDetails] Failed to add comment:", error);
+      Alert.alert("Error", "Could not add your comment. Please try again.");
+    } finally {
+      setIsPostingComment(false);
     }
   };
 
@@ -305,14 +652,17 @@ export default function RequestDetailsScreen() {
     );
   }
 
-  const canEdit = selectedRequest.status === "pending";
-  const canDelete =
-    selectedRequest.status === "pending" ||
-    selectedRequest.status === "cancelled";
-  const canProvideFeedback = selectedRequest.status === "completed";
-  const statusColors = getStatusColor(selectedRequest.status);
-  const priorityColors = getPriorityColor(selectedRequest.priority);
-  const statusIcon = getStatusIcon(selectedRequest.status);
+  const normalizedStatus = normalizeStatus(selectedRequest.status);
+  const normalizedPriority = normalizePriority(selectedRequest.priority);
+  const normalizedAttachments = normalizeAttachments(selectedRequest.attachments);
+
+  const canEdit = normalizedStatus === "pending";
+  const canDelete = normalizedStatus === "pending";
+  const canCancel = normalizedStatus === "in-progress";
+  const canProvideFeedback = false;
+  const statusColors = getStatusColor(normalizedStatus);
+  const priorityColors = getPriorityColor(normalizedPriority);
+  const statusIcon = getStatusIcon(normalizedStatus);
   const jobStatusMeta = job ? getJobStatusMeta(job.status) : null;
   const estimate = job?.estimate;
   const additionalCosts = job?.additionalCosts ?? [];
@@ -421,6 +771,14 @@ export default function RequestDetailsScreen() {
                 <Ionicons name="trash-outline" size={20} color="#DC2626" />
               </TouchableOpacity>
             )}
+            {canCancel && (
+              <TouchableOpacity
+                onPress={() => setShowDeleteConfirm(true)}
+                style={styles.deleteButton}
+              >
+                <Ionicons name="trash-outline" size={20} color="#DC2626" />
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
@@ -428,704 +786,872 @@ export default function RequestDetailsScreen() {
           style={styles.scrollView}
           showsVerticalScrollIndicator={false}
         >
-          {/* Request Header Card */}
-          <Animated.View
-            entering={FadeIn.duration(400)}
-            style={styles.card}
-          >
-            {showEditMode ? (
-              <View style={styles.editForm}>
-                <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Title</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={editForm.title}
-                    onChangeText={(text) =>
-                      setEditForm((prev) => ({ ...prev, title: text }))
-                    }
-                    placeholder="Request title"
-                  />
-                </View>
-
-                <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Description</Text>
-                  <TextInput
-                    style={[styles.input, styles.textArea]}
-                    value={editForm.description}
-                    onChangeText={(text) =>
-                      setEditForm((prev) => ({ ...prev, description: text }))
-                    }
-                    placeholder="Describe your request"
-                    multiline
-                    numberOfLines={4}
-                    textAlignVertical="top"
-                  />
-                </View>
-
-                <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Priority</Text>
-                  <View style={styles.priorityButtons}>
-                    {(["low", "medium", "high", "urgent"] as const).map(
-                      (priority) => (
-                        <TouchableOpacity
-                          key={priority}
-                          onPress={() =>
-                            setEditForm((prev) => ({ ...prev, priority }))
-                          }
-                          style={[
-                            styles.priorityButton,
-                            editForm.priority === priority &&
-                              styles.priorityButtonActive,
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.priorityButtonText,
-                              editForm.priority === priority &&
-                                styles.priorityButtonTextActive,
-                            ]}
-                          >
-                            {priority.charAt(0).toUpperCase() +
-                              priority.slice(1)}
-                          </Text>
-                        </TouchableOpacity>
-                      ),
-                    )}
-                  </View>
-                </View>
-
-                <View style={styles.editActions}>
-                  <TouchableOpacity
-                    style={styles.cancelButton}
-                    onPress={() => setShowEditMode(false)}
-                    disabled={loading}
-                  >
-                    <Text style={styles.cancelButtonText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.saveButton}
-                    onPress={handleUpdateRequest}
-                    disabled={loading}
-                  >
-                    {loading ? (
-                      <ActivityIndicator color="#fff" />
-                    ) : (
-                      <Text style={styles.saveButtonText}>Save Changes</Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : (
-              <View>
-                <Text style={styles.requestTitle}>{selectedRequest.title}</Text>
-
-                {/* Status Badges */}
-                <View style={styles.badges}>
-                  <View
-                    style={[
-                      styles.badge,
-                      {
-                        backgroundColor: statusColors.bg,
-                        borderColor: statusColors.border,
-                      },
-                    ]}
-                  >
-                    <Ionicons
-                      name={statusIcon}
-                      size={14}
-                      color={statusColors.text}
-                    />
-                    <Text
-                      style={[styles.badgeText, { color: statusColors.text }]}
-                    >
-                      {selectedRequest.status.replace("-", " ")}
-                    </Text>
-                  </View>
-
-                  <View
-                    style={[
-                      styles.badge,
-                      {
-                        backgroundColor: priorityColors.bg,
-                        borderColor: priorityColors.border,
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.badgeText,
-                        { color: priorityColors.text },
-                      ]}
-                    >
-                      {selectedRequest.priority}
-                    </Text>
-                  </View>
-
-                  <View
-                    style={[
-                      styles.badge,
-                      { backgroundColor: "#F3F4F6", borderColor: "#E5E7EB" },
-                    ]}
-                  >
-                    <Text style={[styles.badgeText, { color: "#1F2937" }]}>
-                      {selectedRequest.type}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Progress Bar */}
-                <View style={styles.progressContainer}>
-                  <View style={styles.progressHeader}>
-                    <Text style={styles.progressLabel}>Progress</Text>
-                    <Text style={styles.progressPercentage}>
-                      {getProgressPercentage(selectedRequest.status)}%
-                    </Text>
-                  </View>
-                  <View style={styles.progressBarContainer}>
-                    <View
-                      style={[
-                        styles.progressBar,
-                        {
-                          width: `${getProgressPercentage(selectedRequest.status)}%`,
-                          backgroundColor:
-                            selectedRequest.status === "completed"
-                              ? "#10B981"
-                              : selectedRequest.status === "in-progress"
-                                ? "#3B82F6"
-                                : selectedRequest.status === "cancelled"
-                                  ? "#9CA3AF"
-                                  : "#F59E0B",
-                        },
-                      ]}
-                    />
-                  </View>
-                </View>
-
-                {/* Description */}
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Description</Text>
-                  <View style={styles.descriptionBox}>
-                    <Text style={styles.descriptionText}>
-                      {selectedRequest.description}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Additional Notes */}
-                {selectedRequest.additionalNotes && (
-                  <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Additional Notes</Text>
-                    <View style={styles.notesBox}>
-                      <Text style={styles.notesText}>
-                        {selectedRequest.additionalNotes}
-                      </Text>
-                    </View>
-                  </View>
-                )}
-
-                {/* Attachments */}
-                {selectedRequest.attachments &&
-                  selectedRequest.attachments.length > 0 && (
-                    <View style={styles.section}>
-                      <Text style={styles.sectionTitle}>
-                        Photos ({selectedRequest.attachments.length})
-                      </Text>
-                      <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        style={styles.attachmentsScroll}
-                      >
-                        {selectedRequest.attachments.map((attachment, index) => (
-                          <TouchableOpacity
-                            key={index}
-                            style={styles.attachmentImageContainer}
-                            onPress={() => {
-                              setSelectedImageIndex(index);
-                              setShowImageViewer(true);
-                            }}
-                          >
-                            <Image
-                              source={{ uri: attachment }}
-                              style={styles.attachmentImage}
-                              resizeMode="cover"
-                            />
-                            <View style={styles.attachmentOverlay}>
-                              <Ionicons
-                                name="expand-outline"
-                                size={20}
-                                color="#FFFFFF"
-                              />
-                            </View>
-                          </TouchableOpacity>
-                        ))}
-                      </ScrollView>
-                    </View>
-                  )}
-              </View>
-            )}
-          </Animated.View>
-
-          {/* Location Information */}
-          <Animated.View
-            entering={FadeInDown.delay(50).duration(400)}
-            style={styles.card}
-          >
-            <View style={styles.cardHeader}>
-              <Ionicons name="location-outline" size={20} color="#6B7280" />
-              <Text style={styles.cardTitle}>Location</Text>
-            </View>
-            <Text style={styles.locationText}>
-              {selectedRequest.apartment}, {selectedRequest.tower}
-            </Text>
-            <Text style={styles.locationSubtext}>
-              Binghatti Apartment Complex
-            </Text>
-          </Animated.View>
-
-          {/* Timeline */}
-          <Animated.View
-            entering={FadeInDown.delay(100).duration(400)}
-            style={styles.card}
-          >
-            <View style={styles.cardHeader}>
-              <Ionicons name="calendar-outline" size={20} color="#6B7280" />
-              <Text style={styles.cardTitle}>Timeline</Text>
-            </View>
-            <View style={styles.timelineItem}>
-              <Text style={styles.timelineLabel}>Created</Text>
-              <Text style={styles.timelineValue}>
-                {formatDate(selectedRequest.createdAt)}
-              </Text>
-            </View>
-            {selectedRequest.updatedAt !== selectedRequest.createdAt && (
-              <View style={styles.timelineItem}>
-                <Text style={styles.timelineLabel}>Last Updated</Text>
-                <Text style={styles.timelineValue}>
-                  {formatDate(selectedRequest.updatedAt)}
-                </Text>
-              </View>
-            )}
-          </Animated.View>
-
-          {/* Job Overview */}
-          {job && (
-            <Animated.View
-              entering={FadeInDown.delay(130).duration(400)}
-              style={styles.card}
-            >
-              <View style={styles.cardHeader}>
-                <Ionicons name="briefcase-outline" size={20} color="#6B7280" />
-                <Text style={styles.cardTitle}>Job Overview</Text>
-              </View>
-
-              <View style={styles.jobStatusRow}>
-                {jobStatusMeta && (
-                  <View
-                    style={[
-                      styles.jobStatusBadge,
-                      {
-                        backgroundColor: jobStatusMeta.bg,
-                        borderColor: jobStatusMeta.border,
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.jobStatusBadgeText,
-                        { color: jobStatusMeta.text },
-                      ]}
-                    >
-                      {jobStatusMeta.label}
-                    </Text>
-                  </View>
-                )}
-                {completionMeta && (
-                  <View
-                    style={[
-                      styles.jobStatusBadge,
-                      {
-                        backgroundColor: completionMeta.bg,
-                        borderColor: completionMeta.bg,
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.jobStatusBadgeText,
-                        { color: completionMeta.text },
-                      ]}
-                    >
-                      {completionMeta.label}
-                    </Text>
-                  </View>
-                )}
-              </View>
-
-              {completionMeta && (
-                <Text style={styles.completionSubtitle}>
-                  {completionMeta.subtitle}
-                </Text>
-              )}
-
-              {completionRejectedReason && (
-                <View style={styles.rejectionNotice}>
-                  <Ionicons name="alert-circle" size={18} color="#DC2626" />
-                  <Text style={styles.rejectionNoticeText}>
-                    {completionRejectedReason}
-                  </Text>
-                </View>
-              )}
-
-              <View style={styles.jobInfoGrid}>
-                <View style={styles.jobInfoItem}>
-                  <Text style={styles.jobInfoLabel}>Assigned To</Text>
-                  <Text style={styles.jobInfoValue}>
-                    {job.assignedToEmployeeName ||
-                      job.assignedToName ||
-                      "To be assigned"}
-                  </Text>
-                </View>
-                <View style={styles.jobInfoItem}>
-                  <Text style={styles.jobInfoLabel}>Service Provider</Text>
-                  <Text style={styles.jobInfoValue}>
-                    {job.assignedToName || "Not yet assigned"}
-                  </Text>
-                </View>
-                {job.scheduledDate && (
-                  <View style={styles.jobInfoItem}>
-                    <Text style={styles.jobInfoLabel}>Scheduled</Text>
-                    <Text style={styles.jobInfoValue}>
-                      {formatDate(job.scheduledDate)}
-                    </Text>
-                  </View>
-                )}
-                {job.startedAt && (
-                  <View style={styles.jobInfoItem}>
-                    <Text style={styles.jobInfoLabel}>Started</Text>
-                    <Text style={styles.jobInfoValue}>
-                      {formatDate(job.startedAt)}
-                    </Text>
-                  </View>
-                )}
-                {job.completedDate && (
-                  <View style={styles.jobInfoItem}>
-                    <Text style={styles.jobInfoLabel}>Completed</Text>
-                    <Text style={styles.jobInfoValue}>
-                      {formatDate(job.completedDate)}
-                    </Text>
-                  </View>
-                )}
-              </View>
-
-              {job.completionNotes && (
-                <View style={styles.jobNotes}>
-                  <Text style={styles.jobNotesLabel}>Completion Notes</Text>
-                  <Text style={styles.jobNotesText}>{job.completionNotes}</Text>
-                </View>
-              )}
-
-              {job.completionFeedback && (
-                <View style={styles.jobNotes}>
-                  <Text style={styles.jobNotesLabel}>Your Feedback</Text>
-                  <Text style={styles.jobNotesText}>
-                    {job.completionFeedback}
-                  </Text>
-                </View>
-              )}
-
-              {awaitingCompletionApproval && actions.approveTenantJobCompletion && (
+          {/* Tabs */}
+          <View style={styles.tabRow}>
+            {(["overview", "comments"] as const).map((tab) => {
+              const active = detailTab === tab;
+              return (
                 <TouchableOpacity
-                  style={styles.reviewCompletionButton}
-                  onPress={() => handleReviewCompletion(job.id)}
+                  key={tab}
+                  style={[styles.tabButton, active && styles.tabButtonActive]}
+                  onPress={() => setDetailTab(tab)}
                 >
-                  <Ionicons
-                    name="checkmark-circle-outline"
-                    size={18}
-                    color="#FFFFFF"
-                  />
-                  <Text style={styles.reviewCompletionButtonText}>
-                    Review & Confirm Completion
-                  </Text>
-                  <Ionicons
-                    name="chevron-forward"
-                    size={16}
-                    color="#FFFFFF"
-                    style={{ opacity: 0.8 }}
-                  />
-                </TouchableOpacity>
-              )}
-
-              {!awaitingCompletionApproval &&
-                job.status === "completed" &&
-                !completionMeta && (
-                  <View style={styles.jobCompletionInfo}>
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={18}
-                      color="#10B981"
-                    />
-                    <Text style={styles.jobCompletionInfoText}>
-                      Job marked completed on{" "}
-                      {job.completedDate
-                        ? formatDate(job.completedDate)
-                        : "the latest update"}
-                      .
-                    </Text>
-                  </View>
-                )}
-            </Animated.View>
-          )}
-
-          {/* Estimate */}
-          {job && estimate && (
-            <Animated.View
-              entering={FadeInDown.delay(160).duration(400)}
-              style={styles.card}
-            >
-              <View style={styles.cardHeader}>
-                <Ionicons name="receipt-outline" size={20} color="#6B7280" />
-                <Text style={styles.cardTitle}>Cost Estimate</Text>
-              </View>
-              <Text style={styles.estimateMeta}>
-                Submitted on {formatDate(estimate.createdAt)}
-              </Text>
-              {estimate.notes && (
-                <Text style={styles.estimateNotes}>{estimate.notes}</Text>
-              )}
-              <View style={styles.estimateItems}>
-                {estimate.items.map((item) => (
-                  <View key={item.id} style={styles.estimateItemRow}>
-                    <View style={styles.estimateItemInfo}>
-                      <Text style={styles.estimateItemLabel}>{item.label}</Text>
-                      {item.description && (
-                        <Text style={styles.estimateItemDescription}>
-                          {item.description}
-                        </Text>
-                      )}
-                    </View>
-                    <Text style={styles.estimateItemAmount}>
-                      {formatCurrency(item.amount)}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-              <View style={styles.estimateTotalRow}>
-                <Text style={styles.estimateTotalLabel}>Total</Text>
-                <Text style={styles.estimateTotalAmount}>
-                  {formatCurrency(estimate.subtotal)}
-                </Text>
-              </View>
-
-              {estimateAwaitingTenant && actions.reviewJobEstimateAsTenant ? (
-                <View style={styles.estimateActionRow}>
-                  <TouchableOpacity
-                    style={[styles.estimateActionButton, styles.estimateDecline]}
-                    onPress={() => handleDeclineEstimate(job.id)}
-                  >
-                    <Ionicons
-                      name="close-circle-outline"
-                      size={18}
-                      color="#EF4444"
-                    />
-                    <Text style={styles.estimateDeclineText}>
-                      Request Changes
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.estimateActionButton, styles.estimateApprove]}
-                    onPress={() => handleApproveEstimate(job.id)}
-                  >
-                    <Ionicons
-                      name="checkmark-circle-outline"
-                      size={18}
-                      color="#FFFFFF"
-                    />
-                    <Text style={styles.estimateApproveText}>Approve</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : estimateStatusDetails ? (
-                <View style={styles.estimateStatusBanner}>
-                  <Ionicons
-                    name={estimateStatusDetails.icon}
-                    size={18}
-                    color={estimateStatusDetails.color}
-                  />
                   <Text
-                    style={[
-                      styles.estimateStatusText,
-                      { color: estimateStatusDetails.color },
-                    ]}
+                    style={[styles.tabButtonText, active && styles.tabButtonTextActive]}
                   >
-                    {estimateStatusDetails.text}
+                    {tab === "overview" ? "Overview" : "Comments"}
                   </Text>
-                </View>
-              ) : null}
-            </Animated.View>
-          )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
 
-          {/* Additional Costs */}
-          {job && hasAdditionalCosts && (
-            <Animated.View
-              entering={FadeInDown.delay(190).duration(400)}
-              style={styles.card}
-            >
-              <View style={styles.cardHeader}>
-                <Ionicons name="cash-outline" size={20} color="#6B7280" />
-                <Text style={styles.cardTitle}>Additional Costs</Text>
-              </View>
-              <View style={styles.additionalCostSummary}>
-                <View style={styles.additionalCostChip}>
-                  <Ionicons name="checkmark-circle" size={16} color="#047857" />
-                  <Text style={styles.additionalCostChipText}>
-                    Approved: {formatCurrency(approvedAdditionalCostTotal)}
-                  </Text>
-                </View>
-                {pendingAdditionalCostCount > 0 && (
-                  <View
-                    style={[
-                      styles.additionalCostChip,
-                      styles.additionalCostChipPending,
-                    ]}
-                  >
-                    <Ionicons name="time-outline" size={16} color="#92400E" />
-                    <Text
-                      style={[
-                        styles.additionalCostChipText,
-                        { color: "#92400E" },
-                      ]}
-                    >
-                      Pending: {pendingAdditionalCostCount}
-                    </Text>
+          {detailTab === "overview" ? (
+            <>
+              {/* Request Header Card */}
+              <Animated.View
+                entering={FadeIn.duration(400)}
+                style={styles.card}
+              >
+                {showEditMode ? (
+                  <View style={styles.editForm}>
+                    <View style={styles.inputGroup}>
+                      <Text style={styles.label}>Title</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={editForm.title}
+                        onChangeText={(text) =>
+                          setEditForm((prev) => ({ ...prev, title: text }))
+                        }
+                        placeholder="Request title"
+                      />
+                    </View>
+
+                    <View style={styles.inputGroup}>
+                      <Text style={styles.label}>Description</Text>
+                      <TextInput
+                        style={[styles.input, styles.textArea]}
+                        value={editForm.description}
+                        onChangeText={(text) =>
+                          setEditForm((prev) => ({ ...prev, description: text }))
+                        }
+                        placeholder="Describe your request"
+                        multiline
+                        numberOfLines={4}
+                        textAlignVertical="top"
+                      />
+                    </View>
+
+                    <View style={styles.inputGroup}>
+                      <Text style={styles.label}>Priority</Text>
+                      <View style={styles.priorityButtons}>
+                        {(["low", "medium", "high", "urgent"] as const).map(
+                          (priority) => (
+                            <TouchableOpacity
+                              key={priority}
+                              onPress={() =>
+                                setEditForm((prev) => ({ ...prev, priority }))
+                              }
+                              style={[
+                                styles.priorityButton,
+                                editForm.priority === priority &&
+                                  styles.priorityButtonActive,
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.priorityButtonText,
+                                  editForm.priority === priority &&
+                                    styles.priorityButtonTextActive,
+                                ]}
+                              >
+                                {priority.charAt(0).toUpperCase() +
+                                  priority.slice(1)}
+                              </Text>
+                            </TouchableOpacity>
+                          ),
+                        )}
+                      </View>
+                    </View>
+
+                    <View style={styles.editActions}>
+                      <TouchableOpacity
+                        style={styles.cancelButton}
+                        onPress={() => setShowEditMode(false)}
+                        disabled={loading}
+                      >
+                        <Text style={styles.cancelButtonText}>Cancel</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.saveButton}
+                        onPress={handleUpdateRequest}
+                        disabled={loading}
+                      >
+                        {loading ? (
+                          <ActivityIndicator color="#fff" />
+                        ) : (
+                          <Text style={styles.saveButtonText}>Save Changes</Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                )}
-              </View>
+                ) : (
+                  <View>
+                    <Text style={styles.requestTitle}>{selectedRequest.title}</Text>
 
-              <View style={styles.additionalCostList}>
-                {additionalCosts.map((cost) => (
-                  <View key={cost.id} style={styles.additionalCostItem}>
-                    <View style={styles.additionalCostHeader}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.additionalCostTitle}>
-                          {cost.description}
-                        </Text>
-                        <Text style={styles.additionalCostMeta}>
-                          {cost.category
-                            ? `${cost.category} • `
-                            : ""}
-                          Added by {cost.employeeName}
+                    {/* Status Badges */}
+                    <View style={styles.badges}>
+                      <View
+                        style={[
+                          styles.badge,
+                          {
+                            backgroundColor: statusColors.bg,
+                            borderColor: statusColors.border,
+                          },
+                        ]}
+                      >
+                        <Ionicons
+                          name={statusIcon}
+                          size={14}
+                          color={statusColors.text}
+                        />
+                        <Text
+                          style={[styles.badgeText, { color: statusColors.text }]}
+                        >
+                          {normalizedStatus.replace("-", " ")}
                         </Text>
                       </View>
-                      <Text style={styles.additionalCostAmount}>
-                        {formatCurrency(cost.amount)}
-                      </Text>
-                    </View>
-                    <View style={styles.additionalCostStatusRow}>
-                      <Ionicons
-                        name={
-                          cost.status === "approved"
-                            ? "checkmark-circle"
-                            : cost.status === "rejected"
-                              ? "close-circle"
-                              : "time-outline"
-                        }
-                        size={16}
-                        color={
-                          cost.status === "approved"
-                            ? "#10B981"
-                            : cost.status === "rejected"
-                              ? "#EF4444"
-                              : "#F59E0B"
-                        }
-                      />
-                      <Text style={styles.additionalCostStatusText}>
-                        {cost.status === "approved"
-                          ? `Approved${
-                              cost.approvedAt
-                                ? ` on ${new Date(
-                                    cost.approvedAt,
-                                  ).toLocaleDateString()}`
-                                : ""
-                            }`
-                          : cost.status === "rejected"
-                            ? `Rejected${
-                                cost.rejectionReason
-                                  ? ` – ${cost.rejectionReason}`
-                                  : ""
-                              }`
-                            : "Awaiting service provider review"}
-                      </Text>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            </Animated.View>
-          )}
 
-          {/* Contact Information */}
-          {selectedRequest.contactPhone && (
+                      <View
+                        style={[
+                          styles.badge,
+                          {
+                            backgroundColor: priorityColors.bg,
+                            borderColor: priorityColors.border,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.badgeText,
+                            { color: priorityColors.text },
+                          ]}
+                        >
+                          {normalizedPriority}
+                        </Text>
+                      </View>
+
+                      <View
+                        style={[
+                          styles.badge,
+                          { backgroundColor: "#F3F4F6", borderColor: "#E5E7EB" },
+                        ]}
+                      >
+                        <Text style={[styles.badgeText, { color: "#1F2937" }]}>
+                          {selectedRequest.type}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Assignment */}
+                    {selectedRequest.assignedTo && (
+                      <View style={styles.assignedRow}>
+                        <Ionicons name="person-outline" size={16} color="#1F2937" />
+                        <Text style={styles.assignedLabel}>Assigned to</Text>
+                        <Text style={styles.assignedValue}>
+                          {selectedRequest.assignedTo}
+                        </Text>
+                      </View>
+                    )}
+
+                    {/* Progress Bar */}
+                    <View style={styles.progressContainer}>
+                      <View style={styles.progressHeader}>
+                        <Text style={styles.progressLabel}>Progress</Text>
+                        <Text style={styles.progressPercentage}>
+                          {getProgressPercentage(normalizedStatus)}%
+                        </Text>
+                      </View>
+                      <View style={styles.progressBarContainer}>
+                        <View
+                          style={[
+                            styles.progressBar,
+                            {
+                              width: `${getProgressPercentage(normalizedStatus)}%`,
+                              backgroundColor:
+                                normalizedStatus === "completed"
+                                  ? "#10B981"
+                                  : normalizedStatus === "in-progress"
+                                    ? "#3B82F6"
+                                    : normalizedStatus === "cancelled"
+                                      ? "#9CA3AF"
+                                      : "#F59E0B",
+                            },
+                          ]}
+                        />
+                      </View>
+                    </View>
+
+                    {/* Description */}
+                    <View style={styles.section}>
+                      <Text style={styles.sectionTitle}>Description</Text>
+                      <View style={styles.descriptionBox}>
+                        <Text style={styles.descriptionText}>
+                          {selectedRequest.description}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Additional Notes */}
+                    {selectedRequest.additionalNotes && (
+                      <View style={styles.section}>
+                        <Text style={styles.sectionTitle}>Additional Notes</Text>
+                        <View style={styles.notesBox}>
+                          <Text style={styles.notesText}>
+                            {selectedRequest.additionalNotes}
+                          </Text>
+                        </View>
+                      </View>
+                    )}
+
+                    {/* Attachments */}
+                    {normalizedAttachments.length > 0 && (
+                        <View style={styles.section}>
+                          <Text style={styles.sectionTitle}>
+                            Photos ({normalizedAttachments.length})
+                          </Text>
+                          <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            style={styles.attachmentsScroll}
+                          >
+                            {normalizedAttachments.map((attachment, index) => (
+                              <TouchableOpacity
+                                key={index}
+                                style={styles.attachmentImageContainer}
+                                onPress={() => {
+                                  setSelectedImageIndex(index);
+                                  setShowImageViewer(true);
+                                }}
+                              >
+                                <Image
+                                  source={{ uri: attachment }}
+                                  style={styles.attachmentImage}
+                                  resizeMode="cover"
+                                />
+                                <View style={styles.attachmentOverlay}>
+                                  <Ionicons
+                                    name="expand-outline"
+                                    size={20}
+                                    color="#FFFFFF"
+                                  />
+                                </View>
+                              </TouchableOpacity>
+                            ))}
+                          </ScrollView>
+                        </View>
+                      )}
+                  </View>
+                )}
+              </Animated.View>
+
+              {/* Location Information */}
+              {(selectedRequest.apartment ||
+                selectedRequest.tower ||
+                selectedRequest.buildingId ||
+                selectedRequest.floor ||
+                resolvedBuildingName) && (
+                <Animated.View
+                  entering={FadeInDown.delay(50).duration(400)}
+                  style={styles.card}
+                >
+                  <View style={styles.cardHeader}>
+                    <Ionicons name="location-outline" size={20} color="#6B7280" />
+                    <Text style={styles.cardTitle}>Location</Text>
+                  </View>
+
+                  {/* Building Name (if available) */}
+                  {(resolvedBuildingName || selectedRequest.buildingName || selectedRequest.buildingId) && (
+                    <Text style={styles.buildingName}>
+                      {resolvedBuildingName ||
+                        selectedRequest.buildingName ||
+                        (selectedRequest.buildingId ? `Building ${selectedRequest.buildingId}` : "")}
+                    </Text>
+                  )}
+
+                  {/* Unit Details */}
+                  <View style={styles.locationDetails}>
+                    {selectedRequest.apartment && (
+                      <View style={styles.locationDetailRow}>
+                        <Text style={styles.locationDetailLabel}>Unit:</Text>
+                        <Text style={styles.locationDetailValue}>
+                           {currentUser?.profile?.apartment || "—"}
+                    
+                        </Text>
+                      </View>
+                    )}
+
+                    {selectedRequest.tower && (
+                      <View style={styles.locationDetailRow}>
+                        <Text style={styles.locationDetailLabel}>Tower:</Text>
+                        <Text style={styles.locationDetailValue}>
+                          {selectedRequest.tower}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </Animated.View>
+              )}
+
+              {/* Timeline */}
+              <Animated.View
+                entering={FadeInDown.delay(100).duration(400)}
+                style={styles.card}
+              >
+                <View style={styles.cardHeader}>
+                  <Ionicons name="calendar-outline" size={20} color="#6B7280" />
+                  <Text style={styles.cardTitle}>Timeline</Text>
+                </View>
+                <View style={styles.timelineItem}>
+                  <Text style={styles.timelineLabel}>Created</Text>
+                  <Text style={styles.timelineValue}>
+                    {formatDate(selectedRequest.createdAt)}
+                  </Text>
+                </View>
+                {selectedRequest.updatedAt !== selectedRequest.createdAt && (
+                  <View style={styles.timelineItem}>
+                    <Text style={styles.timelineLabel}>Last Updated</Text>
+                    <Text style={styles.timelineValue}>
+                      {formatDate(selectedRequest.updatedAt)}
+                    </Text>
+                  </View>
+                )}
+              </Animated.View>
+
+              {/* Job Overview */}
+              {job && (
+                <Animated.View
+                  entering={FadeInDown.delay(130).duration(400)}
+                  style={styles.card}
+                >
+                  <View style={styles.cardHeader}>
+                    <Ionicons name="briefcase-outline" size={20} color="#6B7280" />
+                    <Text style={styles.cardTitle}>Job Overview</Text>
+                  </View>
+
+                  <View style={styles.jobStatusRow}>
+                    {jobStatusMeta && (
+                      <View
+                        style={[
+                          styles.jobStatusBadge,
+                          {
+                            backgroundColor: jobStatusMeta.bg,
+                            borderColor: jobStatusMeta.border,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.jobStatusBadgeText,
+                            { color: jobStatusMeta.text },
+                          ]}
+                        >
+                          {jobStatusMeta.label}
+                        </Text>
+                      </View>
+                    )}
+                    {completionMeta && (
+                      <View
+                        style={[
+                          styles.jobStatusBadge,
+                          {
+                            backgroundColor: completionMeta.bg,
+                            borderColor: completionMeta.bg,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.jobStatusBadgeText,
+                            { color: completionMeta.text },
+                          ]}
+                        >
+                          {completionMeta.label}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {completionMeta && (
+                    <Text style={styles.completionSubtitle}>
+                      {completionMeta.subtitle}
+                    </Text>
+                  )}
+
+                  {completionRejectedReason && (
+                    <View style={styles.rejectionNotice}>
+                      <Ionicons name="alert-circle" size={18} color="#DC2626" />
+                      <Text style={styles.rejectionNoticeText}>
+                        {completionRejectedReason}
+                      </Text>
+                    </View>
+                  )}
+
+                  <View style={styles.jobInfoGrid}>
+                    <View style={styles.jobInfoItem}>
+                      <Text style={styles.jobInfoLabel}>Assigned To</Text>
+                      <Text style={styles.jobInfoValue}>
+                        {job.assignedToEmployeeName ||
+                          job.assignedToName ||
+                          "To be assigned"}
+                      </Text>
+                    </View>
+                    <View style={styles.jobInfoItem}>
+                      <Text style={styles.jobInfoLabel}>Service Provider</Text>
+                      <Text style={styles.jobInfoValue}>
+                        {job.assignedToName || "Not yet assigned"}
+                      </Text>
+                    </View>
+                    {job.scheduledDate && (
+                      <View style={styles.jobInfoItem}>
+                        <Text style={styles.jobInfoLabel}>Scheduled</Text>
+                        <Text style={styles.jobInfoValue}>
+                          {formatDate(job.scheduledDate)}
+                        </Text>
+                      </View>
+                    )}
+                    {job.startedAt && (
+                      <View style={styles.jobInfoItem}>
+                        <Text style={styles.jobInfoLabel}>Started</Text>
+                        <Text style={styles.jobInfoValue}>
+                          {formatDate(job.startedAt)}
+                        </Text>
+                      </View>
+                    )}
+                    {job.completedDate && (
+                      <View style={styles.jobInfoItem}>
+                        <Text style={styles.jobInfoLabel}>Completed</Text>
+                        <Text style={styles.jobInfoValue}>
+                          {formatDate(job.completedDate)}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {job.completionNotes && (
+                    <View style={styles.jobNotes}>
+                      <Text style={styles.jobNotesLabel}>Completion Notes</Text>
+                      <Text style={styles.jobNotesText}>{job.completionNotes}</Text>
+                    </View>
+                  )}
+
+                  {job.completionFeedback && (
+                    <View style={styles.jobNotes}>
+                      <Text style={styles.jobNotesLabel}>Your Feedback</Text>
+                      <Text style={styles.jobNotesText}>
+                        {job.completionFeedback}
+                      </Text>
+                    </View>
+                  )}
+
+                  {awaitingCompletionApproval && actions.approveTenantJobCompletion && (
+                    <TouchableOpacity
+                      style={styles.reviewCompletionButton}
+                      onPress={() => handleReviewCompletion(job.id)}
+                    >
+                      <Ionicons
+                        name="checkmark-circle-outline"
+                        size={18}
+                        color="#FFFFFF"
+                      />
+                      <Text style={styles.reviewCompletionButtonText}>
+                        Review & Confirm Completion
+                      </Text>
+                      <Ionicons
+                        name="chevron-forward"
+                        size={16}
+                        color="#FFFFFF"
+                        style={{ opacity: 0.8 }}
+                      />
+                    </TouchableOpacity>
+                  )}
+
+                  {!awaitingCompletionApproval &&
+                    job.status === "completed" &&
+                    !completionMeta && (
+                      <View style={styles.jobCompletionInfo}>
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={18}
+                          color="#10B981"
+                        />
+                        <Text style={styles.jobCompletionInfoText}>
+                          Job marked completed on{" "}
+                          {job.completedDate
+                            ? formatDate(job.completedDate)
+                            : "the latest update"}
+                          .
+                        </Text>
+                      </View>
+                    )}
+                </Animated.View>
+              )}
+
+              {/* Estimate */}
+              {job && estimate && (
+                <Animated.View
+                  entering={FadeInDown.delay(160).duration(400)}
+                  style={styles.card}
+                >
+                  <View style={styles.cardHeader}>
+                    <Ionicons name="receipt-outline" size={20} color="#6B7280" />
+                    <Text style={styles.cardTitle}>Cost Estimate</Text>
+                  </View>
+                  <Text style={styles.estimateMeta}>
+                    Submitted on {formatDate(estimate.createdAt)}
+                  </Text>
+                  {estimate.notes && (
+                    <Text style={styles.estimateNotes}>{estimate.notes}</Text>
+                  )}
+                  <View style={styles.estimateItems}>
+                    {estimate.items.map((item) => (
+                      <View key={item.id} style={styles.estimateItemRow}>
+                        <View style={styles.estimateItemInfo}>
+                          <Text style={styles.estimateItemLabel}>{item.label}</Text>
+                          {item.description && (
+                            <Text style={styles.estimateItemDescription}>
+                              {item.description}
+                            </Text>
+                          )}
+                        </View>
+                        <Text style={styles.estimateItemAmount}>
+                          {formatCurrency(item.amount)}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                  <View style={styles.estimateTotalRow}>
+                    <Text style={styles.estimateTotalLabel}>Total</Text>
+                    <Text style={styles.estimateTotalAmount}>
+                      {formatCurrency(estimate.subtotal)}
+                    </Text>
+                  </View>
+
+                  {estimateAwaitingTenant && actions.reviewJobEstimateAsTenant ? (
+                    <View style={styles.estimateActionRow}>
+                      <TouchableOpacity
+                        style={[styles.estimateActionButton, styles.estimateDecline]}
+                        onPress={() => handleDeclineEstimate(job.id)}
+                      >
+                        <Ionicons
+                          name="close-circle-outline"
+                          size={18}
+                          color="#EF4444"
+                        />
+                        <Text style={styles.estimateDeclineText}>
+                          Request Changes
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.estimateActionButton, styles.estimateApprove]}
+                        onPress={() => handleApproveEstimate(job.id)}
+                      >
+                        <Ionicons
+                          name="checkmark-circle-outline"
+                          size={18}
+                          color="#FFFFFF"
+                        />
+                        <Text style={styles.estimateApproveText}>Approve</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : estimateStatusDetails ? (
+                    <View style={styles.estimateStatusBanner}>
+                      <Ionicons
+                        name={estimateStatusDetails.icon}
+                        size={18}
+                        color={estimateStatusDetails.color}
+                      />
+                      <Text
+                        style={[
+                          styles.estimateStatusText,
+                          { color: estimateStatusDetails.color },
+                        ]}
+                      >
+                        {estimateStatusDetails.text}
+                      </Text>
+                    </View>
+                  ) : null}
+                </Animated.View>
+              )}
+
+              {/* Additional Costs */}
+              {job && hasAdditionalCosts && (
+                <Animated.View
+                  entering={FadeInDown.delay(190).duration(400)}
+                  style={styles.card}
+                >
+                  <View style={styles.cardHeader}>
+                    <Ionicons name="cash-outline" size={20} color="#6B7280" />
+                    <Text style={styles.cardTitle}>Additional Costs</Text>
+                  </View>
+                  <View style={styles.additionalCostSummary}>
+                    <View style={styles.additionalCostChip}>
+                      <Ionicons name="checkmark-circle" size={16} color="#047857" />
+                      <Text style={styles.additionalCostChipText}>
+                        Approved: {formatCurrency(approvedAdditionalCostTotal)}
+                      </Text>
+                    </View>
+                    {pendingAdditionalCostCount > 0 && (
+                      <View
+                        style={[
+                          styles.additionalCostChip,
+                          styles.additionalCostChipPending,
+                        ]}
+                      >
+                        <Ionicons name="time-outline" size={16} color="#92400E" />
+                        <Text
+                          style={[
+                            styles.additionalCostChipText,
+                            { color: "#92400E" },
+                          ]}
+                        >
+                          Pending: {pendingAdditionalCostCount}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  <View style={styles.additionalCostList}>
+                    {additionalCosts.map((cost) => (
+                      <View key={cost.id} style={styles.additionalCostItem}>
+                        <View style={styles.additionalCostHeader}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.additionalCostTitle}>
+                              {cost.description}
+                            </Text>
+                            <Text style={styles.additionalCostMeta}>
+                              {cost.category
+                                ? `${cost.category} • `
+                                : ""}
+                              Added by {cost.employeeName}
+                            </Text>
+                          </View>
+                          <Text style={styles.additionalCostAmount}>
+                            {formatCurrency(cost.amount)}
+                          </Text>
+                        </View>
+                        <View style={styles.additionalCostStatusRow}>
+                          <Ionicons
+                            name={
+                              cost.status === "approved"
+                                ? "checkmark-circle"
+                                : cost.status === "rejected"
+                                  ? "close-circle"
+                                  : "time-outline"
+                            }
+                            size={16}
+                            color={
+                              cost.status === "approved"
+                                ? "#10B981"
+                                : cost.status === "rejected"
+                                  ? "#EF4444"
+                                  : "#F59E0B"
+                            }
+                          />
+                          <Text style={styles.additionalCostStatusText}>
+                            {cost.status === "approved"
+                              ? `Approved${
+                                  cost.approvedAt
+                                    ? ` on ${new Date(
+                                        cost.approvedAt,
+                                      ).toLocaleDateString()}`
+                                    : ""
+                                }`
+                              : cost.status === "rejected"
+                                ? `Rejected${
+                                    cost.rejectionReason
+                                      ? ` – ${cost.rejectionReason}`
+                                      : ""
+                                  }`
+                                : "Awaiting service provider review"}
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                </Animated.View>
+              )}
+
+              {/* Contact Information */}
+              {selectedRequest.contactPhone && (
+                <Animated.View
+                  entering={FadeInDown.delay(220).duration(400)}
+                  style={styles.card}
+                >
+                  <View style={styles.cardHeader}>
+                    <Ionicons name="call-outline" size={20} color="#6B7280" />
+                    <Text style={styles.cardTitle}>Contact Information</Text>
+                  </View>
+                  <Text style={styles.contactPhone}>
+                    {selectedRequest.contactPhone}
+                  </Text>
+                  {selectedRequest.preferredTime && (
+                    <View style={styles.preferredTime}>
+                      <Text style={styles.preferredTimeLabel}>
+                        Preferred Time:
+                      </Text>
+                      <Text style={styles.preferredTimeValue}>
+                        {selectedRequest.preferredTime}
+                      </Text>
+                    </View>
+                  )}
+                </Animated.View>
+              )}
+
+              {/* Rating Section */}
+              {canProvideFeedback && (
+                <Animated.View
+                  entering={FadeInDown.delay(260).duration(400)}
+                  style={styles.card}
+                >
+                  <View style={styles.ratingSection}>
+                    <Text style={styles.sectionTitle}>Rate This Service</Text>
+                    <Text style={styles.ratingPromptText}>
+                      How was your experience with this request?
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.ratingButton}
+                      onPress={() => {
+                        // Check if rating already exists
+                        const existingRating = actions.getRatingByRequestId(selectedRequest.id);
+                        if (existingRating) {
+                          // Navigate to ratings screen to view existing rating
+                          router.push("/(tenant)/my-ratings");
+                        } else {
+                          // Navigate to submit rating modal
+                          router.push({
+                            pathname: "/(modals)/submit-rating",
+                            params: {
+                              requestId: selectedRequest.id,
+                              serviceProviderId: selectedRequest.assignedTo || "default-provider",
+                              requestTitle: selectedRequest.title,
+                              serviceProviderName: "Service Provider",
+                            },
+                          });
+                        }
+                      }}
+                    >
+                      <Ionicons name="star-outline" size={20} color="#fff" />
+                      <Text style={styles.ratingButtonText}>
+                        {actions.getRatingByRequestId(selectedRequest.id)
+                          ? "View Your Rating"
+                          : "Leave a Rating"}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </Animated.View>
+              )}
+            </>
+          ) : (
             <Animated.View
-              entering={FadeInDown.delay(220).duration(400)}
+              entering={FadeInDown.duration(300)}
               style={styles.card}
             >
               <View style={styles.cardHeader}>
-                <Ionicons name="call-outline" size={20} color="#6B7280" />
-                <Text style={styles.cardTitle}>Contact Information</Text>
+                <Ionicons name="chatbubbles-outline" size={20} color="#6B7280" />
+                <Text style={styles.cardTitle}>Comments</Text>
               </View>
-              <Text style={styles.contactPhone}>
-                {selectedRequest.contactPhone}
-              </Text>
-              {selectedRequest.preferredTime && (
-                <View style={styles.preferredTime}>
-                  <Text style={styles.preferredTimeLabel}>
-                    Preferred Time:
-                  </Text>
-                  <Text style={styles.preferredTimeValue}>
-                    {selectedRequest.preferredTime}
-                  </Text>
+
+              {fetchingDetails && comments.length === 0 ? (
+                <View style={styles.commentsEmpty}>
+                  <ActivityIndicator color="#2563EB" />
+                  <Text style={styles.commentsEmptyText}>Loading comments…</Text>
+                </View>
+              ) : comments.length === 0 ? (
+                <View style={styles.commentsEmpty}>
+                  <Ionicons name="chatbox-ellipses-outline" size={22} color="#9CA3AF" />
+                  <Text style={styles.commentsEmptyText}>No comments yet.</Text>
+                </View>
+              ) : (
+                <View style={styles.commentsList}>
+                  {comments.map((comment) => (
+                    <View key={comment.id} style={styles.commentCard}>
+                      <View style={styles.commentHeader}>
+                        <Ionicons name="person-circle-outline" size={20} color="#6B7280" />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.commentAuthor}>{comment.author}</Text>
+                          <Text style={styles.commentTime}>{formatDate(comment.createdAt)}</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.commentBody}>{comment.message}</Text>
+                      {comment.attachments && comment.attachments.length > 0 ? (
+                        <ScrollView
+                          horizontal
+                          showsHorizontalScrollIndicator={false}
+                          contentContainerStyle={{ gap: 10, marginTop: 8 }}
+                        >
+                          {comment.attachments.map((uri, idx) => {
+                            const isImage = isImageUri(uri);
+                            return (
+                              <TouchableOpacity
+                                key={`${comment.id}-${idx}`}
+                                style={styles.commentAttachment}
+                                onPress={() => Linking.openURL(uri)}
+                                activeOpacity={0.85}
+                              >
+                                {isImage ? (
+                                  <Image
+                                    source={{ uri }}
+                                    style={styles.commentAttachmentImage}
+                                    resizeMode="cover"
+                                  />
+                                ) : (
+                                  <View style={styles.commentAttachmentPlaceholder}>
+                                    <Ionicons name="document-outline" size={20} color="#2563EB" />
+                                  </View>
+                                )}
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </ScrollView>
+                      ) : null}
+                    </View>
+                  ))}
                 </View>
               )}
-            </Animated.View>
-          )}
 
-          {/* Rating Section */}
-          {canProvideFeedback && (
-            <Animated.View
-              entering={FadeInDown.delay(260).duration(400)}
-              style={styles.card}
-            >
-              <View style={styles.ratingSection}>
-                <Text style={styles.sectionTitle}>Rate This Service</Text>
-                <Text style={styles.ratingPromptText}>
-                  How was your experience with this request?
-                </Text>
+              <View style={styles.commentInputBox}>
+                <Text style={styles.commentInputLabel}>Add a comment</Text>
+                <TextInput
+                  style={styles.commentInput}
+                  placeholder={
+                    normalizedStatus === "cancelled"
+                      ? "Comments are disabled for cancelled requests"
+                      : normalizedStatus === "completed"
+                      ? "Comments are disabled for completed requests"
+                      : "Share an update or ask a question…"
+                  }
+                  value={newComment}
+                  onChangeText={setNewComment}
+                  multiline
+                  editable={normalizedStatus !== "cancelled" && normalizedStatus !== "completed"}
+                />
                 <TouchableOpacity
-                  style={styles.ratingButton}
-                  onPress={() => {
-                    // Check if rating already exists
-                    const existingRating = actions.getRatingByRequestId(selectedRequest.id);
-                    if (existingRating) {
-                      // Navigate to ratings screen to view existing rating
-                      router.push("/(tenant)/my-ratings");
-                    } else {
-                      // Navigate to submit rating modal
-                      router.push({
-                        pathname: "/(modals)/submit-rating",
-                        params: {
-                          requestId: selectedRequest.id,
-                          serviceProviderId: selectedRequest.assignedTo || "default-provider",
-                          requestTitle: selectedRequest.title,
-                          serviceProviderName: "Service Provider",
-                        },
-                      });
-                    }
-                  }}
+                  style={[
+                    styles.commentSendButton,
+                    (!newComment.trim() || isPostingComment || normalizedStatus === "cancelled" || normalizedStatus === "completed") && styles.commentSendButtonDisabled,
+                  ]}
+                  onPress={handleSubmitComment}
+                  disabled={!newComment.trim() || isPostingComment || normalizedStatus === "cancelled" || normalizedStatus === "completed"}
                 >
-                  <Ionicons name="star-outline" size={20} color="#fff" />
-                  <Text style={styles.ratingButtonText}>
-                    {actions.getRatingByRequestId(selectedRequest.id)
-                      ? "View Your Rating"
-                      : "Leave a Rating"}
-                  </Text>
+                  {isPostingComment ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <Ionicons name="send" size={16} color="#FFFFFF" />
+                      <Text style={styles.commentSendText}>Post Comment</Text>
+                    </>
+                  )}
                 </TouchableOpacity>
               </View>
             </Animated.View>
@@ -1150,9 +1676,9 @@ export default function RequestDetailsScreen() {
             <View style={styles.modalIcon}>
               <Ionicons name="trash-outline" size={32} color="#DC2626" />
             </View>
-            <Text style={styles.modalTitle}>Delete Request</Text>
+            <Text style={styles.modalTitle}>Cancel Request</Text>
             <Text style={styles.modalMessage}>
-              Are you sure you want to delete this request? This action cannot
+              Are you sure you want to cancel this request? This action cannot
               be undone.
             </Text>
             <View style={styles.modalRequestInfo}>
@@ -1179,12 +1705,9 @@ export default function RequestDetailsScreen() {
                 {loading ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <>
-                    <Ionicons name="trash-outline" size={20} color="#fff" />
-                    <Text style={styles.modalDeleteButtonText}>
-                      Delete Request
-                    </Text>
-                  </>
+                  <Text style={styles.modalDeleteButtonText}>
+                    Cancel Request
+                  </Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -1193,9 +1716,9 @@ export default function RequestDetailsScreen() {
       </Modal>
 
       {/* Image Viewer */}
-      {selectedRequest && selectedRequest.attachments.length > 0 && (
+      {selectedRequest && normalizedAttachments.length > 0 && (
         <ImageViewer
-          images={selectedRequest.attachments}
+          images={normalizedAttachments}
           initialIndex={selectedImageIndex}
           visible={showImageViewer}
           onClose={() => setShowImageViewer(false)}
@@ -1257,6 +1780,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
   },
+  tabRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 12,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: "#E5E7EB",
+    alignItems: "center",
+  },
+  tabButtonActive: {
+    backgroundColor: "#2563EB",
+  },
+  tabButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1F2937",
+  },
+  tabButtonTextActive: {
+    color: "#FFFFFF",
+  },
   card: {
     backgroundColor: "#fff",
     borderRadius: 12,
@@ -1293,6 +1839,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
     textTransform: "capitalize",
+  },
+  assignedRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 12,
+  },
+  assignedLabel: {
+    fontSize: 13,
+    color: "#4B5563",
+  },
+  assignedValue: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#1F2937",
   },
   progressContainer: {
     marginBottom: 16,
@@ -1372,6 +1933,100 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0, 0, 0, 0.6)",
     borderRadius: 16,
     padding: 6,
+  },
+  commentsEmpty: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 24,
+    gap: 8,
+  },
+  commentsEmptyText: {
+    fontSize: 13,
+    color: "#6B7280",
+  },
+  commentsList: {
+    gap: 12,
+    marginBottom: 16,
+  },
+  commentCard: {
+    backgroundColor: "#F9FAFB",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    padding: 12,
+    gap: 8,
+  },
+  commentHeader: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+  },
+  commentAuthor: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#111827",
+  },
+  commentTime: {
+    fontSize: 12,
+    color: "#9CA3AF",
+  },
+  commentBody: {
+    fontSize: 14,
+    color: "#374151",
+    lineHeight: 20,
+  },
+  commentAttachment: {
+    width: 100,
+    height: 100,
+    borderRadius: 10,
+    overflow: "hidden",
+    backgroundColor: "#EFF6FF",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  commentAttachmentImage: {
+    width: "100%",
+    height: "100%",
+  },
+  commentAttachmentPlaceholder: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#EFF6FF",
+  },
+  commentInputBox: {
+    gap: 10,
+  },
+  commentInputLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1F2937",
+  },
+  commentInput: {
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 10,
+    padding: 12,
+    minHeight: 80,
+    backgroundColor: "#FFFFFF",
+    textAlignVertical: "top",
+  },
+  commentSendButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#2563EB",
+    borderRadius: 10,
+    paddingVertical: 12,
+  },
+  commentSendButtonDisabled: {
+    opacity: 0.6,
+  },
+  commentSendText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
   },
   cardHeader: {
     flexDirection: "row",
@@ -1732,10 +2387,13 @@ const styles = StyleSheet.create({
   },
   priorityButtons: {
     flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
     gap: 8,
   },
   priorityButton: {
-    flex: 1,
+    flexBasis: "48%",
+    flexGrow: 1,
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 8,
@@ -1926,8 +2584,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#DC2626",
     alignItems: "center",
     justifyContent: "center",
-    flexDirection: "row",
-    gap: 8,
   },
   modalDeleteButtonText: {
     fontSize: 16,

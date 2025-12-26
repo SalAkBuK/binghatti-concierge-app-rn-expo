@@ -3,7 +3,9 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  FlatList,
   Modal,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -18,8 +20,10 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
+import { adminApi } from "../../lib/services/api/admin";
 import type { Building, Lease, User } from "../../lib/types";
 import { filterNotificationsByUser } from "../../lib/utils/helpers";
+import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
 
 const MANAGEMENT_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
 
@@ -27,15 +31,20 @@ interface TenantFormData {
   name: string;
   email: string;
   phone: string;
+  password: string;
+  address: string;
+  nationality: string;
   buildingId: string;
   tower: string;
   floor: string;
   apartment: string;
+  entranceDate: string;
 }
 
 export default function ManagementTenantsScreen() {
   const { currentUser, notifications, actions, leases } = useApp();
   const { getBuildings, getManagedBuildings, getUsers } = actions;
+  const isManagement = currentUser?.role?.toLowerCase() === "management";
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [showSideMenu, setShowSideMenu] = useState(false);
@@ -48,11 +57,25 @@ export default function ManagementTenantsScreen() {
     name: "",
     email: "",
     phone: "",
+    password: "",
+    address: "",
+    nationality: "",
     buildingId: "",
     tower: "",
     floor: "",
     apartment: "",
+    entranceDate: new Date().toISOString(),
   });
+  const [backendTenants, setBackendTenants] = useState<User[]>([]);
+  const [loadingTenants, setLoadingTenants] = useState(false);
+  const [managerBuildings, setManagerBuildings] = useState<Building[]>([]);
+  const [loadingManagerBuildings, setLoadingManagerBuildings] = useState(false);
+
+  // Pagination state
+  const ITEMS_PER_PAGE = 20;
+  const [currentPage, setCurrentPage] = useState(1);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
   const isCompact = width < 768;
@@ -62,36 +85,141 @@ export default function ManagementTenantsScreen() {
     [getManagedBuildings, getBuildings],
   );
 
+  const buildingOptions = useMemo(
+    () => (managedBuildings.length > 0 ? managedBuildings : managerBuildings),
+    [managedBuildings, managerBuildings],
+  );
+
   const [selectedBuildingId, setSelectedBuildingId] = useState<string>(
     managedBuildings.length === 1 ? managedBuildings[0].id : "all",
   );
 
+  const defaultFormBuildingId = useMemo(() => {
+    if (selectedBuildingId !== "all") {
+      return selectedBuildingId;
+    }
+    return buildingOptions[0]?.id || "";
+  }, [selectedBuildingId, buildingOptions]);
+
   useEffect(() => {
-    if (!managedBuildings.length) {
+    console.log("[ManagementTenants] Managed buildings updated", {
+      count: managedBuildings.length,
+      ids: managedBuildings.map((b) => b.id),
+      names: managedBuildings.map((b) => b.name),
+      selectedBuildingId,
+      defaultFormBuildingId,
+    });
+    console.log("[ManagementTenants] Building options snapshot", {
+      optionsCount: buildingOptions.length,
+      optionIds: buildingOptions.map((b) => b.id),
+      optionNames: buildingOptions.map((b) => b.name),
+      managerBuildingsCount: managerBuildings.length,
+      loadingManagerBuildings,
+    });
+  }, [managedBuildings, selectedBuildingId, defaultFormBuildingId, buildingOptions, managerBuildings, loadingManagerBuildings]);
+
+  useEffect(() => {
+    const shouldFetchManagerBuildings =
+      isManagement &&
+      managedBuildings.length === 0 &&
+      managerBuildings.length === 0 &&
+      !!currentUser.id;
+
+    if (!shouldFetchManagerBuildings) return;
+
+    const fetchBuildings = async () => {
+      setLoadingManagerBuildings(true);
+      try {
+        console.log("[ManagementTenants] Fetching manager buildings (fallback) for user", currentUser.id);
+        const response = await adminApi.getBuildingsByManagerId(currentUser.id);
+        if (response.success && Array.isArray(response.data)) {
+          setManagerBuildings(response.data);
+          console.log("[ManagementTenants] Manager buildings fetched", {
+            count: response.data.length,
+            names: response.data.map((b) => b.name),
+          });
+        } else {
+          setManagerBuildings([]);
+          console.warn("[ManagementTenants] Manager buildings fetch returned empty or failed", response);
+        }
+      } catch (error) {
+        console.error("[ManagementTenants] Failed to fetch manager buildings", error);
+        setManagerBuildings([]);
+      } finally {
+        setLoadingManagerBuildings(false);
+      }
+    };
+
+    fetchBuildings();
+  }, [currentUser?.id, isManagement, managedBuildings.length, managerBuildings.length]);
+
+  useEffect(() => {
+    if (!buildingOptions.length) {
       setSelectedBuildingId("all");
       return;
     }
 
     if (
       selectedBuildingId !== "all" &&
-      !managedBuildings.some((building) => building.id === selectedBuildingId)
+      !buildingOptions.some((building) => building.id === selectedBuildingId)
     ) {
-      setSelectedBuildingId("all");
+      setSelectedBuildingId(buildingOptions[0]?.id || "all");
+      return;
     }
-  }, [managedBuildings, selectedBuildingId]);
+
+    if (selectedBuildingId === "all" && buildingOptions.length === 1) {
+      setSelectedBuildingId(buildingOptions[0].id);
+    }
+  }, [buildingOptions, selectedBuildingId]);
 
   const buildingMap = useMemo(() => {
     const map = new Map<string, Building>();
-    managedBuildings.forEach((building) => {
+    buildingOptions.forEach((building) => {
       map.set(building.id, building);
     });
     return map;
-  }, [managedBuildings]);
+  }, [buildingOptions]);
 
-  const tenants = useMemo(
-    () => getUsers().filter((user) => user.role === "tenant"),
-    [getUsers],
-  );
+  const modalBuilding = useMemo(() => {
+    if (formData.buildingId) {
+      return buildingMap.get(formData.buildingId);
+    }
+
+    if (selectedBuildingId !== "all") {
+      return buildingMap.get(selectedBuildingId);
+    }
+
+    return buildingOptions[0];
+  }, [formData.buildingId, selectedBuildingId, buildingMap, buildingOptions]);
+
+  useEffect(() => {
+    if (!showCreateModal) return;
+    console.log("[ManagementTenants] Modal building context", {
+      showCreateModal,
+      formBuildingId: formData.buildingId,
+      selectedBuildingId,
+      defaultFormBuildingId,
+      modalBuildingName: modalBuilding?.name,
+      modalBuildingId: modalBuilding?.id,
+      managedBuildingsCount: buildingOptions.length,
+      managedBuildingNames: buildingOptions.map((b) => `${b.id}:${b.name}`),
+    });
+  }, [
+    showCreateModal,
+    formData.buildingId,
+    selectedBuildingId,
+    defaultFormBuildingId,
+    modalBuilding,
+    buildingOptions,
+  ]);
+
+  const tenants = useMemo(() => {
+    // Prefer backend list when available; fall back to cached users
+    if (backendTenants.length > 0) {
+      return backendTenants;
+    }
+    return getUsers().filter((user) => user.role === "tenant");
+  }, [backendTenants, getUsers]);
 
   const activeLeases = useMemo(
     () => leases.filter((lease) => lease.status !== "ended"),
@@ -119,7 +247,7 @@ export default function ManagementTenantsScreen() {
 
         if (!tenantBuildingId) return false;
 
-        return managedBuildings.some(
+        return buildingOptions.some(
           (building) => building.id === tenantBuildingId,
         );
       })
@@ -134,13 +262,95 @@ export default function ManagementTenantsScreen() {
         const bUnit = b.profile?.apartment || "";
         return aUnit.localeCompare(bUnit);
       });
-  }, [tenants, searchQuery, selectedBuildingId, managedBuildings]);
+  }, [tenants, searchQuery, selectedBuildingId, buildingOptions]);
+
+  // Paginated tenants - only show items up to current page
+  const paginatedTenants = useMemo(() => {
+    return filteredTenants.slice(0, currentPage * ITEMS_PER_PAGE);
+  }, [filteredTenants, currentPage, ITEMS_PER_PAGE]);
+
+  const hasMoreTenants = paginatedTenants.length < filteredTenants.length;
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedBuildingId]);
+
+  const fetchTenantsForBuilding = React.useCallback(
+    async (buildingId?: string) => {
+      const targetBuildingId =
+        buildingId || (selectedBuildingId === "all" ? buildingOptions[0]?.id : selectedBuildingId);
+
+      if (!targetBuildingId) {
+        setBackendTenants([]);
+        return;
+      }
+
+      console.log("[ManagementTenants] Fetching tenants for building", {
+        targetBuildingId,
+        selectedBuildingId,
+        optionsCount: buildingOptions.length,
+      });
+
+      setLoadingTenants(true);
+      try {
+        const numericId =
+          typeof targetBuildingId === "string"
+            ? parseInt(targetBuildingId.replace(/\D/g, ""), 10)
+            : targetBuildingId;
+
+        const response = await adminApi.getTenantsByBuilding(numericId);
+        if (response.success && Array.isArray(response.data)) {
+          const mapped: User[] = response.data.map((item: any) => ({
+            id: String(item.id),
+            email: item.email || "",
+            name: item.fullName || item.email || `Tenant ${item.id}`,
+            role: "tenant",
+            phone: item.phoneNumber || "",
+            profile: {
+              buildingId: String(targetBuildingId),
+              apartment: item.profile?.unitNumber || "",
+              floor: item.profile?.floorNumber != null ? String(item.profile.floorNumber) : "",
+              entranceDate: item.profile?.entranceDate,
+              address: item.address,
+              nationality: item.nationality,
+            } as any,
+            status: item.isActive ? "active" : "inactive",
+            createdAt: item.createdAt || new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          }));
+          setBackendTenants(mapped);
+          console.log("[ManagementTenants] Tenants fetched from backend", {
+            count: mapped.length,
+            buildingId: targetBuildingId,
+          });
+        } else {
+          setBackendTenants([]);
+          console.warn("[ManagementTenants] Tenant fetch returned empty or unsuccessful", {
+            buildingId: targetBuildingId,
+            response,
+          });
+        }
+      } catch (error) {
+        console.error("[ManagementTenants] Failed to fetch tenants by building:", error);
+        setBackendTenants([]);
+      } finally {
+        setLoadingTenants(false);
+      }
+    },
+    [buildingOptions, selectedBuildingId],
+  );
+
+  // Fetch tenants from backend when building selection changes
+  useEffect(() => {
+    fetchTenantsForBuilding();
+  }, [fetchTenantsForBuilding]);
 
   const occupancySnapshot = useMemo(() => {
     const buildingsScope =
       selectedBuildingId !== "all" && buildingMap.get(selectedBuildingId)
         ? [buildingMap.get(selectedBuildingId)!]
-        : managedBuildings;
+        : buildingOptions;
 
     const totals = buildingsScope.reduce(
       (acc, building) => ({
@@ -168,7 +378,7 @@ export default function ManagementTenantsScreen() {
       occupancyRate,
       activeLeases: activeLeaseCount,
     };
-  }, [selectedBuildingId, buildingMap, managedBuildings, activeLeases]);
+  }, [selectedBuildingId, buildingMap, buildingOptions, activeLeases]);
 
   const userNotifications = filterNotificationsByUser(
     notifications || [],
@@ -178,7 +388,7 @@ export default function ManagementTenantsScreen() {
 
   const activeLeasesInScope = useMemo(() => {
     if (selectedBuildingId === "all") {
-      const scopeIds = managedBuildings.map((building) => building.id);
+      const scopeIds = buildingOptions.map((building) => building.id);
       return activeLeases.filter((lease) =>
         scopeIds.includes(lease.buildingId),
       ).length;
@@ -187,7 +397,7 @@ export default function ManagementTenantsScreen() {
     return activeLeases.filter(
       (lease) => lease.buildingId === selectedBuildingId,
     ).length;
-  }, [selectedBuildingId, managedBuildings, activeLeases]);
+  }, [selectedBuildingId, buildingOptions, activeLeases]);
 
   const selectedTenantLease = selectedTenant
     ? leaseByTenant.get(selectedTenant.id)
@@ -200,13 +410,26 @@ export default function ManagementTenantsScreen() {
         name: "",
         email: "",
         phone: "",
-        buildingId: managedBuildings[0]?.id || "",
+        password: "",
+        address: "",
+        nationality: "",
+        buildingId: defaultFormBuildingId,
         tower: "",
         floor: "",
         apartment: "",
+        entranceDate: new Date().toISOString(),
       });
     }
-  }, [showCreateModal, editingTenant, managedBuildings]);
+  }, [showCreateModal, editingTenant, buildingOptions, defaultFormBuildingId]);
+
+  useEffect(() => {
+    if (showCreateModal && !editingTenant && !formData.buildingId && defaultFormBuildingId) {
+      console.log("[ManagementTenants] Applying default building to form", {
+        defaultFormBuildingId,
+      });
+      setFormData((prev) => ({ ...prev, buildingId: defaultFormBuildingId }));
+    }
+  }, [showCreateModal, editingTenant, formData.buildingId, defaultFormBuildingId]);
 
   // Initialize form when editing
   useEffect(() => {
@@ -215,14 +438,21 @@ export default function ManagementTenantsScreen() {
         name: editingTenant.name || "",
         email: editingTenant.email || "",
         phone: editingTenant.phone || "",
-        buildingId: editingTenant.profile?.buildingId || managedBuildings[0]?.id || "",
+        password: "",
+        address: (editingTenant as any).address || editingTenant.profile?.address || "",
+        nationality: (editingTenant as any).nationality || editingTenant.profile?.nationality || "",
+        buildingId: editingTenant.profile?.buildingId || buildingOptions[0]?.id || "",
         tower: editingTenant.profile?.tower || "",
         floor: editingTenant.profile?.floor || "",
         apartment: editingTenant.profile?.apartment || "",
+        entranceDate:
+          (editingTenant.profile as any)?.entranceDate ||
+          (editingTenant as any).entranceDate ||
+          new Date().toISOString(),
       });
       setShowCreateModal(true);
     }
-  }, [editingTenant, managedBuildings]);
+  }, [editingTenant, buildingOptions]);
 
   const handleCreateTenant = async () => {
     // Validate form
@@ -238,25 +468,63 @@ export default function ManagementTenantsScreen() {
 
     setIsSubmitting(true);
     try {
-      const payload = {
-        name: formData.name.trim(),
+      // Validate required fields for backend API
+      if (!editingTenant && !formData.password.trim()) {
+        Alert.alert("Validation Error", "Password is required");
+        setIsSubmitting(false);
+        return;
+      }
+      if (!formData.address.trim()) {
+        Alert.alert("Validation Error", "Address is required");
+        setIsSubmitting(false);
+        return;
+      }
+      if (!formData.nationality.trim()) {
+        Alert.alert("Validation Error", "Nationality is required");
+        setIsSubmitting(false);
+        return;
+      }
+      if (!formData.apartment.trim()) {
+        Alert.alert("Validation Error", "Unit/Apartment is required");
+        setIsSubmitting(false);
+        return;
+      }
+
+      const payload: any = {
+        fullName: formData.name.trim(),
         email: formData.email.trim(),
-        phone: formData.phone.trim(),
+        password: formData.password.trim(),
+        phoneNumber: formData.phone.trim(),
+        address: formData.address.trim(),
+        nationality: formData.nationality.trim(),
+        buildingId: formData.buildingId,
+        unitNumber: formData.apartment.trim(),
+        floorNumber: 0, // Send 0 as default floor number
+        entranceDate: formData.entranceDate,
         role: "tenant" as const,
-        profile: {
-          buildingId: formData.buildingId,
-          tower: formData.tower.trim() || undefined,
-          floor: formData.floor.trim() || undefined,
-          apartment: formData.apartment.trim() || undefined,
-        },
       };
+      if (editingTenant && !formData.password.trim()) {
+        delete payload.password;
+      }
 
       if (editingTenant) {
-        await actions.adminUpdateUser?.(editingTenant.id, payload as any);
-        Alert.alert("Success", "Tenant updated successfully");
+        await actions.adminUpdateUser?.(editingTenant.id, {
+          ...payload,
+          ...(formData.password.trim() ? { password: formData.password.trim() } : {}),
+          profile: {
+            buildingId: payload.buildingId,
+            apartment: payload.unitNumber,
+            floor: "0", // Send 0 as string for profile
+            address: payload.address,
+            nationality: payload.nationality,
+            entranceDate: payload.entranceDate,
+            tower: "", // Always send empty string
+          },
+        } as any);
+        showSuccessAlert("Tenant updated successfully");
       } else {
         await actions.createUser(payload as any);
-        Alert.alert("Success", "Tenant created successfully");
+        showSuccessAlert("Tenant created successfully");
       }
 
       setShowCreateModal(false);
@@ -265,14 +533,18 @@ export default function ManagementTenantsScreen() {
         name: "",
         email: "",
         phone: "",
-        buildingId: managedBuildings[0]?.id || "",
+        password: "",
+        address: "",
+        nationality: "",
+        buildingId: defaultFormBuildingId,
         tower: "",
         floor: "",
         apartment: "",
+        entranceDate: new Date().toISOString(),
       });
     } catch (error) {
       console.error("Failed to save tenant:", error);
-      Alert.alert("Error", editingTenant ? "Failed to update tenant" : "Failed to create tenant");
+      showErrorAlert(error);
     } finally {
       setIsSubmitting(false);
     }
@@ -281,7 +553,7 @@ export default function ManagementTenantsScreen() {
   const handleDeleteTenant = async (tenantId: string) => {
     Alert.alert(
       "Delete Tenant",
-      "Are you sure you want to delete this tenant? This action cannot be undone.",
+      "Are you sure you want to delete this tenant? You cannot undo this action.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -290,11 +562,11 @@ export default function ManagementTenantsScreen() {
           onPress: async () => {
             try {
               await actions.adminDeleteUser?.(tenantId);
-              Alert.alert("Success", "Tenant deleted successfully");
+              showSuccessAlert("Tenant deleted successfully");
               setSelectedTenant(null);
             } catch (error) {
               console.error("Failed to delete tenant:", error);
-              Alert.alert("Error", "Failed to delete tenant");
+              showErrorAlert(error);
             }
           },
         },
@@ -307,17 +579,27 @@ export default function ManagementTenantsScreen() {
     setSelectedTenant(null);
   };
 
-  return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView
-        style={[styles.scrollView, { paddingHorizontal: pagePadding }]}
-        contentContainerStyle={[
-          styles.scrollViewContent,
-          { paddingBottom: 200 + insets.bottom },
-        ]}
-        showsVerticalScrollIndicator={false}
-      >
-        <HeaderBar
+  const handleLoadMore = () => {
+    if (!isLoadingMore && hasMoreTenants) {
+      setIsLoadingMore(true);
+      setTimeout(() => {
+        setCurrentPage((prev) => prev + 1);
+        setIsLoadingMore(false);
+      }, 300);
+    }
+  };
+
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    fetchTenantsForBuilding().finally(() => {
+      setCurrentPage(1);
+      setIsRefreshing(false);
+    });
+  };
+
+  const renderHeader = () => (
+    <>
+      <HeaderBar
           title="Tenant Directory"
           subtitle="Manage occupants, leases, and unit assignments"
           hasUnreadNotifications={hasUnreadNotifications}
@@ -326,44 +608,7 @@ export default function ManagementTenantsScreen() {
           notificationRoute={MANAGEMENT_NOTIFICATION_ROUTE}
         />
 
-        <Animated.View
-          entering={FadeInDown.delay(40).duration(280)}
-          style={[
-            styles.summaryRow,
-            isCompact && styles.summaryRowCompact,
-          ]}
-        >
-          <View style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>Occupancy</Text>
-            <Text style={styles.summaryValue}>
-              {occupancySnapshot.occupancyRate}%
-            </Text>
-          <Text style={styles.summaryMeta}>
-            {occupancySnapshot.occupiedUnits}/{occupancySnapshot.totalUnits} units
-          </Text>
-        </View>
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>Vacant Units</Text>
-          <Text style={styles.summaryValue}>
-            {occupancySnapshot.vacantUnits}
-          </Text>
-          <Text style={styles.summaryMeta}>
-            Across selected management scope
-          </Text>
-        </View>
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>Active Leases</Text>
-          <Text style={styles.summaryValue}>{activeLeasesInScope}</Text>
-          <Text style={styles.summaryMeta}>In selected scope</Text>
-        </View>
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>Residents</Text>
-          <Text style={styles.summaryValue}>{filteredTenants.length}</Text>
-          <Text style={styles.summaryMeta}>Tenants in scope</Text>
-        </View>
-        </Animated.View>
-
-        {managedBuildings.length > 1 ? (
+        {buildingOptions.length > 1 ? (
           <Animated.View
             entering={FadeInDown.delay(80).duration(280)}
             style={styles.filterRow}
@@ -389,7 +634,7 @@ export default function ManagementTenantsScreen() {
                   All buildings
                 </Text>
               </TouchableOpacity>
-              {managedBuildings.map((building) => (
+              {buildingOptions.map((building) => (
                 <TouchableOpacity
                   key={building.id}
                   style={[
@@ -435,20 +680,39 @@ export default function ManagementTenantsScreen() {
             <Text style={styles.createButtonText}>Add Tenant</Text>
           </TouchableOpacity>
         </Animated.View>
+    </>
+  );
 
-        <Animated.View
-          entering={FadeInDown.delay(160).duration(320)}
-          style={styles.tenantList}
-        >
-          {filteredTenants.length ? (
-            filteredTenants.map((tenant) => {
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={{ flex: 1, paddingHorizontal: pagePadding }}>
+        {renderHeader()}
+
+        {loadingTenants ? (
+          <View style={styles.loadingCard}>
+            <ActivityIndicator size="large" color="#2563EB" />
+            <Text style={styles.emptyStateBody}>Loading tenants...</Text>
+          </View>
+        ) : paginatedTenants.length === 0 ? (
+          <View style={[styles.emptyState, styles.emptyStateStandalone]}>
+            <Ionicons name="people-outline" size={40} color="#CBD5F5" />
+            <Text style={styles.emptyStateTitle}>No tenants found</Text>
+            <Text style={styles.emptyStateBody}>
+              Try adjusting your building scope or search query.
+            </Text>
+          </View>
+        ) : (
+          <FlatList
+            data={paginatedTenants}
+            keyExtractor={(item) => item.id}
+            keyboardShouldPersistTaps="handled"
+            renderItem={({ item: tenant }) => {
               const building = tenant.profile?.buildingId
                 ? buildingMap.get(tenant.profile.buildingId)
                 : undefined;
               const tenantLease = leaseByTenant.get(tenant.id);
               return (
                 <TouchableOpacity
-                  key={tenant.id}
                   style={styles.tenantCard}
                   onPress={() => setSelectedTenant(tenant)}
                 >
@@ -460,6 +724,11 @@ export default function ManagementTenantsScreen() {
                   <View style={styles.tenantInfo}>
                     <Text style={styles.tenantName}>{tenant.name}</Text>
                     <Text style={styles.tenantMeta}>{tenant.email}</Text>
+                    {building ? (
+                      <Text style={styles.tenantMetaSecondary}>
+                        {building.name}
+                      </Text>
+                    ) : null}
                     <View style={styles.tenantTags}>
                       {tenant.profile?.apartment ? (
                         <View style={styles.tag}>
@@ -515,18 +784,59 @@ export default function ManagementTenantsScreen() {
                   />
                 </TouchableOpacity>
               );
-            })
-          ) : (
-            <View style={styles.emptyState}>
-              <Ionicons name="people-outline" size={40} color="#CBD5F5" />
-              <Text style={styles.emptyStateTitle}>No tenants found</Text>
-              <Text style={styles.emptyStateBody}>
-                Try adjusting your building scope or search query.
-              </Text>
-            </View>
-          )}
-        </Animated.View>
-      </ScrollView>
+            }}
+            ListFooterComponent={() => {
+              if (isLoadingMore) {
+                return (
+                  <View style={styles.loadingFooter}>
+                    <ActivityIndicator size="small" color="#2563EB" />
+                    <Text style={styles.loadingFooterText}>Loading more...</Text>
+                  </View>
+                );
+              }
+              if (hasMoreTenants && paginatedTenants.length > 0) {
+                return (
+                  <TouchableOpacity style={styles.loadMoreButton} onPress={handleLoadMore}>
+                    <Text style={styles.loadMoreButtonText}>
+                      Load More ({filteredTenants.length - paginatedTenants.length} remaining)
+                    </Text>
+                    <Ionicons name="chevron-down" size={16} color="#2563EB" />
+                  </TouchableOpacity>
+                );
+              }
+              if (paginatedTenants.length > 0 && !hasMoreTenants) {
+                return (
+                  <View style={styles.endReachedFooter}>
+                    <Text style={styles.endReachedText}>
+                      Showing all {paginatedTenants.length} tenants
+                    </Text>
+                  </View>
+                );
+              }
+              return null;
+            }}
+            refreshControl={
+              <RefreshControl
+                refreshing={isRefreshing}
+                onRefresh={handleRefresh}
+                tintColor="#2563EB"
+                colors={["#2563EB"]}
+              />
+            }
+            contentContainerStyle={[
+              styles.tenantList,
+              { paddingBottom: 120 },
+            ]}
+            style={styles.flatList}
+            showsVerticalScrollIndicator={false}
+            removeClippedSubviews={true}
+            maxToRenderPerBatch={10}
+            updateCellsBatchingPeriod={50}
+            initialNumToRender={10}
+            windowSize={5}
+          />
+        )}
+      </View>
 
       <SideMenu
         isVisible={showSideMenu}
@@ -638,6 +948,18 @@ export default function ManagementTenantsScreen() {
             <View style={{ width: 24 }} />
           </View>
           <ScrollView contentContainerStyle={styles.modalContent}>
+            {modalBuilding ? (
+              <View style={styles.buildingContextCard}>
+                <View style={styles.buildingContextIcon}>
+                  <Ionicons name="business-outline" size={18} color="#1D4ED8" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.buildingContextLabel}>Building</Text>
+                  <Text style={styles.buildingContextName}>{modalBuilding.name}</Text>
+                </View>
+              </View>
+            ) : null}
+
             <View style={styles.formGroup}>
               <Text style={styles.formLabel}>Name *</Text>
               <TextInput
@@ -672,59 +994,38 @@ export default function ManagementTenantsScreen() {
             </View>
 
             <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>Building *</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.buildingSelector}
-              >
-                {managedBuildings.map((building) => (
-                  <TouchableOpacity
-                    key={building.id}
-                    style={[
-                      styles.buildingChip,
-                      formData.buildingId === building.id && styles.buildingChipActive,
-                    ]}
-                    onPress={() =>
-                      setFormData((prev) => ({ ...prev, buildingId: building.id }))
-                    }
-                  >
-                    <Text
-                      style={[
-                        styles.buildingChipText,
-                        formData.buildingId === building.id &&
-                          styles.buildingChipTextActive,
-                      ]}
-                    >
-                      {building.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+              <Text style={styles.formLabel}>Password *</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="Enter password"
+                value={formData.password}
+                onChangeText={(text) => setFormData((prev) => ({ ...prev, password: text }))}
+                secureTextEntry
+                autoCapitalize="none"
+              />
             </View>
 
-            <View style={styles.formRow}>
-              <View style={[styles.formGroup, styles.formGroupHalf]}>
-                <Text style={styles.formLabel}>Tower</Text>
-                <TextInput
-                  style={styles.formInput}
-                  placeholder="e.g., A, B, C"
-                  value={formData.tower}
-                  onChangeText={(text) => setFormData((prev) => ({ ...prev, tower: text }))}
-                />
-              </View>
-
-              <View style={[styles.formGroup, styles.formGroupHalf]}>
-                <Text style={styles.formLabel}>Floor</Text>
-                <TextInput
-                  style={styles.formInput}
-                  placeholder="e.g., 5, 12"
-                  value={formData.floor}
-                  onChangeText={(text) => setFormData((prev) => ({ ...prev, floor: text }))}
-                  keyboardType="number-pad"
-                />
-              </View>
+            <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>Address *</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="Enter address"
+                value={formData.address}
+                onChangeText={(text) => setFormData((prev) => ({ ...prev, address: text }))}
+              />
             </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>Nationality *</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="e.g., UAE, Indian, Pakistani"
+                value={formData.nationality}
+                onChangeText={(text) => setFormData((prev) => ({ ...prev, nationality: text }))}
+              />
+            </View>
+
+
 
             <View style={styles.formGroup}>
               <Text style={styles.formLabel}>Unit/Apartment</Text>
@@ -736,6 +1037,21 @@ export default function ManagementTenantsScreen() {
                   setFormData((prev) => ({ ...prev, apartment: text }))
                 }
               />
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>Entrance Date</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="YYYY-MM-DDTHH:mm:ss.sssZ"
+                value={formData.entranceDate}
+                onChangeText={(text) =>
+                  setFormData((prev) => ({ ...prev, entranceDate: text }))
+                }
+              />
+              <Text style={styles.helperText}>
+                Uses ISO format; defaults to now if left unchanged.
+              </Text>
             </View>
 
             <TouchableOpacity
@@ -833,20 +1149,20 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
   },
   searchRow: {
-    marginTop: 20,
+    marginTop: -10,
     flexDirection: "row",
-    gap: 12,
+    gap: 10,
     alignItems: "center",
   },
   searchInputWrapper: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 8,
     backgroundColor: "#FFFFFF",
     borderRadius: 999,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 5,
+    paddingVertical: 8,
     borderWidth: 1,
     borderColor: "rgba(148, 163, 184, 0.2)",
   },
@@ -910,6 +1226,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#6B7280",
   },
+  tenantMetaSecondary: {
+    fontSize: 12,
+    color: "#9CA3AF",
+  },
   tenantTags: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -963,6 +1283,16 @@ const styles = StyleSheet.create({
     color: "#6B7280",
     textAlign: "center",
   },
+  loadingCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 24,
+    alignItems: "center",
+    gap: 10,
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.2)",
+    marginTop: 16,
+  },
   modalContainer: {
     flex: 1,
     backgroundColor: "#F3F4F6",
@@ -983,8 +1313,8 @@ const styles = StyleSheet.create({
     color: "#111827",
   },
   modalContent: {
-    padding: 24,
-    gap: 24,
+    padding: 20,
+    gap: 16,
   },
   modalProfile: {
     alignItems: "center",
@@ -1028,6 +1358,34 @@ const styles = StyleSheet.create({
   modalPlaceholder: {
     fontSize: 13,
     color: "#6B7280",
+  },
+  buildingContextCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.2)",
+  },
+  buildingContextIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#EEF2FF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  buildingContextLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#6B7280",
+  },
+  buildingContextName: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#111827",
   },
   modalLeaseCard: {
     backgroundColor: "#F9FAFB",
@@ -1082,7 +1440,7 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
   },
   formGroup: {
-    marginBottom: 20,
+    marginBottom: 12,
   },
   formLabel: {
     fontSize: 14,
@@ -1147,5 +1505,51 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
     color: "#FFFFFF",
+  },
+  flatList: {
+    flex: 1,
+  },
+  emptyStateStandalone: {
+    marginTop: 16,
+    paddingVertical: 24,
+  },
+  loadingFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+    paddingVertical: 24,
+  },
+  loadingFooterText: {
+    fontSize: 14,
+    color: "#6B7280",
+    fontWeight: "500",
+  },
+  loadMoreButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 16,
+    marginVertical: 16,
+    backgroundColor: "#EFF6FF",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+  },
+  loadMoreButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#2563EB",
+  },
+  endReachedFooter: {
+    alignItems: "center",
+    paddingVertical: 20,
+    paddingBottom: 40,
+  },
+  endReachedText: {
+    fontSize: 13,
+    color: "#9CA3AF",
+    fontWeight: "500",
   },
 });

@@ -77,9 +77,23 @@ export default function RegisterVisitorScreen() {
     }
 
     if (!formData.visitorIdNumber.trim()) {
-      errors.visitorIdNumber = "ID number is required";
+      const fieldName = formData.visitorIdType === "passport"
+        ? "Passport number"
+        : formData.visitorIdType === "national_id"
+        ? "National ID number"
+        : formData.visitorIdType === "driving_license"
+        ? "Driving license number"
+        : "ID number";
+      errors.visitorIdNumber = `${fieldName} is required`;
     } else if (formData.visitorIdNumber.trim().length < 3) {
-      errors.visitorIdNumber = "ID number must be at least 3 characters";
+      const fieldName = formData.visitorIdType === "passport"
+        ? "Passport number"
+        : formData.visitorIdType === "national_id"
+        ? "National ID number"
+        : formData.visitorIdType === "driving_license"
+        ? "Driving license number"
+        : "ID number";
+      errors.visitorIdNumber = `${fieldName} must be at least 3 characters`;
     }
 
     if (!formData.visitPurpose.trim()) {
@@ -192,6 +206,34 @@ export default function RegisterVisitorScreen() {
     });
   };
 
+  const getIdNumberLabel = (): string => {
+    switch (formData.visitorIdType) {
+      case "passport":
+        return "Passport Number *";
+      case "national_id":
+        return "National ID Number *";
+      case "driving_license":
+        return "Driving License Number *";
+      case "other":
+      default:
+        return "ID Number *";
+    }
+  };
+
+  const getIdNumberPlaceholder = (): string => {
+    switch (formData.visitorIdType) {
+      case "passport":
+        return "Enter passport number";
+      case "national_id":
+        return "Enter national ID number";
+      case "driving_license":
+        return "Enter driving license number";
+      case "other":
+      default:
+        return "Enter ID number";
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
@@ -272,27 +314,30 @@ export default function RegisterVisitorScreen() {
                     handleInputChange("visitorIdType", value)
                   }
                   style={styles.picker}
+                  dropdownIconColor="#111827"
+                  itemStyle={{ color: "#111827" }}
                 >
-                  <Picker.Item label="Passport" value="passport" />
-                  <Picker.Item label="National ID" value="national_id" />
+                  <Picker.Item label="Passport" value="passport" color="#111827" />
+                  <Picker.Item label="National ID" value="national_id" color="#111827" />
                   <Picker.Item
                     label="Driving License"
                     value="driving_license"
+                    color="#111827"
                   />
-                  <Picker.Item label="Other" value="other" />
+                  <Picker.Item label="Other" value="other" color="#111827" />
                 </Picker>
               </View>
             </View>
 
             {/* ID Number */}
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>ID Number *</Text>
+              <Text style={styles.label}>{getIdNumberLabel()}</Text>
               <TextInput
                 style={[
                   styles.textInput,
                   validationErrors.visitorIdNumber && styles.errorInput,
                 ]}
-                placeholder="Enter ID number"
+                placeholder={getIdNumberPlaceholder()}
                 value={formData.visitorIdNumber}
                 onChangeText={(text) =>
                   handleInputChange("visitorIdNumber", text)
@@ -512,9 +557,12 @@ const styles = StyleSheet.create({
     borderColor: "#d1d5db",
     borderRadius: 8,
     backgroundColor: "white",
+    overflow: "hidden",
   },
   picker: {
     height: 50,
+    color: "#111827", // Text color for selected item
+    backgroundColor: "white",
   },
   datePickerButton: {
     flexDirection: "row",

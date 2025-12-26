@@ -68,8 +68,15 @@ export default function NotificationsHubScreen() {
   };
 
   const handleAddNotice = () => {
-    // TODO: Navigate to create notice screen
-    console.log("Add notice pressed");
+    // First dismiss the modal, then navigate to management dashboard
+    router.back();
+    // Use setTimeout to ensure modal is dismissed before navigating
+    setTimeout(() => {
+      router.push({
+        pathname: "/(management)/index" as any,
+        params: { openBroadcastModal: "true" },
+      });
+    }, 100);
   };
 
   const handleRefresh = async () => {

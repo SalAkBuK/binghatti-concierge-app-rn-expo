@@ -37,6 +37,35 @@ const AMENITY_OPTIONS = [
   { id: "kingsize-bed", label: "King Size Bed" },
 ];
 
+// Input validation constants
+const MAX_AREA_SQFT = 99999; // Max 5 digits (up to 99,999 sq ft)
+const MAX_RENT_AMOUNT = 999999; // Max 6 digits (up to 999,999 AED)
+const MAX_DEPOSIT_AMOUNT = 999999; // Max 6 digits
+const MAX_MAINTENANCE_CHARGES = 99999; // Max 5 digits
+
+/**
+ * Validates and formats numeric input with max digit limit
+ * @param value - Input value to validate
+ * @param maxValue - Maximum allowed value
+ * @returns Validated string or empty string if invalid
+ */
+const validateNumericInput = (value: string, maxValue: number): string => {
+  // Remove any non-numeric characters except decimal point
+  const cleaned = value.replace(/[^\d.]/g, '');
+
+  // Prevent multiple decimal points
+  const parts = cleaned.split('.');
+  if (parts.length > 2) return parts[0] + '.' + parts.slice(1).join('');
+
+  // Check if value exceeds max
+  const numValue = parseFloat(cleaned);
+  if (!isNaN(numValue) && numValue > maxValue) {
+    return maxValue.toString();
+  }
+
+  return cleaned;
+};
+
 type UnitStatusFilter = "all" | BuildingUnit["status"];
 
 const UNIT_STATUS_OPTIONS: { label: string; value: UnitStatusFilter }[] = [
@@ -58,6 +87,21 @@ export default function ManagementUnitsScreen() {
   const [editedAmenities, setEditedAmenities] = useState<string[]>([]);
   const [editedStatus, setEditedStatus] = useState<BuildingUnit["status"]>("occupied");
   const [isSavingUnit, setIsSavingUnit] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    unitNumber: "",
+    floor: "",
+    tower: "",
+    areaSqFt: "",
+    bedrooms: "",
+    bathrooms: "",
+    rentAmount: "",
+    furnishing: "unfurnished" as "furnished" | "semi_furnished" | "unfurnished",
+    managedBy: "" as "building" | "owner" | "",
+    billsInclusive: false,
+    maintenanceInclusive: false,
+    depositAmount: "",
+    maintenanceCharges: "",
+  });
 
   // Create unit modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -218,15 +262,74 @@ export default function ManagementUnitsScreen() {
     setSelectedUnit(unit);
     setEditedAmenities(unit.amenities || []);
     setEditedStatus(unit.status);
+
+    // Populate edit form with current unit data
+    const building = buildingMap.get(unit.buildingId || "");
+    setEditFormData({
+      unitNumber: unit.unitNumber,
+      floor: unit.floor.toString(),
+      tower: building?.name || unit.tower || "",
+      areaSqFt: unit.areaSqFt?.toString() || "",
+      bedrooms: unit.bedrooms?.toString() || "",
+      bathrooms: unit.bathrooms?.toString() || "",
+      rentAmount: unit.rentAmount?.toString() || "",
+      furnishing: unit.furnishing || "unfurnished",
+      managedBy: unit.managedBy || "",
+      billsInclusive: unit.billsInclusive || false,
+      maintenanceInclusive: unit.maintenanceInclusive || false,
+      depositAmount: unit.depositAmount?.toString() || "",
+      maintenanceCharges: unit.maintenanceCharges?.toString() || "",
+    });
   };
 
   const handleSaveUnit = async () => {
     if (!selectedUnit) return;
+
+    // Validation
+    if (!editFormData.unitNumber.trim()) {
+      Alert.alert("Validation Error", "Please enter a unit number");
+      return;
+    }
+
+    const floor = parseInt(editFormData.floor, 10);
+    if (isNaN(floor) || floor < 0) {
+      Alert.alert("Validation Error", "Please enter a valid floor number");
+      return;
+    }
+
+    // Conditional validation based on managedBy
+    if (editFormData.managedBy === "building") {
+      const deposit = parseFloat(editFormData.depositAmount);
+      if (isNaN(deposit) || deposit < 0) {
+        Alert.alert("Validation Error", "Please enter a valid deposit amount");
+        return;
+      }
+
+      const maintenance = parseFloat(editFormData.maintenanceCharges);
+      if (isNaN(maintenance) || maintenance < 0) {
+        Alert.alert("Validation Error", "Please enter valid maintenance charges");
+        return;
+      }
+    }
+
     setIsSavingUnit(true);
     try {
       await updateUnit(selectedUnit.id, {
+        unitNumber: editFormData.unitNumber,
+        floor,
+        tower: editFormData.tower || undefined,
+        areaSqFt: editFormData.areaSqFt ? parseFloat(editFormData.areaSqFt) : undefined,
+        bedrooms: editFormData.bedrooms ? parseInt(editFormData.bedrooms, 10) : undefined,
+        bathrooms: editFormData.bathrooms ? parseFloat(editFormData.bathrooms) : undefined,
+        rentAmount: editFormData.rentAmount ? parseFloat(editFormData.rentAmount) : undefined,
         amenities: editedAmenities,
         status: editedStatus,
+        furnishing: editFormData.furnishing,
+        managedBy: editFormData.managedBy || undefined,
+        billsInclusive: editFormData.managedBy === "owner" ? editFormData.billsInclusive : undefined,
+        maintenanceInclusive: editFormData.managedBy === "owner" ? editFormData.maintenanceInclusive : undefined,
+        depositAmount: editFormData.managedBy === "building" ? parseFloat(editFormData.depositAmount) : undefined,
+        maintenanceCharges: editFormData.managedBy === "building" ? parseFloat(editFormData.maintenanceCharges) : undefined,
       });
       Alert.alert("Updated", "Unit details saved successfully.");
       setSelectedUnit(null);
@@ -673,13 +776,115 @@ export default function ManagementUnitsScreen() {
                     <Ionicons name="close" size={24} color="#111827" />
                   </TouchableOpacity>
                   <Text style={styles.modalTitle}>
-                    Unit {selectedUnit.unitNumber}
+                    Edit Unit {selectedUnit.unitNumber}
                   </Text>
                   <View style={{ width: 24 }} />
                 </View>
 
-                <View style={styles.modalSection}>
-                  <Text style={styles.modalSectionTitle}>Status</Text>
+                {/* Unit Details */}
+                <View style={styles.formRow}>
+                  <View style={[styles.formGroup, styles.formGroupHalf]}>
+                    <Text style={styles.label}>Unit Number *</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="e.g., 1205, A-302"
+                      value={editFormData.unitNumber}
+                      onChangeText={(text) =>
+                        setEditFormData((prev) => ({ ...prev, unitNumber: text }))
+                      }
+                    />
+                  </View>
+
+                  <View style={[styles.formGroup, styles.formGroupHalf]}>
+                    <Text style={styles.label}>Floor *</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="e.g., 12"
+                      value={editFormData.floor}
+                      onChangeText={(text) =>
+                        setEditFormData((prev) => ({ ...prev, floor: text }))
+                      }
+                      keyboardType="number-pad"
+                    />
+                  </View>
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Tower / Building</Text>
+                  <TextInput
+                    style={[styles.input, styles.inputDisabled]}
+                    placeholder="Auto-filled from building"
+                    value={editFormData.tower}
+                    editable={false}
+                  />
+                </View>
+
+                {/* Customizable Specs */}
+                <View style={styles.formRow}>
+                  <View style={[styles.formGroup, styles.formGroupHalf]}>
+                    <Text style={styles.label}>Area (sqft)</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Max 99,999"
+                      value={editFormData.areaSqFt}
+                      onChangeText={(text) => {
+                        const validated = validateNumericInput(text, MAX_AREA_SQFT);
+                        setEditFormData((prev) => ({ ...prev, areaSqFt: validated }));
+                      }}
+                      keyboardType="decimal-pad"
+                      maxLength={8}
+                    />
+                    <Text style={styles.inputHint}>Maximum: 99,999 sq ft</Text>
+                  </View>
+
+                  <View style={[styles.formGroup, styles.formGroupHalf]}>
+                    <Text style={styles.label}>Rent (AED/month)</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Max 999,999"
+                      value={editFormData.rentAmount}
+                      onChangeText={(text) => {
+                        const validated = validateNumericInput(text, MAX_RENT_AMOUNT);
+                        setEditFormData((prev) => ({ ...prev, rentAmount: validated }));
+                      }}
+                      keyboardType="decimal-pad"
+                      maxLength={10}
+                    />
+                    <Text style={styles.inputHint}>Maximum: 999,999 AED</Text>
+                  </View>
+                </View>
+
+                <View style={styles.formRow}>
+                  <View style={[styles.formGroup, styles.formGroupHalf]}>
+                    <Text style={styles.label}>Bedrooms</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Bedrooms"
+                      value={editFormData.bedrooms}
+                      onChangeText={(text) =>
+                        setEditFormData((prev) => ({ ...prev, bedrooms: text }))
+                      }
+                      keyboardType="number-pad"
+                    />
+                  </View>
+
+                  <View style={[styles.formGroup, styles.formGroupHalf]}>
+                    <Text style={styles.label}>Bathrooms</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Bathrooms"
+                      value={editFormData.bathrooms}
+                      onChangeText={(text) =>
+                        setEditFormData((prev) => ({ ...prev, bathrooms: text }))
+                      }
+                      keyboardType="decimal-pad"
+                    />
+                  </View>
+                </View>
+
+                {/* Status */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Status</Text>
                   <View style={styles.statusPickerRow}>
                     {UNIT_STATUS_OPTIONS.filter(
                       (option) => option.value !== "all",
@@ -711,8 +916,160 @@ export default function ManagementUnitsScreen() {
                   </View>
                 </View>
 
-                <View style={styles.modalSection}>
-                  <Text style={styles.modalSectionTitle}>Amenities</Text>
+                {/* Furnishing */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Furnishing</Text>
+                  <View style={styles.statusPickerRow}>
+                    {[
+                      { label: "Furnished", value: "furnished" },
+                      { label: "Semi-furnished", value: "semi_furnished" },
+                      { label: "Unfurnished", value: "unfurnished" },
+                    ].map((option) => (
+                      <TouchableOpacity
+                        key={option.value}
+                        style={[
+                          styles.statusPickerChip,
+                          editFormData.furnishing === option.value &&
+                            styles.statusPickerChipActive,
+                        ]}
+                        onPress={() =>
+                          setEditFormData((prev) => ({
+                            ...prev,
+                            furnishing: option.value as "furnished" | "semi_furnished" | "unfurnished",
+                          }))
+                        }
+                      >
+                        <Text
+                          style={[
+                            styles.statusPickerLabel,
+                            editFormData.furnishing === option.value &&
+                              styles.statusPickerLabelActive,
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+
+                {/* Managed By */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Managed By</Text>
+                  <View style={styles.statusPickerRow}>
+                    {[
+                      { label: "Managed by Building", value: "building" },
+                      { label: "Managed by Owner-Tenant", value: "owner" },
+                    ].map((option) => (
+                      <TouchableOpacity
+                        key={option.value}
+                        style={[
+                          styles.statusPickerChip,
+                          editFormData.managedBy === option.value &&
+                            styles.statusPickerChipActive,
+                        ]}
+                        onPress={() =>
+                          setEditFormData((prev) => ({
+                            ...prev,
+                            managedBy: option.value as "building" | "owner",
+                          }))
+                        }
+                      >
+                        <Text
+                          style={[
+                            styles.statusPickerLabel,
+                            editFormData.managedBy === option.value &&
+                              styles.statusPickerLabelActive,
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+
+                {/* Conditional Fields - Owner Managed */}
+                {editFormData.managedBy === "owner" && (
+                  <View style={styles.formGroup}>
+                    <Text style={styles.label}>Inclusions</Text>
+                    <View style={styles.checkboxContainer}>
+                      <TouchableOpacity
+                        style={styles.checkboxRow}
+                        onPress={() =>
+                          setEditFormData((prev) => ({
+                            ...prev,
+                            billsInclusive: !prev.billsInclusive,
+                          }))
+                        }
+                      >
+                        <View style={[styles.checkbox, editFormData.billsInclusive && styles.checkboxChecked]}>
+                          {editFormData.billsInclusive && (
+                            <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                          )}
+                        </View>
+                        <Text style={styles.checkboxLabel}>Bills inclusive</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.checkboxRow}
+                        onPress={() =>
+                          setEditFormData((prev) => ({
+                            ...prev,
+                            maintenanceInclusive: !prev.maintenanceInclusive,
+                          }))
+                        }
+                      >
+                        <View style={[styles.checkbox, editFormData.maintenanceInclusive && styles.checkboxChecked]}>
+                          {editFormData.maintenanceInclusive && (
+                            <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                          )}
+                        </View>
+                        <Text style={styles.checkboxLabel}>Maintenance inclusive</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+
+                {/* Conditional Fields - Building Managed */}
+                {editFormData.managedBy === "building" && (
+                  <View style={styles.formRow}>
+                    <View style={[styles.formGroup, styles.formGroupHalf]}>
+                      <Text style={styles.label}>Deposit (AED)</Text>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Max 999,999"
+                        value={editFormData.depositAmount}
+                        onChangeText={(text) => {
+                          const validated = validateNumericInput(text, MAX_DEPOSIT_AMOUNT);
+                          setEditFormData((prev) => ({ ...prev, depositAmount: validated }));
+                        }}
+                        keyboardType="decimal-pad"
+                        maxLength={10}
+                      />
+                      <Text style={styles.inputHint}>Maximum: 999,999 AED</Text>
+                    </View>
+
+                    <View style={[styles.formGroup, styles.formGroupHalf]}>
+                      <Text style={styles.label}>Maintenance (AED/mo)</Text>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Max 99,999"
+                        value={editFormData.maintenanceCharges}
+                        onChangeText={(text) => {
+                          const validated = validateNumericInput(text, MAX_MAINTENANCE_CHARGES);
+                          setEditFormData((prev) => ({ ...prev, maintenanceCharges: validated }));
+                        }}
+                        keyboardType="decimal-pad"
+                        maxLength={8}
+                      />
+                      <Text style={styles.inputHint}>Maximum: 99,999 AED</Text>
+                    </View>
+                  </View>
+                )}
+
+                {/* Amenities */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Unit Amenities</Text>
                   <View style={styles.amenitiesGrid}>
                     {AMENITY_OPTIONS.map((amenity) => {
                       const active = editedAmenities.includes(amenity.id);
@@ -744,9 +1101,11 @@ export default function ManagementUnitsScreen() {
                   onPress={handleSaveUnit}
                   disabled={isSavingUnit}
                 >
-                  <Text style={styles.saveButtonText}>
-                    {isSavingUnit ? "Saving…" : "Save changes"}
-                  </Text>
+                  {isSavingUnit ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.saveButtonText}>Save changes</Text>
+                  )}
                 </TouchableOpacity>
               </>
             ) : null}
@@ -892,26 +1251,32 @@ export default function ManagementUnitsScreen() {
                   <Text style={styles.label}>Area (sqft)</Text>
                   <TextInput
                     style={styles.input}
-                    placeholder="Auto-filled"
+                    placeholder="Max 99,999"
                     value={createFormData.areaSqFt}
-                    onChangeText={(text) =>
-                      setCreateFormData((prev) => ({ ...prev, areaSqFt: text }))
-                    }
+                    onChangeText={(text) => {
+                      const validated = validateNumericInput(text, MAX_AREA_SQFT);
+                      setCreateFormData((prev) => ({ ...prev, areaSqFt: validated }));
+                    }}
                     keyboardType="decimal-pad"
+                    maxLength={8}
                   />
+                  <Text style={styles.inputHint}>Maximum: 99,999 sq ft</Text>
                 </View>
 
                 <View style={[styles.formGroup, styles.formGroupHalf]}>
                   <Text style={styles.label}>Rent (AED/month)</Text>
                   <TextInput
                     style={styles.input}
-                    placeholder="Auto-filled"
+                    placeholder="Max 999,999"
                     value={createFormData.rentAmount}
-                    onChangeText={(text) =>
-                      setCreateFormData((prev) => ({ ...prev, rentAmount: text }))
-                    }
+                    onChangeText={(text) => {
+                      const validated = validateNumericInput(text, MAX_RENT_AMOUNT);
+                      setCreateFormData((prev) => ({ ...prev, rentAmount: validated }));
+                    }}
                     keyboardType="decimal-pad"
+                    maxLength={10}
                   />
+                  <Text style={styles.inputHint}>Maximum: 999,999 AED</Text>
                 </View>
               </View>
 
@@ -1072,26 +1437,32 @@ export default function ManagementUnitsScreen() {
                       <Text style={styles.label}>Deposit (AED) *</Text>
                       <TextInput
                         style={styles.input}
-                        placeholder="e.g., 9200"
+                        placeholder="Max 999,999"
                         value={createFormData.depositAmount}
-                        onChangeText={(text) =>
-                          setCreateFormData((prev) => ({ ...prev, depositAmount: text }))
-                        }
+                        onChangeText={(text) => {
+                          const validated = validateNumericInput(text, MAX_DEPOSIT_AMOUNT);
+                          setCreateFormData((prev) => ({ ...prev, depositAmount: validated }));
+                        }}
                         keyboardType="decimal-pad"
+                        maxLength={10}
                       />
+                      <Text style={styles.inputHint}>Maximum: 999,999 AED</Text>
                     </View>
 
                     <View style={[styles.formGroup, styles.formGroupHalf]}>
                       <Text style={styles.label}>Maintenance (AED/mo) *</Text>
                       <TextInput
                         style={styles.input}
-                        placeholder="e.g., 300"
+                        placeholder="Max 99,999"
                         value={createFormData.maintenanceCharges}
-                        onChangeText={(text) =>
-                          setCreateFormData((prev) => ({ ...prev, maintenanceCharges: text }))
-                        }
+                        onChangeText={(text) => {
+                          const validated = validateNumericInput(text, MAX_MAINTENANCE_CHARGES);
+                          setCreateFormData((prev) => ({ ...prev, maintenanceCharges: validated }));
+                        }}
                         keyboardType="decimal-pad"
+                        maxLength={8}
                       />
+                      <Text style={styles.inputHint}>Maximum: 99,999 AED</Text>
                     </View>
                   </View>
                 </>
@@ -1492,6 +1863,11 @@ const styles = StyleSheet.create({
   inputDisabled: {
     backgroundColor: "#F3F4F6",
     color: "#9CA3AF",
+  },
+  inputHint: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginTop: 4,
   },
   selectChip: {
     paddingHorizontal: 16,

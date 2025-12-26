@@ -207,12 +207,43 @@ export class BaseApiService {
       // Check if response is ok
       if (!response.ok) {
         const errorData = await response.text();
-        let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        // Include status text when available; some RN environments leave it blank
+        let errorMessage = response.statusText
+          ? `HTTP ${response.status}: ${response.statusText}`
+          : `HTTP ${response.status}`;
+        let parsedError: any;
 
+        // Try to surface the most helpful backend error message
         try {
-          const parsedError = JSON.parse(errorData);
-          errorMessage =
-            parsedError.message || parsedError.error || errorMessage;
+          parsedError = JSON.parse(errorData);
+
+          const problemMessage =
+            parsedError.message ||
+            parsedError.error ||
+            parsedError.title ||
+            parsedError.detail;
+
+          // ASP.NET-style validation errors live under "errors"
+          if (parsedError.errors && typeof parsedError.errors === "object") {
+            const firstKey = Object.keys(parsedError.errors)[0];
+            const firstValue = parsedError.errors[firstKey];
+            const firstValueText = Array.isArray(firstValue)
+              ? firstValue[0]
+              : String(firstValue);
+
+            if (problemMessage) {
+              errorMessage = `${problemMessage} (${firstKey}: ${firstValueText})`;
+            } else {
+              errorMessage = `${firstKey}: ${firstValueText}`;
+            }
+          } else if (problemMessage) {
+            errorMessage = problemMessage;
+          }
+
+          // If we still have no message, fall back to raw text
+          if (!errorMessage && errorData) {
+            errorMessage = errorData;
+          }
         } catch {
           // Use the raw text if JSON parsing fails
           errorMessage = errorData || errorMessage;
@@ -222,6 +253,7 @@ export class BaseApiService {
           message: errorMessage,
           status: response.status,
           code: response.status.toString(),
+          details: parsedError,
         };
 
         await this.handleError(apiError);
@@ -311,10 +343,11 @@ export class BaseApiService {
     });
   }
 
-  async delete<T = any>(url: string): Promise<T> {
+  async delete<T = any>(url: string, data?: any): Promise<T> {
     return this.request<T>({
       method: "DELETE",
       url,
+      data,
     });
   }
 }

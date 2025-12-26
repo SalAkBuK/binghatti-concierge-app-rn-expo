@@ -1,11 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
-import type { ReactElement } from "react";
-import React from "react";
-import { Modal, SafeAreaView, ScrollView, Text, TouchableOpacity, View, type ViewStyle } from "react-native";
+import React, { useEffect, useState } from "react";
+import { ActivityIndicator, Modal, SafeAreaView, ScrollView, Text, TouchableOpacity, View, type ViewStyle } from "react-native";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 
-import type { Building, BuildingEmployee, BuildingUnit, RatingSummary, ServiceProviderProfile, UnitType, VisitorLog } from "../../../../lib/types";
+import type { Building, BuildingEmployee, BuildingUnit, RatingSummary, ServiceProviderProfile, UnitType, User, VisitorLog } from "../../../../lib/types";
 import { formatDate } from "../../../../lib/utils/helpers";
+import apiService from "@/lib/services/api";
 import { styles } from "./_styles";
 import { getStatusColor } from "../utils/buildingHelpers";
 
@@ -16,6 +16,7 @@ interface BuildingActions {
   getRatingSummaries?: (role: "service_provider") => RatingSummary[];
   getServiceProviders?: () => ServiceProviderProfile[] | undefined;
   getUnitTypeById?: (id: string) => UnitType | undefined;
+  getServiceProvidersForBuilding?: (buildingId: string) => ServiceProviderProfile[];
 }
 
 interface BuildingDetailsModalProps {
@@ -27,6 +28,7 @@ interface BuildingDetailsModalProps {
   canManageBuildings: boolean;
   onAssignManager: (building: Building) => void;
   onEditBuilding: (building: Building) => void;
+  onDeleteBuilding: (building: Building) => void;
 }
 
 export function BuildingDetailsModal({
@@ -38,7 +40,218 @@ export function BuildingDetailsModal({
   canManageBuildings,
   onAssignManager,
   onEditBuilding,
+  onDeleteBuilding,
 }: BuildingDetailsModalProps) {
+  const [buildingEmployeesData, setBuildingEmployeesData] = useState<BuildingEmployee[]>([]);
+  const [loadingEmployees, setLoadingEmployees] = useState(false);
+  const [tenants, setTenants] = useState<User[]>([]);
+  const [loadingTenants, setLoadingTenants] = useState(false);
+  const [managerName, setManagerName] = useState<string | null>(null);
+  const [loadingManager, setLoadingManager] = useState(false);
+  const [buildingServiceProviders, setBuildingServiceProviders] = useState<ServiceProviderProfile[]>([]);
+  const [loadingServiceProviders, setLoadingServiceProviders] = useState(false);
+
+  // Fetch building manager when building changes
+  useEffect(() => {
+    const fetchManager = async () => {
+      if (!building?.id) {
+        return;
+      }
+
+      // Use cached manager name if available
+      if (building.managerName) {
+        setManagerName(building.managerName);
+        return;
+      }
+
+      setLoadingManager(true);
+      try {
+        const buildingIdNum = parseInt(building.id, 10);
+        if (isNaN(buildingIdNum)) {
+          setManagerName(null);
+          return;
+        }
+
+        console.log('[BuildingDetailsModal] Fetching manager for building:', building.id);
+        const response = await apiService.admin.getBuildingManagers(buildingIdNum);
+
+        if (response.success && response.data && response.data.length > 0) {
+          const manager = response.data[0];
+          const name = manager.fullName || manager.name || null;
+          console.log('[BuildingDetailsModal] Manager fetched:', name);
+          setManagerName(name);
+        } else {
+          console.log('[BuildingDetailsModal] No manager assigned to this building');
+          setManagerName(null);
+        }
+      } catch (error) {
+        console.error('[BuildingDetailsModal] Failed to fetch manager:', error);
+        setManagerName(null);
+      } finally {
+        setLoadingManager(false);
+      }
+    };
+
+    if (visible && building) {
+      fetchManager();
+    } else {
+      setManagerName(null);
+    }
+  }, [visible, building]);
+
+  // Fetch tenants when building changes
+  useEffect(() => {
+    const fetchTenants = async () => {
+      if (!building?.id) {
+        return;
+      }
+
+      setLoadingTenants(true);
+      try {
+        console.log('[BuildingDetailsModal] Fetching tenants for building:', building.id);
+        const response = await apiService.admin.getTenantsByBuilding(building.id);
+
+        if (response.success && response.data) {
+          console.log('[BuildingDetailsModal] Tenants received:', response.data.length);
+          setTenants(response.data);
+        } else {
+          console.error('[BuildingDetailsModal] API returned unsuccessful:', response.message);
+          setTenants([]);
+        }
+      } catch (error) {
+        console.error('[BuildingDetailsModal] Failed to fetch tenants:', error);
+        setTenants([]);
+      } finally {
+        setLoadingTenants(false);
+      }
+    };
+
+    if (visible && building) {
+      fetchTenants();
+    } else {
+      setTenants([]);
+    }
+  }, [visible, building]);
+
+  // Fetch employees when building changes
+  useEffect(() => {
+    const fetchEmployees = async () => {
+      if (!building?.id) {
+        return;
+      }
+
+      setLoadingEmployees(true);
+      try {
+        console.log('[BuildingDetailsModal] Fetching employees for building:', building.id);
+        const response = await apiService.admin.getMaintenanceStaffByBuilding(building.id);
+
+        if (response.success && Array.isArray(response.data)) {
+          const normalizedEmployees: BuildingEmployee[] = response.data.map((staff) => ({
+            id: String(staff.id ?? staff.userId ?? staff.email ?? `employee-${building.id}-${staff.fullName || 'unknown'}`),
+            buildingId: String(building.id),
+            name: staff.fullName || staff.name || "N/A",
+            role: staff.role || "Maintenance Staff",
+            phone: staff.phoneNumber || staff.phone || staff.contactNumber || "N/A",
+            shift: undefined,
+            rating: staff.rating,
+            jobsCompleted: staff.jobsCompleted,
+          }));
+          setBuildingEmployeesData(normalizedEmployees);
+        } else {
+          console.error('[BuildingDetailsModal] API returned unsuccessful for employees:', response.message);
+          setBuildingEmployeesData([]);
+        }
+      } catch (error) {
+        console.error('[BuildingDetailsModal] Failed to fetch employees:', error);
+        setBuildingEmployeesData([]);
+      } finally {
+        setLoadingEmployees(false);
+      }
+    };
+
+    if (visible && building) {
+      fetchEmployees();
+    } else {
+      setBuildingEmployeesData([]);
+    }
+  }, [visible, building]);
+
+  // Fetch service providers assigned to this building
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchServiceProviders = async () => {
+      if (!visible || !building?.id) {
+        setBuildingServiceProviders([]);
+        return;
+      }
+
+      // Prefer cached assignments if available to avoid duplicate API calls
+      const cachedProviders = actions.getServiceProvidersForBuilding?.(building.id) || [];
+      if (cachedProviders.length > 0) {
+        setBuildingServiceProviders(cachedProviders);
+        return;
+      }
+
+      setBuildingServiceProviders([]);
+      setLoadingServiceProviders(true);
+      try {
+        const response = await apiService.admin.getServiceProvidersByBuilding(building.id);
+        if (!isMounted) return;
+
+        if (response.success && Array.isArray(response.data)) {
+          const mappedProviders = response.data.map((provider: any) => {
+            const ratingValue = Number(
+              provider.rating ?? provider.averageRating ?? provider.ratingScore ?? 0,
+            );
+            const jobsCount = Number(
+              provider.jobsCompleted ?? provider.completedJobs ?? provider.totalJobs ?? provider.workOrdersCompleted ?? 0,
+            );
+
+            return {
+              id: String(
+                provider.id ||
+                  provider.providerId ||
+                  provider.serviceProviderId ||
+                  provider.userId ||
+                  `provider-${building.id}-${provider.fullName || provider.name || "unknown"}`,
+              ),
+              name: provider.fullName || provider.name || provider.companyName || "Unknown provider",
+              specialty:
+                provider.specialization ||
+                provider.speciality ||
+                provider.specialty ||
+                provider.category ||
+                "Service Provider",
+              phone: provider.phoneNumber || provider.phone || provider.contactNumber || "N/A",
+              email: provider.email || provider.contactEmail,
+              rating: Number.isFinite(ratingValue) ? ratingValue : 0,
+              jobsCompleted: Number.isFinite(jobsCount) ? jobsCount : 0,
+            } as ServiceProviderProfile;
+          });
+          setBuildingServiceProviders(mappedProviders);
+        } else {
+          setBuildingServiceProviders([]);
+        }
+      } catch (error) {
+        console.error("[BuildingDetailsModal] Failed to fetch service providers:", error);
+        if (isMounted) {
+          setBuildingServiceProviders([]);
+        }
+      } finally {
+        if (isMounted) {
+          setLoadingServiceProviders(false);
+        }
+      }
+    };
+
+    fetchServiceProviders();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [visible, building?.id, actions.getServiceProvidersForBuilding]);
+
   const resolveUnitType = (id: string): UnitType | undefined => {
     return actions.getUnitTypeById?.(id) || unitTypes?.find((type) => type.id === id);
   };
@@ -107,15 +320,43 @@ export function BuildingDetailsModal({
     </View>
   );
 
+  const renderTenantItem = (tenant: any) => (
+    <View key={tenant.id} style={styles.detailCardRow}>
+      <View style={styles.detailCardRowLeft}>
+        <Text style={styles.detailCardTitle}>{tenant.fullName || tenant.name || "N/A"}</Text>
+        <Text style={styles.detailCardSubtitle}>
+          {tenant.profile?.unitNumber ? `Unit ${tenant.profile.unitNumber}` : "No unit"} • {tenant.profile?.floorNumber ? `Floor ${tenant.profile.floorNumber}` : "N/A"}
+        </Text>
+      </View>
+      <View style={styles.detailCardRowRight}>
+        <Text style={styles.detailMeta}>{tenant.phoneNumber || tenant.phone || "N/A"}</Text>
+        <Text style={styles.detailMeta}>{tenant.email}</Text>
+      </View>
+    </View>
+  );
+
   const renderServiceProviderItem = (provider: ServiceProviderProfile) => (
     <View key={provider.id} style={styles.detailCardRow}>
       <View style={styles.detailCardRowLeft}>
         <Text style={styles.detailCardTitle}>{provider.name}</Text>
-        <Text style={styles.detailCardSubtitle}>{provider.specialty}</Text>
+        <Text style={styles.detailCardSubtitle}>{provider.specialty || "Service Provider"}</Text>
+        {[provider.email, provider.phone].filter(Boolean).length > 0 && (
+          <Text style={styles.detailMeta}>
+            {[provider.email, provider.phone].filter(Boolean).join(" • ")}
+          </Text>
+        )}
       </View>
       <View style={styles.detailCardRowRight}>
-        <Text style={styles.detailMeta}>{provider.rating.toFixed(1)} ★</Text>
-        <Text style={styles.detailMeta}>{provider.jobsCompleted} jobs</Text>
+        <Text style={styles.detailMeta}>
+          {Number.isFinite(provider.rating) && provider.rating > 0
+            ? `${provider.rating.toFixed(1)} ★`
+            : "No rating yet"}
+        </Text>
+        {Number.isFinite(provider.jobsCompleted) && (
+          <Text style={styles.detailMeta}>
+            {provider.jobsCompleted} {provider.jobsCompleted === 1 ? "job" : "jobs"}
+          </Text>
+        )}
       </View>
     </View>
   );
@@ -185,28 +426,11 @@ export function BuildingDetailsModal({
       (unit) => unit.status === "maintenance",
     ).length;
     const employees =
-      actions.getBuildingEmployees?.(building.id) || [];
+      buildingEmployeesData.length > 0
+        ? buildingEmployeesData
+        : actions.getBuildingEmployees?.(building.id) || [];
     const visitorEntries =
       actions.getVisitorLogsByBuilding?.(building.id) || [];
-    const providerSummaries =
-      actions.getRatingSummaries?.("service_provider") || [];
-    const providers =
-      actions.getServiceProviders?.() as ServiceProviderProfile[] | undefined;
-    const providerCards =
-      providerSummaries.length > 0 && providers
-        ? (providerSummaries
-            .slice(0, 3)
-            .map((summary) => {
-              const provider =
-                providers.find(
-                  (sp) =>
-                    sp.id === summary.entityId || sp.userId === summary.entityId,
-                ) || providers.find((sp) => sp.userId === summary.entityId);
-              if (!provider) return null;
-              return renderServiceProviderItem(provider);
-            })
-            .filter(Boolean) as ReactElement[])
-        : [];
 
     const occupancyRate = buildingUnitsData.length > 0 
       ? Math.round((occupiedUnits / buildingUnitsData.length) * 100)
@@ -214,6 +438,11 @@ export function BuildingDetailsModal({
 
     const status = (building.status || "active") as Building["status"];
     const statusColors = getStatusColor(status);
+
+    const resolvedServiceProviders =
+      buildingServiceProviders.length > 0
+        ? buildingServiceProviders
+        : actions.getServiceProvidersForBuilding?.(building.id) || [];
 
     return (
       <SafeAreaView style={styles.detailsModalContainer}>
@@ -253,28 +482,47 @@ export function BuildingDetailsModal({
         >
           {/* Manager Card */}
           <Animated.View entering={FadeInDown.delay(50).duration(300)} style={styles.detailsManagerCard}>
-          <View style={styles.detailsManagerHeader}>
-            <View style={styles.detailsManagerIconWrapper}>
-              <Ionicons name="person-circle" size={24} color="#7034FF" />
-            </View>
-            <View style={styles.detailsManagerInfo}>
+            <View style={styles.detailsManagerHeader}>
+              <View style={styles.detailsManagerIconWrapper}>
+                <Ionicons name="person-circle" size={24} color="#7034FF" />
+              </View>
+              <View style={styles.detailsManagerInfo}>
                 <Text style={styles.detailsManagerLabel}>Building Manager</Text>
                 <Text style={styles.detailsManagerName}>
-                  {building.managerName || "Not assigned"}
+                  {loadingManager ? "Loading..." : (managerName || building.managerName || "Not assigned")}
                 </Text>
               </View>
             </View>
             {canManageBuildings && (
-              <TouchableOpacity
-                style={[styles.detailsAssignButton, { marginLeft: 8 }]}
-                onPress={() => {
-                  onClose();
-                  onEditBuilding(building);
-                }}
-              >
-                <Ionicons name="create-outline" size={18} color="#7034FF" />
-                <Text style={styles.detailsAssignButtonText}>Edit</Text>
-              </TouchableOpacity>
+              <View style={styles.detailsManagerActions}>
+                <TouchableOpacity
+                  style={styles.detailsAssignButton}
+                  onPress={() => onAssignManager(building)}
+                >
+                  <Ionicons name="person-add-outline" size={16} color="#7034FF" />
+                  <Text style={styles.detailsAssignButtonText}>Assign</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.detailsAssignButton}
+                  onPress={() => {
+                    onClose();
+                    onEditBuilding(building);
+                  }}
+                >
+                  <Ionicons name="create-outline" size={16} color="#7034FF" />
+                  <Text style={styles.detailsAssignButtonText}>Edit</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.detailsAssignButton, styles.detailsDeleteButton]}
+                  onPress={() => {
+                    onClose();
+                    onDeleteBuilding(building);
+                  }}
+                >
+                  <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                  <Text style={[styles.detailsAssignButtonText, { color: "#EF4444" }]}>Delete</Text>
+                </TouchableOpacity>
+              </View>
             )}
           </Animated.View>
 
@@ -476,16 +724,51 @@ export function BuildingDetailsModal({
               <Ionicons name="people" size={20} color="#1F2937" />
               <Text style={styles.detailsSectionTitle}>Building Employees</Text>
               <View style={styles.detailsCountBadge}>
-                <Text style={styles.detailsCountBadgeText}>{employees.length}</Text>
+                <Text style={styles.detailsCountBadgeText}>
+                  {loadingEmployees ? "..." : employees.length}
+                </Text>
               </View>
             </View>
             <View style={styles.detailsSectionContent}>
-              {employees.length > 0 ? (
+              {loadingEmployees ? (
+                <View style={styles.detailsEmptyState}>
+                  <ActivityIndicator size="large" color="#7034FF" />
+                  <Text style={styles.detailsEmptyText}>Loading employees...</Text>
+                </View>
+              ) : employees.length > 0 ? (
                 employees.map(renderEmployeeItem)
               ) : (
                 <View style={styles.detailsEmptyState}>
                   <Ionicons name="people-outline" size={40} color="#D1D5DB" />
                   <Text style={styles.detailsEmptyText}>No employees assigned</Text>
+                </View>
+              )}
+            </View>
+          </Animated.View>
+
+          {/* Tenants Section */}
+          <Animated.View entering={FadeInDown.delay(225).duration(300)} style={styles.detailsSection}>
+            <View style={styles.detailsSectionHeader}>
+              <Ionicons name="home" size={20} color="#1F2937" />
+              <Text style={styles.detailsSectionTitle}>Tenants</Text>
+              <View style={styles.detailsCountBadge}>
+                <Text style={styles.detailsCountBadgeText}>
+                  {loadingTenants ? "..." : tenants.length}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.detailsSectionContent}>
+              {loadingTenants ? (
+                <View style={styles.detailsEmptyState}>
+                  <ActivityIndicator size="large" color="#7034FF" />
+                  <Text style={styles.detailsEmptyText}>Loading tenants...</Text>
+                </View>
+              ) : tenants.length > 0 ? (
+                tenants.map(renderTenantItem)
+              ) : (
+                <View style={styles.detailsEmptyState}>
+                  <Ionicons name="home-outline" size={40} color="#D1D5DB" />
+                  <Text style={styles.detailsEmptyText}>No tenants in this building</Text>
                 </View>
               )}
             </View>
@@ -497,37 +780,23 @@ export function BuildingDetailsModal({
               <Ionicons name="construct" size={20} color="#1F2937" />
               <Text style={styles.detailsSectionTitle}>Service Providers</Text>
               <View style={styles.detailsCountBadge}>
-                <Text style={styles.detailsCountBadgeText}>{providerCards.length}</Text>
+                <Text style={styles.detailsCountBadgeText}>
+                  {loadingServiceProviders ? "..." : resolvedServiceProviders.length}
+                </Text>
               </View>
             </View>
             <View style={styles.detailsSectionContent}>
-              {providerCards.length > 0 ? (
-                providerCards
+              {loadingServiceProviders ? (
+                <View style={styles.detailsEmptyState}>
+                  <ActivityIndicator size="large" color="#7034FF" />
+                  <Text style={styles.detailsEmptyText}>Loading service providers...</Text>
+                </View>
+              ) : resolvedServiceProviders.length > 0 ? (
+                resolvedServiceProviders.map(renderServiceProviderItem)
               ) : (
                 <View style={styles.detailsEmptyState}>
                   <Ionicons name="hammer-outline" size={40} color="#D1D5DB" />
-                  <Text style={styles.detailsEmptyText}>No service providers yet</Text>
-                </View>
-              )}
-            </View>
-          </Animated.View>
-
-          {/* Visitor Logs Section */}
-          <Animated.View entering={FadeInDown.delay(300).duration(300)} style={styles.detailsSection}>
-            <View style={styles.detailsSectionHeader}>
-              <Ionicons name="log-in" size={20} color="#1F2937" />
-              <Text style={styles.detailsSectionTitle}>Recent Visitors & Deliveries</Text>
-              <View style={styles.detailsCountBadge}>
-                <Text style={styles.detailsCountBadgeText}>{visitorEntries.length}</Text>
-              </View>
-            </View>
-            <View style={styles.detailsSectionContent}>
-              {visitorEntries.length > 0 ? (
-                visitorEntries.slice(0, 5).map(renderVisitorLogItem)
-              ) : (
-                <View style={styles.detailsEmptyState}>
-                  <Ionicons name="log-in-outline" size={40} color="#D1D5DB" />
-                  <Text style={styles.detailsEmptyText}>No visitor activity recorded</Text>
+                  <Text style={styles.detailsEmptyText}>No service providers assigned</Text>
                 </View>
               )}
             </View>

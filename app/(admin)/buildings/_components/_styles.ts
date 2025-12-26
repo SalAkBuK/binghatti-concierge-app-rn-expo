@@ -64,7 +64,7 @@ const styles = StyleSheet.create({
     padding: 20,
     width: "100%",
     maxWidth: 500,
-    maxHeight: "80%",
+    maxHeight: "85%",
   },
   modalHeader: {
     flexDirection: "row",
@@ -481,9 +481,6 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   detailsManagerCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
     padding: 16,
@@ -523,21 +520,32 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#111827",
   },
+  detailsManagerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 12,
+    flexWrap: "wrap",
+  },
   detailsAssignButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 4,
     backgroundColor: "#F3E8FF",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: "#E9D5FF",
   },
   detailsAssignButtonText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "600",
     color: "#7034FF",
+  },
+  detailsDeleteButton: {
+    backgroundColor: "#FEE2E2",
+    borderColor: "#FECACA",
   },
   detailsCapacityCard: {
     backgroundColor: "#FFFFFF",
@@ -830,6 +838,26 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#7034FF",
     textAlign: "center",
+  },
+  // Load More Button (Pagination)
+  loadMoreButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F9FAFB",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    marginTop: 16,
+    marginHorizontal: 16,
+    gap: 8,
+  },
+  loadMoreText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#7034FF",
   },
 });
 

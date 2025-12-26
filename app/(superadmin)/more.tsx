@@ -37,14 +37,6 @@ const MENU_ITEMS: MenuItem[] = [
     route: "/(superadmin)/profile",
     color: "#7034FF",
   },
-  {
-    id: "activity",
-    title: "System Activity",
-    subtitle: "Monitor system-wide activity logs",
-    icon: "notifications",
-    route: "/(superadmin)/activity",
-    color: "#F59E0B",
-  },
 ];
 
 export default function SuperAdminMoreScreen() {

@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   RefreshControl,
   ScrollView,
@@ -19,6 +19,7 @@ import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
 import type { Job } from "../../lib/types";
 import { filterNotificationsByUser } from "../../lib/utils/helpers";
+import apiService from "../../lib/services/api";
 
 const NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
 
@@ -43,7 +44,7 @@ const PRIORITY_OPTIONS: { label: string; value: JobPriority }[] = [
 ];
 
 export default function JobsScreen() {
-  const { currentUser, notifications, actions } = useApp();
+  const { currentUser, notifications } = useApp();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [showSideMenu, setShowSideMenu] = useState(false);
@@ -52,6 +53,57 @@ export default function JobsScreen() {
   const [selectedStatus, setSelectedStatus] = useState<JobStatus>("all");
   const [selectedPriority, setSelectedPriority] = useState<JobPriority>("all");
   const [showFilters, setShowFilters] = useState(false);
+  const [requests, setRequests] = useState<Job[]>([]);
+  const [loading, setLoading] = useState(false);
+  const normalizeRequestToJob = (item: any): Job => {
+    const statusCode = Number(
+      item.status ?? item.requestStatus ?? item.statusId ?? item.Status ?? 0,
+    );
+    let status: Job["status"];
+    switch (statusCode) {
+      case 5:
+        status = "completed";
+        break;
+      case 6:
+        status = "cancelled";
+        break;
+      case 3:
+        status = "in-progress";
+        break;
+      case 4:
+        status = "pending"; // map on-hold to pending bucket for now
+        break;
+      case 2:
+        status = "assigned";
+        break;
+      case 1:
+      default:
+        status = "pending";
+    }
+    const priority = (item.priority || item.priorityLevel || "medium")
+      .toString()
+      .toLowerCase() as Job["priority"];
+    return {
+      id: String(item.id || item.requestId || item.maintenanceId || Math.random()),
+      title: String(item.title || item.requestTitle || item.issueTitle || "Maintenance Request"),
+      description: String(item.description || item.issueDescription || ""),
+      status,
+      priority,
+      buildingId: String(item.buildingId || ""),
+      buildingName: String(item.buildingName || item.building || "Unknown"),
+      unitNumber: item.unitNumber ? String(item.unitNumber) : "",
+      assignedTo: currentUser?.id,
+      assignedToEmployeeId: item.assignedToEmployeeId
+        ? String(item.assignedToEmployeeId)
+        : undefined,
+      offerStatus: item.offerStatus || "accepted",
+      scheduledDate: item.scheduledDate || item.expectedVisitDate || item.createdAt,
+      completedDate: item.completedDate || item.closedAt || "",
+      createdAt: item.createdAt || item.createdOn || new Date().toISOString(),
+      actualCost: Number(item.actualCost || item.cost || 0),
+      estimatedCost: Number(item.estimatedCost || item.estimate || 0),
+    } as Job;
+  };
 
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
   const userNotifications = filterNotificationsByUser(
@@ -60,9 +112,37 @@ export default function JobsScreen() {
   );
   const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
 
+  useEffect(() => {
+    let isMounted = true;
+    const fetchRequests = async () => {
+      if (!currentUser?.id) return;
+      setLoading(true);
+      try {
+        const response = await apiService.get<any>(`/Maintenance/byuser/${currentUser.id}`);
+        if (!isMounted) return;
+        const data = (response as any)?.data ?? response ?? [];
+        const normalized: Job[] = Array.isArray(data)
+          ? data.map((item) => normalizeRequestToJob(item))
+          : [];
+        setRequests(normalized);
+      } catch (error) {
+        if (error?.code !== "CANCELLED" && error?.message !== "Request cancelled") {
+          console.error("[ServiceProviderJobs] Failed to fetch requests:", error);
+        }
+        if (isMounted) setRequests([]);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    fetchRequests();
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUser?.id]);
+
   // Get service provider's jobs
-  const allJobs = actions.getJobs?.() ?? [];
-  const myJobs = allJobs.filter((job) => job.assignedTo === currentUser?.id);
+  const myJobs = requests;
 
   // Filter jobs
   const filteredJobs = useMemo(() => {
@@ -109,8 +189,20 @@ export default function JobsScreen() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    setRefreshing(false);
+    try {
+      const response = await apiService.get<any>(`/Maintenance/byuser/${currentUser?.id}`);
+      const data = (response as any)?.data ?? response ?? [];
+      const normalized: Job[] = Array.isArray(data)
+        ? data.map((item) => normalizeRequestToJob(item))
+        : [];
+      setRequests(normalized);
+    } catch (error) {
+      if (error?.code !== "CANCELLED" && error?.message !== "Request cancelled") {
+        console.error("[ServiceProviderJobs] Refresh failed:", error);
+      }
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const getStatusStyle = (status: Job["status"]) => {
@@ -317,10 +409,12 @@ export default function JobsScreen() {
                       <View style={styles.jobCardHeader}>
                         <View style={styles.jobCardHeaderLeft}>
                           <Text style={styles.jobTitle} numberOfLines={1}>
-                            {job.title}
+                            {String(job.title || "Maintenance Request")}
                           </Text>
                           <View style={styles.jobMeta}>
-                            <Text style={styles.jobId}>#{job.id.slice(0, 8)}</Text>
+                            <Text style={styles.jobId}>
+                              #{String(job.id || "").slice(0, 8) || "NA"}
+                            </Text>
                             <View style={styles.jobMetaDivider} />
                             <View style={styles.priorityBadge}>
                               <View
@@ -361,24 +455,30 @@ export default function JobsScreen() {
                             {job.unitNumber ? ` • Unit ${job.unitNumber}` : ""}
                           </Text>
                         </View>
-                        {job.scheduledDate && (
+                        {!!job.scheduledDate && (
                           <View style={styles.jobInfo}>
-                            <Ionicons name="calendar-outline" size={16} color="#64748B" />
-                            <Text style={styles.jobInfoText}>
-                              {new Date(job.scheduledDate).toLocaleDateString("en-US", {
+                          <Ionicons name="calendar-outline" size={16} color="#64748B" />
+                          <Text style={styles.jobInfoText}>
+                            {new Date(job.scheduledDate || job.createdAt || "").toLocaleDateString(
+                              "en-US",
+                              {
                                 month: "short",
                                 day: "numeric",
                                 year: "numeric",
-                              })}
-                              {" at "}
-                              {new Date(job.scheduledDate).toLocaleTimeString("en-US", {
+                              },
+                            )}
+                            {" at "}
+                            {new Date(job.scheduledDate || job.createdAt || "").toLocaleTimeString(
+                              "en-US",
+                              {
                                 hour: "2-digit",
                                 minute: "2-digit",
-                              })}
-                            </Text>
-                          </View>
-                        )}
-                        {job.estimatedCost && (
+                              },
+                            )}
+                          </Text>
+                        </View>
+                      )}
+                        {!!job.estimatedCost && (
                           <View style={styles.jobInfo}>
                             <Ionicons name="cash-outline" size={16} color="#64748B" />
                             <Text style={styles.jobInfoText}>

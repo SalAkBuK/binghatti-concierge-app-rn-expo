@@ -2,6 +2,7 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo, useState } from "react";
 import {
+  Alert,
   Modal,
   Platform,
   ScrollView,
@@ -131,11 +132,36 @@ export default function ManagementAmenitiesScreen() {
 
   const toggleAmenityStatus = async (config: BuildingAmenityConfig) => {
     const nextStatus = config.status === "active" ? "inactive" : "active";
-    try {
-      await updateAmenityConfig(config.id, { status: nextStatus });
-    } catch (error) {
-      console.warn("Failed to update amenity:", getUserErrorMessage(error));
-    }
+    const statusLabel = nextStatus === "active" ? "activate" : "deactivate";
+
+    Alert.alert(
+      "Confirm Status Change",
+      `Are you sure you want to ${statusLabel} "${config.amenityName}"?`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Confirm",
+          onPress: async () => {
+            try {
+              await updateAmenityConfig(config.id, { status: nextStatus });
+              Alert.alert(
+                "Success",
+                `${config.amenityName} has been ${statusLabel}d successfully.`
+              );
+            } catch (error) {
+              Alert.alert(
+                "Error",
+                `Failed to update amenity: ${getUserErrorMessage(error)}`
+              );
+            }
+          },
+        },
+      ],
+      { cancelable: true }
+    );
   };
 
   const openMaintenanceModal = (config: BuildingAmenityConfig) => {
@@ -196,7 +222,10 @@ export default function ManagementAmenitiesScreen() {
         status: editingConfig?.status ?? "active",
       };
 
-      if (editingConfig) {
+      const isEditing = !!editingConfig;
+      const amenityName = newAmenityForm.amenityName;
+
+      if (isEditing) {
         await updateAmenityConfig?.(editingConfig.id, payload);
       } else {
         await createAmenityConfig?.(payload);
@@ -212,8 +241,17 @@ export default function ManagementAmenitiesScreen() {
         rules: [],
       });
       setEditingConfig(null);
+
+      // Show success message
+      Alert.alert(
+        "Success",
+        `${amenityName} has been ${isEditing ? "updated" : "added"} successfully.`
+      );
     } catch (error) {
-      console.warn("Failed to add amenity:", getUserErrorMessage(error));
+      Alert.alert(
+        "Error",
+        `Failed to ${editingConfig ? "update" : "add"} amenity: ${getUserErrorMessage(error)}`
+      );
     }
   };
 

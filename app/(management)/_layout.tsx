@@ -1,11 +1,13 @@
-import { Stack, router } from "expo-router";
+import { Stack, router, usePathname } from "expo-router";
 import React, { useEffect } from "react";
+import { BackHandler } from "react-native";
 
 import { ManagementTabBar } from "../../components/ui/ManagementTabBar";
 import { useApp } from "../../lib/context/connected-app-provider";
 
 export default function ManagementLayout() {
   const { isAuthenticated, currentUser } = useApp();
+  const pathname = usePathname();
   const isManagement = currentUser?.role === "management";
 
   // Debug: Log current user role
@@ -26,6 +28,22 @@ export default function ManagementLayout() {
     }
   }, [isAuthenticated, currentUser, isManagement]);
 
+  // Handle Android back button to prevent navigating to other portals
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener("hardwareBackPress", () => {
+      // If we're on the management index screen (dashboard), prevent default back behavior
+      if (pathname === "/(management)" || pathname === "/(management)/index") {
+        console.log("[ManagementLayout] Back button pressed on dashboard - preventing default behavior");
+        // Prevent going back - user should use logout to exit
+        return true; // Returning true prevents default back behavior
+      }
+      // For other management screens, allow normal back navigation within management portal
+      return false;
+    });
+
+    return () => backHandler.remove();
+  }, [pathname]);
+
   // Only allow management users
   if (!isAuthenticated || !currentUser) {
     return null;
@@ -34,6 +52,9 @@ export default function ManagementLayout() {
   if (!isManagement) {
     return null;
   }
+
+  // Hide tab bar on profile screen for focused editing
+  const shouldShowTabBar = pathname !== "/(management)/profile";
 
   return (
     <>
@@ -46,26 +67,23 @@ export default function ManagementLayout() {
         {/* Main tab screens */}
         <Stack.Screen name="index" />
         <Stack.Screen name="requests" />
-        <Stack.Screen name="jobs" />
         <Stack.Screen name="tenants" />
         <Stack.Screen name="more" />
 
+        {/* Profile screen for profile editing */}
+        <Stack.Screen
+          name="profile"
+          options={{
+            gestureEnabled: false, // Disable swipe back gesture
+          }}
+        />
+
         {/* Additional screens - accessible via navigation but not in tab bar */}
-        <Stack.Screen name="units" />
-        <Stack.Screen name="amenities" />
-        <Stack.Screen name="visitors/index" />
-        <Stack.Screen name="buildings" />
-        <Stack.Screen name="workforce" />
-        <Stack.Screen name="activity" />
-        <Stack.Screen name="parcels/index" />
-        <Stack.Screen name="shifts" />
-        <Stack.Screen name="maintenance/index" />
-        <Stack.Screen name="billing/index" />
-        <Stack.Screen name="managers/index" />
+        {/* Hidden for now */}
       </Stack>
 
-      {/* Custom tab bar that only shows the 5 main tabs */}
-      <ManagementTabBar />
+      {/* Custom tab bar that only shows the 5 main tabs - hidden on profile screen */}
+      {shouldShowTabBar && <ManagementTabBar />}
     </>
   );
 }

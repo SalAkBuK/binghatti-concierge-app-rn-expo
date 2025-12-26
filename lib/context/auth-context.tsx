@@ -6,8 +6,9 @@ import React, {
   useEffect,
   useState,
 } from "react";
+import * as SecureStore from "expo-secure-store";
 import { useAsyncStorage } from "../hooks/useAsyncStorage";
-import { APP_CONFIG, STORAGE_KEYS, DEFAULT_USERS, generateId } from "../utils";
+import { APP_CONFIG, STORAGE_KEYS, generateId } from "../utils";
 import apiService from "../services/api";
 import type { User, LoginDTO, RegisterDTO } from "../types";
 
@@ -206,12 +207,12 @@ const extractUserPayload = (payload: any): any => {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [users, setUsers, isLoadingUsers] = useAsyncStorage(
     STORAGE_KEYS.users,
-    DEFAULT_USERS,
+    {}, // No mock users - start fresh
   );
   const [isInitialized, setIsInitialized] = useState(false);
   const storedUsers =
     users && typeof users === "object" ? (users as Record<string, User>) : {};
-  const mergedInitialUsers = { ...DEFAULT_USERS, ...storedUsers };
+  const mergedInitialUsers = { ...storedUsers }; // No DEFAULT_USERS
   const [state, dispatch] = useReducer(authReducer, {
     ...initialState,
     users: mergedInitialUsers,
@@ -225,11 +226,34 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           ? (users as Record<string, User>)
           : {};
 
+      // Remove mock users from previous versions (one-time migration)
+      // Mock users have specific email domain patterns
+      const mockEmailDomains = ['@demo.com', '@email.com', '@towerdesk.com'];
+
+      const cleanedUsers: Record<string, User> = {};
+      let removedMockCount = 0;
+
+      Object.entries(incomingUsers).forEach(([email, user]) => {
+        // Skip mock users (check if email contains any mock domain)
+        const isMockUser = mockEmailDomains.some(domain => email.includes(domain));
+
+        if (isMockUser) {
+          removedMockCount++;
+          console.log(`[AuthProvider] Removing mock user: ${email}`);
+          return;
+        }
+        cleanedUsers[email] = user;
+      });
+
+      if (removedMockCount > 0) {
+        console.log(`[AuthProvider] Removed ${removedMockCount} mock users from storage`);
+      }
+
       // Sanitize users: filter out any with invalid IDs and regenerate if needed
       const sanitizedIncoming: Record<string, User> = {};
       let nextId = 1;
 
-      Object.entries(incomingUsers).forEach(([email, user]) => {
+      Object.entries(cleanedUsers).forEach(([email, user]) => {
         // Check if user has a valid ID
         const hasValidId = user.id != null &&
                           user.id !== undefined &&
@@ -255,7 +279,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
       });
 
-      const mergedUsers = { ...DEFAULT_USERS, ...sanitizedIncoming };
+      const mergedUsers = { ...sanitizedIncoming }; // No DEFAULT_USERS
 
       console.log(
         "[AuthProvider] Users loaded from AsyncStorage:",
@@ -266,7 +290,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         Object.keys(sanitizedIncoming),
       );
       console.log(
-        "[AuthProvider] Users after merging defaults:",
+        "[AuthProvider] Merged users (no mock data):",
         Object.keys(mergedUsers),
       );
 
@@ -275,9 +299,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         payload: mergedUsers,
       });
 
-      // Save sanitized users back to storage if we had to clean any
-      if (Object.keys(mergedUsers).length !== Object.keys(incomingUsers).length ||
+      // Save sanitized users back to storage if we had to clean any or removed mock users
+      if (removedMockCount > 0 ||
+          Object.keys(mergedUsers).length !== Object.keys(incomingUsers).length ||
           Object.keys(sanitizedIncoming).length !== Object.keys(incomingUsers).length) {
+        console.log('[AuthProvider] Saving cleaned users to storage');
         setUsers(mergedUsers);
       }
       setIsInitialized(true);
@@ -292,33 +318,60 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.users, isInitialized]);
 
-  // Initialize auth state from API service (temporarily disabled)
-  // useEffect(() => {
-  //   const initializeAuth = async () => {
-  //     try {
-  //       const authState = await apiService.getAuthState();
-  //       if (authState.isAuthenticated) {
-  //         // Try to get user profile
-  //         const profileResponse = await apiService.getProfile();
-  //         if (profileResponse.success && profileResponse.data) {
-  //           dispatch({
-  //             type: AUTH_ACTIONS.SET_AUTH,
-  //             payload: {
-  //               isAuthenticated: true,
-  //               currentUser: profileResponse.data,
-  //               userRole: profileResponse.data.role,
-  //             },
-  //           });
-  //         }
-  //       }
-  //     } catch (error) {
-  //       // If auth check fails, user is not authenticated
-  //       console.warn('Auth initialization failed:', error);
-  //     }
-  //   };
+  // Initialize auth state from saved session
+  useEffect(() => {
+    const initializeAuth = async () => {
+      try {
+        console.log('[AuthProvider] Initializing auth from saved session...');
 
-  //   initializeAuth();
-  // }, []);
+        // Check if we have a saved token
+        const authState = await apiService.getAuthState();
+        console.log('[AuthProvider] Auth state check:', { isAuthenticated: authState.isAuthenticated, hasToken: !!authState.token });
+
+        if (authState.isAuthenticated && authState.token) {
+          // Try to get saved user data from SecureStore
+          const savedUserData = await SecureStore.getItemAsync(STORAGE_KEYS.user_data);
+
+          if (savedUserData) {
+            try {
+              const userData = JSON.parse(savedUserData);
+              console.log('[AuthProvider] Restored user from storage:', { email: userData.email, role: userData.role });
+
+              // Restore auth state from saved data
+              dispatch({
+                type: AUTH_ACTIONS.SET_AUTH,
+                payload: {
+                  isAuthenticated: true,
+                  currentUser: userData,
+                  userRole: userData.role,
+                },
+              });
+
+              console.log('[AuthProvider] Session restored successfully!');
+            } catch (parseError) {
+              console.error('[AuthProvider] Failed to parse saved user data:', parseError);
+              // Clear invalid data
+              await SecureStore.deleteItemAsync(STORAGE_KEYS.user_data);
+              await SecureStore.deleteItemAsync(STORAGE_KEYS.auth_token);
+            }
+          } else {
+            console.log('[AuthProvider] No saved user data found, clearing session');
+            // Token exists but no user data - clear the orphaned token
+            await SecureStore.deleteItemAsync(STORAGE_KEYS.auth_token);
+          }
+        } else {
+          console.log('[AuthProvider] No active session found');
+        }
+      } catch (error) {
+        // If auth check fails, user is not authenticated
+        console.warn('[AuthProvider] Auth initialization failed:', error);
+      }
+    };
+
+    if (isInitialized) {
+      initializeAuth();
+    }
+  }, [isInitialized]);
 
   // Action Creators
   const actions: AuthActions = {
@@ -339,10 +392,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const existingUser =
           state.users[normalizedEmail] || state.users[credentials.email];
 
-        const isAdminLogin = normalizedEmail === ADMIN_LOGIN_EMAIL;
+        // Try backend login first for all users
+        // Only fall back to mock authentication if backend login fails with 404
         let authenticatedUser: User | null = null;
+        let backendLoginAttempted = false;
 
-        if (isAdminLogin) {
+        try {
+          backendLoginAttempted = true;
           const response = await fetch(APP_CONFIG.api.adminLoginUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -356,13 +412,27 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           const payload = safeJsonParse(rawPayload);
 
           if (!response.ok) {
+            // Handle specific HTTP status codes
+            if (response.status === 401 || response.status === 403) {
+              throw new Error("Invalid email or password");
+            }
+
+            if (response.status === 404) {
+              throw new Error("User not found");
+            }
+
+            if (response.status === 500) {
+              throw new Error("Server error. Please try again later");
+            }
+
+            // Try to extract error message from response
             const errorMessage =
               (payload &&
                 typeof payload === "object" &&
                 (payload.message || payload.error || payload.title)) ||
               (typeof payload === "string" ? payload : null) ||
               response.statusText ||
-              "Invalid admin credentials";
+              "Invalid email or password";
             throw new Error(errorMessage);
           }
 
@@ -375,19 +445,45 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
           const payloadUser = extractUserPayload(payload);
           const nowIso = new Date().toISOString();
+
+          // Determine user role from backend response
+          // Backend returns roles array with roleName, frontend expects single role string
+          let userRole: User["role"] = "admin"; // default
+          if (payloadUser?.roles && Array.isArray(payloadUser.roles) && payloadUser.roles.length > 0) {
+            const backendRole = payloadUser.roles[0].roleName?.toLowerCase();
+            console.log('[Auth] Backend role from API:', payloadUser.roles[0].roleName, '→ lowercase:', backendRole);
+
+            // Map backend role names to frontend role types
+            if (backendRole === "towerdesk" || backendRole === "superadmin") {
+              userRole = "super_admin";
+            } else if (backendRole === "admin") {
+              userRole = "admin";
+            } else if (backendRole === "manager" || backendRole === "management") {
+              userRole = "management";
+            } else if (backendRole === "tenant") {
+              userRole = "tenant";
+            } else if (backendRole === "maintenancestaff") {
+              userRole = "building_employee";
+            } else if (backendRole === "serviceprovider") {
+              userRole = "service_provider";
+            }
+            console.log('[Auth] Mapped frontend role:', userRole);
+          }
+
           const adminUser: User = {
             id: payloadUser?.id
               ? String(payloadUser.id)
               : existingUser?.id ?? "admin-live",
             email: normalizedEmail,
             name:
-              payloadUser?.name ??
               payloadUser?.fullName ??
+              payloadUser?.name ??
               payloadUser?.username ??
               existingUser?.name ??
               "Tower Desk Admin",
-            role: "admin",
+            role: userRole,
             phone:
+              payloadUser?.phoneNumber ??
               payloadUser?.phone ??
               payloadUser?.mobile ??
               existingUser?.phone,
@@ -397,11 +493,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 ? payloadUser.profile
                 : {}),
               name:
-                payloadUser?.name ??
                 payloadUser?.fullName ??
+                payloadUser?.name ??
                 existingUser?.profile?.name ??
                 "Tower Desk Admin",
               phone:
+                payloadUser?.phoneNumber ??
                 payloadUser?.phone ??
                 payloadUser?.mobile ??
                 existingUser?.profile?.phone,
@@ -416,13 +513,64 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           });
 
           authenticatedUser = adminUser;
-        } else {
-          if (!existingUser) {
-            console.log("[Auth] User not found in state.users");
-            throw new Error("Invalid email or password");
-          }
 
-          authenticatedUser = existingUser;
+          // Fetch full tenant profile if user is a tenant
+          if (userRole === "tenant" && payloadUser?.id) {
+            try {
+              console.log("[Auth] Fetching tenant profile for ID:", payloadUser.id);
+              const { tenantsApi } = await import("../services/api/tenants");
+              const tenantProfileResponse = await tenantsApi.getTenantById(payloadUser.id);
+
+              if (tenantProfileResponse.success && tenantProfileResponse.data) {
+                const tenantData = tenantProfileResponse.data;
+                console.log("[Auth] Tenant profile fetched:", tenantData);
+
+                // Update authenticated user with complete tenant profile
+                authenticatedUser = {
+                  ...authenticatedUser,
+                  name: tenantData.fullName || authenticatedUser.name,
+                  phone: tenantData.phoneNumber || authenticatedUser.phone,
+                  profile: {
+                    ...authenticatedUser.profile,
+                    buildingId: tenantData.profile?.buildingId
+                      ? String(tenantData.profile.buildingId)
+                      : authenticatedUser.profile?.buildingId,
+                    apartment: tenantData.profile?.unitNumber || authenticatedUser.profile?.apartment,
+                    floor: tenantData.profile?.floorNumber
+                      ? String(tenantData.profile.floorNumber)
+                      : authenticatedUser.profile?.floor,
+                    phone: tenantData.phoneNumber || authenticatedUser.profile?.phone,
+                    address: tenantData.address || authenticatedUser.profile?.address,
+                    nationality: tenantData.nationality || authenticatedUser.profile?.nationality,
+                  },
+                };
+
+                // Update in storage
+                dispatch({
+                  type: AUTH_ACTIONS.UPDATE_USER,
+                  payload: { email: normalizedEmail, user: authenticatedUser },
+                });
+
+                console.log("[Auth] Tenant profile updated with buildingId:", authenticatedUser.profile?.buildingId);
+              }
+            } catch (tenantError) {
+              console.error("[Auth] Failed to fetch tenant profile:", tenantError);
+              // Don't fail login if profile fetch fails - continue with basic data
+            }
+          }
+        } catch (backendError: any) {
+          // If backend login fails with 404 (user not found in backend),
+          // fall back to mock authentication for demo users
+          const is404 = backendError.message?.includes("User not found") ||
+                        backendError.message?.includes("404");
+
+          if (is404 && existingUser) {
+            console.log("[Auth] Backend user not found, falling back to mock authentication");
+            authenticatedUser = existingUser;
+          } else {
+            // For any other error (401, 403, 500, network error, etc.), re-throw
+            throw backendError;
+          }
         }
 
         if (!authenticatedUser) {
@@ -436,18 +584,53 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         // In production, verify password for non-admin users here
 
+        // Set auth state
         actions.setAuth({
           isAuthenticated: true,
           currentUser: authenticatedUser,
           userRole: authenticatedUser.role,
         });
 
+        // Persist user data to SecureStore for session restoration
+        try {
+          await SecureStore.setItemAsync(
+            STORAGE_KEYS.user_data,
+            JSON.stringify(authenticatedUser)
+          );
+          console.log("[Auth] User data saved to SecureStore for session persistence");
+        } catch (storageError) {
+          console.warn("[Auth] Failed to save user data to SecureStore:", storageError);
+          // Don't fail login if storage fails - user is still authenticated
+        }
+
         console.log("[Auth] Auth state set successfully");
         actions.setLoading(false);
       } catch (error: any) {
         console.error("[Auth] Login error:", error);
-        actions.setError(error.message || "Login failed");
-        throw error;
+
+        // Enhanced error handling
+        let errorMessage = "Login failed. Please try again.";
+
+        if (error.message) {
+          errorMessage = error.message;
+        } else if (error.response) {
+          // Handle API error responses
+          if (error.response.status === 401 || error.response.status === 403) {
+            errorMessage = "Invalid email or password";
+          } else if (error.response.status === 404) {
+            errorMessage = "User not found";
+          } else if (error.response.status === 500) {
+            errorMessage = "Server error. Please try again later";
+          } else if (error.response.data) {
+            errorMessage = error.response.data.message || error.response.data.error || errorMessage;
+          }
+        } else if (error.code === "NETWORK_ERROR" || error.message?.includes("Network")) {
+          errorMessage = "Network error. Please check your connection.";
+        }
+
+        actions.setError(errorMessage);
+        actions.setLoading(false);
+        throw new Error(errorMessage);
       }
     },
 
@@ -506,16 +689,30 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         actions.setLoading(true);
         actions.clearError();
 
-        // TODO: Replace with real API call
-        // await apiService.logout();
+        console.log('[Auth] Logging out, clearing session data...');
 
+        // Clear auth state
         actions.setAuth({
           isAuthenticated: false,
           currentUser: null,
           userRole: null,
         });
 
+        // Clear persisted session data from SecureStore
+        try {
+          await SecureStore.deleteItemAsync(STORAGE_KEYS.user_data);
+          await SecureStore.deleteItemAsync(STORAGE_KEYS.auth_token);
+          console.log('[Auth] Session data cleared from SecureStore');
+        } catch (storageError) {
+          console.warn('[Auth] Failed to clear SecureStore:', storageError);
+          // Don't fail logout if storage clear fails
+        }
+
+        // TODO: Call backend logout API if needed
+        // await apiService.logout();
+
         actions.setLoading(false);
+        console.log('[Auth] Logout completed');
       } catch (error: any) {
         actions.setError(error.message || "Logout failed");
         throw error;
@@ -527,11 +724,93 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         actions.setLoading(true);
         actions.clearError();
 
-        // TODO: Replace with real API call
-        // const response = await apiService.updateProfile(userData);
+        if (!state.currentUser) {
+          throw new Error("No user logged in");
+        }
 
-        // Mock update for now
-        const updatedUser = { ...state.currentUser, ...userData } as User;
+        const role = state.currentUser.role;
+        const profileData = userData.profile || {};
+        let response;
+        let apiCallSuccess = false;
+
+        // Try to call backend API, but gracefully handle if endpoints don't exist yet
+        try {
+          // Route to role-specific endpoint (Option B)
+          switch (role) {
+            case "admin":
+              response = await apiService.users.updateAdminProfile({
+                companyName: profileData.companyName || "",
+                phone: profileData.phone || "",
+                companyWebsite: profileData.companyWebsite,
+                companyDescription: profileData.companyDescription,
+                companyAddress: profileData.companyAddress,
+                companyLogoUrl: profileData.companyLogoUrl,
+              });
+              break;
+
+            case "management":
+              response = await apiService.users.updateManagementProfile({
+                name: userData.name || profileData.name || "",
+                phone: profileData.phone || "",
+                buildingId: profileData.buildingId || "",
+                managedBuildingIds: profileData.managedBuildingIds || [],
+                jobTitle: profileData.jobTitle,
+                department: profileData.department,
+                bio: profileData.bio,
+                avatar: profileData.avatar,
+              });
+              break;
+
+            case "tenant":
+              response = await apiService.users.updateTenantProfile({
+                name: userData.name || profileData.name || "",
+                phone: profileData.phone || "",
+                buildingId: profileData.buildingId || "",
+                apartment: profileData.apartment || "",
+                floor: profileData.floor || "",
+                tower: profileData.tower,
+                emergencyContact: profileData.emergencyContact,
+                emergencyPhone: profileData.emergencyPhone,
+                emiratesId: profileData.emiratesId,
+                avatar: profileData.avatar,
+              });
+              break;
+
+            default:
+              throw new Error(`Profile update not supported for role: ${role}`);
+          }
+
+          if (response && response.success) {
+            apiCallSuccess = true;
+          }
+        } catch (apiError: any) {
+          // Check if it's a 404 or network error - gracefully handle for demo/development
+          const is404 = apiError.status === 404 || apiError.message?.includes("404") || apiError.message?.includes("Not Found");
+          const isNetworkError = apiError.message?.includes("Network") || apiError.message?.includes("fetch");
+
+          if (is404 || isNetworkError) {
+            console.warn(`[Auth] Profile update API not available (${is404 ? '404' : 'Network error'}), updating locally only`);
+            // Continue with local update instead of failing
+            apiCallSuccess = false;
+          } else {
+            // For other errors, re-throw
+            throw apiError;
+          }
+        }
+
+        // Update local state (either from server response or with local data)
+        const updatedUser = {
+          ...state.currentUser,
+          name: userData.name || state.currentUser.name,
+          phone: profileData.phone || state.currentUser.phone,
+          profile: apiCallSuccess && response?.data
+            ? response.data
+            : {
+                ...state.currentUser.profile,
+                ...profileData,
+              },
+          profileCompleted: true,
+        };
 
         actions.setAuth({
           isAuthenticated: state.isAuthenticated,
@@ -539,10 +818,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           userRole: updatedUser.role,
         });
 
+        // Persist to secure storage
+        await SecureStore.setItemAsync(
+          STORAGE_KEYS.user_data,
+          JSON.stringify(updatedUser)
+        );
+
         actions.setLoading(false);
         return updatedUser;
       } catch (error: any) {
         actions.setError(error.message || "Profile update failed");
+        actions.setLoading(false);
         throw error;
       }
     },

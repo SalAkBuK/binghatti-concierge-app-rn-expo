@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   RefreshControl,
   ScrollView,
@@ -17,15 +17,61 @@ import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
 import { filterNotificationsByUser } from "../../lib/utils/helpers";
+import apiService from "../../lib/services/api";
 
 const NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
 
 export default function ServiceProviderDashboard() {
-  const { currentUser, notifications, actions } = useApp();
+  const { currentUser, notifications } = useApp();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [requests, setRequests] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const normalizeRequest = (item: any) => {
+    const statusCode = Number(
+      item.status ?? item.requestStatus ?? item.statusId ?? item.Status ?? 0,
+    );
+    let status: string;
+    switch (statusCode) {
+      case 5:
+        status = "completed";
+        break;
+      case 6:
+        status = "cancelled";
+        break;
+      case 3:
+        status = "in-progress";
+        break;
+      case 4:
+        status = "pending"; // map on-hold to pending bucket for now
+        break;
+      case 2:
+        status = "assigned";
+        break;
+      case 1:
+      default:
+        status = "pending";
+    }
+    const priority = (item.priority || item.priorityLevel || "medium").toString().toLowerCase();
+    return {
+      id: String(item.id || item.requestId || item.maintenanceId || Math.random()),
+      title: String(item.title || item.requestTitle || item.issueTitle || "Maintenance Request"),
+      description: String(item.description || item.issueDescription || ""),
+      status,
+      priority,
+      buildingName: String(item.buildingName || item.building || "Unknown"),
+      unitNumber: item.unitNumber ? String(item.unitNumber) : "",
+      assignedTo: currentUser?.id,
+      offerStatus: item.offerStatus || "accepted",
+      scheduledDate: item.scheduledDate || item.expectedVisitDate || item.createdAt,
+      completedDate: item.completedDate || item.closedAt || "",
+      createdAt: item.createdAt || item.createdOn || new Date().toISOString(),
+      actualCost: Number(item.actualCost || item.cost || 0),
+      estimatedCost: Number(item.estimatedCost || item.estimate || 0),
+    };
+  };
 
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
   const isTablet = width >= 768;
@@ -38,40 +84,52 @@ export default function ServiceProviderDashboard() {
   );
   const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
 
+  useEffect(() => {
+    let isMounted = true;
+    const fetchRequests = async () => {
+      if (!currentUser?.id) return;
+      setLoading(true);
+      try {
+        const response = await apiService.get<any>(`/Maintenance/byuser/${currentUser.id}`);
+        if (!isMounted) return;
+        const data = (response as any)?.data ?? response ?? [];
+        const normalized = Array.isArray(data)
+          ? data.map((item) => normalizeRequest(item))
+          : [];
+        setRequests(normalized);
+      } catch (error) {
+        console.error("[ServiceProviderDashboard] Failed to fetch requests:", error);
+        if (isMounted) setRequests([]);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    fetchRequests();
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUser?.id]);
+
   // Get service provider's jobs
-  const allJobs = actions.getJobs?.() ?? [];
-  const myJobs = allJobs.filter(
-    (job) => job.assignedTo === currentUser?.id
-  );
+  const myJobs = requests;
 
   // Calculate stats
   const stats = useMemo(() => {
-    // Pending Jobs: Jobs accepted by SP company but NOT yet assigned to any employee
-    const pending = myJobs.filter(
-      (j) => j.offerStatus === "accepted" && !j.assignedToEmployeeId
-    ).length;
-
-    // Jobs assigned to employees (for reference)
-    const assigned = myJobs.filter((j) => j.assignedToEmployeeId).length;
-
-    // In Progress: Jobs actively being worked on by employees
-    const inProgress = myJobs.filter(
-      (j) => j.status === "in-progress" && j.assignedToEmployeeId
-    ).length;
-
-    // Completed This Month: Jobs completed this month
+    const pending = myJobs.filter((j) => j.status === "pending").length;
+    const assigned = myJobs.filter((j) => j.status === "assigned").length;
+    const inProgress = myJobs.filter((j) => j.status === "in-progress").length;
     const completedThisMonth = myJobs.filter(
       (j) =>
         j.status === "completed" &&
-        new Date(j.completedDate || "").getMonth() === new Date().getMonth()
+        new Date(j.completedDate || j.createdAt || "").getMonth() === new Date().getMonth(),
     ).length;
 
-    // Calculate earnings (mock calculation)
     const earningsThisMonth = myJobs
       .filter(
         (j) =>
           j.status === "completed" &&
-          new Date(j.completedDate || "").getMonth() === new Date().getMonth()
+          new Date(j.completedDate || j.createdAt || "").getMonth() === new Date().getMonth(),
       )
       .reduce((sum, j) => sum + (j.actualCost || j.estimatedCost || 0), 0);
 
@@ -79,17 +137,10 @@ export default function ServiceProviderDashboard() {
       .filter((j) => j.status === "completed" && !j.paidDate)
       .reduce((sum, j) => sum + (j.actualCost || j.estimatedCost || 0), 0);
 
-    // Acceptance Rate: % of job offers that SP company accepted from management
-    const jobOffers = myJobs.filter(
-      (j) => j.offerStatus === "offered" || j.offerStatus === "accepted" || j.offerStatus === "declined"
-    );
-    const acceptedOffers = myJobs.filter((j) => j.offerStatus === "accepted");
-    const acceptanceRate =
-      jobOffers.length > 0
-        ? Math.round((acceptedOffers.length / jobOffers.length) * 100)
-        : 100;
+    const totalJobs = myJobs.length;
+    const nonCancelled = myJobs.filter((j) => j.status !== "cancelled").length;
+    const acceptanceRate = totalJobs > 0 ? Math.round((nonCancelled / totalJobs) * 100) : 100;
 
-    // Get average rating (from service provider profile)
     const rating = currentUser?.profile?.rating || 4.5;
 
     return {
@@ -111,16 +162,25 @@ export default function ServiceProviderDashboard() {
       .sort(
         (a, b) =>
           new Date(a.scheduledDate || "").getTime() -
-          new Date(b.scheduledDate || "").getTime()
+          new Date(b.scheduledDate || "").getTime(),
       )
       .slice(0, 5);
   }, [myJobs]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    // Simulate refresh
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    setRefreshing(false);
+    try {
+      const response = await apiService.get<any>(`/Maintenance/byuser/${currentUser?.id}`);
+      const data = (response as any)?.data ?? response ?? [];
+      const normalized = Array.isArray(data)
+        ? data.map((item) => normalizeRequest(item))
+        : [];
+      setRequests(normalized);
+    } catch (error) {
+      console.error("[ServiceProviderDashboard] Refresh failed:", error);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   // Stat tiles data

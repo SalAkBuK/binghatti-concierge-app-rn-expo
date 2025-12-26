@@ -89,10 +89,11 @@ export const STORAGE_KEYS = {
 // API endpoints
 export const API_ENDPOINTS = {
   auth: {
-    login: "/auth/login",
-    register: "/auth/register",
-    logout: "/auth/logout",
-    refresh: "/auth/refresh",
+    login: "/Auth/login",
+    register: "/Auth/register",
+    logout: "/Auth/logout",
+    refresh: "/Auth/refresh",
+    resetPassword: "/Auth/reset-password",
   },
   requests: {
     list: "/requests",
@@ -104,6 +105,24 @@ export const API_ENDPOINTS = {
     profile: "/users/profile",
     update: "/users/profile",
     list: "/users",
+  },
+  // Role-specific profile endpoints
+  profile: {
+    admin: {
+      get: "/api/Admin/profile",
+      update: "/api/Admin/profile",
+      upload: "/api/Admin/profile/upload",
+    },
+    management: {
+      get: "/api/Management/profile",
+      update: "/api/Management/profile",
+      upload: "/api/Management/profile/upload",
+    },
+    tenant: {
+      get: "/api/Tenant/profile",
+      update: "/api/Tenant/profile",
+      upload: "/api/Tenant/profile/upload",
+    },
   },
   notifications: {
     list: "/notifications",
@@ -125,12 +144,19 @@ export const API_ENDPOINTS = {
     profile: "/employee/profile",
     updateProfile: "/employee/profile",
   },
+  admin: {
+    createUser: "/api/Admin/create",
+    updateUser: (id: string | number) => `/api/Admin/update/${id}`,
+    deleteUser: (id: string | number) => `/api/Admin/delete/${id}`,
+    getUsers: "/api/Admin/users",
+    getUser: (id: string | number) => `/api/Admin/users/${id}`,
+  },
 } as const;
 
 // App configuration
 export const APP_CONFIG = {
   api: {
-    baseUrl: "https://1bnx.online/api",
+    baseUrl: "http://16.171.240.211/api",  // ✅ Live backend (HTTP allowed via network security config)
     timeout: 10000,
     adminLoginUrl: "http://16.171.240.211/api/Auth/login",
   },

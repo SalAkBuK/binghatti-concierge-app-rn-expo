@@ -16,8 +16,8 @@ export default function ProfileIcon({
   const containerWidth = focused ? 70 : 54;
   const containerHeight = focused ? 64 : 39;
 
-  // Icon colors based on state
-  const iconFill = focused ? "#356FEC" : "#8296C4";
+  // Use the color prop passed from Tabs component
+  const iconFill = color;
 
   return (
     <Svg

@@ -37,7 +37,7 @@ export function AssignManagerModal({
     <View style={styles.modalOverlay}>
       <Animated.View
         entering={FadeIn.duration(200)}
-        style={[styles.modalContent, { maxHeight: 400 }]}
+        style={styles.modalContent}
       >
       {/* Modal Header */}
       <View style={styles.modalHeader}>
@@ -54,49 +54,55 @@ export function AssignManagerModal({
         {selectedBuilding?.name}
       </Text>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        nestedScrollEnabled
+        contentContainerStyle={styles.modalScrollContent}
+      >
         <View style={styles.formGroup}>
           <Text style={styles.label}>Select Manager</Text>
-          <View style={styles.pickerContainer}>
-            <ScrollView horizontal={false} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            style={styles.pickerContainer}
+            showsVerticalScrollIndicator
+            nestedScrollEnabled
+          >
+            <TouchableOpacity
+              style={[
+                styles.pickerOption,
+                !managerId && styles.pickerOptionActive,
+              ]}
+              onPress={() => setManagerId("")}
+            >
+              <Text
+                style={[
+                  styles.pickerOptionText,
+                  !managerId && styles.pickerOptionTextActive,
+                ]}
+              >
+                None (Remove Manager)
+              </Text>
+            </TouchableOpacity>
+            {managementUsers.map((user) => (
               <TouchableOpacity
+                key={user.id}
                 style={[
                   styles.pickerOption,
-                  !managerId && styles.pickerOptionActive,
+                  managerId === user.id && styles.pickerOptionActive,
                 ]}
-                onPress={() => setManagerId("")}
+                onPress={() => setManagerId(user.id)}
               >
                 <Text
                   style={[
                     styles.pickerOptionText,
-                    !managerId && styles.pickerOptionTextActive,
+                    managerId === user.id && styles.pickerOptionTextActive,
                   ]}
                 >
-                  None (Remove Manager)
+                  {user.name}
                 </Text>
+                <Text style={styles.pickerOptionSubtext}>{user.email}</Text>
               </TouchableOpacity>
-              {managementUsers.map((user) => (
-                <TouchableOpacity
-                  key={user.id}
-                  style={[
-                    styles.pickerOption,
-                    managerId === user.id && styles.pickerOptionActive,
-                  ]}
-                  onPress={() => setManagerId(user.id)}
-                >
-                  <Text
-                    style={[
-                      styles.pickerOptionText,
-                      managerId === user.id && styles.pickerOptionTextActive,
-                    ]}
-                  >
-                    {user.name}
-                  </Text>
-                  <Text style={styles.pickerOptionSubtext}>{user.email}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
+            ))}
+          </ScrollView>
         </View>
 
         {/* Submit Button */}

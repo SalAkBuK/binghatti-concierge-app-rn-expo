@@ -1,3 +1,4 @@
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
@@ -10,7 +11,7 @@ import {
   View,
 } from "react-native";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import BuildingIcon from "../../components/icons/BuildingIcon";
 import FireIcon from "../../components/icons/FireIcon";
@@ -22,6 +23,7 @@ import { HeaderBar } from "../../components/ui/HeaderBar";
 import { HomeScreenSkeleton } from "../../components/ui/HomeScreenSkeleton";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
+import { buildingsApi } from "../../lib/services/api/buildings";
 import { filterNotificationsByUser } from "../../lib/utils/helpers";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -37,7 +39,8 @@ export default function TenantHomeScreen() {
   } = useApp();
   const [isLoading, setIsLoading] = useState(true);
   const [showSideMenu, setShowSideMenu] = useState(false);
-  const insets = useSafeAreaInsets();
+  const [buildingName, setBuildingName] = useState<string>("Binghatti");
+  const tabBarHeight = useBottomTabBarHeight();
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -55,6 +58,34 @@ export default function TenantHomeScreen() {
 
     return () => clearTimeout(timer);
   }, [currentUser]);
+
+  // Fetch building name
+  useEffect(() => {
+    const fetchBuildingName = async () => {
+      const buildingId = currentUser?.profile?.buildingId;
+      if (!buildingId) {
+        console.log('[TenantHome] No buildingId found in user profile');
+        return;
+      }
+
+      try {
+        console.log('[TenantHome] Fetching building name for buildingId:', buildingId);
+        const response = await buildingsApi.getBuildingById(buildingId);
+
+        if (response.success && response.data) {
+          setBuildingName(response.data.name);
+          console.log('[TenantHome] Building name fetched:', response.data.name);
+        }
+      } catch (error) {
+        console.error('[TenantHome] Failed to fetch building name:', error);
+        // Keep default building name on error
+      }
+    };
+
+    if (currentUser?.profile?.buildingId) {
+      fetchBuildingName();
+    }
+  }, [currentUser?.profile?.buildingId]);
 
   const handleNoticePress = (notice: any) => {
     actions.setSelectedNotice(notice);
@@ -100,7 +131,7 @@ export default function TenantHomeScreen() {
               Welcome back, {currentUser?.name || "Ahmed"}!
             </Text>
             <Text style={styles.welcomeSubtitle}>
-              Your premium living experience at Binghatti
+              Your premium living experience
             </Text>
 
             <View style={styles.buildingInfo}>
@@ -108,7 +139,7 @@ export default function TenantHomeScreen() {
                 <BuildingIcon size={44} color="rgba(255,255,255,0.8)" />
                 <View>
                   <Text style={styles.infoLabel}>Building</Text>
-                  <Text style={styles.infoValue}>Binghatti Azure</Text>
+                  <Text style={styles.infoValue}>{buildingName}</Text>
                 </View>
               </View>
 
@@ -117,8 +148,7 @@ export default function TenantHomeScreen() {
                 <View>
                   <Text style={styles.infoLabel}>Your Apartment</Text>
                   <Text style={styles.infoValue}>
-                    {currentUser?.profile?.apartment || "1205"},{" "}
-                    {currentUser?.profile?.tower || "2nd Floor"}
+                    {currentUser?.profile?.apartment || "—"}
                   </Text>
                 </View>
               </View>
@@ -173,7 +203,7 @@ export default function TenantHomeScreen() {
       {/* Scrollable Content */}
       <ScrollView
         style={styles.scrollableContent}
-        contentContainerStyle={{ paddingBottom: 160 + insets.bottom }}
+        contentContainerStyle={{ paddingBottom: tabBarHeight + 32 }}
         showsVerticalScrollIndicator={false}
       >
         {/* Building Notices Section */}

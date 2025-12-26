@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { type Dispatch, type SetStateAction } from "react";
+import { Picker } from "@react-native-picker/picker";
+import React, { type Dispatch, type SetStateAction, useEffect } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -48,24 +49,50 @@ export function CreateUserModal({
   const { currentUser } = useApp();
   const isSuperAdmin = currentUser?.role === "super_admin";
 
+  // Debug: Log formData when modal becomes visible
+  useEffect(() => {
+    if (visible) {
+      console.log('[CreateUserModal] Modal opened with formData:', JSON.stringify(formData, null, 2));
+    }
+  }, [visible, formData]);
+
   // Determine which role options to show based on current user's role
   const roleOptions = isSuperAdmin
     ? SUPER_ADMIN_USER_ROLE_OPTIONS
     : ADMIN_USER_ROLE_OPTIONS;
 
-  const isLocationRole = formData.role === "tenant" || formData.role === "employee";
   const isTenant = formData.role === "tenant";
+  const isEmployee = formData.role === "employee";
+  const isManagement = formData.role === "management";
 
   const handleRoleChange = (role: UserFormState["role"]) => {
     setFormData((prev) => {
-      const next = { ...prev, role };
-      if (role !== "tenant" && role !== "employee") {
-        next.buildingId = defaultBuildingId;
-        next.tower = "";
-        next.floor = "";
-        next.apartment = "";
-      }
-      return next;
+      // Reset building-dependent fields when switching away from tenant/employee/management
+      const shouldResetLocation =
+        role !== "tenant" && role !== "employee" && role !== "management";
+      const clearedLocation = shouldResetLocation
+        ? {
+            buildingId: "",
+            tower: "",
+            floor: "",
+            apartment: "",
+            emergencyContact: "",
+            emergencyPhone: "",
+          }
+        : {
+            buildingId: prev.buildingId || defaultBuildingId,
+            tower: prev.tower,
+            floor: prev.floor,
+            apartment: prev.apartment,
+            emergencyContact: prev.emergencyContact,
+            emergencyPhone: prev.emergencyPhone,
+          };
+
+      return {
+        ...prev,
+        role,
+        ...clearedLocation,
+      };
     });
   };
 
@@ -122,6 +149,38 @@ export function CreateUserModal({
             </View>
 
             <View style={styles.formGroup}>
+              <Text style={styles.label}>Password *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter password"
+                value={formData.password}
+                onChangeText={(text) => setFormData((prev) => ({ ...prev, password: text }))}
+                secureTextEntry
+                autoCapitalize="none"
+              />
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Address *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter address"
+                value={formData.address}
+                onChangeText={(text) => setFormData((prev) => ({ ...prev, address: text }))}
+              />
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Nationality *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g., UAE, Indian, Pakistani, etc."
+                value={formData.nationality}
+                onChangeText={(text) => setFormData((prev) => ({ ...prev, nationality: text }))}
+              />
+            </View>
+
+            <View style={styles.formGroup}>
               <Text style={styles.label}>Role *</Text>
               <View style={styles.roleButtons}>
                 {roleOptions.map((role) => (
@@ -157,108 +216,131 @@ export function CreateUserModal({
               </Text>
             </View>
 
-            {isLocationRole && (
+            {(isEmployee || isManagement) && (
               <>
                 <View style={styles.sectionDivider}>
-                  <Text style={styles.sectionTitle}>Location Details</Text>
+                  <Text style={styles.sectionTitle}>Building Assignment</Text>
                 </View>
 
                 <View style={styles.formGroup}>
                   <Text style={styles.label}>
-                    Building Assignment {isTenant ? "*" : "(Optional)"}
+                    {isManagement ? "Assign Manager to Building *" : "Assign to Building *"}
                   </Text>
-                  <Text style={styles.hint}>Select the building for this {formData.role}</Text>
-                  <View style={styles.buildingsList}>
-                    {managedBuildings.length ? (
-                      managedBuildings.map((building) => {
-                        const isSelected = formData.buildingId === building.id;
-                        return (
-                          <TouchableOpacity
-                            key={building.id}
-                            style={[
-                              styles.buildingOption,
-                              isSelected && styles.buildingOptionActive,
-                            ]}
-                            onPress={() =>
-                              setFormData((prev) => ({ ...prev, buildingId: building.id }))
-                            }
-                          >
-                            <Ionicons
-                              name={isSelected ? "checkmark-circle" : "ellipse-outline"}
-                              size={22}
-                              color={isSelected ? "#2563EB" : "#9CA3AF"}
+                  <View style={styles.pickerContainer}>
+                    <View style={styles.pickerWrapper}>
+                      {managedBuildings.length > 0 ? (
+                        <Picker
+                          selectedValue={formData.buildingId}
+                          onValueChange={(value) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              buildingId: value,
+                            }))
+                          }
+                          style={styles.picker}
+                          dropdownIconColor="#111827"
+                        >
+                          <Picker.Item label="Select a building" value="" color="#9CA3AF" />
+                          {managedBuildings.map((building) => (
+                            <Picker.Item
+                              key={building.id}
+                              label={building.name}
+                              value={building.id}
+                              color="#111827"
                             />
-                            <View style={{ flex: 1 }}>
-                              <Text
-                                style={[
-                                  styles.buildingOptionText,
-                                  isSelected && styles.buildingOptionTextActive,
-                                ]}
-                              >
-                                {building.name}
-                              </Text>
-                              {building.address && (
-                                <Text style={styles.buildingOptionAddress}>
-                                  {building.address}
-                                </Text>
-                              )}
-                            </View>
-                          </TouchableOpacity>
-                        );
-                      })
-                    ) : (
-                      <Text style={styles.hint}>
-                        No managed buildings available. Assign buildings to see the list here.
-                      </Text>
-                    )}
+                          ))}
+                        </Picker>
+                      ) : (
+                        <Text style={styles.emptyPickerText}>
+                          No buildings available
+                        </Text>
+                      )}
+                    </View>
                   </View>
-                </View>
-
-                <View style={styles.formGroup}>
-                  <Text style={styles.labelOptional}>Tower/Wing</Text>
-                  <Text style={styles.hint}>
-                    ℹ️ Only for multi-tower or multi-wing complexes
+                  <Text style={styles.helperText}>
+                    {isManagement
+                      ? "The manager will be assigned to this building"
+                      : "The maintenance staff will be assigned to this building"}
                   </Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="e.g., Tower A, North Wing (leave blank if not applicable)"
-                    value={formData.tower}
-                    onChangeText={(text) => setFormData((prev) => ({ ...prev, tower: text }))}
-                  />
                 </View>
-
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Floor {isTenant ? "*" : "(Optional)"}</Text>
-                  <Text style={styles.hint}>
-                    Enter floor number (e.g., 12, G for ground, B1 for basement)
-                  </Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="e.g., 12, G, B1, M"
-                    value={formData.floor}
-                    onChangeText={(text) => setFormData((prev) => ({ ...prev, floor: text }))}
-                  />
-                </View>
-
-                {isTenant && (
-                  <View style={styles.formGroup}>
-                    <Text style={styles.label}>Apartment/Unit *</Text>
-                    <Text style={styles.hint}>Enter unit or apartment number</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="e.g., 1205, A-304"
-                      value={formData.apartment}
-                      onChangeText={(text) =>
-                        setFormData((prev) => ({ ...prev, apartment: text }))
-                      }
-                    />
-                  </View>
-                )}
               </>
             )}
 
             {isTenant && (
               <>
+                <View style={styles.sectionDivider}>
+                  <Text style={styles.sectionTitle}>Tenant Details</Text>
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Building *</Text>
+                  <View style={styles.pickerContainer}>
+                    <View style={styles.pickerWrapper}>
+                      {managedBuildings.length > 0 ? (
+                        <Picker
+                          selectedValue={formData.buildingId}
+                          onValueChange={(value) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              buildingId: value,
+                            }))
+                          }
+                          style={styles.picker}
+                          dropdownIconColor="#111827"
+                        >
+                          <Picker.Item label="Select a building" value="" color="#9CA3AF" />
+                          {managedBuildings.map((building) => (
+                            <Picker.Item
+                              key={building.id}
+                              label={building.name}
+                              value={building.id}
+                              color="#111827"
+                            />
+                          ))}
+                        </Picker>
+                      ) : (
+                        <Text style={styles.emptyPickerText}>
+                          No buildings available
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                  <Text style={styles.helperText}>
+                    Select the building where the tenant resides
+                  </Text>
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Unit Number *</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g., 1205, A-304"
+                    value={formData.apartment}
+                    onChangeText={(text) => setFormData((prev) => ({ ...prev, apartment: text }))}
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Floor Number *</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g., 12, 3"
+                    value={formData.floor}
+                    onChangeText={(text) => setFormData((prev) => ({ ...prev, floor: text }))}
+                    keyboardType="number-pad"
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.labelOptional}>Tower/Block</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g., Tower A, Block B (Optional)"
+                    value={formData.tower}
+                    onChangeText={(text) => setFormData((prev) => ({ ...prev, tower: text }))}
+                  />
+                </View>
+
                 <View style={styles.sectionDivider}>
                   <Text style={styles.sectionTitle}>Emergency Contact (Optional)</Text>
                 </View>

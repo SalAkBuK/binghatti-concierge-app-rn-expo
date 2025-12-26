@@ -14,8 +14,8 @@ export default function NewTabIcon({
   const containerWidth = focused ? 70 : 54;
   const containerHeight = focused ? 64 : 39;
 
-  // Icon colors based on state
-  const iconColor = focused ? "#336BE3" : "#8296C4";
+  // Use the color prop passed from Tabs component
+  const iconColor = color;
 
   return (
     <Svg

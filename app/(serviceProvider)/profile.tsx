@@ -5,7 +5,6 @@ import {
   Alert,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -35,23 +34,6 @@ export default function ProfileScreen() {
     experience: "5 years", // Mock
   });
 
-  // Settings state
-  const [settings, setSettings] = useState({
-    emailNotifications: true,
-    pushNotifications: true,
-    smsNotifications: false,
-    jobAlerts: true,
-    weeklyReports: true,
-  });
-
-  // Password change state
-  const [showPasswordForm, setShowPasswordForm] = useState(false);
-  const [passwordData, setPasswordData] = useState({
-    current: "",
-    new: "",
-    confirm: "",
-  });
-
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
 
   const handleSaveProfile = () => {
@@ -78,34 +60,6 @@ export default function ProfileScreen() {
     setIsEditing(false);
   };
 
-  const handleChangePassword = () => {
-    if (!passwordData.current || !passwordData.new || !passwordData.confirm) {
-      Alert.alert("Validation Error", "All password fields are required.");
-      return;
-    }
-
-    if (passwordData.new !== passwordData.confirm) {
-      Alert.alert("Validation Error", "New passwords do not match.");
-      return;
-    }
-
-    if (passwordData.new.length < 6) {
-      Alert.alert("Validation Error", "Password must be at least 6 characters.");
-      return;
-    }
-
-    // In real app, would call API to change password
-    Alert.alert("Success", "Password changed successfully!", [
-      {
-        text: "OK",
-        onPress: () => {
-          setShowPasswordForm(false);
-          setPasswordData({ current: "", new: "", confirm: "" });
-        },
-      },
-    ]);
-  };
-
   const handleLogout = () => {
     Alert.alert(
       "Logout",
@@ -122,10 +76,6 @@ export default function ProfileScreen() {
         },
       ]
     );
-  };
-
-  const handleViewDocument = (docType: string) => {
-    Alert.alert("View Document", `Opening ${docType}...`);
   };
 
   return (
@@ -280,227 +230,6 @@ export default function ProfileScreen() {
               </View>
             )}
           </View>
-        </Animated.View>
-
-        {/* Documents Section */}
-        <Animated.View
-          entering={FadeInDown.duration(400).delay(200)}
-          style={styles.card}
-        >
-          <Text style={styles.cardTitle}>Documents</Text>
-          <View style={styles.documentsList}>
-            <TouchableOpacity
-              style={styles.documentItem}
-              onPress={() => handleViewDocument("License")}
-            >
-              <View style={styles.documentIcon}>
-                <Ionicons name="document-text" size={24} color="#3B82F6" />
-              </View>
-              <View style={styles.documentInfo}>
-                <Text style={styles.documentName}>Business License</Text>
-                <Text style={styles.documentStatus}>Verified</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color="#CBD5E1" />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.documentItem}
-              onPress={() => handleViewDocument("Insurance")}
-            >
-              <View style={styles.documentIcon}>
-                <Ionicons name="shield-checkmark" size={24} color="#10B981" />
-              </View>
-              <View style={styles.documentInfo}>
-                <Text style={styles.documentName}>Insurance Certificate</Text>
-                <Text style={styles.documentStatus}>Verified</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color="#CBD5E1" />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.documentItem}
-              onPress={() => handleViewDocument("ID")}
-            >
-              <View style={styles.documentIcon}>
-                <Ionicons name="card" size={24} color="#F59E0B" />
-              </View>
-              <View style={styles.documentInfo}>
-                <Text style={styles.documentName}>Emirates ID</Text>
-                <Text style={styles.documentStatus}>Verified</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color="#CBD5E1" />
-            </TouchableOpacity>
-          </View>
-        </Animated.View>
-
-        {/* Notification Settings */}
-        <Animated.View
-          entering={FadeInDown.duration(400).delay(300)}
-          style={styles.card}
-        >
-          <Text style={styles.cardTitle}>Notifications</Text>
-          <View style={styles.settingsList}>
-            <View style={styles.settingItem}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Email Notifications</Text>
-                <Text style={styles.settingDescription}>
-                  Receive notifications via email
-                </Text>
-              </View>
-              <Switch
-                value={settings.emailNotifications}
-                onValueChange={(value) =>
-                  setSettings((prev) => ({ ...prev, emailNotifications: value }))
-                }
-                trackColor={{ false: "#E2E8F0", true: "#93C5FD" }}
-                thumbColor={settings.emailNotifications ? "#3B82F6" : "#F1F5F9"}
-              />
-            </View>
-
-            <View style={styles.settingItem}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Push Notifications</Text>
-                <Text style={styles.settingDescription}>
-                  Receive push notifications on your device
-                </Text>
-              </View>
-              <Switch
-                value={settings.pushNotifications}
-                onValueChange={(value) =>
-                  setSettings((prev) => ({ ...prev, pushNotifications: value }))
-                }
-                trackColor={{ false: "#E2E8F0", true: "#93C5FD" }}
-                thumbColor={settings.pushNotifications ? "#3B82F6" : "#F1F5F9"}
-              />
-            </View>
-
-            <View style={styles.settingItem}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>SMS Notifications</Text>
-                <Text style={styles.settingDescription}>
-                  Receive notifications via SMS
-                </Text>
-              </View>
-              <Switch
-                value={settings.smsNotifications}
-                onValueChange={(value) =>
-                  setSettings((prev) => ({ ...prev, smsNotifications: value }))
-                }
-                trackColor={{ false: "#E2E8F0", true: "#93C5FD" }}
-                thumbColor={settings.smsNotifications ? "#3B82F6" : "#F1F5F9"}
-              />
-            </View>
-
-            <View style={styles.settingItem}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Job Alerts</Text>
-                <Text style={styles.settingDescription}>
-                  Get notified about new job opportunities
-                </Text>
-              </View>
-              <Switch
-                value={settings.jobAlerts}
-                onValueChange={(value) =>
-                  setSettings((prev) => ({ ...prev, jobAlerts: value }))
-                }
-                trackColor={{ false: "#E2E8F0", true: "#93C5FD" }}
-                thumbColor={settings.jobAlerts ? "#3B82F6" : "#F1F5F9"}
-              />
-            </View>
-
-            <View style={styles.settingItem}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Weekly Reports</Text>
-                <Text style={styles.settingDescription}>
-                  Receive weekly performance reports
-                </Text>
-              </View>
-              <Switch
-                value={settings.weeklyReports}
-                onValueChange={(value) =>
-                  setSettings((prev) => ({ ...prev, weeklyReports: value }))
-                }
-                trackColor={{ false: "#E2E8F0", true: "#93C5FD" }}
-                thumbColor={settings.weeklyReports ? "#3B82F6" : "#F1F5F9"}
-              />
-            </View>
-          </View>
-        </Animated.View>
-
-        {/* Security Section */}
-        <Animated.View
-          entering={FadeInDown.duration(400).delay(400)}
-          style={styles.card}
-        >
-          <Text style={styles.cardTitle}>Security</Text>
-          {!showPasswordForm ? (
-            <TouchableOpacity
-              style={styles.changePasswordButton}
-              onPress={() => setShowPasswordForm(true)}
-            >
-              <Ionicons name="lock-closed-outline" size={20} color="#3B82F6" />
-              <Text style={styles.changePasswordButtonText}>Change Password</Text>
-            </TouchableOpacity>
-          ) : (
-            <View style={styles.passwordForm}>
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Current Password *</Text>
-                <TextInput
-                  style={styles.input}
-                  value={passwordData.current}
-                  onChangeText={(text) =>
-                    setPasswordData((prev) => ({ ...prev, current: text }))
-                  }
-                  secureTextEntry
-                  placeholder="Enter current password"
-                />
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>New Password *</Text>
-                <TextInput
-                  style={styles.input}
-                  value={passwordData.new}
-                  onChangeText={(text) =>
-                    setPasswordData((prev) => ({ ...prev, new: text }))
-                  }
-                  secureTextEntry
-                  placeholder="Enter new password"
-                />
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Confirm New Password *</Text>
-                <TextInput
-                  style={styles.input}
-                  value={passwordData.confirm}
-                  onChangeText={(text) =>
-                    setPasswordData((prev) => ({ ...prev, confirm: text }))
-                  }
-                  secureTextEntry
-                  placeholder="Confirm new password"
-                />
-              </View>
-
-              <View style={styles.formButtons}>
-                <TouchableOpacity
-                  style={[styles.formButton, styles.cancelButton]}
-                  onPress={() => {
-                    setShowPasswordForm(false);
-                    setPasswordData({ current: "", new: "", confirm: "" });
-                  }}
-                >
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.formButton, styles.saveButton]}
-                  onPress={handleChangePassword}
-                >
-                  <Text style={styles.saveButtonText}>Update Password</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
         </Animated.View>
 
         {/* Logout Button */}

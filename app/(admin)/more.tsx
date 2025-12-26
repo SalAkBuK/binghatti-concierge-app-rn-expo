@@ -16,11 +16,6 @@ import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
 import { filterNotificationsByUser } from "../../lib/utils/helpers";
-import {
-  useMountLog,
-  useRenderLog,
-  useScreenFocusLog,
-} from "../../utils/adminProfiler";
 
 const ADMIN_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
 
@@ -58,22 +53,9 @@ const MENU_ITEMS: MenuItem[] = [
     route: "/(admin)/activity",
     color: "#F59E0B",
   },
-  {
-    id: "permissions",
-    title: "Permissions",
-    subtitle: "Configure role-based access control",
-    icon: "shield-checkmark",
-    route: "/(admin)/permissions",
-    color: "#8B5CF6",
-  },
 ];
 
 export default function AdminMoreScreen() {
-  // Profiler hooks - track lifecycle and performance
-  useMountLog("Admin/More");
-  useRenderLog("Admin/More");
-  useScreenFocusLog("Admin/More");
-
   const { currentUser, notifications } = useApp();
   const { width } = useWindowDimensions();
   const router = useRouter();

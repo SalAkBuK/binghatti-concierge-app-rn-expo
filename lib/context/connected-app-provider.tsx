@@ -51,6 +51,7 @@ import {
   DEFAULT_ROLE_PERMISSIONS,
 } from "../utils/mockData";
 import { generateId } from "../utils";
+import { adminApi } from "../services/api/admin";
 
 interface ConnectedAppProviderProps {
   children: ReactNode;
@@ -246,6 +247,15 @@ export const useApp = () => {
     createBuilding,
     updateBuilding,
     deleteBuilding,
+    assignManagerToBuilding,
+    assignAdminToBuilding,
+    assignMaintenanceStaffToBuilding,
+    getBuildingAdmins,
+    getAdminBuildings,
+    refreshBuildings,
+    removeAdminFromBuilding,
+    getAdminAssignedBuildingIds,
+    getAdminAssignedBuildings,
     getManagedBuildingIds,
     getManagedBuildings,
     getUnitTypes,
@@ -266,6 +276,7 @@ export const useApp = () => {
     removeBuildingEmployee,
     getServiceProviders,
     createServiceProvider,
+    updateServiceProvider,
     getServiceProviderBuildingAssignments,
     getServiceProvidersForBuilding,
     assignServiceProviderToBuilding,
@@ -307,66 +318,372 @@ export const useApp = () => {
   } = ratingsActions;
 
   const getUsers = useCallback(
-    () => measure("getUsers: Object.values(auth.users)", () => Object.values(auth.users)),
+    () => Object.values(auth.users),
     [auth.users]
+  );
+
+  /**
+   * Fetch all users (service providers, tenants, employees) from all managed buildings
+   * This ensures we have fresh data from the backend for all building-scoped users
+   */
+  const fetchAllUsersForBuildings = useCallback(
+    async (): Promise<void> => {
+      try {
+        console.log('[fetchAllUsersForBuildings] Starting to fetch users for managed buildings');
+
+        // Get all managed buildings
+        const buildings = getBuildings();
+        console.log(`[fetchAllUsersForBuildings] Found ${buildings.length} managed buildings`);
+
+        if (buildings.length === 0) {
+          console.log('[fetchAllUsersForBuildings] No buildings to fetch users for');
+          return;
+        }
+
+        // Fetch users for all buildings in parallel
+        const fetchPromises = buildings.map(async (building) => {
+          const buildingIdNum = typeof building.id === 'string'
+            ? parseInt(building.id.replace(/\D/g, ''), 10)
+            : building.id;
+
+          if (isNaN(buildingIdNum)) {
+            console.warn(`[fetchAllUsersForBuildings] Invalid building ID: ${building.id}`);
+            return { serviceProviders: [], tenants: [], employees: [] };
+          }
+
+          console.log(`[fetchAllUsersForBuildings] Fetching users for building ${buildingIdNum} (${building.name})`);
+
+          const buildingIdStr = String(building.id);
+
+          // Fetch all user types for this building in parallel
+          const [serviceProvidersRes, tenantsRes, employeesRes, managersRes] = await Promise.allSettled([
+            adminApi.getServiceProvidersByBuilding(buildingIdNum),
+            adminApi.getTenantsByBuilding(buildingIdNum),
+            adminApi.getMaintenanceStaffByBuilding(buildingIdNum),
+            adminApi.getBuildingManagers(buildingIdNum),
+          ]);
+
+          const serviceProviders = serviceProvidersRes.status === 'fulfilled' && serviceProvidersRes.value.data
+            ? serviceProvidersRes.value.data.map((sp: any) => ({
+                ...sp,
+                buildingId: sp.buildingId ?? buildingIdStr,
+                _fetchedBuildingId: buildingIdStr,
+              }))
+            : [];
+          const tenants = tenantsRes.status === 'fulfilled' && tenantsRes.value.data
+            ? tenantsRes.value.data.map((tenant: any) => ({
+                ...tenant,
+                buildingId: tenant.buildingId ?? buildingIdStr,
+                _fetchedBuildingId: buildingIdStr,
+              }))
+            : [];
+          const employees = employeesRes.status === 'fulfilled' && employeesRes.value.data
+            ? employeesRes.value.data.map((employee: any) => ({
+                ...employee,
+                buildingId: employee.buildingId ?? buildingIdStr,
+                _fetchedBuildingId: buildingIdStr,
+            }))
+            : [];
+          const managers = managersRes.status === 'fulfilled' && managersRes.value.data
+            ? managersRes.value.data.map((manager: any) => ({
+                ...manager,
+                buildingId: manager.buildingId ?? buildingIdStr,
+                _fetchedBuildingId: buildingIdStr,
+              }))
+            : [];
+
+          console.log(
+            `[fetchAllUsersForBuildings] Building ${buildingIdNum}: ${serviceProviders.length} providers, ${tenants.length} tenants, ${employees.length} employees, ${managers.length} managers`,
+          );
+
+          return { serviceProviders, tenants, employees, managers, buildingId: buildingIdStr };
+        });
+
+        const results = await Promise.all(fetchPromises);
+
+        // Combine all users from all buildings
+        const allServiceProviders: any[] = [];
+        const allTenants: any[] = [];
+        const allEmployees: any[] = [];
+        const allManagers: any[] = [];
+
+        results.forEach((result) => {
+          if (!result) return;
+          const resultBuildingId = (result as any).buildingId ?? '';
+          const svc = result.serviceProviders ?? [];
+          const tenants = result.tenants ?? [];
+          const emps = result.employees ?? [];
+          const mgrs = (result as any).managers ?? [];
+
+          allServiceProviders.push(
+            ...svc.map((sp: any) => ({
+              ...sp,
+              buildingId: sp.buildingId ?? resultBuildingId,
+              _fetchedBuildingId: sp._fetchedBuildingId ?? resultBuildingId,
+            })),
+          );
+          allTenants.push(
+            ...tenants.map((tenant: any) => ({
+              ...tenant,
+              buildingId: tenant.buildingId ?? resultBuildingId,
+              _fetchedBuildingId: tenant._fetchedBuildingId ?? resultBuildingId,
+            })),
+          );
+          allEmployees.push(
+            ...emps.map((employee: any) => ({
+              ...employee,
+              buildingId: employee.buildingId ?? resultBuildingId,
+              _fetchedBuildingId: employee._fetchedBuildingId ?? resultBuildingId,
+            })),
+          );
+          allManagers.push(
+            ...mgrs.map((manager: any) => ({
+              ...manager,
+              buildingId: manager.buildingId ?? resultBuildingId,
+              _fetchedBuildingId: manager._fetchedBuildingId ?? resultBuildingId,
+            })),
+          );
+        });
+
+        console.log(
+          `[fetchAllUsersForBuildings] Total users fetched: ${allServiceProviders.length} providers, ${allTenants.length} tenants, ${allEmployees.length} employees, ${allManagers.length} managers`,
+        );
+
+        // Map backend responses to frontend User type and store in auth context
+        const mappedUsers: User[] = [];
+
+        // Map service providers
+        allServiceProviders.forEach((sp: any) => {
+          const buildingIdFromSource =
+            (sp as any).buildingId ||
+            (sp as any)._fetchedBuildingId ||
+            '';
+
+          const user: User = {
+            id: String(sp.id || sp.providerId || sp.serviceProviderId),
+            email: sp.email || sp.providerEmail || `provider-${sp.id}@system.local`,
+            name: sp.fullName || sp.name || sp.companyName || `Provider ${sp.id}`,
+            role: 'service_provider',
+            phone: sp.phoneNumber || sp.phone || '',
+            profile: {
+              buildingId: String(buildingIdFromSource || ''),
+              companyName: sp.companyName,
+              specialization: sp.specialization,
+              jobTitle: sp.jobTitle,
+              skills: sp.skills,
+              phone: sp.phoneNumber || sp.phone || '',
+              address: sp.address || '',
+              nationality: sp.nationality || '',
+            },
+            createdAt: sp.createdAt || new Date().toISOString(),
+            updatedAt: sp.updatedAt || new Date().toISOString(),
+          } as any;
+
+          // Add top-level fields for backward compatibility and edit modal population
+          (user as any).fullName = sp.fullName || sp.name || sp.companyName || '';
+          (user as any).phoneNumber = sp.phoneNumber || sp.phone || '';
+          (user as any).address = sp.address || '';
+          (user as any).nationality = sp.nationality || '';
+
+          mappedUsers.push(user);
+        });
+
+        // Map tenants
+        allTenants.forEach((tenant: any) => {
+          console.log('[fetchAllUsersForBuildings] Raw tenant data from backend:', JSON.stringify(tenant, null, 2));
+
+          const buildingIdFromSource =
+            (tenant as any).buildingId ||
+            (tenant as any)._fetchedBuildingId ||
+            (tenant.profile && (tenant.profile as any).buildingId) ||
+            '';
+
+          const user: User = {
+            id: String(tenant.id || tenant.tenantId),
+            email: tenant.email || `tenant-${tenant.id}@system.local`,
+            name: tenant.fullName || tenant.name || `Tenant ${tenant.id}`,
+            role: 'tenant',
+            phone: tenant.phoneNumber || tenant.phone || '',
+            profile: {
+              buildingId: String(buildingIdFromSource || ''),
+              apartment: tenant.unitNumber || tenant.apartment || '',
+              floor: String(tenant.floorNumber || tenant.floor || ''),
+              tower: tenant.tower || '',
+              emergencyContact: tenant.emergencyContact || '',
+              emergencyPhone: tenant.emergencyPhone || '',
+              phone: tenant.phoneNumber || tenant.phone || '',
+              address: tenant.address || '',
+              nationality: tenant.nationality || '',
+              emiratesId: tenant.emiratesId || '',
+            },
+            createdAt: tenant.createdAt || tenant.entranceDate || new Date().toISOString(),
+            updatedAt: tenant.updatedAt || new Date().toISOString(),
+          } as any;
+
+          // Add top-level fields for backward compatibility and edit modal population
+          (user as any).fullName = tenant.fullName || tenant.name || '';
+          (user as any).phoneNumber = tenant.phoneNumber || tenant.phone || '';
+          (user as any).address = tenant.address || '';
+          (user as any).nationality = tenant.nationality || '';
+          (user as any).entranceDate = tenant.entranceDate || '';
+          (user as any).unitNumber = tenant.unitNumber || tenant.apartment || '';
+          (user as any).floorNumber = tenant.floorNumber || tenant.floor || '';
+
+          console.log('[fetchAllUsersForBuildings] Mapped tenant user:', JSON.stringify(user, null, 2));
+
+          mappedUsers.push(user);
+        });
+
+        // Map employees (maintenance staff)
+        allEmployees.forEach((employee: any) => {
+          console.log('[fetchAllUsersForBuildings] Raw employee data from backend:', JSON.stringify(employee, null, 2));
+
+          const buildingIdFromSource =
+            (employee as any).buildingId ||
+            (employee as any)._fetchedBuildingId ||
+            '';
+
+          const user: User = {
+            id: String(employee.id || employee.staffId || employee.employeeId),
+            email: employee.email || `employee-${employee.id}@system.local`,
+            name: employee.fullName || employee.name || `Employee ${employee.id}`,
+            role: 'employee',
+            phone: employee.phoneNumber || employee.phone || '',
+            profile: {
+              buildingId: String(buildingIdFromSource || ''),
+              tower: employee.tower || '',
+              floor: String(employee.floor || ''),
+              phone: employee.phoneNumber || employee.phone || '',
+              address: employee.address || '',
+              nationality: employee.nationality || '',
+              jobTitle: employee.jobTitle || 'Maintenance Staff',
+            },
+            createdAt: employee.createdAt || new Date().toISOString(),
+            updatedAt: employee.updatedAt || new Date().toISOString(),
+          } as any;
+
+          // Add top-level fields for backward compatibility and edit modal population
+          (user as any).fullName = employee.fullName || employee.name || '';
+          (user as any).phoneNumber = employee.phoneNumber || employee.phone || '';
+          (user as any).address = employee.address || '';
+          (user as any).nationality = employee.nationality || '';
+
+          console.log('[fetchAllUsersForBuildings] Mapped employee user:', JSON.stringify(user, null, 2));
+
+          mappedUsers.push(user);
+        });
+
+        // Map managers
+        allManagers.forEach((manager: any) => {
+          console.log('[fetchAllUsersForBuildings] Raw manager data from backend:', JSON.stringify(manager, null, 2));
+
+          const buildingIdFromSource =
+            (manager as any).buildingId ||
+            (manager as any)._fetchedBuildingId ||
+            '';
+
+          const user: User = {
+            id: String(manager.id || manager.userId),
+            email: manager.email || `manager-${manager.id}@system.local`,
+            name: manager.fullName || manager.name || `Manager ${manager.id}`,
+            role: 'management',
+            phone: manager.phoneNumber || manager.phone || '',
+            profile: {
+              buildingId: String(buildingIdFromSource || ''),
+              managedBuildingIds: [String(buildingIdFromSource || '')],
+              phone: manager.phoneNumber || manager.phone || '',
+              address: manager.address || '',
+              nationality: manager.nationality || '',
+              jobTitle: manager.jobTitle || 'Building Manager',
+            } as any,
+            createdAt: manager.createdAt || new Date().toISOString(),
+            updatedAt: manager.updatedAt || new Date().toISOString(),
+          } as any;
+
+          (user as any).fullName = manager.fullName || manager.name || '';
+          (user as any).phoneNumber = manager.phoneNumber || manager.phone || '';
+          (user as any).address = manager.address || '';
+          (user as any).nationality = manager.nationality || '';
+
+          console.log('[fetchAllUsersForBuildings] Mapped manager user:', JSON.stringify(user, null, 2));
+
+          mappedUsers.push(user);
+        });
+
+        // Store all fetched users in auth context
+        console.log(`[fetchAllUsersForBuildings] Storing ${mappedUsers.length} total users in auth context`);
+        mappedUsers.forEach((user) => {
+          auth.actions.addUser(user.email, user);
+        });
+
+        console.log('[fetchAllUsersForBuildings] Successfully fetched and stored all users');
+      } catch (error) {
+        console.error('[fetchAllUsersForBuildings] Failed to fetch users:', error);
+        throw error;
+      }
+    },
+    [getBuildings, auth.actions]
   );
 
   const createUser = useCallback(
     async (userData: CreateUserDTO): Promise<User> => {
       if (
         !auth.currentUser ||
-        !["admin", "super_admin"].includes(auth.currentUser.role)
+        !["admin", "super_admin", "management"].includes(auth.currentUser.role)
       ) {
-        return Promise.reject(new Error("Only admins can create users"));
+        return Promise.reject(new Error("Only admins and management can create users"));
       }
 
-      return new Promise((resolve, reject) => {
-        setTimeout(async () => {
-          const generatedId = generateId(Object.values(auth.users));
+      try {
+        console.log("[createUser] Creating user with role:", userData.role);
 
-          // Validate generated ID
-          if (isNaN(generatedId) || generatedId < 1) {
-            console.error("[createUser] generateId returned invalid ID:", generatedId);
-            reject(new Error("Failed to generate valid user ID"));
-            return;
-          }
+        let response: any;
 
-          const newUser: User = {
-            id: generatedId.toString(),
-            email: userData.email,
-            name: userData.name,
-            role: userData.role,
-            profile: {
-              name: userData.name,
-              phone: userData.phone,
-              apartment: userData.apartment,
-              tower: userData.tower,
-              buildingId: userData.profile?.buildingId,
-              floor: userData.profile?.floor,
-              emergencyContact: userData.profile?.emergencyContact,
-              emergencyPhone: userData.profile?.emergencyPhone,
-            },
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          };
+        // Call appropriate API endpoint based on user role
+        switch (userData.role) {
+          case "management":
+            response = await adminApi.createManager(userData);
+            break;
+          case "employee":
+            response = await adminApi.createMaintenanceStaff(userData);
+            break;
+          case "tenant":
+            response = await adminApi.createTenant(userData);
+            break;
+          case "admin":
+          case "super_admin":
+            response = await adminApi.createAdmin(userData);
+            break;
+          default:
+            throw new Error(`Unsupported user role: ${userData.role}`);
+        }
 
-          console.log("[createUser] Created new user with ID:", newUser.id);
+        if (!response.success || !response.data) {
+          throw new Error(response.message || "Failed to create user");
+        }
 
-          // Add user to auth context (this will persist to AsyncStorage via auth-context)
-          auth.actions.addUser(userData.email, newUser);
+        const createdUser = response.data;
 
-          notifications.actions.createNotification(
-            auth.currentUser!.id,
-            "User Created",
-            `New ${userData.role} user "${userData.name}" has been created`,
-            "success",
-          );
+        console.log("[createUser] User created successfully via API:", createdUser.id);
 
-          resolve(newUser);
-        }, 500);
-      });
+        // Add user to auth context (this will persist to AsyncStorage via auth-context)
+        auth.actions.addUser(createdUser.email, createdUser);
+
+        // Create success notification
+        notifications.actions.createNotification(
+          auth.currentUser!.id,
+          "User Created",
+          `New ${userData.role} user "${userData.fullName}" has been created`,
+          "success",
+        );
+
+        return createdUser;
+      } catch (error: any) {
+        console.error("[createUser] Failed to create user:", error);
+        throw new Error(error?.message || "Failed to create user");
+      }
     },
-    [auth.currentUser, auth.users, auth.actions, notifications.actions],
+    [auth.currentUser, auth.actions, notifications.actions],
   );
 
   const updateUser = useCallback(
@@ -393,8 +710,8 @@ export const useApp = () => {
             ...updates,
             profile: {
               ...existingUser.profile,
-              name: updates.name || existingUser.profile?.name,
-              phone: updates.phone || existingUser.profile?.phone,
+              name: updates.fullName || existingUser.profile?.name,  // Updated to use fullName
+              phone: updates.phoneNumber || existingUser.profile?.phone,  // Updated to use phoneNumber
               apartment: updates.apartment || existingUser.profile?.apartment,
               tower: updates.tower || existingUser.profile?.tower,
             },
@@ -421,9 +738,9 @@ export const useApp = () => {
     async (userId: string): Promise<void> => {
       if (
         !auth.currentUser ||
-        !["admin", "super_admin"].includes(auth.currentUser.role)
+        !["admin", "super_admin", "management"].includes(auth.currentUser.role)
       ) {
-        return Promise.reject(new Error("Only admins can delete users"));
+        return Promise.reject(new Error("Only admins and management can delete users"));
       }
 
       const userRecord =
@@ -648,7 +965,11 @@ export const useApp = () => {
 
       // Notification state
       notifications: notifications.notifications,
-      unreadCount: notifications.unreadCount,
+      unreadCount: auth.currentUser
+        ? notifications.notifications.filter(
+            (n) => n.userId === auth.currentUser?.id && !n.read
+          ).length
+        : 0,
 
       // Notices state
       notices: notices.notices,
@@ -786,6 +1107,7 @@ export const useApp = () => {
 
       // Admin actions - Users
       getUsers,
+      fetchAllUsersForBuildings,
       createUser,
       adminUpdateUser: updateUser,
       adminDeleteUser: deleteUser,
@@ -796,11 +1118,23 @@ export const useApp = () => {
       createBuilding,
       updateBuilding,
       deleteBuilding,
+      assignManagerToBuilding,
+      assignAdminToBuilding,
+      assignMaintenanceStaffToBuilding,
+      getBuildingAdmins,
+      getAdminBuildings,
+      refreshBuildings,
+      removeAdminFromBuilding,
+      getAdminAssignedBuildingIds,
+      getAdminAssignedBuildings,
+      getManagedBuildingIds,
+      getManagedBuildings,
       getBuildingEmployees,
       getBuildingEmployeeByUserId,
       getBuildingEmployeeScope,
       getServiceProviders,
       createServiceProvider,
+      updateServiceProvider,
       getServiceProviderBuildingAssignments,
       getServiceProvidersForBuilding,
       assignServiceProviderToBuilding,

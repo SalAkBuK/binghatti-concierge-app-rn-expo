@@ -21,9 +21,9 @@ export default function BuildingEmployeeLayout() {
           width: '100%',
           backgroundColor: "#FFFFFF",
           borderTopWidth: 0,
-          paddingBottom: Platform.OS === "ios" ? insets.bottom : 8,
+          paddingBottom: Math.max(insets.bottom, 8),
           paddingTop: 12,
-          height: 74 + (Platform.OS === "ios" ? insets.bottom : 8),
+          height: 74 + Math.max(insets.bottom, 8),
           shadowColor: "#0F172A",
           shadowOffset: { width: 0, height: -4 },
           shadowOpacity: 0.08,
@@ -66,6 +66,7 @@ export default function BuildingEmployeeLayout() {
       <Tabs.Screen
         name="amenities"
         options={{
+          href: null,
           title: "Amenities",
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
@@ -79,6 +80,7 @@ export default function BuildingEmployeeLayout() {
       <Tabs.Screen
         name="shifts"
         options={{
+          href: null,
           title: "Shifts",
           tabBarIcon: ({ color, focused }) => (
             <Ionicons

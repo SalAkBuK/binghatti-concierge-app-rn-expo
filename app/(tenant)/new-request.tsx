@@ -1,3 +1,4 @@
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
 import { Picker } from "@react-native-picker/picker";
 import { router } from "expo-router";
@@ -14,14 +15,18 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AttachmentPicker } from "../../components/ui/AttachmentPicker";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
+import { maintenanceApi } from "../../lib/services/api/maintenance";
 import type { CreateRequestDTO } from "../../lib/types";
 import { filterNotificationsByUser } from "../../lib/utils/helpers";
+import { uploadFileToServer } from "../../lib/utils/fileUpload";
+import { IMAGE_CONFIG } from "../../lib/utils/imageUtils";
+import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
 
 interface ValidationErrors {
   title?: string;
@@ -30,9 +35,43 @@ interface ValidationErrors {
   priority?: string;
 }
 
+const getFileNameFromUri = (uri: string): string => {
+  const cleanUri = uri.split("?")[0];
+  const parts = cleanUri.split("/");
+  const last = parts[parts.length - 1];
+  if (last && last.includes(".")) {
+    return last;
+  }
+  return `attachment_${Date.now()}.jpg`;
+};
+
+const getContentTypeFromName = (fileName: string): string => {
+  const ext = fileName.split(".").pop()?.toLowerCase();
+  switch (ext) {
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "png":
+      return "image/png";
+    case "gif":
+      return "image/gif";
+    case "webp":
+      return "image/webp";
+    case "pdf":
+      return "application/pdf";
+    case "doc":
+      return "application/msword";
+    case "docx":
+      return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    default:
+      return "application/octet-stream";
+  }
+};
+
 export default function NewRequestScreen() {
-  const { currentUser, notifications, actions, loading } = useApp();
-  const insets = useSafeAreaInsets();
+  const { currentUser, notifications, loading } = useApp();
+  const tabBarHeight = useBottomTabBarHeight();
+  const maxAttachments = IMAGE_CONFIG.MAX_ATTACHMENTS;
 
   const [newRequest, setNewRequest] = useState<CreateRequestDTO>({
     type: "maintenance",
@@ -40,17 +79,19 @@ export default function NewRequestScreen() {
     description: "",
     priority: "medium",
     apartment: currentUser?.profile?.apartment || "",
-    tower: currentUser?.profile?.tower || "",
+    floor: currentUser?.profile?.floor || currentUser?.profile?.floorNumber
+      ? String(currentUser.profile.floorNumber)
+      : "",
     buildingId:
       currentUser?.profile?.buildingId ||
       currentUser?.profile?.managedBuildingIds?.[0] ||
       "",
     preferredTime: "",
     contactPhone: currentUser?.profile?.phone || "",
-    additionalNotes: "",
   });
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>(
     {},
   );
@@ -102,7 +143,34 @@ export default function NewRequestScreen() {
     }
   };
 
+  const uploadAttachmentForRequest = async (
+    localUri: string,
+    requestIdNum: number,
+    uploadedById: number,
+  ): Promise<void> => {
+    const fileName = getFileNameFromUri(localUri);
+    const contentType = getContentTypeFromName(fileName);
+
+    const uploadedUrl = await uploadFileToServer(localUri, requestIdNum);
+
+    await maintenanceApi.addMaintenanceRequestAttachment({
+      requestId: requestIdNum,
+      uploadedById,
+      fileUrl: uploadedUrl,
+      fileName,
+      contentType,
+    });
+  };
+
   const handleSubmit = async (): Promise<void> => {
+    if (attachments.length > maxAttachments) {
+      Alert.alert(
+        "Attachment limit exceeded",
+        `You can only attach up to ${maxAttachments} photos.`,
+      );
+      return;
+    }
+
     const errors = validateForm();
 
     if (Object.keys(errors).length > 0) {
@@ -113,55 +181,148 @@ export default function NewRequestScreen() {
     setIsSubmitting(true);
 
     try {
-      // Create request with attachments included
-      const requestData: CreateRequestDTO = {
-        ...newRequest,
-        attachments: attachments,
+      // Get tenant ID and building ID from current user
+      const tenantId = currentUser?.id;
+      const buildingId = currentUser?.profile?.buildingId;
+
+      if (!tenantId) {
+        throw new Error("Tenant ID not found. Please log in again.");
+      }
+
+      if (!buildingId) {
+        throw new Error("Building ID not found. Please ensure your profile is complete.");
+      }
+
+      // Map priority string to number (1=Low, 2=Medium, 3=High, 4=Urgent)
+      const priorityMap: { [key: string]: number } = {
+        low: 1,
+        medium: 2,
+        high: 3,
+        urgent: 4,
       };
 
-      console.log("Submitting request with attachments:", {
-        ...requestData,
-        attachments: requestData.attachments?.length,
+      const priorityNumber = priorityMap[newRequest.priority] || 2;
+
+      // Convert buildingId and tenantId to numbers
+      const buildingIdNum = typeof buildingId === 'string'
+        ? parseInt(buildingId.replace(/\D/g, ''), 10)
+        : buildingId;
+
+      const tenantIdNum = typeof tenantId === 'string'
+        ? parseInt(tenantId.replace(/\D/g, ''), 10)
+        : tenantId;
+
+      console.log("[NewRequest] Submitting maintenance request:", {
+        buildingId: buildingIdNum,
+        createdById: tenantIdNum,
+        title: newRequest.title,
+        description: newRequest.description,
+        priority: priorityNumber,
+        attachmentsCount: attachments.length,
       });
 
-      const createdRequest = await actions.createRequest(requestData);
+      // Call the backend API
+      const response = await maintenanceApi.createMaintenanceRequest({
+        buildingId: buildingIdNum,
+        createdById: tenantIdNum,
+        title: newRequest.title,
+        description: newRequest.description,
+        priority: priorityNumber,
+      });
 
-      console.log("Request created successfully:", createdRequest.id);
+      console.log("[NewRequest] Request created successfully:", response);
 
-      Alert.alert("Success", "Your request has been submitted successfully!", [
-        {
-          text: "OK",
-          onPress: () => {
-            // Reset form
-            setNewRequest({
-              type: "maintenance",
-              title: "",
-              description: "",
-              priority: "medium",
-              apartment: currentUser?.profile?.apartment || "",
-              tower: currentUser?.profile?.tower || "",
-              buildingId:
-                currentUser?.profile?.buildingId ||
-                currentUser?.profile?.managedBuildingIds?.[0] ||
-                "",
-              preferredTime: "",
-              contactPhone: currentUser?.profile?.phone || "",
-              additionalNotes: "",
-            });
-            setAttachments([]);
-            // Navigate back to home
-            router.push("/(tenant)/index" as any);
-          },
-        },
-      ]);
+      // Extract requestId from the response
+      const requestId =
+        response?.data?.id ||
+        response?.data?.requestId ||
+        response?.id ||
+        response?.requestId ||
+        (typeof response === "number" ? response : null);
+      let requestIdNum = Number(requestId);
+
+      if ((!requestId || Number.isNaN(requestIdNum)) && tenantIdNum) {
+        try {
+          const tenantRequests = await maintenanceApi.getMaintenanceRequestsByTenantId(
+            tenantIdNum,
+          );
+          if (tenantRequests.success && Array.isArray(tenantRequests.data) && tenantRequests.data.length > 0) {
+            const latest = tenantRequests.data
+              .map((req: any) => ({
+                ...req,
+                createdAt: req.createdAt || req.created_at || new Date().toISOString(),
+              }))
+              .sort(
+                (a: any, b: any) =>
+                  new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+              )[0];
+            if (latest?.id) {
+              requestIdNum = Number(latest.id);
+            }
+          }
+        } catch (lookupErr) {
+          console.warn("[NewRequest] Fallback fetch for latest tenant request failed", lookupErr);
+        }
+      }
+
+      if (!requestIdNum || Number.isNaN(requestIdNum)) {
+        console.warn("[NewRequest] No requestId returned from API; skipping attachment upload");
+      }
+
+      // Upload attachments if any
+      if (attachments.length > 0 && requestIdNum && !Number.isNaN(requestIdNum)) {
+        console.log(`[NewRequest] Uploading ${attachments.length} attachments for request ${requestIdNum}`);
+        setIsUploadingAttachments(true);
+
+        let failedCount = 0;
+        for (let i = 0; i < attachments.length; i++) {
+          const localUri = attachments[i];
+          try {
+            console.log(`[NewRequest] Uploading attachment ${i + 1}/${attachments.length}`);
+            await uploadAttachmentForRequest(localUri, requestIdNum, tenantIdNum);
+          } catch (attachmentError) {
+            failedCount += 1;
+            console.error(`[NewRequest] Failed to upload attachment ${i + 1}:`, attachmentError);
+          }
+        }
+
+        setIsUploadingAttachments(false);
+
+        if (failedCount > 0) {
+          Alert.alert(
+            "Partial Success",
+            `Your request was created, but ${failedCount} attachment${failedCount > 1 ? "s" : ""} failed to upload. You can try adding them later.`,
+          );
+        } else {
+          console.log("[NewRequest] All attachments processed");
+        }
+      }
+
+      showSuccessAlert("Your request has been submitted successfully!");
+
+      // Reset form
+      setNewRequest({
+        type: "maintenance",
+        title: "",
+        description: "",
+        priority: "medium",
+        apartment: currentUser?.profile?.apartment || "",
+        buildingId:
+          currentUser?.profile?.buildingId ||
+          currentUser?.profile?.managedBuildingIds?.[0] ||
+          "",
+        preferredTime: "",
+        contactPhone: currentUser?.profile?.phone || "",
+      });
+      setAttachments([]);
+      // Navigate back to home
+      router.push("/(tenant)" as any);
     } catch (error) {
-      console.error("Error submitting request:", error);
-      Alert.alert(
-        "Error",
-        `Failed to submit request. ${error instanceof Error ? error.message : "Please try again."}`,
-      );
+      console.error("[NewRequest] Error submitting request:", error);
+      showErrorAlert(error);
     } finally {
       setIsSubmitting(false);
+      setIsUploadingAttachments(false);
     }
   };
 
@@ -174,7 +335,7 @@ export default function NewRequestScreen() {
         <ScrollView
           style={styles.scrollView}
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ paddingBottom: 160 + insets.bottom }}
+          contentContainerStyle={{ paddingBottom: tabBarHeight + 32 }}
         >
           {/* Navigation Header */}
           <HeaderBar
@@ -201,14 +362,16 @@ export default function NewRequestScreen() {
                   selectedValue={newRequest.type}
                   onValueChange={(value) => handleInputChange("type", value)}
                   style={styles.picker}
+                  dropdownIconColor="#111827"
+                  itemStyle={{ color: "#111827" }}
                 >
-                  <Picker.Item label="Maintenance" value="maintenance" />
-                  <Picker.Item label="Repair" value="repair" />
-                  <Picker.Item label="Cleaning" value="cleaning" />
-                  <Picker.Item label="Electrical" value="electrical" />
-                  <Picker.Item label="Plumbing" value="plumbing" />
-                  <Picker.Item label="AC/Heating" value="hvac" />
-                  <Picker.Item label="Other" value="other" />
+                  <Picker.Item label="Maintenance" value="maintenance" color="#111827" />
+                  <Picker.Item label="Repair" value="repair" color="#111827" />
+                  <Picker.Item label="Cleaning" value="cleaning" color="#111827" />
+                  <Picker.Item label="Electrical" value="electrical" color="#111827" />
+                  <Picker.Item label="Plumbing" value="plumbing" color="#111827" />
+                  <Picker.Item label="AC/Heating" value="hvac" color="#111827" />
+                  <Picker.Item label="Other" value="other" color="#111827" />
                 </Picker>
               </View>
               {validationErrors.type && (
@@ -267,11 +430,13 @@ export default function NewRequestScreen() {
                     handleInputChange("priority", value)
                   }
                   style={styles.picker}
+                  dropdownIconColor="#111827"
+                  itemStyle={{ color: "#111827" }}
                 >
-                  <Picker.Item label="Low" value="low" />
-                  <Picker.Item label="Medium" value="medium" />
-                  <Picker.Item label="High" value="high" />
-                  <Picker.Item label="Urgent" value="urgent" />
+                  <Picker.Item label="Low" value="low" color="#111827" />
+                  <Picker.Item label="Medium" value="medium" color="#111827" />
+                  <Picker.Item label="High" value="high" color="#111827" />
+                  <Picker.Item label="Urgent" value="urgent" color="#111827" />
                 </Picker>
               </View>
               {validationErrors.priority && (
@@ -281,26 +446,15 @@ export default function NewRequestScreen() {
               )}
             </View>
 
-            {/* Apartment & Tower */}
-            <View style={styles.row}>
-              <View style={[styles.inputGroup, styles.halfWidth]}>
-                <Text style={styles.label}>Apartment</Text>
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="e.g., 1205"
-                  value={newRequest.apartment}
-                  onChangeText={(text) => handleInputChange("apartment", text)}
-                />
-              </View>
-              <View style={[styles.inputGroup, styles.halfWidth]}>
-                <Text style={styles.label}>Tower</Text>
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="e.g., Tower A"
-                  value={newRequest.tower}
-                  onChangeText={(text) => handleInputChange("tower", text)}
-                />
-              </View>
+            {/* Apartment */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Apartment</Text>
+              <TextInput
+                style={styles.textInput}
+                placeholder="e.g., 1205"
+                value={newRequest.apartment}
+                onChangeText={(text) => handleInputChange("apartment", text)}
+              />
             </View>
 
             {/* Contact Phone */}
@@ -328,28 +482,22 @@ export default function NewRequestScreen() {
               />
             </View>
 
-            {/* Additional Notes */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Additional Notes</Text>
-              <TextInput
-                style={styles.textArea}
-                placeholder="Any additional information"
-                value={newRequest.additionalNotes}
-                onChangeText={(text) =>
-                  handleInputChange("additionalNotes", text)
-                }
-                multiline
-                numberOfLines={3}
-                textAlignVertical="top"
-                maxLength={300}
-              />
-            </View>
-
             {/* Attachment Picker */}
             <AttachmentPicker
               attachments={attachments}
-              onAttachmentsChange={setAttachments}
+              onAttachmentsChange={(nextAttachments) => {
+                if (nextAttachments.length > maxAttachments) {
+                  Alert.alert(
+                    "Attachment limit exceeded",
+                    `You can only attach up to ${maxAttachments} photos.`,
+                  );
+                  setAttachments(nextAttachments.slice(0, maxAttachments));
+                  return;
+                }
+                setAttachments(nextAttachments);
+              }}
               disabled={isSubmitting || loading}
+              maxAttachments={maxAttachments}
             />
 
             {/* Submit Button */}
@@ -428,13 +576,6 @@ const styles = StyleSheet.create({
   inputGroup: {
     marginBottom: 20,
   },
-  row: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  halfWidth: {
-    width: "48%",
-  },
   label: {
     fontSize: 16,
     fontWeight: "600",
@@ -464,9 +605,12 @@ const styles = StyleSheet.create({
     borderColor: "#d1d5db",
     borderRadius: 8,
     backgroundColor: "white",
+    overflow: "hidden",
   },
   picker: {
     height: 50,
+    color: "#111827", // Text color for selected item
+    backgroundColor: "white",
   },
   errorInput: {
     borderColor: "#ef4444",

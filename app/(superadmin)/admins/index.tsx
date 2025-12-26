@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   ScrollView,
@@ -16,9 +16,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { HeaderBar } from "../../../components/ui/HeaderBar";
 import { SideMenu } from "../../../components/ui/SideMenu";
 import { useApp } from "../../../lib/context/connected-app-provider";
-import type { User } from "../../../lib/types";
+import type { User, CreateUserDTO, UpdateUserDTO } from "../../../lib/types";
 import { filterNotificationsByUser } from "../../../lib/utils/helpers";
-import { generateId } from "../../../lib/utils";
+import apiService from "../../../lib/services/api";
 import { CreateAdminModal } from "./_components/CreateAdminModal";
 
 const SUPERADMIN_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
@@ -27,16 +27,22 @@ interface AdminFormData {
   name: string;
   email: string;
   phone: string;
+  password: string;
+  address: string;
+  nationality: string;
 }
 
 const createInitialFormData = (): AdminFormData => ({
   name: "",
   email: "",
   phone: "",
+  password: "",
+  address: "",
+  nationality: "",
 });
 
 export default function SuperAdminAdminsScreen() {
-  const { currentUser, users, notifications, actions } = useApp();
+  const { currentUser, notifications } = useApp();
   const { width } = useWindowDimensions();
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
 
@@ -44,6 +50,8 @@ export default function SuperAdminAdminsScreen() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [admins, setAdmins] = useState<User[]>([]);
   const [formData, setFormData] = useState<AdminFormData>(createInitialFormData());
   const [editingUser, setEditingUser] = useState<User | null>(null);
 
@@ -53,22 +61,36 @@ export default function SuperAdminAdminsScreen() {
   );
   const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
 
-  // Get all admin users
-  const adminUsers = useMemo(() => {
-    const allUsers = Object.values(users);
-    return allUsers.filter((u) => u.role === "admin");
-  }, [users]);
+  // Load admins from API on mount
+  useEffect(() => {
+    loadAdmins();
+  }, []);
+
+  const loadAdmins = async () => {
+    try {
+      setIsLoading(true);
+      const response = await apiService.admin.getAdmins();
+      if (response.success && response.data) {
+        setAdmins(response.data);
+      }
+    } catch (error) {
+      console.error("Error loading admins:", error);
+      Alert.alert("Error", "Failed to load admins");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Filter admins based on search
   const filteredAdmins = useMemo(() => {
-    if (!searchQuery.trim()) return adminUsers;
+    if (!searchQuery.trim()) return admins;
     const query = searchQuery.toLowerCase();
-    return adminUsers.filter(
+    return admins.filter(
       (user) =>
         user.name.toLowerCase().includes(query) ||
         user.email.toLowerCase().includes(query),
     );
-  }, [adminUsers, searchQuery]);
+  }, [admins, searchQuery]);
 
   const handleCreateAdmin = useCallback(async () => {
     try {
@@ -82,45 +104,35 @@ export default function SuperAdminAdminsScreen() {
         return;
       }
 
-      // Check if user already exists
-      if (users[formData.email]) {
-        Alert.alert("User Exists", "A user with this email already exists");
-        setIsCreating(false);
-        return;
-      }
-
-      // Generate new ID
-      const allUsers = Object.values(users);
-      const newId = generateId(allUsers);
-
-      // Create new admin user
-      const newAdmin: User = {
-        id: newId.toString(),
+      // Prepare admin data for API
+      const adminData: CreateUserDTO = {
+        fullName: formData.name.trim(),
         email: formData.email.trim().toLowerCase(),
-        name: formData.name.trim(),
-        role: "admin",
-        phone: formData.phone.trim() || undefined,
-        profile: {
-          name: formData.name.trim(),
-          phone: formData.phone.trim() || undefined,
-        },
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        password: formData.password.trim(),
+        phoneNumber: formData.phone.trim(),
+        address: formData.address.trim(),
+        nationality: formData.nationality.trim(),
       };
 
-      // Add user to state
-      actions.addUser(newAdmin.email, newAdmin);
+      // Call API to create admin
+      const response = await apiService.admin.createAdmin(adminData);
 
-      Alert.alert("Success", "Admin created successfully");
-      setShowCreateModal(false);
-      setFormData(createInitialFormData());
-    } catch (error) {
+      if (response.success) {
+        Alert.alert("Success", "Admin created successfully");
+        setShowCreateModal(false);
+        setFormData(createInitialFormData());
+        // Reload admins list
+        loadAdmins();
+      } else {
+        Alert.alert("Error", response.message || "Failed to create admin");
+      }
+    } catch (error: any) {
       console.error("Error creating admin:", error);
-      Alert.alert("Error", "Failed to create admin");
+      Alert.alert("Error", error.message || "Failed to create admin");
     } finally {
       setIsCreating(false);
     }
-  }, [formData, users, actions]);
+  }, [formData]);
 
   const handleEditAdmin = useCallback(
     (user: User) => {
@@ -128,7 +140,10 @@ export default function SuperAdminAdminsScreen() {
       setFormData({
         name: user.name,
         email: user.email,
-        phone: user.phone || "",
+        phone: user.phone || user.profile?.phone || "",
+        password: "", // Password not needed for edit
+        address: user.profile?.address || user.profile?.companyAddress || "",
+        nationality: user.profile?.nationality || "",
       });
       setShowCreateModal(true);
     },
@@ -141,31 +156,34 @@ export default function SuperAdminAdminsScreen() {
     try {
       setIsCreating(true);
 
-      const updatedUser: User = {
-        ...editingUser,
-        name: formData.name.trim(),
-        phone: formData.phone.trim() || undefined,
-        profile: {
-          ...editingUser.profile,
-          name: formData.name.trim(),
-          phone: formData.phone.trim() || undefined,
-        },
-        updatedAt: new Date().toISOString(),
+      // Prepare update data for API
+      const updateData: UpdateUserDTO = {
+        fullName: formData.name.trim(),
+        phoneNumber: formData.phone.trim(),
+        address: formData.address.trim(),
+        nationality: formData.nationality.trim(),
       };
 
-      await actions.updateUser(editingUser.email, updatedUser);
+      // Call API to update admin
+      const response = await apiService.admin.updateAdmin(editingUser.id, updateData);
 
-      Alert.alert("Success", "Admin updated successfully");
-      setShowCreateModal(false);
-      setFormData(createInitialFormData());
-      setEditingUser(null);
-    } catch (error) {
+      if (response.success) {
+        Alert.alert("Success", "Admin updated successfully");
+        setShowCreateModal(false);
+        setFormData(createInitialFormData());
+        setEditingUser(null);
+        // Reload admins list
+        loadAdmins();
+      } else {
+        Alert.alert("Error", response.message || "Failed to update admin");
+      }
+    } catch (error: any) {
       console.error("Error updating admin:", error);
-      Alert.alert("Error", "Failed to update admin");
+      Alert.alert("Error", error.message || "Failed to update admin");
     } finally {
       setIsCreating(false);
     }
-  }, [editingUser, formData, actions]);
+  }, [editingUser, formData]);
 
   const handleModalClose = useCallback(() => {
     setShowCreateModal(false);
@@ -185,17 +203,24 @@ export default function SuperAdminAdminsScreen() {
             style: "destructive",
             onPress: async () => {
               try {
-                await actions.deleteUser(user.email);
-                Alert.alert("Success", "Admin deleted successfully");
-              } catch (error) {
-                Alert.alert("Error", "Failed to delete admin");
+                const response = await apiService.admin.deleteAdmin(user.id);
+                if (response.success) {
+                  Alert.alert("Success", "Admin deleted successfully");
+                  // Reload admins list
+                  loadAdmins();
+                } else {
+                  Alert.alert("Error", response.message || "Failed to delete admin");
+                }
+              } catch (error: any) {
+                console.error("Error deleting admin:", error);
+                Alert.alert("Error", error.message || "Failed to delete admin");
               }
             },
           },
         ],
       );
     },
-    [actions],
+    [],
   );
 
   return (
@@ -249,7 +274,7 @@ export default function SuperAdminAdminsScreen() {
           style={styles.statsCard}
         >
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{adminUsers.length}</Text>
+            <Text style={styles.statValue}>{admins.length}</Text>
             <Text style={styles.statLabel}>Total Admins</Text>
           </View>
           <View style={styles.statDivider} />
@@ -265,7 +290,11 @@ export default function SuperAdminAdminsScreen() {
           style={styles.listSection}
         >
           <Text style={styles.sectionTitle}>Admin Users</Text>
-          {filteredAdmins.length === 0 ? (
+          {isLoading ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateText}>Loading admins...</Text>
+            </View>
+          ) : filteredAdmins.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name="people-outline" size={48} color="#9CA3AF" />
               <Text style={styles.emptyStateText}>

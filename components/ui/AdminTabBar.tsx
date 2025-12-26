@@ -1,12 +1,12 @@
 import { router, usePathname } from "expo-router";
 import React from "react";
-import { Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import BusinessTabIcon from "../icons/BusinessTabIcon";
-import GridTabIcon from "../icons/GridTabIcon";
 import LayersTabIcon from "../icons/LayersTabIcon";
 import MoreTabIcon from "../icons/MoreTabIcon";
+import GridTabIcon from "../icons/GridTabIcon";
 import PeopleTabIcon from "../icons/PeopleTabIcon";
 
 interface TabItem {
@@ -18,7 +18,7 @@ interface TabItem {
 
 const TABS: TabItem[] = [
   {
-    name: "index",
+    name: "home",
     label: "Dashboard",
     icon: GridTabIcon,
     route: "/(admin)",
@@ -57,24 +57,32 @@ export function AdminTabBar() {
     router.push(route as any);
   };
 
-  const isTabActive = (tabName: string, route: string) => {
-    // Normalize pathname and route by removing route group parentheses
-    const normalizedPathname = pathname.replace(/\([^)]+\)/g, "");
-    const normalizedRoute = route.replace(/\([^)]+\)/g, "");
+  const normalizePath = (value: string) =>
+    value
+      .replace(/\([^)]+\)/g, "") // Remove route groups like (admin)
+      .replace(/\/+/g, "/") // Clean up double slashes: // → /
+      .replace(/\/index$/, "") // Remove trailing /index
+      .replace(/\/$/, "") || "/";
 
-    // Exact match for index route
-    if (tabName === "index") {
+  const isTabActive = (tab: TabItem) => {
+    const normalizedPathname = normalizePath(pathname);
+    const normalizedRoute = normalizePath(tab.route);
+
+    // Home/dashboard tab: only active on root admin screens
+    if (tab.name === "home") {
       return (
-        pathname === "/(admin)" ||
-        pathname === "/(admin)/" ||
-        pathname === "/" ||
-        normalizedPathname === "/" ||
-        normalizedPathname === ""
+        normalizedPathname === normalizedRoute ||
+        normalizedPathname === "/" // handle normalized root
       );
     }
 
-    // Check if current path matches the tab route (support both formats)
-    return pathname.startsWith(route) || normalizedPathname.startsWith(normalizedRoute);
+    // Check if current path matches the tab route (support both formats and /index suffix)
+    return (
+      pathname.startsWith(tab.route) ||
+      pathname === `${tab.route}/index` ||
+      normalizedPathname === normalizedRoute ||
+      normalizedPathname.startsWith(normalizedRoute)
+    );
   };
 
   return (
@@ -82,13 +90,13 @@ export function AdminTabBar() {
       style={[
         styles.container,
         {
-          paddingBottom: Platform.OS === "ios" ? insets.bottom : 8,
-          height: 74 + (Platform.OS === "ios" ? insets.bottom : 8),
+          paddingBottom: Math.max(insets.bottom, 8),
+          height: 74 + Math.max(insets.bottom, 8),
         },
       ]}
     >
       {TABS.map((tab) => {
-        const isActive = isTabActive(tab.name, tab.route);
+        const isActive = isTabActive(tab);
         const IconComponent = tab.icon;
         const color = isActive ? "#7034FF" : "#8296C4";
 

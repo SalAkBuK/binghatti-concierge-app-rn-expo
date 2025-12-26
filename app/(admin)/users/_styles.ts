@@ -222,6 +222,61 @@ const styles = StyleSheet.create({
     color: "#6B7280",
     marginTop: 2,
   },
+  loadMoreButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 16,
+    marginVertical: 16,
+    backgroundColor: "#F5F3FF",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#DDD6FE",
+  },
+  loadMoreButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#7034FF",
+  },
+  endReachedFooter: {
+    alignItems: "center",
+    paddingVertical: 20,
+    paddingBottom: 40,
+  },
+  endReachedText: {
+    fontSize: 13,
+    color: "#9CA3AF",
+    fontWeight: "500",
+  },
+  helperText: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginTop: 4,
+    fontStyle: "italic",
+  },
+  emptyPickerText: {
+    fontSize: 14,
+    color: "#9CA3AF",
+    padding: 12,
+    textAlign: "center",
+  },
+  pickerContainer: {
+    marginTop: 4,
+  },
+  pickerWrapper: {
+    backgroundColor: "#F9FAFB",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    overflow: "hidden",
+  },
+  picker: {
+    width: "100%",
+    height: 48,
+    color: "#1F2937",
+    backgroundColor: "#F9FAFB",
+  },
 });
 
 export { styles };

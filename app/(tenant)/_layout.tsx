@@ -1,5 +1,5 @@
-import { Tabs } from "expo-router";
-import React from "react";
+import { Tabs, router } from "expo-router";
+import React, { useEffect, useRef } from "react";
 import { Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import NewHomeTabIcon from "../../components/icons/NewHomeTabIcon";
@@ -10,12 +10,30 @@ import RequestsTabIcon from "../../components/icons/RequestsTabIcon";
 import { useApp } from "../../lib/context/connected-app-provider";
 
 export default function TabLayout() {
-  const { isAuthenticated } = useApp();
+  const { isAuthenticated, currentUser } = useApp();
   const insets = useSafeAreaInsets();
+  const hasRedirectedToRole = useRef(false);
 
-  // Only render tabs if authenticated
-  if (!isAuthenticated) {
-    return null; // Or a loading component
+  // Redirect non-tenant users to their appropriate portal
+  useEffect(() => {
+    if (isAuthenticated && currentUser && currentUser.role !== "tenant" && !hasRedirectedToRole.current) {
+      hasRedirectedToRole.current = true;
+      console.log("[TenantLayout] Non-tenant user detected, redirecting to appropriate portal");
+      // Redirect to index which will handle role-based routing
+      router.replace("/" as any);
+    } else if (!currentUser || currentUser.role === "tenant") {
+      hasRedirectedToRole.current = false;
+    }
+  }, [isAuthenticated, currentUser]);
+
+  // Only render tabs if authenticated and user is tenant
+  if (!isAuthenticated || !currentUser) {
+    return null;
+  }
+
+  // Don't render if user is not a tenant
+  if (currentUser.role !== "tenant") {
+    return null;
   }
 
   return (
@@ -32,9 +50,9 @@ export default function TabLayout() {
           width: '100%',
           backgroundColor: "#FFFFFF",
           borderTopWidth: 0,
-          paddingBottom: Platform.OS === "ios" ? insets.bottom : 8,
+          paddingBottom: Math.max(insets.bottom, 8),
           paddingTop: 12,
-          height: 74 + (Platform.OS === "ios" ? insets.bottom : 8),
+          height: 74 + Math.max(insets.bottom, 8),
           shadowColor: "#9CAFD9",
           shadowOffset: {
             width: 0,

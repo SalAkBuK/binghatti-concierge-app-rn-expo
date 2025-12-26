@@ -1,5 +1,4 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
@@ -18,12 +17,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
+import apiService from "../../lib/services/api";
+import { getUserErrorMessage } from "../../lib/services/api/errors";
 import type {
   Building,
-  BuildingEmployee,
-  ServiceProviderProfile,
+  BuildingEmployee
 } from "../../lib/types";
-import { getUserErrorMessage } from "../../lib/services/api/errors";
 import { filterNotificationsByUser } from "../../lib/utils/helpers";
 
 const MANAGEMENT_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
@@ -36,14 +35,10 @@ const SHIFT_SEQUENCE: NonNullable<BuildingEmployee["shift"]>[] = [
 export default function WorkforceManagementScreen() {
   const { currentUser, notifications, actions } = useApp();
   const {
-    getBuildings,
-    getManagedBuildings,
     getBuildingEmployees,
-    getServiceProviders,
     getServiceProviderBuildingAssignments,
     updateBuildingEmployee,
     removeBuildingEmployee,
-    addBuildingEmployee,
   } = actions;
   const { width } = useWindowDimensions();
   const [showSideMenu, setShowSideMenu] = useState(false);
@@ -52,20 +47,70 @@ export default function WorkforceManagementScreen() {
     name: "",
     role: "",
     phone: "",
+    email: "",
+    password: "",
+    address: "",
+    nationality: "",
     shift: "morning" as NonNullable<BuildingEmployee["shift"]>,
     buildingId: "",
   });
   const [isSaving, setIsSaving] = useState(false);
+  const [maintenanceStaff, setMaintenanceStaff] = useState<{
+    id: number;
+    fullName: string;
+    email: string;
+    phoneNumber: string;
+    isActive: boolean;
+  }[]>([]);
+  const [isLoadingStaff, setIsLoadingStaff] = useState(false);
+  const [serviceProviders, setServiceProviders] = useState<{
+    id: number;
+    fullName: string;
+    email: string;
+    phoneNumber: string;
+    isActive: boolean;
+  }[]>([]);
+  const [isLoadingProviders, setIsLoadingProviders] = useState(false);
+  const [managedBuildings, setManagedBuildings] = useState<Building[]>([]);
+  const [loadingBuildings, setLoadingBuildings] = useState(true);
 
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
   const isCompact = width < 900;
   const isManagement = currentUser?.role === "management";
 
-  const allBuildings = useMemo(() => getBuildings(), [getBuildings]);
-  const managedBuildings = useMemo(() => {
-    if (!isManagement) return allBuildings;
-    return getManagedBuildings?.() ?? [];
-  }, [isManagement, getManagedBuildings, allBuildings]);
+  // Fetch buildings assigned to this manager from the API (same as dashboard)
+  useEffect(() => {
+    const fetchBuildings = async () => {
+      if (!currentUser?.id) {
+        setLoadingBuildings(false);
+        return;
+      }
+
+      setLoadingBuildings(true);
+      try {
+        console.log('[Workforce] Fetching buildings for manager:', currentUser.id);
+        const response = await apiService.admin.getBuildingsByManagerId(currentUser.id);
+
+        if (response.success && response.data) {
+          console.log('[Workforce] Buildings fetched:', response.data.length);
+          console.log('[Workforce] Building data:', response.data);
+          setManagedBuildings(response.data);
+        } else {
+          console.log('[Workforce] No buildings assigned to this manager');
+          setManagedBuildings([]);
+        }
+      } catch (error) {
+        console.error('[Workforce] Failed to fetch buildings:', error);
+        setManagedBuildings([]);
+      } finally {
+        setLoadingBuildings(false);
+      }
+    };
+
+    fetchBuildings();
+  }, [currentUser?.id]);
+
+  const allBuildings = useMemo(() => managedBuildings, [managedBuildings]);
 
   const [selectedBuildingId, setSelectedBuildingId] = useState<string>(
     isManagement && managedBuildings.length === 1 ? managedBuildings[0].id : "all",
@@ -89,6 +134,118 @@ export default function WorkforceManagementScreen() {
       setSelectedBuildingId("all");
     }
   }, [isManagement, managedBuildings, selectedBuildingId]);
+
+  // Fetch maintenance staff from API when building selection changes
+  useEffect(() => {
+    const fetchMaintenanceStaff = async () => {
+      if (selectedBuildingId === "all") {
+        // Fetch staff for all managed buildings
+        setIsLoadingStaff(true);
+        try {
+          const scopedBuildingIds = isManagement && managedBuildings.length
+            ? managedBuildings.map((building) => building.id)
+            : allBuildings.map((building) => building.id);
+
+          const staffPromises = scopedBuildingIds.map(async (buildingId) => {
+            const buildingIdNum = typeof buildingId === 'string'
+              ? parseInt(buildingId.replace(/\D/g, ''), 10)
+              : buildingId;
+            try {
+              const response = await apiService.maintenance.getMaintenanceStaffByBuilding(buildingIdNum);
+              return response.success ? response.data : [];
+            } catch (error) {
+              console.error(`Failed to fetch staff for building ${buildingId}:`, error);
+              return [];
+            }
+          });
+
+          const staffArrays = await Promise.all(staffPromises);
+          const allStaff = staffArrays.flat();
+          setMaintenanceStaff(allStaff);
+        } catch (error) {
+          console.error('Failed to fetch maintenance staff:', error);
+          setMaintenanceStaff([]);
+        } finally {
+          setIsLoadingStaff(false);
+        }
+      } else {
+        // Fetch staff for selected building
+        setIsLoadingStaff(true);
+        try {
+          const buildingIdNum = typeof selectedBuildingId === 'string'
+            ? parseInt(selectedBuildingId.replace(/\D/g, ''), 10)
+            : selectedBuildingId;
+          const response = await apiService.maintenance.getMaintenanceStaffByBuilding(buildingIdNum);
+          setMaintenanceStaff(response.success ? response.data : []);
+        } catch (error) {
+          console.error('Failed to fetch maintenance staff:', error);
+          setMaintenanceStaff([]);
+        } finally {
+          setIsLoadingStaff(false);
+        }
+      }
+    };
+
+    fetchMaintenanceStaff();
+  }, [selectedBuildingId, isManagement, managedBuildings, allBuildings]);
+
+  // Fetch service providers from API when building selection changes
+  useEffect(() => {
+    const fetchServiceProviders = async () => {
+      if (selectedBuildingId === "all") {
+        // Fetch providers for all managed buildings
+        setIsLoadingProviders(true);
+        try {
+          const scopedBuildingIds = isManagement && managedBuildings.length
+            ? managedBuildings.map((building) => building.id)
+            : allBuildings.map((building) => building.id);
+
+          const providerPromises = scopedBuildingIds.map(async (buildingId) => {
+            const buildingIdNum = typeof buildingId === 'string'
+              ? parseInt(buildingId.replace(/\D/g, ''), 10)
+              : buildingId;
+            try {
+              const response = await apiService.maintenance.getServiceProvidersByBuilding(buildingIdNum);
+              return response.success ? response.data : [];
+            } catch (error) {
+              console.error(`Failed to fetch providers for building ${buildingId}:`, error);
+              return [];
+            }
+          });
+
+          const providerArrays = await Promise.all(providerPromises);
+          const allProviders = providerArrays.flat();
+          // Remove duplicates by id
+          const uniqueProviders = Array.from(
+            new Map(allProviders.map(p => [p.id, p])).values()
+          );
+          setServiceProviders(uniqueProviders);
+        } catch (error) {
+          console.error('Failed to fetch service providers:', error);
+          setServiceProviders([]);
+        } finally {
+          setIsLoadingProviders(false);
+        }
+      } else {
+        // Fetch providers for selected building
+        setIsLoadingProviders(true);
+        try {
+          const buildingIdNum = typeof selectedBuildingId === 'string'
+            ? parseInt(selectedBuildingId.replace(/\D/g, ''), 10)
+            : selectedBuildingId;
+          const response = await apiService.maintenance.getServiceProvidersByBuilding(buildingIdNum);
+          setServiceProviders(response.success ? response.data : []);
+        } catch (error) {
+          console.error('Failed to fetch service providers:', error);
+          setServiceProviders([]);
+        } finally {
+          setIsLoadingProviders(false);
+        }
+      }
+    };
+
+    fetchServiceProviders();
+  }, [selectedBuildingId, isManagement, managedBuildings, allBuildings]);
 
   const buildingMap = useMemo(() => {
     const map = new Map<string, Building>();
@@ -117,13 +274,10 @@ export default function WorkforceManagementScreen() {
     getBuildingEmployees,
   ]);
 
-  const serviceProviders = useMemo<ServiceProviderProfile[]>(
-    () => getServiceProviders(),
-    [getServiceProviders],
-  );
-
   const staffSummary = useMemo(() => {
-    const total = employees.length;
+    const contextTotal = employees.length;
+    const apiTotal = maintenanceStaff.filter(staff => staff.isActive).length;
+    const total = contextTotal + apiTotal;
     const avgRating =
       employees.reduce((acc, employee) => acc + (employee.rating || 0), 0) /
       (employees.length || 1);
@@ -135,22 +289,13 @@ export default function WorkforceManagementScreen() {
       nightShift,
       avgRating: avgRating ? avgRating.toFixed(1) : "N/A",
     };
-  }, [employees]);
+  }, [employees, maintenanceStaff]);
 
   const providerSummary = useMemo(() => {
-    const topPerformer = [...serviceProviders].sort(
-      (a, b) => b.rating - a.rating,
-    )[0];
-    const averageResponse =
-      serviceProviders.reduce(
-        (acc, provider) => acc + (provider.responseTimeMinutes || 0),
-        0,
-      ) / (serviceProviders.length || 1);
-
+    const activeProviders = serviceProviders.filter(p => p.isActive);
     return {
       total: serviceProviders.length,
-      topPerformer,
-      averageResponse: Math.round(averageResponse || 0),
+      activeCount: activeProviders.length,
     };
   }, [serviceProviders]);
 
@@ -215,6 +360,10 @@ export default function WorkforceManagementScreen() {
       name: "",
       role: "",
       phone: "",
+      email: "",
+      password: "",
+      address: "",
+      nationality: "",
       shift: "morning",
       buildingId:
         selectedBuildingId !== "all" ? selectedBuildingId : managedBuildings[0]?.id || "",
@@ -227,8 +376,8 @@ export default function WorkforceManagementScreen() {
   }, [selectedBuildingId, managedBuildings.length]);
 
   const handleCreateEmployee = async () => {
-    if (!formData.name.trim() || !formData.phone.trim()) {
-      Alert.alert("Validation", "Name and phone are required.");
+    if (!formData.name.trim() || !formData.phone.trim() || !formData.email.trim() || !formData.password.trim()) {
+      Alert.alert("Validation", "Name, phone, email, and password are required.");
       return;
     }
 
@@ -243,15 +392,65 @@ export default function WorkforceManagementScreen() {
 
     setIsSaving(true);
     try {
-      await addBuildingEmployee(targetBuildingId, {
-        name: formData.name.trim(),
-        role: formData.role.trim() || "Staff",
-        phone: formData.phone.trim(),
-        shift: formData.shift,
+      // Step 1: Create the maintenance staff
+      const createResponse = await apiService.maintenance.createMaintenanceStaff({
+        fullName: formData.name.trim(),
+        email: formData.email.trim(),
+        password: formData.password.trim(),
+        phoneNumber: formData.phone.trim(),
+        address: formData.address.trim() || "N/A",
+        nationality: formData.nationality.trim() || "N/A",
       });
-      Alert.alert("Employee added", `${formData.name} added to the roster.`);
+
+      if (!createResponse.success || !createResponse.data?.id) {
+        throw new Error(createResponse.message || "Failed to create maintenance staff");
+      }
+
+      const staffId = createResponse.data.id;
+
+      // Step 2: Assign the staff to the building
+      const buildingIdNum = typeof targetBuildingId === 'string'
+        ? parseInt(targetBuildingId.replace(/\D/g, ''), 10)
+        : targetBuildingId;
+
+      await apiService.maintenance.assignMaintenanceStaffToBuilding({
+        buildingId: buildingIdNum,
+        staffId: staffId,
+      });
+
+      Alert.alert("Employee added", `${formData.name} has been created and assigned to the building.`);
       setShowAddModal(false);
       resetForm();
+
+      // Refresh the maintenance staff list
+      try {
+        const response = await apiService.maintenance.getMaintenanceStaffByBuilding(buildingIdNum);
+        if (response.success) {
+          if (selectedBuildingId === targetBuildingId) {
+            setMaintenanceStaff(response.data);
+          } else {
+            // If viewing all buildings, refetch all
+            const scopedBuildingIds = isManagement && managedBuildings.length
+              ? managedBuildings.map((building) => building.id)
+              : allBuildings.map((building) => building.id);
+
+            const staffPromises = scopedBuildingIds.map(async (bId) => {
+              const bIdNum = typeof bId === 'string' ? parseInt(bId.replace(/\D/g, ''), 10) : bId;
+              try {
+                const res = await apiService.maintenance.getMaintenanceStaffByBuilding(bIdNum);
+                return res.success ? res.data : [];
+              } catch {
+                return [];
+              }
+            });
+
+            const staffArrays = await Promise.all(staffPromises);
+            setMaintenanceStaff(staffArrays.flat());
+          }
+        }
+      } catch (error) {
+        console.error('Failed to refresh staff list:', error);
+      }
     } catch (error) {
       const errorMessage = getUserErrorMessage(error);
       Alert.alert("Creation failed", errorMessage);
@@ -306,30 +505,16 @@ export default function WorkforceManagementScreen() {
             <View>
               <Text style={styles.providersTitle}>Service Providers</Text>
               <Text style={styles.providersSubtitle}>
-                {providerSummary.total} vendors connected
+                {providerSummary.total} vendor{providerSummary.total !== 1 ? 's' : ''} assigned
               </Text>
             </View>
             <View style={styles.providerBadge}>
-              <Ionicons name="flash-outline" size={16} color="#F97316" />
+              <Ionicons name="checkmark-circle" size={16} color="#10B981" />
               <Text style={styles.providerBadgeText}>
-                Avg response {providerSummary.averageResponse} mins
+                {providerSummary.activeCount} active
               </Text>
             </View>
           </View>
-
-          {providerSummary.topPerformer ? (
-            <View style={styles.topProvider}>
-              <Text style={styles.topProviderLabel}>Top Rated</Text>
-              <Text style={styles.topProviderName}>
-                {providerSummary.topPerformer.name}
-              </Text>
-              <Text style={styles.topProviderMeta}>
-                {providerSummary.topPerformer.specialty} ·{" "}
-                {providerSummary.topPerformer.rating.toFixed(1)} ★ ·{" "}
-                {providerSummary.topPerformer.jobsCompleted} jobs
-              </Text>
-            </View>
-          ) : null}
         </Animated.View>
 
         {buildingFilterOptions.length > 1 && (
@@ -400,19 +585,95 @@ export default function WorkforceManagementScreen() {
           </TouchableOpacity>
         </Animated.View>
 
+        {/* Maintenance Staff Section (from API) */}
         <View style={styles.employeesList}>
-          {employees.length === 0 ? (
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Maintenance Staff</Text>
+            <Text style={styles.sectionSubtitle}>
+              {isLoadingStaff ? 'Loading...' : `${maintenanceStaff.length} staff member${maintenanceStaff.length !== 1 ? 's' : ''}`}
+            </Text>
+          </View>
+
+          {isLoadingStaff ? (
+            <Animated.View
+              entering={FadeInDown.delay(200).duration(320)}
+              style={styles.emptyState}
+            >
+              <Ionicons name="hourglass-outline" size={48} color="#D1D5DB" />
+              <Text style={styles.emptyTitle}>Loading staff...</Text>
+            </Animated.View>
+          ) : maintenanceStaff.length === 0 ? (
             <Animated.View
               entering={FadeInDown.delay(200).duration(320)}
               style={styles.emptyState}
             >
               <Ionicons name="people-circle-outline" size={48} color="#D1D5DB" />
-              <Text style={styles.emptyTitle}>No employees listed</Text>
+              <Text style={styles.emptyTitle}>No maintenance staff found</Text>
               <Text style={styles.emptySubtitle}>
-                Add staff members or adjust the building filter.
+                Add staff members using the button above.
               </Text>
             </Animated.View>
           ) : (
+            maintenanceStaff.map((staff, index) => (
+              <Animated.View
+                key={staff.id}
+                entering={FadeInDown.delay(200 + index * 40).duration(300)}
+              >
+                <View style={styles.employeeCard}>
+                  <View style={styles.employeeHeader}>
+                    <View style={styles.employeeAvatar}>
+                      <Text style={styles.employeeAvatarText}>
+                        {staff.fullName.charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.employeeName}>{staff.fullName}</Text>
+                      <Text style={styles.employeeRole}>
+                        Maintenance Staff
+                        {!staff.isActive && ' · Inactive'}
+                      </Text>
+                    </View>
+                    <View style={[
+                      styles.statusBadge,
+                      staff.isActive ? styles.statusBadgeActive : styles.statusBadgeInactive
+                    ]}>
+                      <Text style={[
+                        styles.statusBadgeText,
+                        staff.isActive ? styles.statusBadgeTextActive : styles.statusBadgeTextInactive
+                      ]}>
+                        {staff.isActive ? 'Active' : 'Inactive'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.employeeMetaRow}>
+                    <View style={styles.metaChip}>
+                      <Ionicons name="mail-outline" size={16} color="#2563EB" />
+                      <Text style={styles.metaChipText}>{staff.email}</Text>
+                    </View>
+                    <View style={styles.metaChip}>
+                      <Ionicons name="call-outline" size={16} color="#10B981" />
+                      <Text style={styles.metaChipText}>{staff.phoneNumber}</Text>
+                    </View>
+                  </View>
+                </View>
+              </Animated.View>
+            ))
+          )}
+        </View>
+
+        {/* Legacy Employees Section (from Context) */}
+        <View style={styles.employeesList}>
+          {employees.length > 0 && (
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Legacy Employees</Text>
+              <Text style={styles.sectionSubtitle}>
+                {employees.length} employee{employees.length !== 1 ? 's' : ''} (from context)
+              </Text>
+            </View>
+          )}
+
+          {employees.length === 0 ? null : (
             employees.map((employee, index) => (
               <Animated.View
                 key={employee.id}
@@ -477,122 +738,81 @@ export default function WorkforceManagementScreen() {
         </View>
 
         <View style={styles.providersList}>
-          <View style={styles.providersHeader}>
-            <Text style={styles.providersHeading}>Vendor Directory</Text>
-            <Text style={styles.providersSubheading}>
-              View all service providers and request access for your building
-            </Text>
+          <View style={[styles.providersHeader, isCompact && styles.providersHeaderCompact]}>
+            <View>
+              <Text style={styles.providersHeading}>Vendor Directory</Text>
+              <Text style={styles.providersSubheading}>
+                View all service providers
+              </Text>
+            </View>
             <Text style={styles.debugText}>
               {serviceProviders.length} service provider{serviceProviders.length !== 1 ? 's' : ''} available
             </Text>
           </View>
-          {serviceProviders.map((provider) => {
-            const providerAssignments = getServiceProviderBuildingAssignments?.(provider.id) ?? [];
-            const activeAssignments = providerAssignments.filter((a) => a.status === "active");
-            const assignedToSelectedBuilding = selectedBuildingId !== "all"
-              ? activeAssignments.some((a) => a.buildingId === selectedBuildingId)
-              : activeAssignments.length > 0;
-
-            return (
-              <View key={provider.id} style={styles.providerCard}>
-                <View style={styles.providerCardContent}>
-                  <View style={styles.providerInfo}>
-                    <Text style={styles.providerName} numberOfLines={2}>
-                      {provider.name}
-                    </Text>
-                    <Text style={styles.providerSpecialty} numberOfLines={1}>
-                      {provider.specialty}
-                    </Text>
-                    <Text style={styles.providerContact} numberOfLines={1}>
-                      {provider.phone}
-                    </Text>
-                  </View>
-                  <View style={styles.providerStats}>
-                    <View style={styles.providerStatChip}>
-                      <Ionicons name="star" size={16} color="#F59E0B" />
-                      <Text style={styles.providerStatText} numberOfLines={1}>
-                        {provider.rating.toFixed(1)}
-                      </Text>
-                    </View>
-                    <View style={styles.providerStatChip}>
-                      <Ionicons name="construct-outline" size={16} color="#2563EB" />
-                      <Text style={styles.providerStatText} numberOfLines={1}>
-                        {provider.jobsCompleted} jobs
-                      </Text>
-                    </View>
-                    <View style={[
-                      styles.providerStatChip,
-                      assignedToSelectedBuilding && styles.providerStatChipActive
-                    ]}>
-                      <Ionicons
-                        name="business"
-                        size={16}
-                        color={assignedToSelectedBuilding ? "#10B981" : "#6B7280"}
-                      />
-                      <Text
-                        style={[
-                          styles.providerStatText,
-                          assignedToSelectedBuilding && styles.providerStatTextActive
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {activeAssignments.length} {activeAssignments.length === 1 ? "building" : "buildings"}
-                      </Text>
-                    </View>
-                  </View>
-                  {activeAssignments.length > 0 && (
-                    <View style={styles.assignedBuildingsRow}>
-                      <Text style={styles.assignedLabel}>Assigned to:</Text>
-                      <View style={styles.assignedBuildingTags}>
-                        {activeAssignments.map((assignment) => {
-                          const building = buildingMap.get(assignment.buildingId);
-                          return (
-                            <View key={assignment.id} style={styles.buildingTag}>
-                              <Text style={styles.buildingTagText}>
-                                {building?.name || "Unknown"}
-                              </Text>
-                            </View>
-                          );
-                        })}
+          {isLoadingProviders ? (
+            <View style={styles.providerCard}>
+              <Text style={styles.emptyBuildingText}>Loading service providers...</Text>
+            </View>
+          ) : serviceProviders.length === 0 ? (
+            <View style={styles.providerCard}>
+              <Text style={styles.emptyBuildingText}>No service providers assigned to this building</Text>
+            </View>
+          ) : (
+            <View style={[styles.providersGrid, isCompact && styles.providersGridCompact]}>
+              {serviceProviders.map((provider) => {
+                return (
+                  <View
+                    key={provider.id}
+                    style={[
+                      styles.providerCard,
+                      isCompact ? styles.providerCardCompact : styles.providerCardExpanded
+                    ]}
+                  >
+                    <View style={styles.providerCardContent}>
+                      <View style={styles.providerInfo}>
+                        <Text style={styles.providerName} numberOfLines={2}>
+                          {provider.fullName}
+                        </Text>
+                        <Text style={styles.providerSpecialty} numberOfLines={1}>
+                          Service Provider
+                        </Text>
+                        <Text style={styles.providerContact} numberOfLines={1}>
+                          {provider.phoneNumber}
+                        </Text>
+                      </View>
+                      <View style={styles.providerStats}>
+                        <View style={styles.providerStatChip}>
+                          <Ionicons name="mail-outline" size={16} color="#2563EB" />
+                          <Text style={styles.providerStatText} numberOfLines={1} ellipsizeMode="tail">
+                            {provider.email}
+                          </Text>
+                        </View>
+                        <View style={[
+                          styles.providerStatChip,
+                          provider.isActive && styles.providerStatChipActive
+                        ]}>
+                          <Ionicons
+                            name={provider.isActive ? "checkmark-circle" : "close-circle"}
+                            size={16}
+                            color={provider.isActive ? "#10B981" : "#EF4444"}
+                          />
+                          <Text
+                            style={[
+                              styles.providerStatText,
+                              provider.isActive && styles.providerStatTextActive
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {provider.isActive ? "Active" : "Inactive"}
+                          </Text>
+                        </View>
                       </View>
                     </View>
-                  )}
-                  <TouchableOpacity
-                    style={[
-                      styles.requestAccessButton,
-                      assignedToSelectedBuilding && selectedBuildingId !== "all" && styles.requestAccessButtonDisabled
-                    ]}
-                    onPress={() => {
-                      if (selectedBuildingId === "all") {
-                        alert("Please select a specific building to request provider access");
-                        return;
-                      }
-                      router.push({
-                        pathname: "/(modals)/request-provider-access",
-                        params: {
-                          providerId: provider.id,
-                          buildingId: selectedBuildingId,
-                        },
-                      });
-                    }}
-                    disabled={assignedToSelectedBuilding && selectedBuildingId !== "all"}
-                  >
-                    <Ionicons
-                      name={assignedToSelectedBuilding && selectedBuildingId !== "all" ? "checkmark-circle" : "add-circle-outline"}
-                      size={18}
-                      color={assignedToSelectedBuilding && selectedBuildingId !== "all" ? "#10B981" : "#2563EB"}
-                    />
-                    <Text style={[
-                      styles.requestAccessButtonText,
-                      assignedToSelectedBuilding && selectedBuildingId !== "all" && styles.requestAccessButtonTextDisabled
-                    ]}>
-                      {assignedToSelectedBuilding && selectedBuildingId !== "all" ? "Already Assigned" : "Request Access"}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            );
-          })}
+                  </View>
+                );
+              })}
+            </View>
+          )}
         </View>
 
         <View style={{ height: 48 }} />
@@ -615,12 +835,17 @@ export default function WorkforceManagementScreen() {
               </TouchableOpacity>
             </View>
 
-            {selectedBuildingId === "all" && (
-              <View style={styles.modalSection}>
-                <Text style={styles.modalLabel}>Assign to building</Text>
+            <View style={styles.modalSection}>
+              <Text style={styles.modalLabel}>Assign to building *</Text>
+              {loadingBuildings ? (
+                <View style={styles.buildingSelectRow}>
+                  <Text style={styles.emptyBuildingText}>Loading buildings...</Text>
+                </View>
+              ) : managedBuildings.length > 0 ? (
                 <View style={styles.buildingSelectRow}>
                   {managedBuildings.map((building) => {
                     const active = formData.buildingId === building.id;
+                    console.log('[Workforce Modal] Building:', building.name, 'ID:', building.id, 'Active:', active);
                     return (
                       <TouchableOpacity
                         key={building.id}
@@ -647,17 +872,92 @@ export default function WorkforceManagementScreen() {
                     );
                   })}
                 </View>
-              </View>
-            )}
+              ) : (
+                <View style={styles.emptyBuildingNotice}>
+                  <Text style={styles.emptyBuildingText}>
+                    No buildings available. Please contact your administrator.
+                  </Text>
+                  <Text style={styles.debugInfo}>
+                    Debug: isManagement={String(isManagement)},
+                    managedBuildings.length={managedBuildings.length},
+                    allBuildings.length={allBuildings.length}
+                  </Text>
+                </View>
+              )}
+            </View>
 
             <View style={styles.modalSection}>
-              <Text style={styles.modalLabel}>Name</Text>
+              <Text style={styles.modalLabel}>Name *</Text>
               <TextInput
                 style={styles.modalInput}
                 placeholder="Employee name"
                 value={formData.name}
                 onChangeText={(text) =>
                   setFormData((prev) => ({ ...prev, name: text }))
+                }
+              />
+            </View>
+
+            <View style={styles.modalSection}>
+              <Text style={styles.modalLabel}>Email *</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="employee@example.com"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                value={formData.email}
+                onChangeText={(text) =>
+                  setFormData((prev) => ({ ...prev, email: text }))
+                }
+              />
+            </View>
+
+            <View style={styles.modalSection}>
+              <Text style={styles.modalLabel}>Password *</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Minimum 6 characters"
+                secureTextEntry
+                value={formData.password}
+                onChangeText={(text) =>
+                  setFormData((prev) => ({ ...prev, password: text }))
+                }
+              />
+            </View>
+
+            <View style={styles.modalSection}>
+              <Text style={styles.modalLabel}>Phone *</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="+971 50 000 0000"
+                keyboardType="phone-pad"
+                value={formData.phone}
+                onChangeText={(text) =>
+                  setFormData((prev) => ({ ...prev, phone: text }))
+                }
+              />
+            </View>
+
+            <View style={styles.modalSection}>
+              <Text style={styles.modalLabel}>Address</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Address (optional)"
+                value={formData.address}
+                onChangeText={(text) =>
+                  setFormData((prev) => ({ ...prev, address: text }))
+                }
+              />
+            </View>
+
+            <View style={styles.modalSection}>
+              <Text style={styles.modalLabel}>Nationality</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Nationality (optional)"
+                value={formData.nationality}
+                onChangeText={(text) =>
+                  setFormData((prev) => ({ ...prev, nationality: text }))
                 }
               />
             </View>
@@ -670,19 +970,6 @@ export default function WorkforceManagementScreen() {
                 value={formData.role}
                 onChangeText={(text) =>
                   setFormData((prev) => ({ ...prev, role: text }))
-                }
-              />
-            </View>
-
-            <View style={styles.modalSection}>
-              <Text style={styles.modalLabel}>Phone</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="+971 50 000 0000"
-                keyboardType="phone-pad"
-                value={formData.phone}
-                onChangeText={(text) =>
-                  setFormData((prev) => ({ ...prev, phone: text }))
                 }
               />
             </View>
@@ -964,7 +1251,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: 16,
+  },
+  providersHeaderCompact: {
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: 8,
   },
   providersHeading: {
     fontSize: 16,
@@ -976,11 +1268,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#6B7280",
   },
+  providersGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  providersGridCompact: {
+    flexDirection: "column",
+  },
   debugText: {
     fontSize: 12,
     fontWeight: "600",
     color: "#2563EB",
-    marginTop: 8,
+    marginTop: 4,
   },
   requestAccessButton: {
     flexDirection: "row",
@@ -1013,6 +1313,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E5E7EB",
     padding: 16,
+  },
+  providerCardCompact: {
+    width: "100%",
+  },
+  providerCardExpanded: {
+    width: "48%",
+    minWidth: 280,
   },
   providerCardContent: {
     gap: 12,
@@ -1197,5 +1504,60 @@ const styles = StyleSheet.create({
   },
   shiftChipTextActive: {
     color: "#FFFFFF",
+  },
+  sectionHeader: {
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: 4,
+  },
+  sectionSubtitle: {
+    fontSize: 13,
+    color: "#6B7280",
+  },
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  statusBadgeActive: {
+    backgroundColor: "#D1FAE5",
+    borderColor: "#10B981",
+  },
+  statusBadgeInactive: {
+    backgroundColor: "#FEE2E2",
+    borderColor: "#EF4444",
+  },
+  statusBadgeText: {
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  statusBadgeTextActive: {
+    color: "#059669",
+  },
+  statusBadgeTextInactive: {
+    color: "#DC2626",
+  },
+  emptyBuildingNotice: {
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1,
+    borderColor: "#FEE2E2",
+    borderRadius: 12,
+    padding: 16,
+    gap: 8,
+  },
+  emptyBuildingText: {
+    fontSize: 13,
+    color: "#DC2626",
+    fontWeight: "600",
+  },
+  debugInfo: {
+    fontSize: 11,
+    color: "#6B7280",
+    fontFamily: "monospace",
   },
 });

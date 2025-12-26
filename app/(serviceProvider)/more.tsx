@@ -30,22 +30,6 @@ type MenuItem = {
 
 const MENU_ITEMS: MenuItem[] = [
   {
-    id: "analytics",
-    title: "Analytics & Reports",
-    subtitle: "View performance metrics",
-    icon: "stats-chart-outline",
-    iconColor: "#8B5CF6",
-    route: "/(serviceProvider)/analytics",
-  },
-  {
-    id: "ratings",
-    title: "Ratings & Reviews",
-    subtitle: "View customer feedback",
-    icon: "star-outline",
-    iconColor: "#F59E0B",
-    route: "/(serviceProvider)/ratings",
-  },
-  {
     id: "service-areas",
     title: "Service Areas",
     subtitle: "Manage coverage zones",

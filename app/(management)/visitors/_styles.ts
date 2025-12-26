@@ -446,9 +446,12 @@ export const styles = StyleSheet.create({
     borderColor: "#d1d5db",
     borderRadius: 8,
     backgroundColor: "#fff",
+    overflow: "hidden",
   },
   picker: {
     height: 50,
+    color: "#111827", // Text color for selected item
+    backgroundColor: "#fff",
   },
   datePickerButton: {
     flexDirection: "row",

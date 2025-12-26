@@ -1,10 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import { LinearGradient } from "expo-linear-gradient";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -13,12 +16,16 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
+import apiService from "../../lib/services/api";
+import { buildingsApi } from "../../lib/services/api/buildings";
+import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
 import { filterNotificationsByUser } from "../../lib/utils/helpers";
+import { APP_CONFIG } from "../../lib/utils/constants";
 
 interface ProfileFormData {
   name: string;
@@ -41,7 +48,7 @@ interface ValidationErrors {
 }
 
 export default function ProfileScreen() {
-  const insets = useSafeAreaInsets();
+  const tabBarHeight = useBottomTabBarHeight();
   const { currentUser, notifications, actions } = useApp();
 
   const [profileData, setProfileData] = useState<ProfileFormData>({
@@ -53,19 +60,53 @@ export default function ProfileScreen() {
     emergencyContact: currentUser?.profile?.emergencyContact || "",
     emergencyPhone: currentUser?.profile?.emergencyPhone || "",
   });
+  const [buildingName, setBuildingName] = useState<string>("Binghatti");
 
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>(
     {},
   );
   const [showSideMenu, setShowSideMenu] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   const userNotifications = filterNotificationsByUser(
     notifications || [],
     currentUser?.id,
   );
   const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
+  const minPasswordLength = APP_CONFIG.validation.minPasswordLength;
+
+  useEffect(() => {
+    const fetchBuildingName = async () => {
+      const buildingId = currentUser?.profile?.buildingId;
+      if (!buildingId) {
+        console.log("[Profile] No buildingId found in user profile");
+        return;
+      }
+
+      try {
+        console.log("[Profile] Fetching building name for buildingId:", buildingId);
+        const response = await buildingsApi.getBuildingById(buildingId);
+
+        if (response.success && response.data) {
+          setBuildingName(response.data.name);
+          console.log("[Profile] Building name fetched:", response.data.name);
+        }
+      } catch (error) {
+        console.error("[Profile] Failed to fetch building name:", error);
+        // Keep default building name on error
+      }
+    };
+
+    if (currentUser?.profile?.buildingId) {
+      fetchBuildingName();
+    }
+  }, [currentUser?.profile?.buildingId]);
 
   const validateForm = (): ValidationErrors => {
     const errors: ValidationErrors = {};
@@ -136,10 +177,10 @@ export default function ProfileScreen() {
 
       await actions.updateUser(currentUser.email, updatedUser);
 
-      Alert.alert("Success", "Profile updated successfully!");
+      showSuccessAlert("Profile updated successfully!");
       setIsEditing(false);
-    } catch {
-      Alert.alert("Error", "Failed to update profile. Please try again.");
+    } catch (error) {
+      showErrorAlert(error);
     } finally {
       setIsSaving(false);
     }
@@ -161,6 +202,62 @@ export default function ProfileScreen() {
         },
       },
     ]);
+  };
+
+  const handleOpenPasswordModal = () => {
+    setNewPassword("");
+    setPasswordError(null);
+    setShowPassword(false);
+    setShowPasswordModal(true);
+  };
+
+  const handleClosePasswordModal = (force = false) => {
+    if (!isResettingPassword || force) {
+      setShowPasswordModal(false);
+      setNewPassword("");
+      setPasswordError(null);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    const email = currentUser?.email || profileData.email;
+
+    if (!email) {
+      showErrorAlert(new Error("Email not found. Please log in again."));
+      return;
+    }
+
+    if (!newPassword.trim()) {
+      setPasswordError("New password is required");
+      return;
+    }
+
+    if (newPassword.length < minPasswordLength) {
+      setPasswordError(
+        `Password must be at least ${minPasswordLength} characters`,
+      );
+      return;
+    }
+
+    setIsResettingPassword(true);
+
+    try {
+      const response = await apiService.resetPassword({
+        email,
+        newPassword,
+      });
+
+      if (!response?.success) {
+        throw new Error(response?.message || "Failed to update password");
+      }
+
+      showSuccessAlert("Password updated successfully!");
+      handleClosePasswordModal(true);
+    } catch (error) {
+      showErrorAlert(error);
+    } finally {
+      setIsResettingPassword(false);
+    }
   };
 
   const renderProfileField = (
@@ -205,7 +302,7 @@ export default function ProfileScreen() {
         <ScrollView
           style={styles.scrollView}
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ paddingBottom: 160 + insets.bottom }}
+          contentContainerStyle={{ paddingBottom: tabBarHeight + 32 }}
         >
           {/* Navigation Header */}
           <HeaderBar
@@ -281,12 +378,12 @@ export default function ProfileScreen() {
               "e.g., 1205",
             )}
 
-            {renderProfileField(
-              "Tower/Building",
-              profileData.tower,
-              "tower",
-              "e.g., Tower A",
-            )}
+            <View style={styles.fieldContainer}>
+              <Text style={styles.fieldLabel}>Building</Text>
+              <Text style={styles.fieldValue}>
+                {buildingName || "Not provided"}
+              </Text>
+            </View>
 
             <Text style={styles.sectionTitle}>Emergency Contact</Text>
 
@@ -354,6 +451,18 @@ export default function ProfileScreen() {
             {/* Logout Button */}
             {!isEditing && (
               <TouchableOpacity
+                style={styles.changePasswordButton}
+                onPress={handleOpenPasswordModal}
+              >
+                <Ionicons name="key-outline" size={20} color="#1f2937" />
+                <Text style={styles.changePasswordButtonText}>
+                  Change Password
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {!isEditing && (
+              <TouchableOpacity
                 style={styles.logoutButton}
                 onPress={handleLogout}
               >
@@ -364,6 +473,133 @@ export default function ProfileScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={showPasswordModal}
+        onRequestClose={handleClosePasswordModal}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <TouchableOpacity
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={handleClosePasswordModal}
+          />
+          <View style={styles.modalCard}>
+            <LinearGradient
+              colors={["#2563EB", "#4F46E5"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.modalHeader}
+            >
+              <View style={styles.modalHeaderLeft}>
+                <View style={styles.modalIconCircle}>
+                  <Ionicons name="lock-closed-outline" size={20} color="#fff" />
+                </View>
+                <View>
+                  <Text style={styles.modalTitle}>Change Password</Text>
+                  <Text style={styles.modalSubtitle}>
+                    Update your account password securely
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={styles.modalCloseButton}
+                onPress={handleClosePasswordModal}
+                disabled={isResettingPassword}
+              >
+                <Ionicons name="close" size={18} color="#fff" />
+              </TouchableOpacity>
+            </LinearGradient>
+
+            <View style={styles.modalBody}>
+              <Text style={styles.modalLabel}>Email</Text>
+              <View style={styles.modalEmailPill}>
+                <Text style={styles.modalEmailText}>
+                  {currentUser?.email || profileData.email || "Not provided"}
+                </Text>
+              </View>
+
+              <Text style={styles.modalLabel}>New Password</Text>
+              <View
+                style={[
+                  styles.modalInputRow,
+                  passwordError && styles.errorInput,
+                ]}
+              >
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="Enter a new password"
+                  value={newPassword}
+                  onChangeText={(text) => {
+                    setNewPassword(text);
+                    if (passwordError) {
+                      setPasswordError(null);
+                    }
+                  }}
+                  secureTextEntry={!showPassword}
+                  textContentType="newPassword"
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity
+                  style={styles.passwordToggleButton}
+                  onPress={() => setShowPassword((prev) => !prev)}
+                >
+                  <Ionicons
+                    name={showPassword ? "eye-off-outline" : "eye-outline"}
+                    size={18}
+                    color="#475569"
+                  />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.modalHint}>
+                Minimum {minPasswordLength} characters
+              </Text>
+              {passwordError && (
+                <Text style={styles.modalErrorText}>{passwordError}</Text>
+              )}
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={styles.modalSecondaryButton}
+                  onPress={handleClosePasswordModal}
+                  disabled={isResettingPassword}
+                >
+                  <Text style={styles.modalSecondaryText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.modalPrimaryButton,
+                    (isResettingPassword || !newPassword.trim()) &&
+                      styles.modalPrimaryButtonDisabled,
+                  ]}
+                  onPress={handleResetPassword}
+                  disabled={isResettingPassword || !newPassword.trim()}
+                >
+                  <LinearGradient
+                    colors={["#2563EB", "#1D4ED8"]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.modalPrimaryGradient}
+                  >
+                    {isResettingPassword ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={styles.modalPrimaryText}>
+                        Update Password
+                      </Text>
+                    )}
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       {/* Side Menu */}
       <SideMenu
@@ -535,5 +771,169 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     marginLeft: 8,
+  },
+  changePasswordButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#eff6ff",
+    borderRadius: 8,
+    padding: 16,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+  },
+  changePasswordButtonText: {
+    color: "#1e3a8a",
+    fontSize: 16,
+    fontWeight: "600",
+    marginLeft: 8,
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: "center",
+    padding: 24,
+    backgroundColor: "rgba(15, 23, 42, 0.55)",
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  modalCard: {
+    backgroundColor: "#fff",
+    borderRadius: 18,
+    overflow: "hidden",
+    shadowColor: "#0f172a",
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 8,
+  },
+  modalHeader: {
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  modalHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    flex: 1,
+  },
+  modalIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#fff",
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    color: "rgba(255, 255, 255, 0.85)",
+    marginTop: 2,
+  },
+  modalCloseButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 12,
+  },
+  modalBody: {
+    padding: 20,
+    gap: 12,
+  },
+  modalLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#334155",
+  },
+  modalEmailPill: {
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    backgroundColor: "#f8fafc",
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  modalEmailText: {
+    fontSize: 14,
+    color: "#0f172a",
+    fontWeight: "600",
+  },
+  modalInputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 10,
+    backgroundColor: "#fff",
+    paddingHorizontal: 12,
+  },
+  modalInput: {
+    flex: 1,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: "#0f172a",
+  },
+  passwordToggleButton: {
+    paddingLeft: 8,
+    paddingVertical: 6,
+  },
+  modalHint: {
+    fontSize: 12,
+    color: "#64748b",
+    marginTop: -4,
+  },
+  modalErrorText: {
+    color: "#ef4444",
+    fontSize: 12,
+  },
+  modalActions: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 8,
+  },
+  modalSecondaryButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff",
+  },
+  modalSecondaryText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#1e3a8a",
+  },
+  modalPrimaryButton: {
+    flex: 1,
+    borderRadius: 10,
+    overflow: "hidden",
+  },
+  modalPrimaryButtonDisabled: {
+    opacity: 0.6,
+  },
+  modalPrimaryGradient: {
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalPrimaryText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#fff",
   },
 });

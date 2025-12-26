@@ -7,19 +7,84 @@ import {
   DefaultTheme,
   ThemeProvider,
 } from "@react-navigation/native";
-import { Stack } from "expo-router";
+import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect } from "react";
+import { Alert, BackHandler, Platform } from "react-native";
 import "react-native-reanimated";
 
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { ConnectedAppProvider as AppProvider } from "../lib/context/connected-app-provider";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 
 void SplashScreen.preventAutoHideAsync();
 
-export const unstable_settings = {
-  anchor: "(tenant)",
-};
+// Removed hardcoded anchor - let each role portal manage its own navigation
+
+// Component to handle Android back button exit confirmation
+function ExitConfirmationHandler() {
+  const router = useRouter();
+  const segments = useSegments();
+
+  useEffect(() => {
+    // Only handle back button on Android
+    if (Platform.OS !== "android") {
+      return;
+    }
+
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => {
+        // Check if we're at a main portal home screen
+        // This includes both the portal root and the main index/home tab
+        const isPortal =
+          segments[0] === "(tenant)" ||
+          segments[0] === "(management)" ||
+          segments[0] === "(admin)" ||
+          segments[0] === "(superadmin)" ||
+          segments[0] === "(employee)" ||
+          segments[0] === "(buildingEmployee)" ||
+          segments[0] === "(serviceProvider)";
+
+        // Treat as "home" only when at portal root or its index tab (not deep screens)
+        const isAtPortalHome =
+          isPortal &&
+          (segments.length === 1 ||
+            (segments.length === 2 &&
+              (segments[1] === undefined ||
+                segments[1] === "index" ||
+                segments[1] === "")));
+
+        if (isAtPortalHome) {
+          // Show confirmation dialog
+          Alert.alert(
+            "Exit App",
+            "Are you sure you want to exit from the application?",
+            [
+              {
+                text: "No",
+                onPress: () => null,
+                style: "cancel",
+              },
+              {
+                text: "Yes",
+                onPress: () => BackHandler.exitApp(),
+              },
+            ],
+            { cancelable: false }
+          );
+          return true; // Prevent default back button behavior
+        }
+
+        return false; // Allow default back button behavior for other screens
+      }
+    );
+
+    return () => backHandler.remove();
+  }, [segments]);
+
+  return null;
+}
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
@@ -40,9 +105,11 @@ export default function RootLayout() {
   }
 
   return (
-    <AppProvider>
-      <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
-        <Stack>
+    <ErrorBoundary>
+      <AppProvider>
+        <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
+          <ExitConfirmationHandler />
+          <Stack>
           <Stack.Screen name="index" options={{ headerShown: false }} />
           <Stack.Screen name="auth" options={{ headerShown: false }} />
           <Stack.Screen name="(tenant)" options={{ headerShown: false }} />
@@ -121,9 +188,10 @@ export default function RootLayout() {
               headerShown: false,
             }}
           />
-        </Stack>
-        <StatusBar style="auto" />
-      </ThemeProvider>
-    </AppProvider>
+          </Stack>
+          <StatusBar style="auto" />
+        </ThemeProvider>
+      </AppProvider>
+    </ErrorBoundary>
   );
 }

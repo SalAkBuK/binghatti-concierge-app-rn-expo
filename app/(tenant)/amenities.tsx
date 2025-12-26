@@ -1,3 +1,4 @@
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
@@ -10,7 +11,7 @@ import {
   View,
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AnimatedButton } from "../../components/ui/AnimatedButton";
 import { HeaderBar } from "../../components/ui/HeaderBar";
@@ -38,7 +39,7 @@ export default function AmenitiesScreen() {
   const params = useLocalSearchParams();
   const [filterType, setFilterType] = useState<FilterType>("all");
   const [showSideMenu, setShowSideMenu] = useState(false);
-  const insets = useSafeAreaInsets();
+  const tabBarHeight = useBottomTabBarHeight();
 
   // Update filter when params change (from dropdown navigation)
   useEffect(() => {
@@ -102,7 +103,7 @@ export default function AmenitiesScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={{ paddingBottom: 160 + insets.bottom }}
+        contentContainerStyle={{ paddingBottom: tabBarHeight + 32 }}
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}

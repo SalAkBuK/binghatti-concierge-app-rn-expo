@@ -19,20 +19,10 @@ import {
   filterNotificationsByUser,
   formatDateTime,
 } from "../../lib/utils/helpers";
-import {
-  useMountLog,
-  useRenderLog,
-  useScreenFocusLog,
-} from "../../utils/adminProfiler";
 
 const ADMIN_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
 
 export default function ActivityFeedScreen() {
-  // Profiler hooks - track lifecycle and performance
-  useMountLog("Admin/Activity");
-  useRenderLog("Admin/Activity");
-  useScreenFocusLog("Admin/Activity");
-
   const { currentUser, notifications, analytics, actions } = useApp();
   const { width } = useWindowDimensions();
   const [showSideMenu, setShowSideMenu] = useState(false);

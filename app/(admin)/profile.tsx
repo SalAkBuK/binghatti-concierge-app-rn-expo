@@ -1,8 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
 import {
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -25,9 +26,6 @@ export default function AdminProfileScreen() {
   const { width } = useWindowDimensions();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
-
-  // Check if this is first-time setup
-  const isFirstTimeSetup = !currentUser?.profileCompleted;
 
   const userNotifications = filterNotificationsByUser(
     notifications || [],
@@ -55,18 +53,6 @@ export default function AdminProfileScreen() {
   const [isSaving, setIsSaving] = useState(false);
 
   const handleSave = async () => {
-    // Validate required fields for first-time setup
-    if (isFirstTimeSetup) {
-      if (!profileForm.companyName.trim()) {
-        Alert.alert("Required Field", "Please enter your company name");
-        return;
-      }
-      if (!profileForm.phone.trim()) {
-        Alert.alert("Required Field", "Please enter your phone number");
-        return;
-      }
-    }
-
     setIsSaving(true);
     try {
       const updates: Partial<UserProfile> = {
@@ -80,28 +66,15 @@ export default function AdminProfileScreen() {
 
       await actions.updateProfile(updates as any);
 
-      // Mark profile as completed if this is first-time setup
-      if (isFirstTimeSetup && currentUser) {
+      // Mark profile as completed after saving details if needed
+      if (currentUser && !currentUser.profileCompleted) {
         await actions.updateUser(currentUser.email, {
           ...currentUser,
           profileCompleted: true,
         });
       }
 
-      if (isFirstTimeSetup) {
-        Alert.alert(
-          "Profile Complete!",
-          "Your profile has been set up successfully. Welcome to Tower Desk!",
-          [
-            {
-              text: "Continue",
-              onPress: () => router.replace("/(admin)"),
-            },
-          ]
-        );
-      } else {
-        Alert.alert("Saved", "Company profile updated.");
-      }
+      Alert.alert("Saved", "Company profile updated.");
     } catch (error: any) {
       Alert.alert("Error", error?.message || "Failed to save profile");
     } finally {
@@ -111,30 +84,25 @@ export default function AdminProfileScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView
-        style={[styles.scrollView, { paddingHorizontal: pagePadding }]}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
       >
-        {isFirstTimeSetup ? (
-          <View style={styles.setupHeader}>
-            <View style={styles.welcomeIcon}>
-              <Ionicons name="business" size={40} color="#2563EB" />
-            </View>
-            <Text style={styles.setupTitle}>Welcome to Tower Desk!</Text>
-            <Text style={styles.setupSubtitle}>
-              Let's set up your company profile to get started
-            </Text>
-          </View>
-        ) : (
-          <HeaderBar
-            title="Admin Profile"
-            subtitle="Company identity and contact info"
-            hasUnreadNotifications={hasUnreadNotifications}
-            showSideMenu={showSideMenu}
-            onSideMenuToggle={setShowSideMenu}
-          />
-        )}
+        <ScrollView
+          style={[styles.scrollView, { paddingHorizontal: pagePadding }]}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+        >
+        <HeaderBar
+          title="Admin Profile"
+          subtitle="Company identity and contact info"
+          hasUnreadNotifications={hasUnreadNotifications}
+          showSideMenu={showSideMenu}
+          onSideMenuToggle={setShowSideMenu}
+        />
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Company Logo</Text>
@@ -148,9 +116,7 @@ export default function AdminProfileScreen() {
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Company Information</Text>
           <View style={styles.field}>
-            <Text style={styles.label}>
-              Company Name {isFirstTimeSetup && <Text style={styles.required}>*</Text>}
-            </Text>
+          <Text style={styles.label}>Company Name</Text>
             <TextInput
               style={styles.input}
               placeholder="Enter company name"
@@ -175,9 +141,7 @@ export default function AdminProfileScreen() {
           </View>
 
           <View style={styles.field}>
-            <Text style={styles.label}>
-              Phone {isFirstTimeSetup && <Text style={styles.required}>*</Text>}
-            </Text>
+          <Text style={styles.label}>Phone</Text>
             <TextInput
               style={styles.input}
               placeholder="+971..."
@@ -242,19 +206,16 @@ export default function AdminProfileScreen() {
               <Text style={styles.saveButtonText}>Saving...</Text>
             ) : (
               <>
-                <Ionicons name={isFirstTimeSetup ? "checkmark-circle" : "save"} size={18} color="#FFFFFF" />
-                <Text style={styles.saveButtonText}>
-                  {isFirstTimeSetup ? "Complete Setup" : "Save Profile"}
-                </Text>
+                <Ionicons name="save" size={18} color="#FFFFFF" />
+                <Text style={styles.saveButtonText}>Save Profile</Text>
               </>
             )}
           </TouchableOpacity>
         </View>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
-      {!isFirstTimeSetup && (
-        <SideMenu isVisible={showSideMenu} onClose={() => setShowSideMenu(false)} />
-      )}
+      <SideMenu isVisible={showSideMenu} onClose={() => setShowSideMenu(false)} />
     </SafeAreaView>
   );
 }
@@ -268,37 +229,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 120,
+    paddingBottom: 200,
     gap: 16,
-  },
-  setupHeader: {
-    alignItems: "center",
-    paddingVertical: 32,
-    paddingHorizontal: 24,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    gap: 12,
-  },
-  welcomeIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: "#EFF6FF",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 8,
-  },
-  setupTitle: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#111827",
-  },
-  setupSubtitle: {
-    fontSize: 15,
-    color: "#6B7280",
-    textAlign: "center",
   },
   card: {
     backgroundColor: "#FFFFFF",
@@ -320,10 +252,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: "#374151",
-  },
-  required: {
-    color: "#EF4444",
-    fontWeight: "700",
   },
   input: {
     borderWidth: 1,

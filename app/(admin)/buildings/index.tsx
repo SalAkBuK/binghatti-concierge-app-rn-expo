@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Alert, Text, TouchableOpacity, useWindowDimensions, View } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -8,6 +8,7 @@ import { EntityTable } from "../../../components/admin/EntityTable";
 import { HeaderBar } from "../../../components/ui/HeaderBar";
 import { SideMenu } from "../../../components/ui/SideMenu";
 import type { Building, BuildingStatus, BuildingType, UnitBreakdown } from "../../../lib/types";
+import apiService from "../../../lib/services/api";
 
 import { AssignManagerModal } from "./_components/AssignManagerModal";
 import { BuildingDetailsModal } from "./_components/BuildingDetailsModal";
@@ -17,12 +18,6 @@ import { useBuildingsData } from "./_hooks/useBuildingsData";
 import { styles } from "./_components/_styles";
 import type { BuildingFormState } from "./_types";
 import { getStatusColor } from "./utils/buildingHelpers";
-import {
-  useMountLog,
-  useRenderLog,
-  useScreenFocusLog,
-  measure,
-} from "../../../utils/adminProfiler";
 
 const createInitialFormState = (): BuildingFormState => ({
   name: "",
@@ -53,12 +48,8 @@ const createInitialFormState = (): BuildingFormState => ({
 });
 
 export default function BuildingsScreen() {
-  // Profiler hooks - track lifecycle and performance
-  useMountLog("Admin/Buildings");
-  useRenderLog("Admin/Buildings");
-  useScreenFocusLog("Admin/Buildings");
-
   const {
+    currentUser,
     actions,
     unitTypes,
     buildings,
@@ -66,6 +57,7 @@ export default function BuildingsScreen() {
     canManageBuildings,
     hasUnreadNotifications,
   } = useBuildingsData();
+
   const { width } = useWindowDimensions();
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
   const isCompact = width < 768;
@@ -82,23 +74,117 @@ export default function BuildingsScreen() {
   const [showUnitBreakdown, setShowUnitBreakdown] = useState(false);
   const [editingBuilding, setEditingBuilding] = useState<Building | null>(null);
   const [formData, setFormData] = useState<BuildingFormState>(createInitialFormState());
+  const [displayLimit, setDisplayLimit] = useState(20); // Pagination: show 20 items initially
+  const [managerNamesMap, setManagerNamesMap] = useState<Record<string, string>>({});
+  const [loadingManagers, setLoadingManagers] = useState(false);
 
   const filteredBuildings = useMemo(
     () =>
-      measure("Build Admin/Buildings filteredBuildings", () =>
-        buildings.filter(
-          (building) =>
-            !searchQuery.trim() ||
-            building.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            building.address.toLowerCase().includes(searchQuery.toLowerCase()),
-        )
+      buildings.filter(
+        (building) =>
+          !searchQuery.trim() ||
+          building.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          building.address.toLowerCase().includes(searchQuery.toLowerCase()),
       ),
     [buildings, searchQuery],
   );
 
+  // Paginated buildings (limit display to improve performance)
+  const displayedBuildings = useMemo(
+    () => filteredBuildings.slice(0, displayLimit),
+    [filteredBuildings, displayLimit],
+  );
+
+  const hasMoreBuildings = filteredBuildings.length > displayLimit;
+  const hiddenCount = filteredBuildings.length - displayLimit;
+
+  const loadMoreBuildings = () => {
+    setDisplayLimit((prev) => prev + 20); // Load 20 more
+  };
+
+  // Fetch manager names for all displayed buildings
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchManagerNames = async () => {
+      const currentDisplayed = filteredBuildings.slice(0, displayLimit);
+
+      if (!currentDisplayed.length) return;
+
+      setLoadingManagers(true);
+      const newManagersMap: Record<string, string> = {};
+
+      try {
+        // Fetch managers for all buildings in parallel
+        const managerPromises = currentDisplayed.map(async (building) => {
+          // Use cached manager name if available
+          if (building.managerName) {
+            newManagersMap[building.id] = building.managerName;
+            return;
+          }
+
+          // Skip if we already have this manager in the map
+          if (managerNamesMap[building.id]) {
+            newManagersMap[building.id] = managerNamesMap[building.id];
+            return;
+          }
+
+          try {
+            const buildingIdNum = parseInt(building.id, 10);
+            if (isNaN(buildingIdNum)) return;
+
+            const response = await apiService.admin.getBuildingManagers(buildingIdNum);
+
+            if (response.success && response.data && response.data.length > 0) {
+              const manager = response.data[0];
+              const name = manager.fullName || manager.name || null;
+              if (name) {
+                newManagersMap[building.id] = name;
+              }
+            }
+            // Silent fail for buildings without managers - they'll show "Not assigned"
+          } catch (error: any) {
+            // Only log error if it's not a cancellation
+            if (error?.code !== 'CANCELLED' && error?.message !== 'Request cancelled') {
+              console.error(`[Buildings] Failed to fetch manager for building ${building.id}:`, error);
+            }
+            // Building without manager - will show "Not assigned"
+          }
+        });
+
+        await Promise.all(managerPromises);
+
+        // Only update state if component is still mounted
+        if (isMounted) {
+          setManagerNamesMap(newManagersMap);
+        }
+      } catch (error) {
+        console.error('[Buildings] Failed to fetch manager names:', error);
+      } finally {
+        if (isMounted) {
+          setLoadingManagers(false);
+        }
+      }
+    };
+
+    fetchManagerNames();
+
+    // Cleanup function to prevent state updates after unmount
+    return () => {
+      isMounted = false;
+    };
+  }, [buildings.length, displayLimit, searchQuery]); // Use stable dependencies instead of displayedBuildings array reference
+
   const onRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1000);
+    try {
+      // Clear cache and refetch buildings from API
+      await actions.refreshBuildings();
+    } catch (error) {
+      console.error('[Buildings] Failed to refresh:', error);
+    } finally {
+      setTimeout(() => setRefreshing(false), 500);
+    }
   };
 
   const handleCreateBuilding = async () => {
@@ -258,15 +344,75 @@ export default function BuildingsScreen() {
       if (editingBuilding) {
         await actions.updateBuilding(editingBuilding.id, payload as any);
       } else {
-        await actions.createBuilding(payload as any);
+        const response = await actions.createBuilding(payload as any);
+        console.log('[Buildings] Create building response:', JSON.stringify(response, null, 2));
+
+        // Auto-assign the current admin to the building they created
+        console.log('[Buildings] Auto-assignment check:', {
+          hasResponse: !!response,
+          hasData: !!response?.data,
+          hasId: !!response?.data?.id,
+          responseDataId: response?.data?.id,
+          hasCurrentUser: !!currentUser,
+          currentUserId: currentUser?.id,
+          currentUserRole: currentUser?.role,
+          assignFunctionAvailable: typeof actions.assignAdminToBuilding,
+        });
+
+        if (response?.data?.id && currentUser?.id) {
+          try {
+            const buildingId = typeof response.data.id === 'string'
+              ? parseInt(response.data.id.replace(/\D/g, ''), 10)
+              : response.data.id;
+
+            const adminId = typeof currentUser.id === 'string'
+              ? parseInt(currentUser.id.replace(/\D/g, ''), 10)
+              : currentUser.id;
+
+            console.log('[Buildings] Extracted IDs for assignment:', {
+              buildingId,
+              buildingIdType: typeof buildingId,
+              buildingIdValid: !isNaN(buildingId),
+              adminId,
+              adminIdType: typeof adminId,
+              adminIdValid: !isNaN(adminId),
+            });
+
+            if (!isNaN(buildingId) && !isNaN(adminId)) {
+              console.log('[Buildings] Calling assignAdminToBuilding...');
+
+              if (!actions.assignAdminToBuilding) {
+                console.error('[Buildings] assignAdminToBuilding function not available!');
+              } else {
+                const assignResult = await actions.assignAdminToBuilding(buildingId, adminId);
+                console.log('[Buildings] Assignment result:', assignResult);
+                console.log(`[Buildings] ✅ Admin ${adminId} auto-assigned to building ${buildingId}`);
+              }
+            } else {
+              console.error('[Buildings] Invalid IDs - cannot assign:', { buildingId, adminId });
+            }
+          } catch (assignError) {
+            console.error('[Buildings] ❌ Failed to auto-assign admin to building:', assignError);
+            console.error('[Buildings] Assignment error details:', {
+              message: assignError instanceof Error ? assignError.message : String(assignError),
+              stack: assignError instanceof Error ? assignError.stack : undefined,
+            });
+            // Don't fail the entire operation if assignment fails
+          }
+        } else {
+          console.warn('[Buildings] ⚠️ Cannot auto-assign - missing data:', {
+            missingResponseData: !response?.data?.id,
+            missingCurrentUser: !currentUser?.id,
+          });
+        }
       }
 
       Alert.alert("Success", editingBuilding ? "Building updated successfully" : "Building created successfully");
       setShowCreateModal(false);
       setShowUnitBreakdown(false);
+      setEditingBuilding(null);
       // Reset form
       setFormData(createInitialFormState());
-      setEditingBuilding(null);
     } catch (error: any) {
       Alert.alert("Error", error?.message || "Failed to save building");
     } finally {
@@ -287,9 +433,8 @@ export default function BuildingsScreen() {
 
     setIsAssigning(true);
     try {
-      await actions.updateBuilding(selectedBuilding.id, {
-        managerId: formData.managerId,
-      });
+      // Use the new BuildingManager/assign API endpoint
+      await actions.assignManagerToBuilding(selectedBuilding.id, formData.managerId);
 
       Alert.alert("Success", "Manager assigned successfully");
       setShowManagerModal(false);
@@ -341,6 +486,33 @@ export default function BuildingsScreen() {
     setShowCreateModal(true);
   };
 
+  const handleDeleteBuilding = async (building: Building) => {
+    if (!canManageBuildings) {
+      Alert.alert("Permission Denied", "Only admins can delete buildings");
+      return;
+    }
+
+    Alert.alert(
+      "Delete Building",
+      `Are you sure you want to delete "${building.name}"? This action cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await actions.deleteBuilding(building.id);
+              Alert.alert("Success", `Building "${building.name}" has been deleted`);
+            } catch (error: any) {
+              Alert.alert("Error", error?.message || "Failed to delete building");
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const openDetailsModal = (building: Building) => {
     setDetailsBuilding(building);
     setShowDetailsModal(true);
@@ -363,11 +535,16 @@ export default function BuildingsScreen() {
     {
       key: "manager",
       label: "Manager",
-      render: (building: Building) => (
-        <Text style={styles.cellTextSmall} numberOfLines={1}>
-          {building.managerName || "Not assigned"}
-        </Text>
-      ),
+      render: (building: Building) => {
+        const managerName = managerNamesMap[building.id] || building.managerName;
+        const displayText = loadingManagers && !managerName ? "Loading..." : (managerName || "Not assigned");
+
+        return (
+          <Text style={styles.cellTextSmall} numberOfLines={1}>
+            {displayText}
+          </Text>
+        );
+      },
       width: isCompact ? undefined : Math.min(260, width * 0.25),
     },
     {
@@ -432,7 +609,7 @@ export default function BuildingsScreen() {
           style={styles.tableContainer}
         >
           <EntityTable
-            data={filteredBuildings}
+            data={displayedBuildings}
             columns={columns}
             onRowPress={(building) => {
               setSelectedBuilding(building);
@@ -444,6 +621,19 @@ export default function BuildingsScreen() {
             refreshing={refreshing}
             onRefresh={onRefresh}
           />
+
+          {/* Load More Button */}
+          {hasMoreBuildings && (
+            <TouchableOpacity
+              style={styles.loadMoreButton}
+              onPress={loadMoreBuildings}
+            >
+              <Ionicons name="chevron-down-circle-outline" size={20} color="#7034FF" />
+              <Text style={styles.loadMoreText}>
+                Load {Math.min(20, hiddenCount)} more buildings ({hiddenCount} remaining)
+              </Text>
+            </TouchableOpacity>
+          )}
         </Animated.View>
       </View>
 
@@ -461,8 +651,13 @@ export default function BuildingsScreen() {
         setShowUnitBreakdown={setShowUnitBreakdown}
         managementUsers={managementUsers}
         isLoading={isCreating}
-        onClose={() => setShowCreateModal(false)}
+        onClose={() => {
+          setShowCreateModal(false);
+          setEditingBuilding(null);
+        }}
         onSubmit={handleCreateBuilding}
+        modalTitle={editingBuilding ? "Edit Building" : "Create New Building"}
+        submitLabel={editingBuilding ? "Update Building" : "Create Building"}
       />
       <AssignManagerModal
         visible={showManagerModal}
@@ -488,6 +683,7 @@ export default function BuildingsScreen() {
         canManageBuildings={canManageBuildings}
         onAssignManager={openManagerModal}
         onEditBuilding={startEditBuilding}
+        onDeleteBuilding={handleDeleteBuilding}
       />
     </SafeAreaView>
   );

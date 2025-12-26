@@ -68,32 +68,6 @@ export default function ServiceProviderLayout() {
         }}
       />
       <Tabs.Screen
-        name="schedule"
-        options={{
-          title: "Schedule",
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? "calendar" : "calendar-outline"}
-              size={24}
-              color={color}
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="team"
-        options={{
-          title: "Team",
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? "people" : "people-outline"}
-              size={24}
-              color={color}
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="more"
         options={{
           title: "More",
@@ -107,6 +81,18 @@ export default function ServiceProviderLayout() {
         }}
       />
       {/* Hidden screens - accessible via navigation but not shown in tab bar */}
+      <Tabs.Screen
+        name="schedule"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="team"
+        options={{
+          href: null,
+        }}
+      />
       <Tabs.Screen
         name="job-details"
         options={{

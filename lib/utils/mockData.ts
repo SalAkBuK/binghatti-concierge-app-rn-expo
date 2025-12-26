@@ -110,6 +110,7 @@ export const DEFAULT_USERS: Record<string, User> = {
     role: "management",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+    profileCompleted: false, // Force profile setup on first login
     profile: {
       name: "John Smith",
       phone: "+971 50 345 6789",
@@ -163,6 +164,18 @@ export const DEFAULT_USERS: Record<string, User> = {
     profile: {
       name: "Alex Wilson",
       phone: "+971 50 678 9012",
+    },
+  },
+  "sp3@demo.com": {
+    id: "7",
+    email: "sp3@demo.com",
+    name: "Hassan Abdullah",
+    role: "service_provider",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    profile: {
+      name: "Hassan Abdullah",
+      phone: "+971 50 789 0123",
     },
   },
   "concierge@demo.com": {
@@ -1857,61 +1870,8 @@ export const DEFAULT_NOTIFICATIONS: Notification[] = [
   },
 ];
 
-// Default maintenance notices data
-export const DEFAULT_NOTICES: MaintenanceNotice[] = [
-  {
-    id: "1",
-    title: "Water System Maintenance",
-    description:
-      "Scheduled maintenance of the water supply system. Water will be temporarily unavailable during the maintenance window.",
-    scheduledDate: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString(), // Tomorrow
-    status: "scheduled",
-    affectedAreas: ["Tower A", "Tower B"],
-    estimatedDuration: "3 hours",
-    createdBy: "2",
-    createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: "2",
-    title: "Elevator Inspection",
-    description:
-      "Annual safety inspection of all elevators. Service will be temporarily interrupted.",
-    scheduledDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // Next week
-    status: "scheduled",
-    affectedAreas: ["All Towers"],
-    estimatedDuration: "6 hours",
-    createdBy: "2",
-    createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: "3",
-    title: "Parking Area Cleaning",
-    description:
-      "Deep cleaning of the parking areas. Please ensure your vehicles are moved to temporary parking.",
-    scheduledDate: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(), // Yesterday
-    status: "completed",
-    affectedAreas: ["Basement Parking"],
-    estimatedDuration: "4 hours",
-    createdBy: "2",
-    createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: "4",
-    title: "HVAC System Upgrade",
-    description:
-      "Installation of new energy-efficient HVAC units in Tower C. This will improve air quality and reduce energy consumption. Temporary disruption to cooling systems expected.",
-    scheduledDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(), // 3 days from now
-    status: "scheduled",
-    affectedAreas: ["Tower C", "Lobby Areas"],
-    estimatedDuration: "8 hours",
-    createdBy: "2",
-    createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-];
+// Default maintenance notices data (empty - will be populated from backend)
+export const DEFAULT_NOTICES: MaintenanceNotice[] = [];
 
 // Default amenities data
 export const DEFAULT_AMENITIES: Amenity[] = [
@@ -2443,33 +2403,7 @@ export const DEFAULT_RATINGS: Rating[] = [
 // Admin-specific mock data
 
 // Service provider users (add to DEFAULT_USERS for role checking)
-export const SERVICE_PROVIDER_USERS = {
-  "sp1@demo.com": {
-    id: "4",
-    email: "sp1@demo.com",
-    name: "Mike Johnson",
-    role: "service_provider" as const,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    profile: {
-      name: "Mike Johnson",
-      phone: "+971 50 567 8901",
-      serviceProviderId: "sp-profile-1", // CoolTech HVAC Services
-    },
-  },
-  "sp2@demo.com": {
-    id: "5",
-    email: "sp2@demo.com",
-    name: "Alex Wilson",
-    role: "service_provider" as const,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    profile: {
-      name: "Alex Wilson",
-      phone: "+971 50 678 9012",
-    },
-  },
-};
+export const SERVICE_PROVIDER_USERS = {};
 
 // Buildings data
 export const DEFAULT_BUILDINGS: Building[] = [
@@ -2881,210 +2815,11 @@ export const DEFAULT_BUILDING_EMPLOYEES: BuildingEmployee[] = [
   },
 ];
 
-export const DEFAULT_SERVICE_PROVIDERS_PROFILES: ServiceProviderProfile[] = [
-  {
-    id: "sp-profile-1",
-    userId: "4",
-    name: "CoolTech HVAC Services LLC",
-    specialty: "HVAC & Climate Control",
-    phone: "+971 4 567 8901",
-    email: "contact@cooltech-uae.com",
-    rating: 4.9,
-    jobsCompleted: 320,
-    responseTimeMinutes: 45,
-  },
-  {
-    id: "sp-profile-2",
-    userId: "5",
-    name: "VerticalRise Elevator Solutions",
-    specialty: "Elevator Maintenance & Repair",
-    phone: "+971 4 678 9012",
-    email: "service@verticalrise.ae",
-    rating: 4.7,
-    jobsCompleted: 285,
-    responseTimeMinutes: 60,
-  },
-  {
-    id: "sp-profile-3",
-    name: "AquaFlow Plumbing & Drainage Co.",
-    specialty: "Plumbing & Water Systems",
-    phone: "+971 4 789 0123",
-    email: "support@aquaflow.ae",
-    rating: 4.8,
-    jobsCompleted: 412,
-    responseTimeMinutes: 30,
-  },
-];
+export const DEFAULT_SERVICE_PROVIDERS_PROFILES: ServiceProviderProfile[] = [];
 
-export const DEFAULT_SERVICE_PROVIDER_EMPLOYEES: ServiceProviderEmployee[] = [
-  {
-    id: "sp-emp-1",
-    serviceProviderId: "sp-profile-1", // CoolTech HVAC Services
-    name: "Ahmed Al-Mansoori",
-    phone: "+971 55 123 4567",
-    email: "ahmed@cooltech-uae.com",
-    specialty: "Senior HVAC Technician",
-    status: "active",
-    rating: 4.8,
-    jobsCompleted: 78,
-    certifications: ["HVAC Level 2", "Refrigeration Specialist"],
-    createdAt: new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: "sp-emp-2",
-    serviceProviderId: "sp-profile-1", // CoolTech HVAC Services
-    name: "Rashid Ibrahim",
-    phone: "+971 55 234 5678",
-    email: "rashid@cooltech-uae.com",
-    specialty: "HVAC Technician",
-    status: "active",
-    rating: 4.6,
-    jobsCompleted: 62,
-    certifications: ["HVAC Level 1", "AC Installation"],
-    createdAt: new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: "sp-emp-3",
-    serviceProviderId: "sp-profile-2", // VerticalRise Elevator Solutions
-    name: "Khalid Hassan",
-    phone: "+971 55 345 6789",
-    email: "khalid@verticalrise.ae",
-    specialty: "Lead Elevator Technician",
-    status: "active",
-    rating: 4.9,
-    jobsCompleted: 95,
-    certifications: ["Elevator Safety Certification", "Lift Maintenance Expert"],
-    createdAt: new Date(Date.now() - 200 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: "sp-emp-4",
-    serviceProviderId: "sp-profile-2", // VerticalRise Elevator Solutions
-    name: "Mohammed Saeed",
-    phone: "+971 55 456 7890",
-    email: "mohammed@verticalrise.ae",
-    specialty: "Elevator Maintenance Technician",
-    status: "active",
-    rating: 4.5,
-    jobsCompleted: 58,
-    certifications: ["General Maintenance", "Electrical Safety"],
-    createdAt: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: "sp-emp-5",
-    serviceProviderId: "sp-profile-3", // AquaFlow Plumbing & Drainage
-    name: "Youssef Rahman",
-    phone: "+971 55 567 8901",
-    email: "youssef@aquaflow.ae",
-    specialty: "Master Plumber",
-    status: "active",
-    rating: 4.9,
-    jobsCompleted: 104,
-    certifications: ["Master Plumbing License", "Water Systems Expert"],
-    createdAt: new Date(Date.now() - 240 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: "sp-emp-6",
-    serviceProviderId: "sp-profile-3", // AquaFlow Plumbing & Drainage
-    name: "Omar Al-Falasi",
-    phone: "+971 55 678 9012",
-    email: "omar@aquaflow.ae",
-    specialty: "Drainage Specialist",
-    status: "active",
-    rating: 4.7,
-    jobsCompleted: 86,
-    certifications: ["Plumbing Certification", "Drainage Systems"],
-    createdAt: new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: "sp-emp-7",
-    serviceProviderId: "sp-profile-1", // CoolTech HVAC Services
-    name: "Samir Patel",
-    phone: "+971 55 789 0123",
-    email: "samir@cooltech-uae.com",
-    specialty: "Climate Control Specialist",
-    status: "active",
-    rating: 4.8,
-    jobsCompleted: 71,
-    certifications: ["Smart HVAC Systems", "Energy Efficiency Expert"],
-    createdAt: new Date(Date.now() - 150 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-];
+export const DEFAULT_SERVICE_PROVIDER_EMPLOYEES: ServiceProviderEmployee[] = [];
 
-export const DEFAULT_SERVICE_PROVIDER_BUILDING_ASSIGNMENTS: ServiceProviderBuildingAssignment[] = [
-  {
-    id: "sp-assign-1",
-    serviceProviderId: "sp-profile-1", // CoolTech HVAC Services
-    buildingId: "building-1", // Binghatti Tower A
-    assignedBy: "1", // Super Admin
-    assignedByName: "Admin User",
-    assignedAt: new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString(),
-    status: "active",
-    specialties: ["HVAC", "Air Conditioning", "Ventilation"],
-    notes: "Primary HVAC provider for Tower A",
-  },
-  {
-    id: "sp-assign-2",
-    serviceProviderId: "sp-profile-1", // CoolTech HVAC Services
-    buildingId: "building-2", // Binghatti Tower B
-    assignedBy: "1", // Super Admin
-    assignedByName: "Admin User",
-    assignedAt: new Date(Date.now() - 150 * 24 * 60 * 60 * 1000).toISOString(),
-    status: "active",
-    specialties: ["HVAC", "Air Conditioning"],
-    notes: "Climate control for Tower B",
-  },
-  {
-    id: "sp-assign-3",
-    serviceProviderId: "sp-profile-2", // VerticalRise Elevator Solutions
-    buildingId: "building-1", // Binghatti Tower A
-    assignedBy: "2", // John Smith (Building Manager)
-    assignedByName: "John Smith",
-    assignedAt: new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString(),
-    status: "active",
-    specialties: ["Elevator Maintenance", "Elevator Repair"],
-    notes: "Annual elevator maintenance contract",
-  },
-  {
-    id: "sp-assign-4",
-    serviceProviderId: "sp-profile-2", // VerticalRise Elevator Solutions
-    buildingId: "building-3", // Binghatti Plaza
-    assignedBy: "1", // Super Admin
-    assignedByName: "Admin User",
-    assignedAt: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
-    status: "active",
-    specialties: ["Elevator Maintenance"],
-    notes: "Plaza elevator service contract",
-  },
-  {
-    id: "sp-assign-5",
-    serviceProviderId: "sp-profile-3", // AquaFlow Plumbing & Drainage
-    buildingId: "building-1", // Binghatti Tower A
-    assignedBy: "2", // John Smith (Building Manager)
-    assignedByName: "John Smith",
-    assignedAt: new Date(Date.now() - 200 * 24 * 60 * 60 * 1000).toISOString(),
-    status: "active",
-    specialties: ["Plumbing", "Water Systems", "Drainage"],
-    notes: "Primary plumbing contractor for Tower A",
-  },
-  {
-    id: "sp-assign-6",
-    serviceProviderId: "sp-profile-3", // AquaFlow Plumbing & Drainage
-    buildingId: "building-3", // Binghatti Plaza
-    assignedBy: "1", // Super Admin
-    assignedByName: "Admin User",
-    assignedAt: new Date(Date.now() - 160 * 24 * 60 * 60 * 1000).toISOString(),
-    status: "active",
-    specialties: ["Plumbing", "Drainage Systems"],
-    notes: "Plumbing services for Plaza complex",
-  },
-];
+export const DEFAULT_SERVICE_PROVIDER_BUILDING_ASSIGNMENTS: ServiceProviderBuildingAssignment[] = [];
 
 export const DEFAULT_VISITOR_LOGS: VisitorLog[] = [
   {
@@ -4586,69 +4321,23 @@ export const DEFAULT_JOBS: Job[] = [
   },
 ];
 
-// Analytics data
+// Analytics data - Empty for new admin (no mock data)
 export const DEFAULT_ANALYTICS: Analytics = {
-  openJobsCount: 3,
-  tenantsCount: 430,
-  bookingsToday: 8,
-  completedJobsThisMonth: 45,
-  completionRate: 78.5,
-  averageCompletionTime: 24, // hours
-  averageRating: 4.5,
-  totalRevenue: 125000,
-  revenueThisMonth: 28500,
-  pendingRequestsCount: 5,
-  activeMaintenanceNotices: 2,
-  buildingsCount: 4,
-  occupancyRate: 92.3,
-  topServiceProviders: [
-    {
-      id: "4",
-      name: "Mike Johnson",
-      jobsCompleted: 28,
-      completedJobs: 28,
-      averageRating: 4.7,
-    },
-    {
-      id: "5",
-      name: "Alex Wilson",
-      jobsCompleted: 17,
-      completedJobs: 17,
-      averageRating: 4.3,
-    },
-  ],
-  recentActivity: [
-    {
-      id: "act-1",
-      type: "job",
-      description: "AC Repair job assigned to Mike Johnson",
-      timestamp: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      id: "act-2",
-      type: "request",
-      description: "New plumbing request from Unit 1205",
-      timestamp: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      id: "act-3",
-      type: "booking",
-      description: "Pool booking confirmed for tomorrow",
-      timestamp: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      id: "act-4",
-      type: "notice",
-      description: "Water maintenance notice published",
-      timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      id: "act-5",
-      type: "job",
-      description: "Elevator maintenance completed",
-      timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    },
-  ],
+  openJobsCount: 0,
+  tenantsCount: 0,
+  bookingsToday: 0,
+  completedJobsThisMonth: 0,
+  completionRate: 0,
+  averageCompletionTime: 0,
+  averageRating: 0,
+  totalRevenue: 0,
+  revenueThisMonth: 0,
+  pendingRequestsCount: 0,
+  activeMaintenanceNotices: 0,
+  buildingsCount: 0,
+  occupancyRate: 0,
+  topServiceProviders: [],
+  recentActivity: [],
 };
 
 // Permissions data

@@ -548,13 +548,16 @@ export default function VisitorsScreen() {
                       setNewVisitorForm({ ...newVisitorForm, buildingId: value })
                     }
                     style={styles.picker}
+                    dropdownIconColor="#111827"
+                    itemStyle={{ color: "#111827" }}
                   >
-                    <Picker.Item label="Select a building..." value="" />
+                    <Picker.Item label="Select a building..." value="" color="#111827" />
                     {allBuildings.map((building) => (
                       <Picker.Item
                         key={building.id}
                         label={building.name}
                         value={building.id}
+                        color="#111827"
                       />
                     ))}
                   </Picker>
@@ -612,11 +615,13 @@ export default function VisitorsScreen() {
                       setNewVisitorForm({ ...newVisitorForm, visitorIdType: value })
                     }
                     style={styles.picker}
+                    dropdownIconColor="#111827"
+                    itemStyle={{ color: "#111827" }}
                   >
-                    <Picker.Item label="Passport" value="passport" />
-                    <Picker.Item label="National ID" value="national_id" />
-                    <Picker.Item label="Driving License" value="driving_license" />
-                    <Picker.Item label="Other" value="other" />
+                    <Picker.Item label="Passport" value="passport" color="#111827" />
+                    <Picker.Item label="National ID" value="national_id" color="#111827" />
+                    <Picker.Item label="Driving License" value="driving_license" color="#111827" />
+                    <Picker.Item label="Other" value="other" color="#111827" />
                   </Picker>
                 </View>
               </View>

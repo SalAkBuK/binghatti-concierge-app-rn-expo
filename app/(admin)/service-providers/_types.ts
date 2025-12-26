@@ -9,12 +9,21 @@ export interface ProviderAssignmentState {
 }
 
 export interface CreateProviderFormState {
-  name: string;
+  name: string; // company name
+  fullName: string; // contact person
   email: string;
+  password: string;
   phone: string;
+  address: string;
+  nationality: string;
+  companyName: string;
   specialty: string;
+  jobTitle: string;
+  skills: string;
   buildingIds: string[];
 }
+
+export type EditProviderFormState = Omit<CreateProviderFormState, "buildingIds">;
 
 export interface UseServiceProvidersDataResult {
   serviceProviders: ServiceProviderProfile[];

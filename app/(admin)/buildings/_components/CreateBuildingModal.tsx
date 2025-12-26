@@ -134,31 +134,6 @@ export function CreateBuildingModal({
           </View>
         </View>
 
-        <View style={styles.formGroup}>
-          <Text style={styles.label}>Status</Text>
-          <View style={styles.statusButtons}>
-            {(["active", "maintenance", "inactive"] as BuildingStatus[]).map((status) => (
-              <TouchableOpacity
-                key={status}
-                style={[
-                  styles.statusButton,
-                  formData.status === status && styles.statusButtonActive,
-                ]}
-                onPress={() => setFormData({ ...formData, status })}
-              >
-                <Text
-                  style={[
-                    styles.statusButtonText,
-                    formData.status === status && styles.statusButtonTextActive,
-                  ]}
-                >
-                  {status.toUpperCase()}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
         {/* Section 2: Location Details */}
         <View style={styles.sectionDivider}>
           <Text style={styles.sectionTitle}>Location Details</Text>

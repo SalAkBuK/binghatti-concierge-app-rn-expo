@@ -19,19 +19,8 @@ import { UnitTypeFormModal } from "./_components/UnitTypeFormModal";
 import { ADMIN_NOTIFICATION_ROUTE } from "./_constants";
 import { useUnitTypesData } from "./_hooks/useUnitTypesData";
 import { styles } from "./_styles";
-import {
-  useMountLog,
-  useRenderLog,
-  useScreenFocusLog,
-  measure,
-} from "../../../utils/adminProfiler";
 
 export default function UnitTypesScreen() {
-  // Profiler hooks - track lifecycle and performance
-  useMountLog("Admin/UnitTypes");
-  useRenderLog("Admin/UnitTypes");
-  useScreenFocusLog("Admin/UnitTypes");
-
   const { allUnitTypes, hasUnreadNotifications, canManageUnitTypes, actions } =
     useUnitTypesData();
   const { width } = useWindowDimensions();
@@ -57,16 +46,14 @@ export default function UnitTypesScreen() {
   });
 
   const filteredUnitTypes = useMemo(() => {
-    return measure("Build Admin/UnitTypes filteredUnitTypes", () => {
-      if (!searchQuery.trim()) return allUnitTypes;
-      const query = searchQuery.toLowerCase();
-      return allUnitTypes.filter(
-        (type) =>
-          type.name.toLowerCase().includes(query) ||
-          type.bedrooms.toString().includes(query) ||
-          type.bathrooms.toString().includes(query),
-      );
-    });
+    if (!searchQuery.trim()) return allUnitTypes;
+    const query = searchQuery.toLowerCase();
+    return allUnitTypes.filter(
+      (type) =>
+        type.name.toLowerCase().includes(query) ||
+        type.bedrooms.toString().includes(query) ||
+        type.bathrooms.toString().includes(query),
+    );
   }, [allUnitTypes, searchQuery]);
 
   const onRefresh = async () => {
@@ -295,18 +282,15 @@ export default function UnitTypesScreen() {
           notificationRoute={ADMIN_NOTIFICATION_ROUTE}
         />
 
-        {/* Create Button */}
-        {canManageUnitTypes && (
-          <Animated.View entering={FadeInDown.delay(50).duration(400)}>
-            <TouchableOpacity
-              style={styles.createButton}
-              onPress={() => setShowCreateModal(true)}
-            >
-              <Ionicons name="add-circle" size={20} color="#FFFFFF" />
-              <Text style={styles.createButtonText}>Create Unit Type</Text>
-            </TouchableOpacity>
-          </Animated.View>
-        )}
+        {/* Info Banner */}
+        <Animated.View entering={FadeInDown.delay(50).duration(400)}>
+          <View style={styles.infoBanner}>
+            <Ionicons name="information-circle" size={20} color="#2563EB" />
+            <Text style={styles.infoBannerText}>
+              Unit Types are managed through the backend API. Please use the admin panel or API endpoints to create, update, or delete unit types.
+            </Text>
+          </View>
+        </Animated.View>
 
         {/* Entity Table */}
         <Animated.View
@@ -316,7 +300,7 @@ export default function UnitTypesScreen() {
           <EntityTable
             data={filteredUnitTypes}
             columns={columns}
-            onRowPress={(unitType) => openEditModal(unitType)}
+            onRowPress={undefined}
             emptyMessage="No unit types found"
             searchPlaceholder="Search unit types..."
             onSearch={setSearchQuery}
@@ -328,50 +312,6 @@ export default function UnitTypesScreen() {
 
       {/* Side Menu */}
       <SideMenu isVisible={showSideMenu} onClose={() => setShowSideMenu(false)} />
-
-      {/* Create Modal */}
-      {canManageUnitTypes && (
-        <UnitTypeFormModal
-          visible={showCreateModal}
-          isEditMode={false}
-          formData={formData}
-          isLoading={isCreating}
-          canManageUnitTypes={canManageUnitTypes}
-          selectedUnitType={null}
-          onClose={() => {
-            setShowCreateModal(false);
-            resetForm();
-          }}
-          onSubmit={handleCreateUnitType}
-          onDelete={() => {}}
-          onFormChange={setFormData}
-          onToggleAmenity={toggleAmenity}
-        />
-      )}
-
-      {/* Edit Modal */}
-      {canManageUnitTypes && (
-        <UnitTypeFormModal
-          visible={showEditModal}
-          isEditMode={true}
-          formData={formData}
-          isLoading={isUpdating}
-          canManageUnitTypes={canManageUnitTypes}
-          selectedUnitType={selectedUnitType}
-          onClose={() => {
-            setShowEditModal(false);
-            setSelectedUnitType(null);
-            resetForm();
-          }}
-          onSubmit={handleUpdateUnitType}
-          onDelete={() => {
-            setShowEditModal(false);
-            selectedUnitType && handleDeleteUnitType(selectedUnitType);
-          }}
-          onFormChange={setFormData}
-          onToggleAmenity={toggleAmenity}
-        />
-      )}
     </SafeAreaView>
   );
 }

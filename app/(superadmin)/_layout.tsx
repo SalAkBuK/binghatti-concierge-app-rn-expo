@@ -1,5 +1,6 @@
-import { Stack, router } from "expo-router";
+import { Stack, router, usePathname } from "expo-router";
 import React, { useEffect, useRef } from "react";
+import { BackHandler } from "react-native";
 
 import { SuperAdminTabBar } from "../../components/ui/SuperAdminTabBar";
 import { useAuth } from "../../lib/context/auth-context";
@@ -7,6 +8,7 @@ import { useAuth } from "../../lib/context/auth-context";
 export default function SuperAdminLayout() {
   // Use auth context directly instead of useApp() to avoid re-renders from other contexts
   const { isAuthenticated, currentUser } = useAuth();
+  const pathname = usePathname();
 
   // Check if user is super admin
   const isSuperAdmin = currentUser?.role === "super_admin";
@@ -39,6 +41,22 @@ export default function SuperAdminLayout() {
       hasRedirectedToHome.current = false;
     }
   }, [isAuthenticated, currentUser, isSuperAdmin]);
+
+  // Handle Android back button to prevent navigating to other portals
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener("hardwareBackPress", () => {
+      // If we're on the super admin index screen (dashboard), prevent default back behavior
+      if (pathname === "/(superadmin)" || pathname === "/(superadmin)/index") {
+        console.log("[SuperAdminLayout] Back button pressed on dashboard - preventing default behavior");
+        // Prevent going back - super admin should use logout to exit
+        return true; // Returning true prevents default back behavior
+      }
+      // For other super admin screens, allow normal back navigation within super admin portal
+      return false;
+    });
+
+    return () => backHandler.remove();
+  }, [pathname]);
 
   // Only allow super_admin users
   if (!isAuthenticated || !currentUser) {

@@ -48,6 +48,9 @@ export interface UserProfile {
   companyWebsite?: string;
   companyDescription?: string;
   companyAddress?: string;
+  // Admin-specific fields from backend API
+  address?: string;        // User's address (returned by Admin API)
+  nationality?: string;    // User's nationality (returned by Admin API)
 }
 
 export interface Attachment {
@@ -124,13 +127,15 @@ export interface Request {
     | "plumbing"
     | "hvac"
     | "other";
-  status: "pending" | "in-progress" | "completed" | "cancelled";
+  status: "pending" | "in-progress" | "on-hold" | "completed" | "cancelled";
   priority: "low" | "medium" | "high" | "urgent";
   tenantId: string;
   assignedTo?: string;
   buildingId?: string;
+  buildingName?: string;
   apartment?: string;
   tower?: string;
+  floor?: string;
   preferredTime?: string;
   contactPhone?: string;
   additionalNotes?: string;
@@ -203,6 +208,8 @@ export interface CreateRequestDTO {
   priority: Request["priority"];
   apartment?: string;
   tower?: string;
+  floor?: string;
+  buildingName?: string;
   buildingId?: string;
   preferredTime?: string;
   contactPhone?: string;
@@ -264,6 +271,11 @@ export interface RegisterDTO {
   phone?: string;
   apartment?: string;
   tower?: string;
+}
+
+export interface ResetPasswordDTO {
+  email: string;
+  newPassword: string;
 }
 
 // State types (matching the actual AppContext structure)
@@ -1190,15 +1202,25 @@ export interface RolePermissions {
 // DTOs for admin operations
 
 export interface CreateUserDTO {
+  // Backend fields (sent to API via mapper)
+  fullName: string;           // Maps to backend 'fullName'
   email: string;
-  password?: string;
-  name: string;
-  role: UserRole;
-  phone?: string;
-  apartment?: string;
-  tower?: string;
-  buildingId?: string;
-  profile?: {
+  password: string;           // Required for user creation
+  phoneNumber: string;        // Maps to backend 'phoneNumber'
+  address: string;            // Required by backend
+  nationality: string;        // Required by backend
+
+  // Role-specific backend fields
+  role?: UserRole;            // Determines which API endpoint to use
+  buildingId?: string;        // For tenants - backend expects number but we convert
+  unitNumber?: string;        // For tenants - sent to Tenant/create
+  floorNumber?: string;       // For tenants - backend expects number but we store as string
+  entranceDate?: string;      // For tenants - ISO date string
+
+  // Client-side only fields (not sent to backend, managed by mapper)
+  apartment?: string;         // Kept for frontend logic (backend doesn't support yet)
+  tower?: string;             // Kept for frontend logic (backend doesn't support yet)
+  profile?: {                 // Extended profile (backend doesn't support yet)
     apartment?: string;
     tower?: string;
     floor?: string;
@@ -1209,14 +1231,46 @@ export interface CreateUserDTO {
 }
 
 export interface UpdateUserDTO {
-  email?: string;
-  name?: string;
-  role?: UserRole;
-  phone?: string;
-  apartment?: string;
-  tower?: string;
-  buildingId?: string;
-  status?: "active" | "inactive";
+  // Backend fields (sent to API via mapper)
+  fullName?: string;          // Maps to backend 'fullName'
+  phoneNumber?: string;       // Maps to backend 'phoneNumber'
+  address?: string;           // Supported by backend
+  nationality?: string;       // Supported by backend
+
+  // Client-side only fields (not sent to backend yet)
+  email?: string;             // Backend doesn't allow email updates
+  role?: UserRole;            // Backend doesn't support role updates yet
+  buildingId?: string;        // Backend doesn't support building updates yet
+  apartment?: string;         // Backend doesn't support apartment updates yet
+  tower?: string;             // Backend doesn't support tower updates yet
+  status?: "active" | "inactive";  // Backend uses 'isActive' boolean instead
+}
+
+// API-specific DTOs that match backend payload structure exactly
+// These are used by mapper functions to transform frontend DTOs to backend format
+
+/**
+ * DTO that matches backend API exactly for admin user creation
+ * Backend endpoint: POST /api/Admin/create
+ */
+export interface CreateAdminApiDTO {
+  fullName: string;
+  email: string;
+  password: string;
+  phoneNumber: string;
+  address: string;
+  nationality: string;
+}
+
+/**
+ * DTO that matches backend API exactly for admin user updates
+ * Backend endpoint: PUT /api/Admin/update/{id}
+ */
+export interface UpdateAdminApiDTO {
+  fullName?: string;
+  phoneNumber?: string;
+  address?: string;
+  nationality?: string;
 }
 
 export interface CreateBuildingDTO {

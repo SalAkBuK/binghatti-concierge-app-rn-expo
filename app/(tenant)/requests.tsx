@@ -1,18 +1,22 @@
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Dimensions,
   Alert,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
+  FlatList,
+  ActivityIndicator,
+  ScrollView,
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import ChevronIcon from "../../components/icons/ChevronIcon";
 import { AnimatedButton } from "../../components/ui/AnimatedButton";
@@ -20,42 +24,155 @@ import { HeaderBar } from "../../components/ui/HeaderBar";
 import { RequestsScreenSkeleton } from "../../components/ui/RequestsScreenSkeleton";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
+import { maintenanceApi } from "../../lib/services/api/maintenance";
 import type { Job, Request, RequestStatus } from "../../lib/types";
 import { filterNotificationsByUser } from "../../lib/utils/helpers";
+import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 type FilterStatus = "all" | RequestStatus;
 
+// Map backend status codes to frontend statuses
+// 1=New, 2=Assigned, 3=InProgress, 4=OnHold, 5=Completed, 6=Cancelled
+const mapStatusFromBackend = (status: number): RequestStatus => {
+  switch (status) {
+    case 1:
+      return "pending";
+    case 2:
+    case 3:
+      return "in-progress";
+    case 4:
+      return "on-hold";
+    case 5:
+      return "completed";
+    case 6:
+      return "cancelled";
+    default:
+      return "pending";
+  }
+};
+
+// Map backend priority number to frontend priority string
+const mapPriorityFromBackend = (priority: number): Request["priority"] => {
+  switch (priority) {
+    case 1:
+      return "low";
+    case 2:
+      return "medium";
+    case 3:
+      return "high";
+    case 4:
+      return "urgent";
+    default:
+      return "medium";
+  }
+};
+
+const getRequestTimestamp = (request: Request): number => {
+  const timestamp = request.createdAt || request.updatedAt || "";
+  const parsed = Date.parse(timestamp);
+  return Number.isNaN(parsed) ? 0 : parsed;
+};
+
 export default function RequestsScreen() {
-  const { requests, currentUser, notifications, actions, jobs } = useApp();
+  const { currentUser, notifications, actions, jobs } = useApp();
   const [refreshing, setRefreshing] = useState<boolean>(false);
-  const filterStatus: FilterStatus = "all";
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
   const [isLoading, setIsLoading] = useState(true);
   const [showSideMenu, setShowSideMenu] = useState(false);
-  const insets = useSafeAreaInsets();
+  const [backendRequests, setBackendRequests] = useState<Request[]>([]);
+  const tabBarHeight = useBottomTabBarHeight();
 
-  useEffect(() => {
-    // Simulate minimum loading time for smooth animation
-    const timer = setTimeout(() => {
-      if (currentUser && requests) {
-        setIsLoading(false);
-      }
-    }, 500);
+  // Pagination state
+  const [page, setPage] = useState(1);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const REQUESTS_PER_PAGE = 10;
 
-    return () => clearTimeout(timer);
-  }, [currentUser, requests]);
-
-  // Filter requests for current user
-  const userRequests = useMemo(() => {
-    const filtered = requests.filter((req) => req.tenantId === currentUser?.id);
-
-    if (filterStatus === "all") {
-      return filtered;
+  // Shared function to fetch and map requests
+  const fetchRequests = useCallback(async (showLoadingState = true) => {
+    if (!currentUser?.id) {
+      if (showLoadingState) setIsLoading(false);
+      return;
     }
 
-    return filtered.filter((req) => req.status === filterStatus);
-  }, [requests, currentUser, filterStatus]);
+    if (showLoadingState) setIsLoading(true);
+
+    try {
+      console.log('[Requests] Fetching maintenance requests for tenant:', currentUser.id);
+      const response = await maintenanceApi.getMaintenanceRequestsByTenantId(currentUser.id);
+
+      if (response.success && response.data) {
+        // Map backend data to frontend Request type
+        const mappedRequests: Request[] = response.data.map((item: any) => ({
+          id: String(item.id),
+          tenantId: currentUser.id,
+          title: item.title || "Untitled Request",
+          description: item.description || "",
+          type: "maintenance",
+          status: mapStatusFromBackend(item.status),
+          priority: mapPriorityFromBackend(item.priority),
+          assignedTo: item.assignedTo?.fullName || item.assignedTo?.email || undefined,
+          createdAt: item.createdAt || new Date().toISOString(),
+          updatedAt: item.updatedAt || item.createdAt || new Date().toISOString(),
+          apartment: currentUser?.profile?.apartment || "",
+          tower: currentUser?.profile?.tower || "",
+          contactPhone: currentUser?.profile?.phone || "",
+          preferredTime: "",
+          additionalNotes: "",
+          attachments: [],
+          comments: [],
+          messages: [],
+          notes: [],
+          timeline: [],
+          _source: "backend" as const, // Mark as backend request to differentiate from mock data
+        }));
+
+        console.log('[Requests] Fetched and mapped requests:', mappedRequests.length);
+        setBackendRequests(mappedRequests);
+      }
+    } catch (error) {
+      console.error('[Requests] Failed to fetch requests:', error);
+      // Continue with empty list on error
+      setBackendRequests([]);
+    } finally {
+      if (showLoadingState) setIsLoading(false);
+    }
+  }, [currentUser?.id]);
+
+  // Initial fetch on mount with loading state
+  useEffect(() => {
+    fetchRequests(true);
+  }, [fetchRequests]);
+
+  // Fetch requests when screen comes into focus (after initial mount)
+  useFocusEffect(
+    useCallback(() => {
+      // Only refresh if not initial mount (isLoading would be false after first fetch)
+      if (!isLoading) {
+        fetchRequests(false); // Don't show loading spinner on focus refresh
+      }
+    }, [fetchRequests, isLoading])
+  );
+
+  // Filter requests from backend
+  const allUserRequests = useMemo(() => {
+    const filteredRequests =
+      filterStatus === "all"
+        ? backendRequests
+        : backendRequests.filter((req) => req.status === filterStatus);
+
+    return [...filteredRequests].sort(
+      (a, b) => getRequestTimestamp(b) - getRequestTimestamp(a),
+    );
+  }, [backendRequests, filterStatus]);
+
+  // Paginated requests
+  const userRequests = useMemo(() => {
+    return allUserRequests.slice(0, page * REQUESTS_PER_PAGE);
+  }, [allUserRequests, page]);
+
+  const hasMore = userRequests.length < allUserRequests.length;
 
   const jobsByRequestId = useMemo(() => {
     const map: Record<string, Job> = {};
@@ -67,9 +184,9 @@ export default function RequestsScreen() {
     return map;
   }, [jobs]);
 
-  // Calculate stats based on user's requests
+  // Calculate stats based on all backend requests (not affected by filter)
   const stats = useMemo(() => {
-    const statusCounts = userRequests.reduce(
+    const statusCounts = backendRequests.reduce(
       (counts, req) => {
         counts[req.status] = (counts[req.status] || 0) + 1;
         return counts;
@@ -78,18 +195,33 @@ export default function RequestsScreen() {
     );
 
     return {
-      total: userRequests.length,
+      total: backendRequests.length,
       pending: statusCounts.pending || 0,
       "in-progress": statusCounts["in-progress"] || 0,
+      "on-hold": statusCounts["on-hold"] || 0,
       completed: statusCounts.completed || 0,
       cancelled: statusCounts.cancelled || 0,
     };
-  }, [userRequests]);
+  }, [backendRequests]);
 
   const onRefresh = async (): Promise<void> => {
+    if (!currentUser?.id) return;
+
     setRefreshing(true);
-    // Simulate refresh - in real app you'd fetch latest data
-    setTimeout(() => setRefreshing(false), 1000);
+    setPage(1); // Reset pagination on refresh
+    await fetchRequests(false); // Use shared fetch function
+    setRefreshing(false);
+  };
+
+  const loadMoreRequests = () => {
+    if (!isLoadingMore && hasMore) {
+      setIsLoadingMore(true);
+      // Simulate loading delay for better UX
+      setTimeout(() => {
+        setPage(prevPage => prevPage + 1);
+        setIsLoadingMore(false);
+      }, 300);
+    }
   };
 
   const getStatusColor = (status: RequestStatus) => {
@@ -98,6 +230,8 @@ export default function RequestsScreen() {
         return { bg: "#fef3c7", text: "#92400e" };
       case "in-progress":
         return { bg: "#dbeafe", text: "#1d4ed8" };
+      case "on-hold":
+        return { bg: "#ffe4e6", text: "#be123c" };
       case "completed":
         return { bg: "#d1fae5", text: "#065f46" };
       case "cancelled":
@@ -106,6 +240,15 @@ export default function RequestsScreen() {
         return { bg: "#f3f4f6", text: "#6b7280" };
     }
   };
+
+  const statusFilters: { label: string; value: FilterStatus }[] = [
+    { label: "All", value: "all" },
+    { label: "Pending", value: "pending" },
+    { label: "In Progress", value: "in-progress" },
+    { label: "On Hold", value: "on-hold" },
+    { label: "Completed", value: "completed" },
+    { label: "Cancelled", value: "cancelled" },
+  ];
 
   const getPriorityBgColor = (priority: Request["priority"]) => {
     switch (priority) {
@@ -148,13 +291,9 @@ export default function RequestsScreen() {
           onPress: async () => {
             try {
               await actions.reviewJobEstimateAsTenant?.(jobId, "approve");
-              Alert.alert("Estimate Approved", "Thank you for confirming.");
+              showSuccessAlert("Thank you for confirming the estimate.");
             } catch (error: any) {
-              Alert.alert(
-                "Error",
-                error?.message ||
-                  "Unable to approve the estimate. Please try again.",
-              );
+              showErrorAlert(error);
             }
           },
         },
@@ -185,16 +324,9 @@ export default function RequestsScreen() {
                 "decline",
                 reason.trim(),
               );
-              Alert.alert(
-                "Estimate Declined",
-                "The service provider has been notified.",
-              );
+              showSuccessAlert("The service provider has been notified of your decline.");
             } catch (error: any) {
-              Alert.alert(
-                "Error",
-                error?.message ||
-                  "Unable to submit your decline. Please try again.",
-              );
+              showErrorAlert(error);
             }
           },
         },
@@ -217,326 +349,277 @@ export default function RequestsScreen() {
 
   // FilterButton component removed - not used in current UI
 
+  const renderRequestCard = ({ item: request }: { item: Request }) => {
+    const statusColors = getStatusColor(request.status);
+    // Don't show jobs for backend requests (they don't have job data)
+    const isBackendRequest = (request as any)._source === "backend";
+    const job = isBackendRequest ? undefined : jobsByRequestId[request.id];
+    const estimate = job?.estimate;
+    const awaitingCompletionApproval =
+      job?.completionStatus === "awaiting_tenant_approval";
+    const completionApproved =
+      job?.completionStatus === "tenant_approved";
+    const completionDeclaredByProvider =
+      job?.completionStatus === "sp_override_approved";
+    const estimateAwaitingTenant =
+      estimate?.status === "sp_approved";
+    const estimateApproved =
+      estimate?.status === "tenant_approved";
+    const estimateDeclined =
+      estimate?.status === "tenant_declined";
+
+    return (
+      <AnimatedButton
+        style={styles.requestCard}
+        onPress={() => handleRequestPress(request)}
+      >
+        <View style={styles.requestContent}>
+          {/* Header row with title and chevron */}
+          <View style={styles.requestHeader}>
+            <Text style={styles.requestTitle} numberOfLines={1}>
+              {request.title}
+            </Text>
+            <ChevronIcon
+              size={11}
+              color="#000000"
+              opacity={0.5}
+            />
+          </View>
+
+          {/* Status containers */}
+          <View style={styles.statusContainer}>
+            <View style={[styles.statusPill, {backgroundColor: statusColors.bg}]}>
+              <Text style={[styles.statusText, {color: statusColors.text}]}>
+                {request.status.replace('-', ' ').toUpperCase()}
+              </Text>
+            </View>
+            <View style={[styles.priorityPill, {backgroundColor: getPriorityBgColor(request.priority)}]}>
+              <Text style={[styles.priorityText, {color: getPriorityTextColor(request.priority)}]}>
+                {request.priority.toUpperCase()}
+              </Text>
+            </View>
+          </View>
+
+          {/* Body text */}
+          <Text style={styles.requestDescription} numberOfLines={2}>
+            {request.description}
+          </Text>
+
+          {/* Date and time */}
+          <Text style={styles.requestDate}>
+            {new Date(request.createdAt).toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric'
+            })}
+          </Text>
+
+          {estimate && (
+            <View style={styles.requestEstimateCard}>
+              <View style={styles.estimateHeader}>
+                <Ionicons name="receipt-outline" size={14} color="#2563EB" />
+                <Text style={styles.estimateHeaderText}>
+                  Estimate
+                </Text>
+                <Text style={styles.estimateTotalText}>
+                  AED {estimate.subtotal.toLocaleString()}
+                </Text>
+              </View>
+
+              {estimateAwaitingTenant && (
+                <View style={styles.requestEstimateActions}>
+                  <TouchableOpacity
+                    style={[
+                      styles.estimateActionButton,
+                      styles.estimateDeclineButton,
+                    ]}
+                    onPress={() => handleDeclineEstimate(job.id)}
+                  >
+                    <Text style={styles.estimateDeclineText}>
+                      Decline
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.estimateActionButton,
+                      styles.estimateApproveButton,
+                    ]}
+                    onPress={() => handleApproveEstimate(job.id)}
+                  >
+                    <Text style={styles.estimateApproveText}>
+                      Approve
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          )}
+
+          {awaitingCompletionApproval && (
+            <TouchableOpacity
+              style={styles.reviewButton}
+              onPress={() =>
+                router.push({
+                  pathname: "/(modals)/approve-job-completion",
+                  params: { jobId: job!.id },
+                })
+              }
+            >
+              <Text style={styles.reviewButtonText}>
+                Review Completion
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </AnimatedButton>
+    );
+  };
+
+  const renderListHeader = () => (
+    <>
+      {/* Header */}
+      <HeaderBar
+        title="My Requests"
+        hasUnreadNotifications={hasUnreadNotifications}
+        showSideMenu={showSideMenu}
+        onSideMenuToggle={setShowSideMenu}
+      />
+
+      {/* Stats Cards */}
+      <Animated.View
+        entering={FadeInDown.delay(50).duration(400)}
+        style={styles.statsContainer}
+      >
+        <View style={styles.statsRow}>
+          <View style={[styles.statCard, styles.totalCard]}>
+            <Text style={[styles.statNumber, { color: "#1F2937" }]}>
+              0{stats.total}
+            </Text>
+            <Text style={styles.statLabel}>Total Requests</Text>
+          </View>
+          <View style={[styles.statCard, styles.completedCard]}>
+            <Text style={[styles.statNumber, { color: "#1F2937" }]}>
+              0{stats.completed}
+            </Text>
+            <Text style={styles.statLabel}>Completed</Text>
+          </View>
+        </View>
+        <View style={styles.statsRow}>
+          <View style={[styles.statCard, styles.inProgressCard]}>
+            <Text style={[styles.statNumber, { color: "#1F2937" }]}>
+              0{stats["in-progress"]}
+            </Text>
+            <Text style={styles.statLabel}>In Progress</Text>
+          </View>
+          <View style={[styles.statCard, styles.pendingCard]}>
+            <Text style={[styles.statNumber, { color: "#1F2937" }]}>
+              0{stats.pending}
+            </Text>
+            <Text style={styles.statLabel}>Pending</Text>
+          </View>
+        </View>
+      </Animated.View>
+
+      {/* Status Filters */}
+      <Animated.View
+        entering={FadeInDown.delay(80).duration(400)}
+        style={styles.filterRow}
+      >
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterRowContent}
+        >
+          {statusFilters.map((option) => {
+            const active = filterStatus === option.value;
+            return (
+              <TouchableOpacity
+                key={option.value}
+                style={[
+                  styles.filterChip,
+                  active && styles.filterChipActive,
+                ]}
+                onPress={() => {
+                  setFilterStatus(option.value);
+                  setPage(1);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    active && styles.filterChipTextActive,
+                  ]}
+                >
+                  {option.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </Animated.View>
+
+      {/* Past Requests Section Title */}
+      <Text style={styles.pastRequestsTitle}>Past Requests</Text>
+    </>
+  );
+
+  const renderListFooter = () => {
+    if (userRequests.length === 0) {
+      return (
+        <View style={styles.emptyState}>
+          <Ionicons name="document-outline" size={64} color="#d1d5db" />
+          <Text style={styles.emptyStateTitle}>No requests found</Text>
+          <Text style={styles.emptyStateText}>
+            You haven't submitted any requests yet
+          </Text>
+        </View>
+      );
+    }
+
+    if (hasMore) {
+      return (
+        <View style={styles.loadMoreContainer}>
+          {isLoadingMore ? (
+            <ActivityIndicator size="small" color="#2563EB" />
+          ) : (
+            <TouchableOpacity
+              style={styles.loadMoreButton}
+              onPress={loadMoreRequests}
+            >
+              <Text style={styles.loadMoreText}>Load More</Text>
+              <Ionicons name="chevron-down" size={16} color="#2563EB" />
+            </TouchableOpacity>
+          )}
+        </View>
+      );
+    }
+
+    return <View style={{ height: 20 }} />;
+  };
+
   if (isLoading) {
     return <RequestsScreenSkeleton />;
   }
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={{ paddingBottom: 160 + insets.bottom }}
+      <FlatList
+        data={userRequests}
+        renderItem={renderRequestCard}
+        keyExtractor={(item) => item.id}
+        ListHeaderComponent={renderListHeader}
+        ListFooterComponent={renderListFooter}
+        contentContainerStyle={[
+          styles.listContent,
+          { paddingBottom: tabBarHeight + 32 }
+        ]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
-      >
-        {/* Header */}
-        <HeaderBar
-          title="My Requests"
-          hasUnreadNotifications={hasUnreadNotifications}
-          showSideMenu={showSideMenu}
-          onSideMenuToggle={setShowSideMenu}
-        />
-
-        {/* Stats Cards */}
-        <Animated.View
-          entering={FadeInDown.delay(50).duration(400)}
-          style={styles.statsContainer}
-        >
-          <View style={styles.statsRow}>
-            <View style={[styles.statCard, styles.totalCard]}>
-              <Text style={[styles.statNumber, { color: "#1F2937" }]}>
-                0{stats.total}
-              </Text>
-              <Text style={styles.statLabel}>Total Requests</Text>
-            </View>
-            <View style={[styles.statCard, styles.completedCard]}>
-              <Text style={[styles.statNumber, { color: "#1F2937" }]}>
-                0{stats.completed}
-              </Text>
-              <Text style={styles.statLabel}>Completed</Text>
-            </View>
-          </View>
-          <View style={styles.statsRow}>
-            <View style={[styles.statCard, styles.inProgressCard]}>
-              <Text style={[styles.statNumber, { color: "#1F2937" }]}>
-                0{stats["in-progress"]}
-              </Text>
-              <Text style={styles.statLabel}>In Progress</Text>
-            </View>
-            <View style={[styles.statCard, styles.pendingCard]}>
-              <Text style={[styles.statNumber, { color: "#1F2937" }]}>
-                0{stats.pending}
-              </Text>
-              <Text style={styles.statLabel}>Pending</Text>
-            </View>
-          </View>
-        </Animated.View>
-
-        {/* Past Requests Section */}
-        <Animated.View
-          entering={FadeInDown.delay(100).duration(400)}
-          style={styles.pastRequestsContainer}
-        >
-          <Text style={styles.pastRequestsTitle}>Past Requests</Text>
-
-          {/* Requests List */}
-          <View style={styles.requestsList}>
-          {userRequests.length > 0 ? (
-            userRequests.map((request) => {
-              const statusColors = getStatusColor(request.status);
-              const job = jobsByRequestId[request.id];
-              const estimate = job?.estimate;
-              const awaitingCompletionApproval =
-                job?.completionStatus === "awaiting_tenant_approval";
-              const completionApproved =
-                job?.completionStatus === "tenant_approved";
-              const completionDeclaredByProvider =
-                job?.completionStatus === "sp_override_approved";
-              const estimateAwaitingTenant =
-                estimate?.status === "sp_approved";
-              const estimateApproved =
-                estimate?.status === "tenant_approved";
-              const estimateDeclined =
-                estimate?.status === "tenant_declined";
-
-              return (
-                <AnimatedButton
-                  key={request.id}
-                  style={styles.requestCard}
-                  onPress={() => handleRequestPress(request)}
-                >
-                  <View style={styles.requestContent}>
-                    {/* Header row with title and chevron */}
-                    <View style={styles.requestHeader}>
-                      <Text style={styles.requestTitle} numberOfLines={1}>
-                        {request.title}
-                      </Text>
-                      <ChevronIcon
-                        size={11}
-                        color="#000000"
-                        opacity={0.5}
-                      />
-                    </View>
-
-                    {/* Subtitle text */}
-                    <Text style={styles.requestType}>
-                      {request.type.toUpperCase()}
-                    </Text>
-
-                    {/* Status containers */}
-                    <View style={styles.statusContainer}>
-                      <View style={[styles.statusPill, {backgroundColor: statusColors.bg}]}>
-                        <Text style={[styles.statusText, {color: statusColors.text}]}>
-                          {request.status.replace('-', ' ').toUpperCase()}
-                        </Text>
-                      </View>
-                      <View style={[styles.priorityPill, {backgroundColor: getPriorityBgColor(request.priority)}]}>
-                        <Text style={[styles.priorityText, {color: getPriorityTextColor(request.priority)}]}>
-                          {request.priority.toUpperCase()}
-                        </Text>
-                      </View>
-                    </View>
-
-                    {/* Body text */}
-                    <Text style={styles.requestDescription} numberOfLines={3}>
-                      {request.description}
-                    </Text>
-
-                    {/* Date and time */}
-                    <Text style={styles.requestDate}>
-                      {new Date(request.createdAt).toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric'
-                      })}, {new Date(request.createdAt).toLocaleTimeString('en-US', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        hour12: true
-                      })}
-                    </Text>
-
-                    {estimate && (
-                      <View style={styles.requestEstimateCard}>
-                        <View style={styles.estimateHeader}>
-                          <Ionicons name="receipt-outline" size={16} color="#2563EB" />
-                          <Text style={styles.estimateHeaderText}>
-                            Estimate Proposal
-                          </Text>
-                          <Text style={styles.estimateTotalText}>
-                            AED {estimate.subtotal.toLocaleString()}
-                          </Text>
-                        </View>
-                        <View style={styles.requestEstimateItems}>
-                          {estimate.items.slice(0, 3).map((item) => (
-                            <View key={item.id} style={styles.requestEstimateRow}>
-                              <Text style={styles.requestEstimateLabel}>
-                                {item.label}
-                              </Text>
-                              <Text style={styles.requestEstimateAmount}>
-                                AED {item.amount.toLocaleString()}
-                              </Text>
-                            </View>
-                          ))}
-                          {estimate.items.length > 3 && (
-                            <Text style={styles.requestEstimateMore}>
-                              + {estimate.items.length - 3} more items
-                            </Text>
-                          )}
-                        </View>
-
-                        {estimateAwaitingTenant ? (
-                          <View style={styles.requestEstimateActions}>
-                            <TouchableOpacity
-                              style={[
-                                styles.estimateActionButton,
-                                styles.estimateDeclineButton,
-                              ]}
-                              onPress={() => handleDeclineEstimate(job.id)}
-                            >
-                              <Ionicons
-                                name="close-circle-outline"
-                                size={18}
-                                color="#EF4444"
-                              />
-                              <Text style={styles.estimateDeclineText}>
-                                Request Changes
-                              </Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                              style={[
-                                styles.estimateActionButton,
-                                styles.estimateApproveButton,
-                              ]}
-                              onPress={() => handleApproveEstimate(job.id)}
-                            >
-                              <Ionicons
-                                name="checkmark-circle-outline"
-                                size={18}
-                                color="#FFFFFF"
-                              />
-                              <Text style={styles.estimateApproveText}>
-                                Approve
-                              </Text>
-                            </TouchableOpacity>
-                          </View>
-                        ) : (
-                          <Text
-                            style={[
-                              styles.requestEstimateStatus,
-                              estimateApproved
-                                ? styles.requestEstimateStatusSuccess
-                                : estimateDeclined
-                                ? styles.requestEstimateStatusWarning
-                                : styles.requestEstimateStatusInfo,
-                            ]}
-                          >
-                            {estimateApproved
-                              ? "Estimate approved – work will begin once scheduled."
-                              : estimateDeclined
-                              ? "You declined this estimate. The provider will follow up."
-                              : estimate.status === "submitted"
-                              ? "Service provider reviewing the estimate."
-                              : estimate.status === "sp_approved"
-                              ? "Waiting for your decision."
-                              : "Estimate in draft."}
-                          </Text>
-                        )}
-                      </View>
-                    )}
-
-                    {job ? (
-                      <View style={styles.jobStatusCard}>
-                        <View style={styles.jobStatusHeader}>
-                          <Ionicons name="briefcase-outline" size={16} color="#0F172A" />
-                          <Text style={styles.jobStatusTitle}>Job Status</Text>
-                          <View
-                            style={[
-                              styles.jobStatusBadge,
-                              awaitingCompletionApproval
-                                ? styles.jobStatusBadgePending
-                                : completionApproved
-                                ? styles.jobStatusBadgeApproved
-                                : completionDeclaredByProvider
-                                ? styles.jobStatusBadgeInfo
-                                : styles.jobStatusBadgeDefault,
-                            ]}
-                          >
-                            <Text style={styles.jobStatusBadgeText}>
-                              {awaitingCompletionApproval
-                                ? "ACTION REQUIRED"
-                                : completionApproved
-                                ? "APPROVED"
-                                : completionDeclaredByProvider
-                                ? "COMPLETED"
-                                : job.status.replace("-", " ").toUpperCase()}
-                            </Text>
-                          </View>
-                        </View>
-                        <Text style={styles.jobStatusDescription}>
-                          Assigned to{" "}
-                          {job.assignedToEmployeeName ||
-                            job.assignedToName ||
-                            "service team"}
-                        </Text>
-                        {awaitingCompletionApproval ? (
-                          <TouchableOpacity
-                            style={styles.reviewButton}
-                            onPress={() =>
-                              router.push({
-                                pathname: "/(modals)/approve-job-completion",
-                                params: { jobId: job.id },
-                              })
-                            }
-                          >
-                            <Ionicons
-                              name="checkmark-circle-outline"
-                              size={16}
-                              color="#FFFFFF"
-                            />
-                            <Text style={styles.reviewButtonText}>
-                              Review Completion
-                            </Text>
-                          </TouchableOpacity>
-                        ) : completionApproved ? (
-                          <Text style={styles.jobStatusMeta}>
-                            Approved on{" "}
-                            {job.completionApprovedAt
-                              ? new Date(job.completionApprovedAt).toLocaleDateString(
-                                  "en-US",
-                                  {
-                                    month: "short",
-                                    day: "numeric",
-                                  year: "numeric",
-                                },
-                              )
-                              : "recently"}
-                          </Text>
-                        ) : completionDeclaredByProvider ? (
-                          <Text style={styles.jobStatusMeta}>
-                            Service provider closed the job due to inactivity.
-                          </Text>
-                        ) : null}
-                      </View>
-                    ) : null}
-                  </View>
-                </AnimatedButton>
-              );
-            })
-          ) : (
-            <View style={styles.emptyState}>
-              <Ionicons name="document-outline" size={64} color="#d1d5db" />
-              <Text style={styles.emptyStateTitle}>No requests found</Text>
-              <Text style={styles.emptyStateText}>
-                {filterStatus === "all"
-                  ? "You haven't submitted any requests yet"
-                  : `No ${filterStatus} requests found`}
-              </Text>
-            </View>
-          )}
-          </View>
-        </Animated.View>
-      </ScrollView>
+        onEndReached={loadMoreRequests}
+        onEndReachedThreshold={0.5}
+        showsVerticalScrollIndicator={false}
+      />
 
       {/* Side Menu */}
       <SideMenu
@@ -552,8 +635,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F8F9FA",
   },
-  scrollView: {
-    flex: 1,
+  listContent: {
     paddingHorizontal: SCREEN_WIDTH * 0.05,
   },
   header: {
@@ -638,20 +720,18 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "600",
     color: "#1F2937",
-    marginBottom: 20,
-  },
-  requestsList: {
-    // No additional margin needed as it's inside the container
+    marginBottom: 16,
+    paddingHorizontal: SCREEN_WIDTH * 0.05,
   },
   requestCard: {
     backgroundColor: "#FBFBFC",
     borderRadius: 8,
-    padding: 20,
-    marginBottom: 12,
+    padding: 14,
+    marginBottom: 10,
     borderWidth: 1,
     borderColor: "#D5DEE8",
     width: "100%",
-    minHeight: 232,
+    minHeight: 140,
   },
   requestContent: {
     flex: 1,
@@ -660,7 +740,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 8,
+    marginBottom: 6,
     paddingRight: 4,
   },
   requestTitle: {
@@ -673,20 +753,10 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 8,
   },
-  requestType: {
-    fontSize: 12,
-    fontWeight: "500",
-    color: "#000000",
-    fontFamily: "Manrope",
-    lineHeight: 20,
-    letterSpacing: 0,
-    opacity: 0.7,
-    marginBottom: 16,
-  },
   statusContainer: {
     flexDirection: "row",
     gap: 8,
-    marginBottom: 20,
+    marginBottom: 10,
   },
   statusPill: {
     width: 68,
@@ -713,47 +783,71 @@ const styles = StyleSheet.create({
     fontFamily: "Manrope",
   },
   requestDescription: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "normal",
     color: "#000000",
     fontFamily: "Manrope",
-    lineHeight: 20,
+    lineHeight: 16,
     letterSpacing: 0,
     opacity: 0.74,
-    marginBottom: 16,
-    height: 61,
+    marginBottom: 8,
+  },
+  filterRow: {
+    marginBottom: 12,
+  },
+  filterRowContent: {
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 2,
+  },
+  filterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "#E5E7EB",
+  },
+  filterChipActive: {
+    backgroundColor: "#2563EB",
+  },
+  filterChipText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#1F2937",
+  },
+  filterChipTextActive: {
+    color: "#FFFFFF",
   },
   requestDate: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "500",
     color: "#000000",
     fontFamily: "Manrope",
-    lineHeight: 20,
+    lineHeight: 16,
     letterSpacing: 0,
-    opacity: 1,
+    opacity: 0.6,
   },
   requestEstimateCard: {
-    marginTop: 16,
-    padding: 16,
-    borderRadius: 10,
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 8,
     backgroundColor: "#F1F5F9",
     borderWidth: 1,
     borderColor: "#E2E8F0",
-    gap: 12,
+    gap: 8,
   },
   estimateHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 6,
   },
   estimateHeaderText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "700",
     color: "#1F2937",
     flex: 1,
   },
   estimateTotalText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "700",
     color: "#1F2937",
   },
@@ -783,17 +877,17 @@ const styles = StyleSheet.create({
   requestEstimateActions: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    marginTop: 8,
+    gap: 8,
+    marginTop: 4,
   },
   estimateActionButton: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: 8,
+    gap: 4,
+    paddingVertical: 8,
+    borderRadius: 6,
   },
   estimateDeclineButton: {
     backgroundColor: "#FFF",
@@ -804,12 +898,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#2563EB",
   },
   estimateDeclineText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "600",
     color: "#B91C1C",
   },
   estimateApproveText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "600",
     color: "#FFFFFF",
   },
@@ -881,15 +975,36 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
+    gap: 4,
     backgroundColor: "#2563EB",
-    paddingVertical: 10,
-    borderRadius: 8,
+    paddingVertical: 8,
+    borderRadius: 6,
+    marginTop: 10,
   },
   reviewButtonText: {
     color: "#FFFFFF",
     fontWeight: "600",
+    fontSize: 12,
+  },
+  loadMoreContainer: {
+    alignItems: "center",
+    paddingVertical: 20,
+  },
+  loadMoreButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  loadMoreText: {
     fontSize: 13,
+    fontWeight: "600",
+    color: "#2563EB",
   },
   emptyState: {
     alignItems: "center",

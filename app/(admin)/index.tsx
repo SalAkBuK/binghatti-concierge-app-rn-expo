@@ -14,41 +14,41 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AnalyticsSection } from "../../components/admin/AnalyticsSection";
 import { AnalyticsTile } from "../../components/admin/AnalyticsTile";
-import { MiniTrendCard } from "../../components/admin/MiniTrendCard";
 import { TrendDelta } from "../../components/admin/TrendDelta";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
+import apiService from "../../lib/services/api";
 import { formatDate, formatDateTime } from "../../lib/utils/helpers";
 
 import { ADMIN_NOTIFICATION_ROUTE } from "./dashboard/_constants";
 import { useDashboardData } from "./dashboard/_hooks/useDashboardData";
 import { styles } from "./dashboard/_styles";
-import {
-  useMountLog,
-  useRenderLog,
-  useScreenFocusLog,
-  measure,
-} from "../../utils/adminProfiler";
 
 export default function AdminDashboard() {
-  // Profiler hooks - track lifecycle and performance
-  useMountLog("Admin/Dashboard");
-  useRenderLog("Admin/Dashboard");
-  useScreenFocusLog("Admin/Dashboard");
-
   const {
     currentUser,
     analytics,
-    managedBuildings,
-    hasUnreadNotifications,
-    isManagement,
-    managementBaseRoute,
-    actions,
-  } = useDashboardData();
+  managedBuildings,
+  adminAssignedBuildings,
+  hasUnreadNotifications,
+  isManagement,
+  managementBaseRoute,
+  actions,
+} = useDashboardData();
   const { width } = useWindowDimensions();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const reduceMotionEnabled = useReducedMotion();
+  const [adminRequestsCount, setAdminRequestsCount] = useState<number | null>(null);
+  const [adminRequestStatusCounts, setAdminRequestStatusCounts] = useState({
+    new: 0,
+    assigned: 0,
+    inProgress: 0,
+    onHold: 0,
+    completed: 0,
+    cancelled: 0,
+  });
+  const [loadingAdminRequests, setLoadingAdminRequests] = useState(false);
 
   const pagePadding = Math.max(16, Math.min(32, width * 0.05));
   const isCompact = width < 768;
@@ -98,51 +98,49 @@ export default function AdminDashboard() {
       : null;
 
   const managementTiles = useMemo(() => {
-    return measure("Build Admin/Dashboard managementTiles", () => {
-      if (!managementSnapshot) return [];
-      const openRequests =
-        (managementSnapshot.metrics.pendingRequests || 0) +
-        (managementSnapshot.metrics.inProgressRequests || 0);
+    if (!managementSnapshot) return [];
+    const openRequests =
+      (managementSnapshot.metrics.pendingRequests || 0) +
+      (managementSnapshot.metrics.inProgressRequests || 0);
 
-      return [
-        {
-          title: "Open Requests",
-          value: openRequests,
-          icon: "clipboard-outline" as const,
-          iconColor: "#F97316",
-        },
-        {
-          title: "Jobs In Progress",
-          value: managementSnapshot.metrics.jobsInProgress,
-          icon: "construct-outline" as const,
-          iconColor: "#2563EB",
-        },
-        {
-          title: "Bookings Today",
-          value: managementSnapshot.metrics.bookingsToday,
-          icon: "calendar-outline" as const,
-          iconColor: "#10B981",
-        },
-        {
-          title: "Visitors Today",
-          value: managementSnapshot.metrics.visitorsToday,
-          icon: "people-outline" as const,
-          iconColor: "#8B5CF6",
-        },
-        {
-          title: "Completion Rate",
-          value: `${managementSnapshot.metrics.completionRate}%`,
-          icon: "speedometer-outline" as const,
-          iconColor: "#0EA5E9",
-        },
-        {
-          title: "Occupancy",
-          value: `${managementSnapshot.metrics.occupancyRate}%`,
-          icon: "business-outline" as const,
-          iconColor: "#7C3AED",
-        },
-      ];
-    });
+    return [
+      {
+        title: "Open Requests",
+        value: openRequests,
+        icon: "clipboard-outline" as const,
+        iconColor: "#F97316",
+      },
+      {
+        title: "Jobs In Progress",
+        value: managementSnapshot.metrics.jobsInProgress,
+        icon: "construct-outline" as const,
+        iconColor: "#2563EB",
+      },
+      {
+        title: "Bookings Today",
+        value: managementSnapshot.metrics.bookingsToday,
+        icon: "calendar-outline" as const,
+        iconColor: "#10B981",
+      },
+      {
+        title: "Visitors Today",
+        value: managementSnapshot.metrics.visitorsToday,
+        icon: "people-outline" as const,
+        iconColor: "#8B5CF6",
+      },
+      {
+        title: "Completion Rate",
+        value: `${managementSnapshot.metrics.completionRate}%`,
+        icon: "speedometer-outline" as const,
+        iconColor: "#0EA5E9",
+      },
+      {
+        title: "Occupancy",
+        value: `${managementSnapshot.metrics.occupancyRate}%`,
+        icon: "business-outline" as const,
+        iconColor: "#7C3AED",
+      },
+    ];
   }, [managementSnapshot]);
 
   const requestsToday = managementSnapshot?.lists.requestsToday ?? [];
@@ -151,38 +149,36 @@ export default function AdminDashboard() {
   const activeJobs = managementSnapshot?.lists.activeJobs ?? [];
 
   const performanceBanner = useMemo(() => {
-    return measure("Build Admin/Dashboard performanceBanner", () => {
-      if (analytics.completionRate >= 85) {
-        return {
-          icon: "shield-checkmark",
-          toneColor: "#047857",
-          background: "#ECFDF5",
-          border: "#A7F3D0",
-          headline: "Operations are healthy",
-          body: "Job completion is trending upward and response times remain within SLA.",
-        };
-      }
-
-      if (analytics.completionRate >= 70) {
-        return {
-          icon: "alert-circle",
-          toneColor: "#F59E0B",
-          background: "#FFFBEB",
-          border: "#FDE68A",
-          headline: "Keep an eye on completion rate",
-          body: "Response times are slowing slightly. Consider redistributing work orders.",
-        };
-      }
-
+    if (analytics.completionRate >= 85) {
       return {
-        icon: "warning",
-        toneColor: "#DC2626",
-        background: "#FEF2F2",
-        border: "#FECACA",
-        headline: "Action required",
-        body: "Completion rate dipped below target. Investigate overdue jobs immediately.",
+        icon: "shield-checkmark",
+        toneColor: "#047857",
+        background: "#ECFDF5",
+        border: "#A7F3D0",
+        headline: "Operations are healthy",
+        body: "Job completion is trending upward and response times remain within SLA.",
       };
-    });
+    }
+
+    if (analytics.completionRate >= 70) {
+      return {
+        icon: "alert-circle",
+        toneColor: "#F59E0B",
+        background: "#FFFBEB",
+        border: "#FDE68A",
+        headline: "Keep an eye on completion rate",
+        body: "Response times are slowing slightly. Consider redistributing work orders.",
+      };
+    }
+
+    return {
+      icon: "warning",
+      toneColor: "#DC2626",
+      background: "#FEF2F2",
+      border: "#FECACA",
+      headline: "Action required",
+      body: "Completion rate dipped below target. Investigate overdue jobs immediately.",
+    };
   }, [analytics.completionRate]);
 
   const performanceBannerStyles = useMemo(
@@ -206,31 +202,148 @@ export default function AdminDashboard() {
     [performanceBanner],
   );
 
-  const bookingsTrend = useMemo(
-    () => measure("Build Admin/Dashboard bookingsTrend", () =>
-      [6, 7, 5, 9, 8, 10, analytics.bookingsToday]
-    ),
-    [analytics.bookingsToday],
-  );
-
-  const completionTrend = useMemo(
-    () => measure("Build Admin/Dashboard completionTrend", () =>
-      [65, 68, 70, 72, 74, 76, analytics.completionRate]
-    ),
-    [analytics.completionRate],
-  );
-
-  const occupancyTrend = useMemo(
-    () => measure("Build Admin/Dashboard occupancyTrend", () =>
-      [88.4, 89.3, 90.1, 90.9, 91.5, 92.0, analytics.occupancyRate]
-    ),
-    [analytics.occupancyRate],
-  );
-
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     setTimeout(() => setRefreshing(false), 1000);
   }, []);
+
+  const isAdminRole =
+    currentUser?.role === "admin" || currentUser?.role === "super_admin";
+
+  const adminTenantCount = useMemo(() => {
+    if (!isAdminRole || isManagement) return null;
+    const assignedIds = new Set((adminAssignedBuildings || []).map((b) => String(b.id)));
+    const users = actions.getUsers?.() || [];
+    return users.filter(
+      (user) =>
+        user.role === "tenant" &&
+        assignedIds.has(String(user.profile?.buildingId || (user as any).buildingId || "")),
+    ).length;
+  }, [adminAssignedBuildings, actions.getUsers, isAdminRole, isManagement]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchAdminRequests = async () => {
+      if (!isAdminRole || isManagement) {
+        setAdminRequestsCount(null);
+        setAdminRequestStatusCounts({
+          new: 0,
+          assigned: 0,
+          inProgress: 0,
+          onHold: 0,
+          completed: 0,
+          cancelled: 0,
+        });
+        return;
+      }
+
+      const assignedBuildings = adminAssignedBuildings || [];
+      if (!assignedBuildings.length) {
+        setAdminRequestsCount(0);
+        setAdminRequestStatusCounts({
+          new: 0,
+          assigned: 0,
+          inProgress: 0,
+          onHold: 0,
+          completed: 0,
+          cancelled: 0,
+        });
+        return;
+      }
+
+      setLoadingAdminRequests(true);
+      try {
+        const counts = await Promise.all(
+          assignedBuildings.map(async (building) => {
+            try {
+              const response = await apiService.maintenance.getMaintenanceRequestsByBuildingId(
+                building.id,
+              );
+              if (response.success && Array.isArray(response.data)) {
+                return response.data;
+              }
+              return [];
+            } catch (error) {
+              console.error(
+                `[AdminDashboard] Failed to fetch requests for building ${building.id}:`,
+                error,
+              );
+              return [];
+            }
+          }),
+        );
+
+        const allRequests = counts.flat();
+        const statusBuckets = {
+          new: 0,
+          assigned: 0,
+          inProgress: 0,
+          onHold: 0,
+          completed: 0,
+          cancelled: 0,
+        };
+
+        allRequests.forEach((req) => {
+          const statusCode = Number(
+            req.status ?? req.requestStatus ?? req.statusId ?? req.state ?? req.Status ?? 0,
+          );
+          switch (statusCode) {
+            case 1:
+              statusBuckets.new += 1;
+              break;
+            case 2:
+              statusBuckets.assigned += 1;
+              break;
+            case 3:
+              statusBuckets.inProgress += 1;
+              break;
+            case 4:
+              statusBuckets.onHold += 1;
+              break;
+            case 5:
+              statusBuckets.completed += 1;
+              break;
+            case 6:
+              statusBuckets.cancelled += 1;
+              break;
+            default:
+              statusBuckets.new += 1;
+              break;
+          }
+        });
+
+        const total = allRequests.length;
+        if (isMounted) {
+          setAdminRequestsCount(total);
+          setAdminRequestStatusCounts(statusBuckets);
+        }
+      } catch (error) {
+        console.error("[AdminDashboard] Failed to fetch admin requests:", error);
+        if (isMounted) {
+          setAdminRequestsCount(0);
+          setAdminRequestStatusCounts({
+            new: 0,
+            assigned: 0,
+            inProgress: 0,
+            onHold: 0,
+            completed: 0,
+            cancelled: 0,
+          });
+        }
+      } finally {
+        if (isMounted) {
+          setLoadingAdminRequests(false);
+        }
+      }
+    };
+
+    fetchAdminRequests();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [adminAssignedBuildings, isAdminRole, isManagement]);
 
   const renderManagementView = () => {
     if (!managementSnapshot) {
@@ -481,230 +594,54 @@ export default function AdminDashboard() {
         <AnalyticsSection
           title="Performance Overview"
           subtitle="Snapshot of live KPIs across the portfolio"
-          actionSlot={<TrendDelta value={3} isPositive label="vs last week" />}
+          actionSlot={undefined}
         >
           <View style={[styles.kpiGrid, isCompact && styles.kpiGridCompact]}>
             <AnalyticsTile
-              title="Open Jobs"
-              value={analytics.openJobsCount}
-              icon="construct-outline"
-              iconColor="#F59E0B"
-              trend={{ value: 12, isPositive: false }}
+              title="Total Requests"
+              value={
+                isAdminRole && !isManagement
+                  ? loadingAdminRequests
+                    ? "..."
+                    : adminRequestsCount ?? 0
+                  : analytics.pendingRequestsCount + analytics.openJobsCount
+              }
+              icon="build-outline"
+              iconColor="#3B82F6"
             />
             <AnalyticsTile
               title="Pending Requests"
-              value={analytics.pendingRequestsCount}
+              value={
+                isAdminRole && !isManagement
+                  ? loadingAdminRequests
+                    ? "..."
+                    : adminRequestStatusCounts.new
+                  : analytics.pendingRequestsCount
+              }
               icon="clipboard-outline"
               iconColor="#EF4444"
-              trend={{ value: 6, isPositive: false }}
             />
             <AnalyticsTile
               title="Completion Rate"
               value={`${analytics.completionRate}%`}
               icon="checkmark-circle-outline"
               iconColor="#10B981"
-              trend={{ value: 3, isPositive: true }}
             />
           </View>
 
           <View style={[styles.kpiGrid, isCompact && styles.kpiGridCompact]}>
             <AnalyticsTile
-              title="Revenue This Month"
-              value={`AED ${analytics.revenueThisMonth.toLocaleString()}`}
-              icon="cash-outline"
-              iconColor="#059669"
-              trend={{ value: 8, isPositive: true }}
-            />
-            <AnalyticsTile
-              title="Average Completion Time"
-              value={`${analytics.averageCompletionTime}h`}
-              icon="time-outline"
-              iconColor="#3B82F6"
-              trend={{ value: 5, isPositive: true }}
-            />
-            <AnalyticsTile
               title="Occupancy"
-              value={`${analytics.occupancyRate}%`}
+              value={
+                isAdminRole && !isManagement
+                  ? loadingAdminRequests
+                    ? "..."
+                    : adminTenantCount ?? 0
+                  : `${analytics.occupancyRate}%`
+              }
               icon="business-outline"
               iconColor="#8B5CF6"
             />
-          </View>
-        </AnalyticsSection>
-      </Animated.View>
-
-      <Animated.View entering={getEnteringAnimation(120)}>
-        <AnalyticsSection
-          title="Activity Trends"
-          subtitle="Trailing 7-day trend across key signals"
-        >
-          <View style={[styles.trendGrid, isCompact && styles.trendGridCompact]}>
-            <MiniTrendCard
-              title="Amenity Bookings"
-              subtitle="Daily reservations"
-              data={bookingsTrend}
-              delta={{ value: 9, isPositive: true, label: "week growth" }}
-              insight="Peak demand occurred yesterday. Consider extending pool hours over the weekend."
-              color="#2563EB"
-            />
-            <MiniTrendCard
-              title="Job Completion %"
-              subtitle="Work orders closed"
-              data={completionTrend}
-              delta={{ value: 4, isPositive: true, label: "vs target" }}
-              insight="Technicians cleared the HVAC backlog; completion rate is back above SLA threshold."
-              color="#10B981"
-            />
-          </View>
-          <View
-            style={[
-              styles.trendGrid,
-              { marginTop: 16 },
-              isCompact && styles.trendGridCompact,
-            ]}
-          >
-            <MiniTrendCard
-              title="Occupancy Rate"
-              subtitle="Portfolio fill"
-              data={occupancyTrend}
-              delta={{ value: 1, isPositive: true, label: "MoM" }}
-              insight="Leasing team secured two new corporate tenants keeping occupancy north of 92%."
-              color="#8B5CF6"
-            />
-          </View>
-        </AnalyticsSection>
-      </Animated.View>
-
-      <Animated.View entering={getEnteringAnimation(160)}>
-        <AnalyticsSection
-          title="Operational Snapshot"
-          subtitle="Where to focus next"
-        >
-          <View
-            style={[
-              styles.operationsGrid,
-              isCompact && styles.operationsGridCompact,
-            ]}
-          >
-            <View style={styles.operationCard}>
-              <View style={styles.operationHeader}>
-                <Ionicons name="hammer-outline" size={20} color="#2563EB" />
-                <Text style={styles.operationTitle}>Backlog Watch</Text>
-              </View>
-              <Text style={styles.operationMetric}>
-                {analytics.openJobsCount} open jobs
-              </Text>
-              <Text style={styles.operationBody}>
-                Redistribute HVAC work orders to the night shift to avoid SLA
-                breaches.
-              </Text>
-            </View>
-
-            <View style={styles.operationCard}>
-              <View style={styles.operationHeader}>
-                <Ionicons name="megaphone-outline" size={20} color="#D97706" />
-                <Text style={styles.operationTitle}>Active Notices</Text>
-              </View>
-              <Text style={styles.operationMetric}>
-                {analytics.activeMaintenanceNotices} live notices
-              </Text>
-              <Text style={styles.operationBody}>
-                Water system maintenance goes live tomorrow; ensure lobby
-                displays are updated.
-              </Text>
-            </View>
-
-            <View style={styles.operationCard}>
-              <View style={styles.operationHeader}>
-                <Ionicons name="people-outline" size={20} color="#7C3AED" />
-                <Text style={styles.operationTitle}>Tenant Health</Text>
-              </View>
-              <Text style={styles.operationMetric}>
-                {analytics.averageRating.toFixed(1)} ★ average rating
-              </Text>
-              <Text style={styles.operationBody}>
-                Satisfaction remains high. Encourage technicians to request
-                ratings after closure.
-              </Text>
-            </View>
-          </View>
-        </AnalyticsSection>
-      </Animated.View>
-
-      <Animated.View entering={getEnteringAnimation(200)}>
-        <AnalyticsSection
-          title="Top Service Providers"
-          subtitle="Performance over the last 30 days"
-        >
-          {analytics.topServiceProviders.map((provider, index) => (
-            <View key={provider.id} style={styles.providerCard}>
-              <View style={styles.providerLeft}>
-                <View
-                  style={[
-                    styles.rankBadge,
-                    { backgroundColor: index === 0 ? "#FACC15" : "#CBD5F5" },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.rankText,
-                      { color: index === 0 ? "#92400E" : "#1F2937" },
-                    ]}
-                  >
-                    #{index + 1}
-                  </Text>
-                </View>
-                <View style={styles.providerDetails}>
-                  <Text style={styles.providerName}>{provider.name}</Text>
-                  <Text style={styles.providerMeta}>
-                    {provider.jobsCompleted} jobs ·{" "}
-                    {provider.averageRating.toFixed(1)} ★ rating
-                  </Text>
-                </View>
-              </View>
-              <TrendDelta
-                value={provider.averageRating >= 4.5 ? 2 : 1}
-                isPositive
-                label="CSAT"
-              />
-            </View>
-          ))}
-        </AnalyticsSection>
-      </Animated.View>
-
-      <Animated.View entering={getEnteringAnimation(240)}>
-        <AnalyticsSection title="Recent Activity Timeline">
-          <View style={styles.timeline}>
-            {analytics.recentActivity.slice(0, 6).map((activity, index) => {
-              const color = getTimelineColor(activity.type);
-              const icon = getTimelineIcon(activity.type);
-              return (
-                <View key={activity.id} style={styles.timelineRow}>
-                  <View style={styles.timelineIndicator}>
-                    <View
-                      style={[styles.timelineDot, { borderColor: color }]}
-                    >
-                      <Ionicons name={icon} size={14} color={color} />
-                    </View>
-                    {index < analytics.recentActivity.length - 1 ? (
-                      <View
-                        style={[
-                          styles.timelineLine,
-                          { backgroundColor: color + "40" },
-                        ]}
-                      />
-                    ) : null}
-                  </View>
-                  <View style={styles.timelineContent}>
-                    <Text style={styles.timelineTitle}>
-                      {activity.description}
-                    </Text>
-                    <Text style={styles.timelineTimestamp}>
-                      {formatDateTime(activity.timestamp)}
-                    </Text>
-                  </View>
-                </View>
-              );
-            })}
           </View>
         </AnalyticsSection>
       </Animated.View>
@@ -743,59 +680,3 @@ export default function AdminDashboard() {
     </SafeAreaView>
   );
 }
-
-const getTimelineColor = (
-  type:
-    | "job"
-    | "request"
-    | "booking"
-    | "notice"
-    | "job_completed"
-    | "new_request"
-    | "new_tenant",
-) => {
-  switch (type) {
-    case "job_completed":
-    case "job":
-      return "#10B981";
-    case "new_request":
-    case "request":
-      return "#2563EB";
-    case "booking":
-      return "#8B5CF6";
-    case "notice":
-      return "#F59E0B";
-    case "new_tenant":
-      return "#0EA5E9";
-    default:
-      return "#6B7280";
-  }
-};
-
-const getTimelineIcon = (
-  type:
-    | "job"
-    | "request"
-    | "booking"
-    | "notice"
-    | "job_completed"
-    | "new_request"
-    | "new_tenant",
-): keyof typeof Ionicons.glyphMap => {
-  switch (type) {
-    case "job_completed":
-    case "job":
-      return "construct-outline";
-    case "new_request":
-    case "request":
-      return "clipboard-outline";
-    case "booking":
-      return "calendar-outline";
-    case "notice":
-      return "alert-circle-outline";
-    case "new_tenant":
-      return "person-add-outline";
-    default:
-      return "time-outline";
-  }
-};

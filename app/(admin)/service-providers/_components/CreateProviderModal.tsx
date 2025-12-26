@@ -59,7 +59,7 @@ export function CreateProviderModal({
                 placeholder="Enter company or provider name"
                 placeholderTextColor="#9CA3AF"
                 value={formData.name}
-                onChangeText={(name) => onChange({ name })}
+                onChangeText={(name) => onChange({ name, companyName: name })}
               />
             </View>
 
@@ -77,6 +77,19 @@ export function CreateProviderModal({
             </View>
 
             <View style={styles.modalSection}>
+              <Text style={styles.modalLabel}>Password *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Temporary password"
+                placeholderTextColor="#9CA3AF"
+                value={formData.password}
+                onChangeText={(password) => onChange({ password })}
+                autoCapitalize="none"
+                secureTextEntry
+              />
+            </View>
+
+            <View style={styles.modalSection}>
               <Text style={styles.modalLabel}>Contact Phone</Text>
               <TextInput
                 style={styles.input}
@@ -89,25 +102,59 @@ export function CreateProviderModal({
             </View>
 
             <View style={styles.modalSection}>
-              <Text style={styles.modalLabel}>Primary Specialty *</Text>
+              <Text style={styles.modalLabel}>Job Title</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g., Lead Technician"
+                placeholderTextColor="#9CA3AF"
+                value={formData.jobTitle}
+                onChangeText={(jobTitle) => onChange({ jobTitle })}
+              />
+            </View>
+
+            <View style={styles.modalSection}>
+              <Text style={styles.modalLabel}>Skills</Text>
+              <Text style={styles.modalHint}>Select key skills (single selection for now)</Text>
               <View style={styles.specialtiesGrid}>
-                {SPECIALTY_OPTIONS.map((specialty) => {
-                  const active = formData.specialty === specialty;
+                {SPECIALTY_OPTIONS.map((skill) => {
+                  const active = formData.skills === skill;
                   return (
                     <TouchableOpacity
-                      key={specialty}
+                      key={skill}
                       style={[styles.specialtyChip, active && styles.specialtyChipActive]}
-                      onPress={() => onChange({ specialty })}
+                      onPress={() => onChange({ skills: active ? "" : skill })}
                     >
                       <Text
                         style={[styles.specialtyChipText, active && styles.specialtyChipTextActive]}
                       >
-                        {specialty}
+                        {skill}
                       </Text>
                     </TouchableOpacity>
                   );
                 })}
               </View>
+            </View>
+
+            <View style={styles.modalSection}>
+              <Text style={styles.modalLabel}>Address</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Street, City"
+                placeholderTextColor="#9CA3AF"
+                value={formData.address}
+                onChangeText={(address) => onChange({ address })}
+              />
+            </View>
+
+            <View style={styles.modalSection}>
+              <Text style={styles.modalLabel}>Nationality</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g., UAE"
+                placeholderTextColor="#9CA3AF"
+                value={formData.nationality}
+                onChangeText={(nationality) => onChange({ nationality })}
+              />
             </View>
 
             <View style={styles.modalSection}>

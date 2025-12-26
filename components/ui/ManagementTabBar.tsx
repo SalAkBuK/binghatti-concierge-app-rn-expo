@@ -1,13 +1,12 @@
 import { router, usePathname } from "expo-router";
 import React from "react";
-import { Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import ClipboardTabIcon from "../icons/ClipboardTabIcon";
-import ConstructTabIcon from "../icons/ConstructTabIcon";
 import GridTabIcon from "../icons/GridTabIcon";
 import MoreTabIcon from "../icons/MoreTabIcon";
-import PeopleTabIcon from "../icons/PeopleTabIcon";
+import TenantsTabIcon from "../icons/TenantsTabIcon";
 
 interface TabItem {
   name: string;
@@ -30,15 +29,9 @@ const TABS: TabItem[] = [
     route: "/(management)/requests",
   },
   {
-    name: "jobs",
-    label: "Jobs",
-    icon: ConstructTabIcon,
-    route: "/(management)/jobs",
-  },
-  {
     name: "tenants",
     label: "Tenants",
-    icon: PeopleTabIcon,
+    icon: TenantsTabIcon,
     route: "/(management)/tenants",
   },
   {
@@ -58,23 +51,35 @@ export function ManagementTabBar() {
   };
 
   const isTabActive = (tabName: string, route: string) => {
-    // Normalize pathname and route by removing route group parentheses
-    const normalizedPathname = pathname.replace(/\([^)]+\)/g, "");
-    const normalizedRoute = route.replace(/\([^)]+\)/g, "");
+    // Normalize pathname and route by removing route group parentheses and /index suffix
+    const normalizedPathname = pathname
+      .replace(/\([^)]+\)/g, "")  // Remove route groups like (management)
+      .replace(/\/+/g, "/")        // Clean up double slashes: // → /
+      .replace(/\/index$/, "");    // Remove trailing /index
+    const normalizedRoute = route
+      .replace(/\([^)]+\)/g, "")   // Remove route groups like (management)
+      .replace(/\/+/g, "/")        // Clean up double slashes: // → /
+      .replace(/\/index$/, "");    // Remove trailing /index
 
     // Exact match for index route
     if (tabName === "index") {
       return (
         pathname === "/(management)" ||
         pathname === "/(management)/" ||
+        pathname === "/(management)/index" ||
         pathname === "/" ||
         normalizedPathname === "/" ||
         normalizedPathname === ""
       );
     }
 
-    // Check if current path matches the tab route (support both formats)
-    return pathname.startsWith(route) || normalizedPathname.startsWith(normalizedRoute);
+    // Check if current path matches the tab route (support both formats and /index suffix)
+    return (
+      pathname.startsWith(route) ||
+      pathname === `${route}/index` ||
+      normalizedPathname === normalizedRoute ||
+      normalizedPathname.startsWith(normalizedRoute)
+    );
   };
 
   return (
@@ -82,8 +87,8 @@ export function ManagementTabBar() {
       style={[
         styles.container,
         {
-          paddingBottom: Platform.OS === "ios" ? insets.bottom : 8,
-          height: 74 + (Platform.OS === "ios" ? insets.bottom : 8),
+          paddingBottom: Math.max(insets.bottom, 8),
+          height: 74 + Math.max(insets.bottom, 8),
         },
       ]}
     >

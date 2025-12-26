@@ -41,7 +41,9 @@ const generateTimeSlots = (
   ) {
     const timeStr = `${String(currentHour).padStart(2, "0")}:${String(currentMin).padStart(2, "0")}`;
     // Mock some slots as unavailable (randomly)
-    const available = Math.random() > 0.3;
+    // NOTE: Using slot time as seed for consistent availability across re-renders
+    const seed = (currentHour * 60 + currentMin) % 10;
+    const available = seed > 3; // Consistent availability based on time
     slots.push({ time: timeStr, available });
 
     currentMin += durationMinutes;
@@ -52,6 +54,20 @@ const generateTimeSlots = (
   }
 
   return slots;
+};
+
+// Helper function to calculate end time
+const calculateEndTime = (startTime: string, durationMinutes: number): string => {
+  const [hour, min] = startTime.split(":").map(Number);
+  let endMin = min + durationMinutes;
+  let endHour = hour;
+
+  if (endMin >= 60) {
+    endHour += Math.floor(endMin / 60);
+    endMin = endMin % 60;
+  }
+
+  return `${String(endHour).padStart(2, "0")}:${String(endMin).padStart(2, "0")}`;
 };
 
 export default function AmenityBookingFormScreen() {
@@ -70,26 +86,32 @@ export default function AmenityBookingFormScreen() {
     { time: string; available: boolean }[]
   >([]);
 
+  // Load amenity on mount
   useEffect(() => {
-    // Load amenity data from context
-    const foundAmenity = actions.getAmenityById(amenityId);
+    const foundAmenity = amenities.find((a) => a.id === amenityId);
     if (foundAmenity) {
       setAmenity(foundAmenity);
-      // Generate time slots
-      const dayName = selectedDate
-        .toLocaleDateString("en-US", { weekday: "long" })
-        .toLowerCase();
-      const hours = foundAmenity.operatingHours[dayName];
-      if (hours) {
-        const slots = generateTimeSlots(
-          hours.open,
-          hours.close,
-          foundAmenity.bookingDurationMinutes,
-        );
-        setTimeSlots(slots);
-      }
     }
-  }, [actions, amenityId, selectedDate, amenities]);
+  }, [amenityId, amenities]);
+
+  // Generate time slots when amenity or date changes
+  useEffect(() => {
+    if (!amenity) return;
+
+    const dayName = selectedDate
+      .toLocaleDateString("en-US", { weekday: "long" })
+      .toLowerCase();
+    const hours = amenity.operatingHours[dayName];
+
+    if (hours) {
+      const slots = generateTimeSlots(
+        hours.open,
+        hours.close,
+        amenity.bookingDurationMinutes,
+      );
+      setTimeSlots(slots);
+    }
+  }, [amenity, selectedDate]); // Only depend on amenity and selectedDate
 
   const handleDateChange = (event: any, date?: Date) => {
     setShowDatePicker(Platform.OS === "ios");
@@ -518,10 +540,10 @@ const styles = StyleSheet.create({
   slotsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 10,
+    marginHorizontal: -5, // Negative margin to offset gap
   },
   slotButton: {
-    width: (SCREEN_WIDTH - 60) / 3,
+    width: (SCREEN_WIDTH - 50) / 3 - 10, // Account for padding and gap
     paddingVertical: 12,
     paddingHorizontal: 8,
     borderRadius: 8,
@@ -530,6 +552,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     alignItems: "center",
     justifyContent: "center",
+    margin: 5, // Replace gap with margin for better Android compatibility
   },
   slotButtonDisabled: {
     borderColor: "#D1D5DB",

@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "expo-router";
+import React, { useCallback, useEffect, useMemo, useState, memo } from "react";
 import { Alert, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -16,17 +17,14 @@ import { ADMIN_NOTIFICATION_ROUTE } from "./_constants";
 import { useUsersData } from "./_hooks/useUsersData";
 import { styles } from "./_styles";
 import type { UserFormState } from "./_types";
-import {
-  useMountLog,
-  useRenderLog,
-  useScreenFocusLog,
-  measure,
-} from "../../../utils/adminProfiler";
 
 const createInitialFormState = (buildingId: string): UserFormState => ({
   name: "",
   email: "",
   phone: "",
+  password: "",
+  address: "",
+  nationality: "",
   role: "tenant",
   buildingId,
   tower: "",
@@ -34,14 +32,33 @@ const createInitialFormState = (buildingId: string): UserFormState => ({
   apartment: "",
   emergencyContact: "",
   emergencyPhone: "",
+  entranceDate: new Date().toISOString(),
 });
 
-export default function UsersScreen() {
-  // Profiler hooks - track lifecycle and performance
-  useMountLog("Admin/Users");
-  useRenderLog("Admin/Users");
-  useScreenFocusLog("Admin/Users");
+// Memoized cell components for better performance
+const NameCell = memo(({ user }: { user: User }) => (
+  <Text style={styles.cellText}>{user.name}</Text>
+));
+NameCell.displayName = 'NameCell';
 
+const EmailCell = memo(({ user }: { user: User }) => (
+  <Text style={styles.cellTextSmall} numberOfLines={1}>
+    {user.email}
+  </Text>
+));
+EmailCell.displayName = 'EmailCell';
+
+const RoleBadge = memo(({ role, colors }: { role: UserRole; colors: { bg: string; text: string } }) => (
+  <View style={[styles.roleBadge, { backgroundColor: colors.bg }]}>
+    <Text style={[styles.roleBadgeText, { color: colors.text }]}>
+      {role.toUpperCase()}
+    </Text>
+  </View>
+));
+RoleBadge.displayName = 'RoleBadge';
+
+export default function UsersScreen() {
+  const router = useRouter();
   const { currentUser } = useApp();
   const {
     actions,
@@ -66,6 +83,10 @@ export default function UsersScreen() {
     createInitialFormState(defaultBuildingId),
   );
 
+  // Pagination state
+  const ITEMS_PER_PAGE = 20;
+  const [currentPage, setCurrentPage] = useState(1);
+
   // Helper to get building name
   const getBuildingName = (buildingId: string): string => {
     const building = managedBuildings.find((b) => b.id === buildingId);
@@ -85,24 +106,86 @@ export default function UsersScreen() {
     });
   }, [defaultBuildingId]);
 
+  // Fetch all users from backend when component mounts (run once only)
+  useEffect(() => {
+    const loadUsers = async () => {
+      try {
+        console.log('[Users] Fetching all users from backend...');
+        await actions.fetchAllUsersForBuildings?.();
+        console.log('[Users] Successfully loaded users from backend');
+      } catch (error) {
+        console.error('[Users] Failed to load users from backend:', error);
+        // Don't show alert on mount - just log the error
+        // Users can still work with locally cached data
+      }
+    };
+
+    loadUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty array = run once on mount only, prevents infinite loop
+
+  // Refetch when building scope becomes available (e.g., admin assigned buildings load later)
+  useEffect(() => {
+    if (managedBuildings.length === 0) return;
+    if (refreshing) return;
+    const refetch = async () => {
+      try {
+        setRefreshing(true);
+        console.log('[Users] Refreshing users after building scope change...');
+        await actions.fetchAllUsersForBuildings?.();
+      } catch (error) {
+        console.error('[Users] Failed to refresh after building scope change:', error);
+      } finally {
+        setRefreshing(false);
+      }
+    };
+    refetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [managedBuildings.length]);
+
   // Filter users based on search
   const filteredUsers = useMemo(() => {
-    return measure("Build Admin/Users filteredUsers", () => {
-      if (!searchQuery.trim()) return scopedUsers;
-      const query = searchQuery.toLowerCase();
-      return scopedUsers.filter(
-        (user) =>
-          user.name.toLowerCase().includes(query) ||
-          user.email.toLowerCase().includes(query) ||
-          user.role.toLowerCase().includes(query),
-      );
-    });
+    if (!searchQuery.trim()) return scopedUsers;
+    const query = searchQuery.toLowerCase();
+    return scopedUsers.filter(
+      (user) =>
+        user.name.toLowerCase().includes(query) ||
+        user.email.toLowerCase().includes(query) ||
+        user.role.toLowerCase().includes(query),
+    );
   }, [scopedUsers, searchQuery]);
 
-  // Calculate unread notifications
+  // Paginated users - only show items up to current page
+  const paginatedUsers = useMemo(() => {
+    return filteredUsers.slice(0, currentPage * ITEMS_PER_PAGE);
+  }, [filteredUsers, currentPage, ITEMS_PER_PAGE]);
+
+  const hasMoreUsers = paginatedUsers.length < filteredUsers.length;
+  const remainingUsers = filteredUsers.length - paginatedUsers.length;
+
+  // Reset to page 1 when search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery]);
+
+  const handleLoadMore = () => {
+    if (hasMoreUsers) {
+      setCurrentPage((prev) => prev + 1);
+    }
+  };
+
+  // Refresh users from backend
   const onRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1000);
+    try {
+      console.log('[Users] Refreshing users from backend...');
+      await actions.fetchAllUsersForBuildings?.();
+      console.log('[Users] Successfully refreshed users');
+    } catch (error) {
+      console.error('[Users] Failed to refresh users:', error);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const getRoleBadgeColor = useCallback((role: UserRole) => {
@@ -171,14 +254,39 @@ export default function UsersScreen() {
       }
     }
 
-    // Validate employee building and floor if assigned
-    if (formData.role === "employee" && formData.buildingId && !formData.floor.trim()) {
-      Alert.alert("Validation Error", "Floor is required when building is assigned");
+    // Validate employee building assignment
+    if (formData.role === "employee") {
+      if (!formData.buildingId) {
+        Alert.alert("Validation Error", "Building assignment is required for maintenance staff");
+        return;
+      }
+    }
+
+    // Validate management building assignment
+    if (formData.role === "management" && !formData.buildingId) {
+      Alert.alert("Validation Error", "Building assignment is required for managers");
       return;
     }
 
     setIsCreating(true);
     try {
+      // Validate required backend fields
+      if (!formData.password.trim()) {
+        Alert.alert("Validation Error", "Password is required");
+        setIsCreating(false);
+        return;
+      }
+      if (!formData.address.trim()) {
+        Alert.alert("Validation Error", "Address is required");
+        setIsCreating(false);
+        return;
+      }
+      if (!formData.nationality.trim()) {
+        Alert.alert("Validation Error", "Nationality is required");
+        setIsCreating(false);
+        return;
+      }
+
       const profile: any = {
         buildingId: formData.buildingId,
       };
@@ -195,18 +303,89 @@ export default function UsersScreen() {
         profile.floor = formData.floor || undefined;
       }
 
-      const payload = {
-        name: formData.name,
+      // Create payload with backend required fields
+      const payload: CreateUserDTO = {
+        fullName: formData.name,
         email: formData.email,
-        phone: formData.phone,
+        password: formData.password,
+        phoneNumber: formData.phone,
+        address: formData.address,
+        nationality: formData.nationality,
         role: formData.role,
+        buildingId: formData.buildingId,
+        apartment: formData.apartment,
+        tower: formData.tower,
         profile,
       };
+
+      // Add tenant-specific fields
+      if (formData.role === "tenant") {
+        payload.unitNumber = formData.apartment; // apartment field is used as unitNumber
+        payload.floorNumber = formData.floor;    // floor field is used as floorNumber
+        payload.entranceDate = formData.entranceDate;
+      }
 
       if (editingUser) {
         await actions.adminUpdateUser?.(editingUser.id, payload as any);
       } else {
-        await actions.createUser(payload as any);
+        const response = await actions.createUser(payload);
+
+        // If creating maintenance staff (employee), assign to building
+        if (formData.role === "employee" && formData.buildingId && response?.id) {
+          try {
+            const staffId = typeof response.id === 'string'
+              ? parseInt(response.id.replace(/\D/g, ''), 10)
+              : response.id;
+
+            const buildingId = typeof formData.buildingId === 'string'
+              ? parseInt(formData.buildingId.replace(/\D/g, ''), 10)
+              : formData.buildingId;
+
+            if (!isNaN(staffId) && !isNaN(buildingId)) {
+              await actions.assignMaintenanceStaffToBuilding?.(buildingId, staffId);
+            }
+          } catch (assignError) {
+            console.error('[Users] Failed to assign maintenance staff to building:', assignError);
+            // Don't fail the entire operation - user is created, just not assigned
+            Alert.alert(
+              "Partial Success",
+              "Maintenance staff created successfully, but building assignment failed. You can assign them manually later."
+            );
+            setShowCreateModal(false);
+            setFormData(createInitialFormState(defaultBuildingId));
+            setEditingUser(null);
+            setIsCreating(false);
+            return;
+          }
+        }
+
+        // If creating manager, assign to building
+        if (formData.role === "management" && formData.buildingId && response?.id) {
+          try {
+            const managerId = typeof response.id === 'string'
+              ? parseInt(response.id.replace(/\D/g, ''), 10)
+              : response.id;
+
+            const buildingId = typeof formData.buildingId === 'string'
+              ? parseInt(formData.buildingId.replace(/\D/g, ''), 10)
+              : formData.buildingId;
+
+            if (!isNaN(managerId) && !isNaN(buildingId)) {
+              await actions.assignManagerToBuilding?.(String(buildingId), String(managerId));
+            }
+          } catch (assignError) {
+            console.error('[Users] Failed to assign manager to building:', assignError);
+            Alert.alert(
+              "Partial Success",
+              "Manager created successfully, but building assignment failed. You can assign them manually later."
+            );
+            setShowCreateModal(false);
+            setFormData(createInitialFormState(defaultBuildingId));
+            setEditingUser(null);
+            setIsCreating(false);
+            return;
+          }
+        }
       }
 
       Alert.alert("Success", editingUser ? "User updated successfully" : "User created successfully");
@@ -214,67 +393,111 @@ export default function UsersScreen() {
       // Reset form
       setFormData(createInitialFormState(defaultBuildingId));
       setEditingUser(null);
-    } catch (error) {
+
+      // Refresh users list from backend to get the latest data
+      console.log('[Users] Refreshing users list after creation...');
+      try {
+        await actions.fetchAllUsersForBuildings?.();
+        console.log('[Users] Successfully refreshed users list');
+      } catch (refreshError) {
+        console.error('[Users] Failed to refresh users list:', refreshError);
+        // Don't fail the operation - user was created successfully
+      }
+    } catch (error: any) {
       console.error("Failed to create user:", error);
-      Alert.alert("Error", "Failed to save user");
+      Alert.alert("Error", error?.message || "Failed to save user");
     } finally {
       setIsCreating(false);
     }
   };
 
   const startEditUser = (user: User) => {
-    setEditingUser(user);
-    setShowCreateModal(true);
+    // Service providers should be edited in the Service Providers screen
+    if (user.role === 'service_provider') {
+      Alert.alert(
+        "Edit Service Provider",
+        "Service providers should be edited in the Service Providers screen with their specialized fields (Company Name, Specialty, etc.).",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Go to Service Providers",
+            onPress: () => {
+              setShowUserInfoModal(false);
+              setSelectedUser(null);
+              router.push('/(admin)/service-providers');
+            },
+          },
+        ]
+      );
+      return;
+    }
+
+    console.log('[Users] ========== EDIT USER DEBUG ==========');
+    console.log('[Users] Full user object:', JSON.stringify(user, null, 2));
+
     const profile = user.profile || {};
-    setFormData({
-      name: user.name || "",
+    const userAny = user as any;
+
+    console.log('[Users] Extracted values:');
+    console.log('  - name:', user.name, '|| fullName:', userAny.fullName);
+    console.log('  - email:', user.email);
+    console.log('  - phone:', user.phone, '|| phoneNumber:', userAny.phoneNumber, '|| profile.phone:', profile.phone);
+    console.log('  - address:', userAny.address, '|| profile.address:', profile.address);
+    console.log('  - nationality:', userAny.nationality, '|| profile.nationality:', profile.nationality);
+    console.log('  - role:', user.role);
+    console.log('  - buildingId:', profile.buildingId);
+    console.log('  - tower:', profile.tower);
+    console.log('  - floor:', profile.floor, '|| floorNumber:', userAny.floorNumber);
+    console.log('  - apartment:', profile.apartment, '|| unitNumber:', userAny.unitNumber);
+    console.log('  - emergencyContact:', profile.emergencyContact);
+    console.log('  - emergencyPhone:', profile.emergencyPhone);
+
+    const editFormData = {
+      name: user.name || userAny.fullName || "",
       email: user.email || "",
-      phone: user.phone || "",
+      phone: user.phone || userAny.phoneNumber || profile.phone || "",
+      password: "", // Don't pre-fill password for security
+      address: userAny.address || profile.address || "",
+      nationality: userAny.nationality || profile.nationality || "",
       role: user.role as UserRole,
       buildingId: profile.buildingId || defaultBuildingId,
       tower: profile.tower || "",
-      floor: profile.floor || "",
-      apartment: profile.apartment || "",
+      floor: profile.floor || userAny.floorNumber || "",
+      apartment: profile.apartment || userAny.unitNumber || "",
       emergencyContact: profile.emergencyContact || "",
       emergencyPhone: profile.emergencyPhone || "",
-    });
+      entranceDate: userAny.entranceDate || new Date().toISOString(),
+    };
+
+    console.log('[Users] Final form data to be set:', JSON.stringify(editFormData, null, 2));
+    console.log('[Users] ========================================');
+
+    setEditingUser(user);
+    setFormData(editFormData);
+    setShowCreateModal(true);
   };
 
   const columns = useMemo(
-    () =>
-      measure("Build Admin/Users columns", () => [
-        {
-          key: "name",
-          label: "Name",
-          render: (user: User) => <Text style={styles.cellText}>{user.name}</Text>,
-          width: isCompact ? undefined : Math.min(280, width * 0.3),
-        },
-        {
-          key: "email",
-          label: "Email",
-          render: (user: User) => (
-            <Text style={styles.cellTextSmall} numberOfLines={1}>
-              {user.email}
-            </Text>
-          ),
-          width: isCompact ? undefined : Math.min(320, width * 0.35),
-        },
-        {
-          key: "role",
-          label: "Role",
-          render: (user: User) => {
-            const roleColors = getRoleBadgeColor(user.role);
-            return (
-              <View style={[styles.roleBadge, { backgroundColor: roleColors.bg }]}>
-                <Text style={[styles.roleBadgeText, { color: roleColors.text }]}>
-                  {user.role.toUpperCase()}
-                </Text>
-              </View>
-            );
-          },
-          width: isCompact ? undefined : 120,
-        },
-      ]),
+    () => [
+      {
+        key: "name",
+        label: "Name",
+        render: (user: User) => <NameCell user={user} />,
+        width: isCompact ? undefined : Math.min(280, width * 0.3),
+      },
+      {
+        key: "email",
+        label: "Email",
+        render: (user: User) => <EmailCell user={user} />,
+        width: isCompact ? undefined : Math.min(320, width * 0.35),
+      },
+      {
+        key: "role",
+        label: "Role",
+        render: (user: User) => <RoleBadge role={user.role} colors={getRoleBadgeColor(user.role)} />,
+        width: isCompact ? undefined : 120,
+      },
+    ],
     [getRoleBadgeColor, isCompact, width],
   );
 
@@ -313,9 +536,9 @@ export default function UsersScreen() {
           style={styles.tableContainer}
         >
           <EntityTable
-            data={filteredUsers}
+            data={paginatedUsers}
             columns={columns}
-            getId={(user) => user.id || user.email}
+            getId={(user) => user.email}
             onRowPress={handleUserPress}
             emptyMessage="No users found"
             searchPlaceholder="Search by name, email, or role..."
@@ -323,6 +546,23 @@ export default function UsersScreen() {
             refreshing={refreshing}
             onRefresh={onRefresh}
           />
+
+          {/* Pagination Controls */}
+          {hasMoreUsers && paginatedUsers.length > 0 && (
+            <TouchableOpacity style={styles.loadMoreButton} onPress={handleLoadMore}>
+              <Text style={styles.loadMoreButtonText}>
+                Load More ({remainingUsers} remaining)
+              </Text>
+              <Ionicons name="chevron-down" size={16} color="#7034FF" />
+            </TouchableOpacity>
+          )}
+          {paginatedUsers.length > 0 && !hasMoreUsers && (
+            <View style={styles.endReachedFooter}>
+              <Text style={styles.endReachedText}>
+                Showing all {paginatedUsers.length} users
+              </Text>
+            </View>
+          )}
         </Animated.View>
       </View>
 

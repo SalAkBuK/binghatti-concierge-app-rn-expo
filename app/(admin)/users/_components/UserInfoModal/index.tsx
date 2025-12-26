@@ -100,6 +100,9 @@ export function UserInfoModal({
   // Check if user can be deleted (cannot delete admin/super_admin)
   const canDelete = onDelete && !["admin", "super_admin"].includes(user.role);
 
+  // Check if user can be edited (cannot edit admin/super_admin)
+  const canEdit = onEdit && !["admin", "super_admin"].includes(user.role);
+
   const InfoRow = ({
     icon,
     label,
@@ -380,7 +383,7 @@ export function UserInfoModal({
                 <Text style={modalStyles.deleteButtonText}>Delete</Text>
               </TouchableOpacity>
             )}
-            {onEdit && (
+            {canEdit && (
               <TouchableOpacity
                 style={[modalStyles.footerButton, { backgroundColor: "#2563EB" }]}
                 onPress={() => {
@@ -394,8 +397,8 @@ export function UserInfoModal({
             <TouchableOpacity
               style={[
                 modalStyles.footerButton,
-                (canDelete || onEdit) && { flex: 1 },
-                { backgroundColor: onEdit ? "#6B7280" : "#7034FF" },
+                (canDelete || canEdit) && { flex: 1 },
+                { backgroundColor: canEdit ? "#6B7280" : "#7034FF" },
               ]}
               onPress={onClose}
             >

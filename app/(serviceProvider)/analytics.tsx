@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -14,11 +14,12 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
+import apiService from "../../lib/services/api";
 
 type TimePeriod = "week" | "month" | "year";
 
 export default function AnalyticsScreen() {
-  const { currentUser, jobs } = useApp();
+  const { currentUser } = useApp();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [showSideMenu, setShowSideMenu] = useState(false);
@@ -26,12 +27,75 @@ export default function AnalyticsScreen() {
 
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
 
+  const [requests, setRequests] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchRequests = async () => {
+      if (!currentUser?.id) return;
+      setLoading(true);
+      try {
+        const response = await apiService.get<any>(
+          `/Maintenance/byuser/${currentUser.id}`,
+        );
+        if (!isMounted) return;
+        const data = (response as any)?.data ?? response ?? [];
+        const normalized = Array.isArray(data)
+          ? data.map((item) => {
+              const statusCode = Number(
+                item.status ?? item.requestStatus ?? item.statusId ?? item.Status ?? 0,
+              );
+              let status: string;
+              switch (statusCode) {
+                case 5:
+                  status = "completed";
+                  break;
+                case 6:
+                  status = "cancelled";
+                  break;
+                case 3:
+                  status = "in-progress";
+                  break;
+                case 4:
+                  status = "on-hold";
+                  break;
+                case 2:
+                  status = "assigned";
+                  break;
+                case 1:
+                default:
+                  status = "pending";
+              }
+              const priority = (item.priority || item.priorityLevel || "medium").toString().toLowerCase();
+              return {
+                id: String(item.id || item.requestId || item.maintenanceId || Math.random()),
+                status,
+                priority,
+                createdAt: item.createdAt || item.createdOn || item.dateCreated || new Date().toISOString(),
+                buildingName: item.buildingName || item.building || item.propertyName || "Unknown",
+                actualCost: item.actualCost || item.cost || item.amount || 0,
+                estimatedCost: item.estimatedCost || item.estimate || 0,
+              };
+            })
+          : [];
+        setRequests(normalized);
+      } catch (error) {
+        console.error("[ServiceProviderAnalytics] Failed to fetch requests:", error);
+        if (isMounted) setRequests([]);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    fetchRequests();
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUser?.id]);
+
   // Filter jobs for current service provider
-  const myJobs = useMemo(() => {
-    return (
-      jobs?.filter((job) => job.assignedTo === currentUser?.id) || []
-    );
-  }, [jobs, currentUser]);
+  const myJobs = useMemo(() => requests, [requests]);
 
   // Calculate analytics based on selected period
   const analytics = useMemo(() => {

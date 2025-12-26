@@ -66,9 +66,13 @@ export function SideMenu({ isVisible, onClose }: SideMenuProps) {
     onClose();
   };
 
-const navigateAndClose = (href: RouterPushInput | string) => {
+const navigateAndClose = (href: RouterPushInput | string, useReplace = false) => {
   closeMenu();
-  router.push(href as RouterPushInput);
+  if (useReplace) {
+    router.replace(href as any);
+  } else {
+    router.push(href as RouterPushInput);
+  }
 };
 
   const handleLogout = () => {
@@ -91,70 +95,22 @@ const navigateAndClose = (href: RouterPushInput | string) => {
 
   const tenantMenu: MenuItem[] = [
     {
-      id: "tenant-bookings",
-      title: "My Bookings",
-      icon: "calendar-outline",
-      action: () => navigateAndClose("/(tenant)/my-bookings"),
+      id: "tenant-requests",
+      title: "Requests",
+      icon: "list-outline",
+      action: () => navigateAndClose("/(tenant)/requests"),
     },
     {
-      id: "visitors",
-      title: "Guest Registration",
-      icon: "people-outline",
-      action: () => navigateAndClose("/(tenant)/visitors"),
+      id: "tenant-new-request",
+      title: "New",
+      icon: "add-circle-outline",
+      action: () => navigateAndClose("/(tenant)/new-request"),
     },
     {
-      id: "amenities",
-      title: "Amenities Booking",
-      icon: "fitness-outline",
-      expandable: true,
-      subItems: [
-        {
-          id: "pool",
-          title: "Pool",
-          icon: "water",
-          action: () =>
-            navigateAndClose({
-              pathname: "/(tenant)/amenities",
-              params: { filter: "pool" },
-            }),
-        },
-        {
-          id: "gym",
-          title: "Gym",
-          icon: "fitness",
-          action: () =>
-            navigateAndClose({
-              pathname: "/(tenant)/amenities",
-              params: { filter: "gym" },
-            }),
-        },
-        {
-          id: "sauna",
-          title: "Sauna",
-          icon: "flame",
-          action: () =>
-            navigateAndClose({
-              pathname: "/(tenant)/amenities",
-              params: { filter: "sauna" },
-            }),
-        },
-        {
-          id: "bbq",
-          title: "BBQ",
-          icon: "restaurant",
-          action: () =>
-            navigateAndClose({
-              pathname: "/(tenant)/amenities",
-              params: { filter: "bbq" },
-            }),
-        },
-      ],
-    },
-    {
-      id: "tenant-ratings",
-      title: "My Ratings & Reviews",
-      icon: "star-outline",
-      action: () => navigateAndClose("/(tenant)/my-ratings"),
+      id: "tenant-profile",
+      title: "Profile",
+      icon: "person-outline",
+      action: () => navigateAndClose("/(tenant)/profile"),
     },
     {
       id: "logout",
@@ -174,7 +130,7 @@ const navigateAndClose = (href: RouterPushInput | string) => {
       id: "superadmin-dashboard",
       title: "Dashboard",
       icon: "grid-outline",
-      action: () => navigateAndClose("/(superadmin)"),
+      action: () => navigateAndClose("/(superadmin)", true), // Use replace to reset navigation stack
     },
     {
       id: "superadmin-admins",
@@ -187,12 +143,6 @@ const navigateAndClose = (href: RouterPushInput | string) => {
       title: "Buildings",
       icon: "business-outline",
       action: () => navigateAndClose("/(superadmin)/buildings"),
-    },
-    {
-      id: "superadmin-activity",
-      title: "System Activity",
-      icon: "notifications-outline",
-      action: () => navigateAndClose("/(superadmin)/activity"),
     },
     {
       id: "divider-super-admin",
@@ -220,12 +170,6 @@ const navigateAndClose = (href: RouterPushInput | string) => {
 
   // Regular Admin Menu - Full access
   const adminMenu: MenuItem[] = [
-  {
-    id: "admin-dashboard",
-    title: "Admin Dashboard",
-    icon: "grid-outline",
-    action: () => navigateAndClose("/(admin)"),
-  },
     {
       id: "users",
       title: "User Management",
@@ -283,7 +227,7 @@ const managementMenu: MenuItem[] = [
     id: "management-dashboard",
     title: "Operations Dashboard",
     icon: "analytics-outline",
-    action: () => navigateAndClose("/(management)"),
+    action: () => navigateAndClose("/(management)", true), // Use replace to reset navigation stack
   },
   {
     id: "management-requests",
@@ -297,48 +241,7 @@ const managementMenu: MenuItem[] = [
     icon: "people-outline",
     action: () => navigateAndClose("/(management)/tenants"),
   },
-  {
-    id: "management-units",
-    title: "Building Units",
-    icon: "home-outline",
-    action: () => navigateAndClose("/(management)/units"),
-  },
-  {
-    id: "management-amenities",
-    title: "Amenity Policies",
-    icon: "fitness-outline",
-    action: () => navigateAndClose("/(management)/amenities"),
-  },
-  {
-    id: "management-buildings",
-    title: "Buildings",
-    icon: "business-outline",
-    action: () => navigateAndClose("/(management)/buildings"),
-  },
-  {
-    id: "management-jobs",
-    title: "Jobs & Work Orders",
-    icon: "hammer-outline",
-    action: () => navigateAndClose("/(management)/jobs"),
-  },
-  {
-    id: "management-workforce",
-    title: "Building Employees",
-    icon: "briefcase-outline",
-    action: () => navigateAndClose("/(management)/workforce"),
-  },
-  {
-    id: "management-visitors",
-    title: "Visitors & Deliveries",
-    icon: "people-outline",
-    action: () => navigateAndClose("/(management)/visitors"),
-  },
-  {
-    id: "management-activity",
-    title: "Activity Feed",
-    icon: "notifications-outline",
-    action: () => navigateAndClose("/(management)/activity"),
-  },
+
   {
     id: "management-notices",
     title: "Notices & Alerts",
@@ -354,6 +257,12 @@ const managementMenu: MenuItem[] = [
     title: "",
     icon: "remove",
     action: () => {},
+  },
+  {
+    id: "management-profile",
+    title: "My Profile",
+    icon: "person-outline",
+    action: () => navigateAndClose("/(management)/profile"),
   },
   {
     id: "logout",
@@ -372,19 +281,13 @@ const managementMenu: MenuItem[] = [
       id: "be-dashboard",
       title: "Shift Dashboard",
       icon: "speedometer-outline",
-      action: () => navigateAndClose("/(buildingEmployee)"),
+      action: () => navigateAndClose("/(buildingEmployee)", true), // Use replace to reset navigation stack
     },
     {
       id: "be-jobs",
       title: "Maintenance Jobs",
       icon: "construct-outline",
       action: () => navigateAndClose("/(buildingEmployee)/jobs"),
-    },
-    {
-      id: "be-amenities",
-      title: "Amenity Tasks",
-      icon: "fitness-outline",
-      action: () => navigateAndClose("/(buildingEmployee)/amenities"),
     },
     {
       id: "divider-be",
@@ -415,7 +318,7 @@ const managementMenu: MenuItem[] = [
       id: "sp-dashboard",
       title: "Dashboard",
       icon: "grid-outline",
-      action: () => navigateAndClose("/(serviceProvider)"),
+      action: () => navigateAndClose("/(serviceProvider)", true), // Use replace to reset navigation stack
     },
     {
       id: "sp-jobs",
@@ -424,34 +327,10 @@ const managementMenu: MenuItem[] = [
       action: () => navigateAndClose("/(serviceProvider)/jobs"),
     },
     {
-      id: "sp-schedule",
-      title: "Schedule",
-      icon: "calendar-outline",
-      action: () => navigateAndClose("/(serviceProvider)/schedule"),
-    },
-    {
-      id: "sp-team",
-      title: "Team",
-      icon: "people-outline",
-      action: () => navigateAndClose("/(serviceProvider)/team"),
-    },
-    {
       id: "sp-service-areas",
       title: "Service Areas",
       icon: "location-outline",
       action: () => navigateAndClose("/(serviceProvider)/service-areas"),
-    },
-    {
-      id: "sp-analytics",
-      title: "Analytics & Reports",
-      icon: "stats-chart-outline",
-      action: () => navigateAndClose("/(serviceProvider)/analytics"),
-    },
-    {
-      id: "sp-ratings",
-      title: "Ratings & Reviews",
-      icon: "star-outline",
-      action: () => navigateAndClose("/(serviceProvider)/ratings"),
     },
     {
       id: "divider-sp",
@@ -482,7 +361,7 @@ const managementMenu: MenuItem[] = [
       id: "emp-dashboard",
       title: "Dashboard",
       icon: "home-outline",
-      action: () => navigateAndClose("/(employee)"),
+      action: () => navigateAndClose("/(employee)", true), // Use replace to reset navigation stack
     },
     {
       id: "emp-jobs",
@@ -536,7 +415,7 @@ const managementMenu: MenuItem[] = [
     currentUser?.role === "super_admin"
       ? superAdminMenu
       : currentUser?.role === "admin"
-        ? adminMenu
+        ? adminMenu.filter(item => item.id !== "permissions") // Hide permissions for admin
         : currentUser?.role === "management"
           ? managementMenu
           : currentUser?.role === "building_employee"
@@ -657,6 +536,7 @@ const managementMenu: MenuItem[] = [
         {/* Menu Items */}
         <ScrollView
           style={styles.menuItems}
+          contentContainerStyle={styles.menuItemsContent}
           showsVerticalScrollIndicator={false}
           bounces={false}
         >
@@ -820,6 +700,9 @@ const styles = StyleSheet.create({
   menuItems: {
     flex: 1,
     paddingTop: 20,
+  },
+  menuItemsContent: {
+    paddingBottom: 100, // Add padding to ensure last items are visible above footer
   },
   menuItem: {
     flexDirection: "row",

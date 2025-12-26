@@ -280,13 +280,17 @@ const styles = StyleSheet.create({
   providerHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
+    alignItems: "center",
     gap: 12,
   },
   providerHeader: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
+  },
+  providerInfo: {
+    flex: 1,
+    minWidth: 0,
   },
   providerAvatar: {
     width: 48,
@@ -311,6 +315,12 @@ const styles = StyleSheet.create({
     color: "#6B7280",
     marginTop: 4,
   },
+  manageButtonsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexShrink: 0,
+  },
   providerSpecialty: {
     fontSize: 13,
     color: "#6B7280",
@@ -325,6 +335,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     borderColor: "#C7D2FE",
+    flexShrink: 0,
   },
   manageButtonText: {
     fontSize: 13,

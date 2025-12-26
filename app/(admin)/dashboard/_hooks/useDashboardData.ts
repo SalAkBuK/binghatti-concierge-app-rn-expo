@@ -10,6 +10,9 @@ export interface UseDashboardDataResult {
   managedBuildings: ReturnType<
     NonNullable<ReturnType<typeof useApp>["actions"]["getManagedBuildings"]>
   >;
+  adminAssignedBuildings: ReturnType<
+    NonNullable<ReturnType<typeof useApp>["actions"]["getAdminAssignedBuildings"]>
+  >;
   hasUnreadNotifications: boolean;
   isManagement: boolean;
   managementBaseRoute: string;
@@ -23,6 +26,10 @@ export function useDashboardData(): UseDashboardDataResult {
   // PERFORMANCE FIX: Memoize computed values to prevent re-computation
   const isManagement = useMemo(
     () => currentUser?.role === "management",
+    [currentUser?.role]
+  );
+  const isAdminRole = useMemo(
+    () => currentUser?.role === "admin" || currentUser?.role === "super_admin",
     [currentUser?.role]
   );
 
@@ -39,6 +46,14 @@ export function useDashboardData(): UseDashboardDataResult {
     [isManagement, actions.getManagedBuildings]
   );
 
+  const adminAssignedBuildings = useMemo(
+    () =>
+      !isManagement && isAdminRole
+        ? actions.getAdminAssignedBuildings?.() ?? []
+        : [],
+    [isManagement, isAdminRole, actions.getAdminAssignedBuildings]
+  );
+
   const hasUnreadNotifications = useMemo(() => {
     const userNotifications = filterNotificationsByUser(
       notifications || [],
@@ -51,6 +66,7 @@ export function useDashboardData(): UseDashboardDataResult {
     currentUser,
     analytics,
     managedBuildings,
+    adminAssignedBuildings,
     hasUnreadNotifications,
     isManagement,
     managementBaseRoute,

@@ -1,10 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(\"C:\\Users\\13463\\OneDrive\\Documents\\CodeFier\\binghatti-concierge-app-rn-expo\\app\\(admin)\\unit-types\\styles.ts\")",
-      "Bash(\"C:\\Users\\13463\\OneDrive\\Documents\\CodeFier\\binghatti-concierge-app-rn-expo\\app\\(admin)\\unit-types\\index.tsx\")",
-      "Bash(\"C:\\Users\\13463\\OneDrive\\Documents\\CodeFier\\binghatti-concierge-app-rn-expo\\app\\(admin)\\tenants\\styles.ts\")",
-      "Bash(\"C:\\Users\\13463\\OneDrive\\Documents\\CodeFier\\binghatti-concierge-app-rn-expo\\app\\(admin)\\tenants\\index.tsx\")",
+      "Bash(\"C:\\\\Users\\\\13463\\\\OneDrive\\\\Documents\\\\CodeFier\\\\binghatti-concierge-app-rn-expo\\\\app\\\\\\(admin\\)\\\\unit-types\\\\styles.ts\")",
+      "Bash(\"C:\\\\Users\\\\13463\\\\OneDrive\\\\Documents\\\\CodeFier\\\\binghatti-concierge-app-rn-expo\\\\app\\\\\\(admin\\)\\\\unit-types\\\\index.tsx\")",
+      "Bash(\"C:\\\\Users\\\\13463\\\\OneDrive\\\\Documents\\\\CodeFier\\\\binghatti-concierge-app-rn-expo\\\\app\\\\\\(admin\\)\\\\tenants\\\\styles.ts\")",
+      "Bash(\"C:\\\\Users\\\\13463\\\\OneDrive\\\\Documents\\\\CodeFier\\\\binghatti-concierge-app-rn-expo\\\\app\\\\\\(admin\\)\\\\tenants\\\\index.tsx\")",
+
       "Bash(diff:*)",
       "Bash(npx expo:*)",
       "Bash(npm start -- --clear)",
@@ -14,17 +15,21 @@
       "Bash(xcopy:*)",
       "Bash(find:*)",
       "Bash(findstr:*)",
-      "Bash(dir /s /b \"C:\\Users\\13463\\OneDrive\\Documents\\CodeFier\\binghatti-concierge-app-rn-expo\\app\\(management)\\billing\\hooks\" 2)",
+
+      "Bash(dir /s /b \"C:\\\\Users\\\\13463\\\\OneDrive\\\\Documents\\\\CodeFier\\\\binghatti-concierge-app-rn-expo\\\\app\\\\\\(management\\)\\\\billing\\\\hooks\" 2)",
       "Bash(nul)",
-      "Bash(dir /b \"C:\\Users\\13463\\OneDrive\\Documents\\CodeFier\\binghatti-concierge-app-rn-expo\\app\\(management)\")",
-      "Bash(dir /b \"C:\\Users\\13463\\OneDrive\\Documents\\CodeFier\\binghatti-concierge-app-rn-expo\\app\\(management)\\visitors\")",
-      "Bash(dir /b \"C:\\Users\\13463\\OneDrive\\Documents\\CodeFier\\binghatti-concierge-app-rn-expo\\app\\(management)\\parcels\")",
-      "Bash(dir /b \"C:\\Users\\13463\\OneDrive\\Documents\\CodeFier\\binghatti-concierge-app-rn-expo\\app\\(management)\\billing\")",
-      "Bash(dir /b \"C:\\Users\\13463\\OneDrive\\Documents\\CodeFier\\binghatti-concierge-app-rn-expo\\app\\(management)\\maintenance\")",
-      "Bash(dir /b \"C:\\Users\\13463\\OneDrive\\Documents\\CodeFier\\binghatti-concierge-app-rn-expo\\app\\(admin)\")",
-      "Bash(dir /b \"app\\(admin)\" 2)",
+
+      "Bash(dir /b \"C:\\\\Users\\\\13463\\\\OneDrive\\\\Documents\\\\CodeFier\\\\binghatti-concierge-app-rn-expo\\\\app\\\\\\(management\\)\")",
+      "Bash(dir /b \"C:\\\\Users\\\\13463\\\\OneDrive\\\\Documents\\\\CodeFier\\\\binghatti-concierge-app-rn-expo\\\\app\\\\\\(management\\)\\\\visitors\")",
+      "Bash(dir /b \"C:\\\\Users\\\\13463\\\\OneDrive\\\\Documents\\\\CodeFier\\\\binghatti-concierge-app-rn-expo\\\\app\\\\\\(management\\)\\\\parcels\")",
+      "Bash(dir /b \"C:\\\\Users\\\\13463\\\\OneDrive\\\\Documents\\\\CodeFier\\\\binghatti-concierge-app-rn-expo\\\\app\\\\\\(management\\)\\\\billing\")",
+      "Bash(dir /b \"C:\\\\Users\\\\13463\\\\OneDrive\\\\Documents\\\\CodeFier\\\\binghatti-concierge-app-rn-expo\\\\app\\\\\\(management\\)\\\\maintenance\")",
+
+      "Bash(dir /b \"C:\\\\Users\\\\13463\\\\OneDrive\\\\Documents\\\\CodeFier\\\\binghatti-concierge-app-rn-expo\\\\app\\\\\\(admin\\)\")",
+      "Bash(dir /b \"app\\\\\\(admin\\)\" 2)",
       "Bash(mkdir:*)",
-      "Bash(dir /s /b /ad \"C:\\Users\\13463\\OneDrive\\Documents\\CodeFier\\binghatti-concierge-app-rn-expo\\app\\(admin)\")",
+      "Bash(dir /s /b /ad \"C:\\\\Users\\\\13463\\\\OneDrive\\\\Documents\\\\CodeFier\\\\binghatti-concierge-app-rn-expo\\\\app\\\\\\(admin\\)\")",
+
       "Bash(powershell:*)",
       "Bash(npx expo-doctor)",
       "Bash(npm run typecheck:*)",
@@ -32,14 +37,17 @@
       "Bash(npm install:*)",
       "Bash(npm run doctor:*)",
       "Bash(adb install:*)",
+
       "Bash(ren units.tsx +units.tsx)",
       "Bash(ren amenities.tsx +amenities.tsx)",
       "Bash(ren buildings.tsx +buildings.tsx)",
       "Bash(ren workforce.tsx +workforce.tsx)",
       "Bash(ren activity.tsx +activity.tsx)",
       "Bash(ren shifts.tsx +shifts.tsx)",
+
       "Bash(./gradlew tasks:*)",
-      "Bash(./gradlew:*)"
+      "Bash(./gradlew:*)",
+      "Bash(touch:*)"
     ],
     "deny": [],
     "ask": []

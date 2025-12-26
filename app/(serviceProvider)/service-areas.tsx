@@ -1,12 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   RefreshControl,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -18,6 +18,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
+import apiService from "../../lib/services/api";
 
 const SPECIALTY_OPTIONS = [
   { id: "plumbing", label: "Plumbing", icon: "water" as const },
@@ -37,37 +38,65 @@ export default function ServiceAreasScreen() {
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [selectedSpecialties, setSelectedSpecialties] = useState<Set<string>>(
     new Set(["plumbing", "electrical"]) // Mock initial selection
   );
 
-  // Get service provider's assigned buildings
-  const serviceProviderId = currentUser?.profile?.serviceProviderId || `sp-profile-${currentUser?.id}`;
-  
-  const assignments = useMemo(
-    () => actions.getServiceProviderBuildingAssignments?.(serviceProviderId) || [],
-    [actions, serviceProviderId]
-  );
-  
-  const allBuildings = useMemo(
-    () => actions.getBuildings?.() || [],
-    [actions]
-  );
+  // State for storing fetched buildings
+  const [assignedBuildings, setAssignedBuildings] = useState<Array<{
+    id: number;
+    name: string;
+    address: string;
+    city: string;
+    unintsCount: number;
+    isActive: boolean;
+  }>>([]);
 
-  // Get assigned buildings with their activation status
-  const assignedBuildings = useMemo(() => {
-    const assignedBuildingIds = assignments.map((a) => a.buildingId);
-    return allBuildings.filter((b) => assignedBuildingIds.includes(b.id));
-  }, [allBuildings, assignments]);
+  // Get service provider ID from current user
+  const serviceProviderId = currentUser?.id;
 
   // Track active/inactive status for each building
-  const [buildingStatus, setBuildingStatus] = useState<Record<string, boolean>>(() => {
-    const initialStatus: Record<string, boolean> = {};
-    assignments.forEach((assignment) => {
-      initialStatus[assignment.buildingId] = assignment.status === "active";
-    });
-    return initialStatus;
-  });
+  const [buildingStatus, setBuildingStatus] = useState<Record<string, boolean>>({});
+
+  // Fetch buildings assigned to this service provider
+  useEffect(() => {
+    const fetchBuildings = async () => {
+      if (!serviceProviderId) {
+        console.log('[ServiceAreas] No service provider ID found');
+        setLoading(false);
+        return;
+      }
+
+      try {
+        setLoading(true);
+        console.log('[ServiceAreas] Fetching buildings for provider:', serviceProviderId);
+        const response = await apiService.maintenance.getBuildingsByServiceProvider(serviceProviderId);
+
+        if (response.success && response.data) {
+          console.log('[ServiceAreas] Buildings fetched successfully:', response.data.length);
+          setAssignedBuildings(response.data);
+
+          // Initialize building status (all active by default based on API isActive field)
+          const initialStatus: Record<string, boolean> = {};
+          response.data.forEach((building) => {
+            initialStatus[String(building.id)] = building.isActive;
+          });
+          setBuildingStatus(initialStatus);
+        } else {
+          console.error('[ServiceAreas] Failed to fetch buildings:', response);
+          Alert.alert('Error', 'Failed to load assigned buildings');
+        }
+      } catch (error) {
+        console.error('[ServiceAreas] Error fetching buildings:', error);
+        Alert.alert('Error', 'Failed to load assigned buildings');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchBuildings();
+  }, [serviceProviderId]);
 
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
 
@@ -77,14 +106,36 @@ export default function ServiceAreasScreen() {
     const query = searchQuery.toLowerCase();
     return assignedBuildings.filter((building) =>
       building.name.toLowerCase().includes(query) ||
-      building.location?.toLowerCase().includes(query)
+      building.address?.toLowerCase().includes(query) ||
+      building.city?.toLowerCase().includes(query)
     );
   }, [assignedBuildings, searchQuery]);
 
   const onRefresh = async () => {
+    if (!serviceProviderId) return;
+
     setRefreshing(true);
-    // Simulate refresh - in real app, would fetch new data
-    setTimeout(() => setRefreshing(false), 1000);
+    try {
+      console.log('[ServiceAreas] Refreshing buildings for provider:', serviceProviderId);
+      const response = await apiService.maintenance.getBuildingsByServiceProvider(serviceProviderId);
+
+      if (response.success && response.data) {
+        console.log('[ServiceAreas] Buildings refreshed successfully:', response.data.length);
+        setAssignedBuildings(response.data);
+
+        // Update building status with fresh data
+        const updatedStatus: Record<string, boolean> = {};
+        response.data.forEach((building) => {
+          updatedStatus[String(building.id)] = building.isActive;
+        });
+        setBuildingStatus(updatedStatus);
+      }
+    } catch (error) {
+      console.error('[ServiceAreas] Error refreshing buildings:', error);
+      Alert.alert('Error', 'Failed to refresh buildings');
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const toggleSpecialty = (specialtyId: string) => {
@@ -96,14 +147,6 @@ export default function ServiceAreasScreen() {
         newSet.add(specialtyId);
       }
       return newSet;
-    });
-  };
-
-  const toggleBuildingStatus = (buildingId: string) => {
-    setBuildingStatus((prev) => {
-      const newStatus = { ...prev };
-      newStatus[buildingId] = !prev[buildingId];
-      return newStatus;
     });
   };
 
@@ -216,7 +259,7 @@ export default function ServiceAreasScreen() {
           {/* Summary Stats */}
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{assignments.length}</Text>
+              <Text style={styles.statValue}>{assignedBuildings.length}</Text>
               <Text style={styles.statLabel}>Assigned Buildings</Text>
             </View>
             <View style={styles.statItem}>
@@ -225,7 +268,7 @@ export default function ServiceAreasScreen() {
             </View>
             <View style={styles.statItem}>
               <Text style={styles.statValue}>
-                {assignments.length - activeCount}
+                {assignedBuildings.length - activeCount}
               </Text>
               <Text style={styles.statLabel}>Paused</Text>
             </View>
@@ -249,11 +292,15 @@ export default function ServiceAreasScreen() {
           </View>
 
           {/* Buildings List */}
-          {filteredBuildings.length > 0 ? (
+          {loading ? (
+            <View style={styles.emptyState}>
+              <ActivityIndicator size="large" color="#3B82F6" />
+              <Text style={styles.emptyStateText}>Loading buildings...</Text>
+            </View>
+          ) : filteredBuildings.length > 0 ? (
             <View style={styles.buildingsList}>
               {filteredBuildings.map((building, index) => {
-                const assignment = assignments.find((a) => a.buildingId === building.id);
-                const isActive = buildingStatus[building.id] ?? true;
+                const isActive = buildingStatus[String(building.id)] ?? true;
                 return (
                   <Animated.View
                     key={building.id}
@@ -271,65 +318,39 @@ export default function ServiceAreasScreen() {
                       />
                     </View>
                     <View style={styles.buildingInfo}>
-                      <View style={styles.buildingHeader}>
-                        <View style={styles.buildingTitleRow}>
-                          <Text style={[
-                            styles.buildingName,
-                            !isActive && styles.buildingNameInactive,
-                          ]}>
-                            {building.name}
-                          </Text>
-                          {!isActive && (
-                            <View style={styles.pausedBadge}>
-                              <Ionicons name="pause-circle" size={14} color="#F59E0B" />
-                              <Text style={styles.pausedBadgeText}>Paused</Text>
-                            </View>
-                          )}
-                        </View>
-                        <Switch
-                          value={isActive}
-                          onValueChange={() => toggleBuildingStatus(building.id)}
-                          trackColor={{ false: "#E5E7EB", true: "#93C5FD" }}
-                          thumbColor={isActive ? "#3B82F6" : "#9CA3AF"}
-                          ios_backgroundColor="#E5E7EB"
-                        />
+                      <View style={styles.buildingTitleRow}>
+                        <Text style={[
+                          styles.buildingName,
+                          !isActive && styles.buildingNameInactive,
+                        ]}>
+                          {building.name}
+                        </Text>
+                        {!isActive && (
+                          <View style={styles.pausedBadge}>
+                            <Ionicons name="pause-circle" size={14} color="#F59E0B" />
+                            <Text style={styles.pausedBadgeText}>Paused</Text>
+                          </View>
+                        )}
                       </View>
                       <Text style={styles.buildingLocation}>
-                        {building.address || "No location"}
+                        {building.address ? `${building.address}, ${building.city}` : "No location"}
                       </Text>
                       <View style={styles.buildingMeta}>
                         <View style={styles.buildingMetaItem}>
                           <Ionicons name="home-outline" size={14} color="#64748B" />
                           <Text style={styles.buildingMetaText}>
-                            {building.totalUnits || 0} units
+                            {building.unintsCount || 0} units
                           </Text>
                         </View>
-                        {assignment && (
-                          <>
-                            <View style={styles.buildingMetaItem}>
-                              <Ionicons name="person-outline" size={14} color="#3B82F6" />
-                              <Text style={styles.buildingMetaText}>
-                                By: {assignment.assignedByName || "Admin"}
-                              </Text>
-                            </View>
-                            <View style={styles.buildingMetaItem}>
-                              <Ionicons name="calendar-outline" size={14} color="#10B981" />
-                              <Text style={styles.buildingMetaText}>
-                                {new Date(assignment.assignedAt).toLocaleDateString()}
-                              </Text>
-                            </View>
-                          </>
+                        {building.city && (
+                          <View style={styles.buildingMetaItem}>
+                            <Ionicons name="location-outline" size={14} color="#3B82F6" />
+                            <Text style={styles.buildingMetaText}>
+                              {building.city}
+                            </Text>
+                          </View>
                         )}
                       </View>
-                      {assignment && assignment.specialties && assignment.specialties.length > 0 && (
-                        <View style={styles.specialtiesBadges}>
-                          {assignment.specialties.map((specialty, idx) => (
-                            <View key={idx} style={styles.specialtyBadge}>
-                              <Text style={styles.specialtyBadgeText}>{specialty}</Text>
-                            </View>
-                          ))}
-                        </View>
-                      )}
                       {!isActive && (
                         <View style={styles.infoBox}>
                           <Ionicons name="information-circle" size={16} color="#F59E0B" />

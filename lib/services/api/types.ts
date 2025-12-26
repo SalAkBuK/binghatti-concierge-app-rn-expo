@@ -6,6 +6,7 @@ import type {
   Notification,
   LoginDTO,
   RegisterDTO,
+  ResetPasswordDTO,
   CreateRequestDTO,
   UpdateRequestDTO,
   ApiResponse,
@@ -56,6 +57,7 @@ export interface AuthApi {
   register(userData: RegisterDTO): Promise<ApiResponse>;
   logout(): Promise<ApiResponse>;
   refreshToken(): Promise<AuthResponse>;
+  resetPassword(data: ResetPasswordDTO): Promise<ApiResponse>;
   getProfile(): Promise<ApiResponse<User>>;
   updateProfile(userData: Partial<User>): Promise<ApiResponse<User>>;
 }

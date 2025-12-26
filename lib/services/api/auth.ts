@@ -6,6 +6,7 @@ import type { AuthApi } from "./types";
 import type {
   LoginDTO,
   RegisterDTO,
+  ResetPasswordDTO,
   AuthResponse,
   ApiResponse,
   User,
@@ -90,6 +91,19 @@ export class AuthApiService extends BaseApiService implements AuthApi {
     } catch (error) {
       // Clear token if refresh fails
       await this.clearAuthToken();
+      throw error;
+    }
+  }
+
+  async resetPassword(data: ResetPasswordDTO): Promise<ApiResponse> {
+    try {
+      const response = await this.post<ApiResponse>(
+        API_ENDPOINTS.auth.resetPassword,
+        data,
+      );
+
+      return response;
+    } catch (error) {
       throw error;
     }
   }

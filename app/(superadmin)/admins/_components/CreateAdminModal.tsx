@@ -17,6 +17,9 @@ interface AdminFormData {
   name: string;
   email: string;
   phone: string;
+  password: string;
+  address: string;
+  nationality: string;
 }
 
 interface CreateAdminModalProps {
@@ -38,7 +41,13 @@ export function CreateAdminModal({
   onSubmit,
   mode,
 }: CreateAdminModalProps) {
-  const isFormValid = formData.name.trim() && formData.email.trim();
+  const isFormValid =
+    (formData.name || "").trim() &&
+    (formData.email || "").trim() &&
+    (formData.phone || "").trim() &&
+    (formData.address || "").trim() &&
+    (formData.nationality || "").trim() &&
+    (mode === "edit" || (formData.password || "").trim());
 
   return (
     <Modal
@@ -87,13 +96,53 @@ export function CreateAdminModal({
             </View>
 
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Phone</Text>
+              <Text style={styles.label}>Phone *</Text>
               <TextInput
                 style={styles.input}
                 placeholder="+971XXXXXXXXX"
                 value={formData.phone}
                 onChangeText={(text) => setFormData({ ...formData, phone: text })}
                 keyboardType="phone-pad"
+                editable={!isLoading}
+              />
+            </View>
+
+            {mode === "create" && (
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Password *</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter password"
+                  value={formData.password}
+                  onChangeText={(text) => setFormData({ ...formData, password: text })}
+                  secureTextEntry
+                  autoCapitalize="none"
+                  editable={!isLoading}
+                />
+              </View>
+            )}
+
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Address *</Text>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                placeholder="Enter address"
+                value={formData.address}
+                onChangeText={(text) => setFormData({ ...formData, address: text })}
+                multiline
+                numberOfLines={3}
+                textAlignVertical="top"
+                editable={!isLoading}
+              />
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Nationality *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g., UAE, USA, UK"
+                value={formData.nationality}
+                onChangeText={(text) => setFormData({ ...formData, nationality: text })}
                 editable={!isLoading}
               />
             </View>
@@ -187,6 +236,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#111827",
     backgroundColor: "#FFFFFF",
+  },
+  textArea: {
+    minHeight: 80,
+    paddingTop: 12,
   },
   helperText: {
     fontSize: 12,
