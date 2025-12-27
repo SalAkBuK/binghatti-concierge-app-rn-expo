@@ -7,7 +7,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   useWindowDimensions,
   View,
@@ -42,23 +41,18 @@ export default function BuildingsScreen() {
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [isCreating, setIsCreating] = useState(false);
   const [showManagerModal, setShowManagerModal] = useState(false);
   const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null);
   const [isAssigning, setIsAssigning] = useState(false);
   const [detailsBuilding, setDetailsBuilding] = useState<Building | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const isManagement = currentUser?.role === "management";
-  const hasScopedBuildings =
-    currentUser?.role === "management" || currentUser?.role === "super_admin";
+  const hasScopedBuildings = currentUser?.role === "management";
   const managedBuildingIds = useMemo(
     () => (hasScopedBuildings ? actions.getManagedBuildingIds?.() ?? [] : []),
     [actions, hasScopedBuildings],
   );
-  const canManageBuildings = ["admin", "super_admin"].includes(
-    currentUser?.role ?? "",
-  );
+  const canManageBuildings = currentUser?.role === "management";
 
   // Create building form state
   const [formData, setFormData] = useState({
@@ -119,54 +113,6 @@ export default function BuildingsScreen() {
     return colors[status as keyof typeof colors] || colors.active;
   };
 
-  const handleCreateBuilding = async () => {
-    if (!canManageBuildings) {
-      Alert.alert("Permission Denied", "Only admins can create buildings");
-      return;
-    }
-
-    // Validate form
-    if (!formData.name.trim() || !formData.address.trim() || !formData.city.trim() || !formData.country.trim()) {
-      Alert.alert("Validation Error", "Name, address, city, and country are required");
-      return;
-    }
-
-    const totalUnits = parseInt(formData.totalUnits, 10);
-    if (isNaN(totalUnits) || totalUnits <= 0) {
-      Alert.alert("Validation Error", "Total units must be a positive number");
-      return;
-    }
-
-    setIsCreating(true);
-    try {
-      await actions.createBuilding({
-        name: formData.name,
-        address: formData.address,
-        city: formData.city,
-        country: formData.country,
-        totalUnits,
-        managerId: formData.managerId || undefined,
-      });
-
-      Alert.alert("Success", "Building created successfully");
-      setShowCreateModal(false);
-      // Reset form
-      setFormData({
-        name: "",
-        address: "",
-        city: "",
-        country: "",
-        managerId: "",
-        totalUnits: "",
-        status: "active",
-      });
-    } catch (error) {
-      const errorMessage = getUserErrorMessage(error);
-      Alert.alert("Error", errorMessage);
-    } finally {
-      setIsCreating(false);
-    }
-  };
 
   const handleAssignManager = async () => {
     if (!canManageBuildings) {
@@ -613,19 +559,6 @@ export default function BuildingsScreen() {
           notificationRoute={MANAGEMENT_NOTIFICATION_ROUTE}
         />
 
-        {/* Create Button */}
-        {canManageBuildings && (
-          <Animated.View entering={FadeInDown.delay(50).duration(400)}>
-            <TouchableOpacity
-              style={styles.createButton}
-              onPress={() => setShowCreateModal(true)}
-            >
-              <Ionicons name="business" size={20} color="#FFFFFF" />
-              <Text style={styles.createButtonText}>Create Building</Text>
-            </TouchableOpacity>
-          </Animated.View>
-        )}
-
         {/* Entity Table */}
         <Animated.View
           entering={FadeInDown.delay(100).duration(400)}
@@ -652,172 +585,6 @@ export default function BuildingsScreen() {
         isVisible={showSideMenu}
         onClose={() => setShowSideMenu(false)}
       />
-
-      {/* Create Building Modal */}
-      {canManageBuildings && (
-        <Modal
-          visible={showCreateModal}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setShowCreateModal(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <Animated.View
-              entering={FadeIn.duration(200)}
-              style={styles.modalContent}
-            >
-            {/* Modal Header */}
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Create New Building</Text>
-              <TouchableOpacity
-                onPress={() => setShowCreateModal(false)}
-                style={styles.closeButton}
-              >
-                <Ionicons name="close" size={24} color="#6B7280" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {/* Form Fields */}
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Building Name *</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter building name"
-                  value={formData.name}
-                  onChangeText={(text) => setFormData({ ...formData, name: text })}
-                />
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Address *</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter street address"
-                  value={formData.address}
-                  onChangeText={(text) => setFormData({ ...formData, address: text })}
-                />
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>City *</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter city"
-                  value={formData.city}
-                  onChangeText={(text) => setFormData({ ...formData, city: text })}
-                />
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Country *</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter country"
-                  value={formData.country}
-                  onChangeText={(text) => setFormData({ ...formData, country: text })}
-                />
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Total Units *</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter total units"
-                  value={formData.totalUnits}
-                  onChangeText={(text) => setFormData({ ...formData, totalUnits: text })}
-                  keyboardType="number-pad"
-                />
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Manager</Text>
-                <View style={styles.pickerContainer}>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                    <TouchableOpacity
-                      style={[
-                        styles.pickerOption,
-                        !formData.managerId && styles.pickerOptionActive,
-                      ]}
-                      onPress={() => setFormData({ ...formData, managerId: "" })}
-                    >
-                      <Text
-                        style={[
-                          styles.pickerOptionText,
-                          !formData.managerId && styles.pickerOptionTextActive,
-                        ]}
-                      >
-                        None
-                      </Text>
-                    </TouchableOpacity>
-                    {managementUsers.map((user) => (
-                      <TouchableOpacity
-                        key={user.id}
-                        style={[
-                          styles.pickerOption,
-                          formData.managerId === user.id && styles.pickerOptionActive,
-                        ]}
-                        onPress={() => setFormData({ ...formData, managerId: user.id })}
-                      >
-                        <Text
-                          style={[
-                            styles.pickerOptionText,
-                            formData.managerId === user.id && styles.pickerOptionTextActive,
-                          ]}
-                        >
-                          {user.name}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Status</Text>
-                <View style={styles.statusButtons}>
-                  {(["active", "maintenance", "inactive"] as BuildingStatus[]).map((status) => (
-                    <TouchableOpacity
-                      key={status}
-                      style={[
-                        styles.statusButton,
-                        formData.status === status && styles.statusButtonActive,
-                      ]}
-                      onPress={() => setFormData({ ...formData, status })}
-                    >
-                      <Text
-                        style={[
-                          styles.statusButtonText,
-                          formData.status === status && styles.statusButtonTextActive,
-                        ]}
-                      >
-                        {status.toUpperCase()}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-
-              {/* Submit Button */}
-              <TouchableOpacity
-                style={[styles.submitButton, isCreating && styles.submitButtonDisabled]}
-                onPress={handleCreateBuilding}
-                disabled={isCreating}
-              >
-                {isCreating ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <>
-                    <Ionicons name="checkmark" size={20} color="#FFFFFF" />
-                    <Text style={styles.submitButtonText}>Create Building</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </ScrollView>
-            </Animated.View>
-          </View>
-        </Modal>
-      )}
 
       {/* Assign Manager Modal */}
       {canManageBuildings && (

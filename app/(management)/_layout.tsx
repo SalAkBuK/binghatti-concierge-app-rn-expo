@@ -67,7 +67,6 @@ export default function ManagementLayout() {
         {/* Main tab screens */}
         <Stack.Screen name="index" />
         <Stack.Screen name="requests" />
-        <Stack.Screen name="tenants" />
         <Stack.Screen name="more" />
 
         {/* Profile screen for profile editing */}

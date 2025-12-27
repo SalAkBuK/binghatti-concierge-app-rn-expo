@@ -5,8 +5,8 @@ import { API_ENDPOINTS } from "../../utils/constants";
 import type { AuthApi } from "./types";
 import type {
   LoginDTO,
-  RegisterDTO,
-  ResetPasswordDTO,
+  ChangePasswordDTO,
+  UpdateProfileDTO,
   AuthResponse,
   ApiResponse,
   User,
@@ -16,11 +16,13 @@ export class AuthApiService extends BaseApiService implements AuthApi {
   constructor() {
     super();
 
-    // Add response interceptor to handle auth token from login
+    // Add response interceptor to handle auth tokens from login/refresh
     this.addResponseInterceptor(async (response: any) => {
-      // Auto-store token if it's in the response
-      if (response?.token) {
-        await this.setAuthToken(response.token);
+      const accessToken = response?.accessToken ?? response?.data?.accessToken;
+      const refreshToken = response?.refreshToken ?? response?.data?.refreshToken;
+
+      if (accessToken && refreshToken) {
+        await this.setAuthTokens(accessToken, refreshToken);
       }
       return response;
     });
@@ -36,23 +38,13 @@ export class AuthApiService extends BaseApiService implements AuthApi {
 
   async login(credentials: LoginDTO): Promise<AuthResponse> {
     try {
-      const response = await this.post<AuthResponse>(
-        API_ENDPOINTS.auth.login,
-        credentials,
-      );
-
-      return response;
-    } catch (error) {
-      throw error;
-    }
-  }
-
-  async register(userData: RegisterDTO): Promise<ApiResponse> {
-    try {
-      const response = await this.post<ApiResponse>(
-        API_ENDPOINTS.auth.register,
-        userData,
-      );
+      const response = await this.request<AuthResponse>({
+        method: "POST",
+        url: API_ENDPOINTS.auth.login,
+        data: credentials,
+        skipAuth: true,
+        skipAuthRefresh: true,
+      });
 
       return response;
     } catch (error) {
@@ -62,15 +54,15 @@ export class AuthApiService extends BaseApiService implements AuthApi {
 
   async logout(): Promise<ApiResponse> {
     try {
-      // Call logout endpoint if available
-      const response = await this.post<ApiResponse>(API_ENDPOINTS.auth.logout);
-
-      // Clear local auth token regardless of server response
+      // Clear local auth tokens regardless of server response
       await this.clearAuthToken();
 
-      return response;
+      return {
+        success: true,
+        message: "Logged out successfully",
+      };
     } catch (error) {
-      // Clear token even if logout endpoint fails
+      // Clear tokens even if logout fails
       await this.clearAuthToken();
 
       // Return success to not block logout flow
@@ -83,9 +75,18 @@ export class AuthApiService extends BaseApiService implements AuthApi {
 
   async refreshToken(): Promise<AuthResponse> {
     try {
-      const response = await this.post<AuthResponse>(
-        API_ENDPOINTS.auth.refresh,
-      );
+      const refreshToken = await this.getRefreshToken();
+      if (!refreshToken) {
+        throw new Error("Refresh token is missing");
+      }
+
+      const response = await this.request<AuthResponse>({
+        method: "POST",
+        url: API_ENDPOINTS.auth.refresh,
+        data: { refreshToken },
+        skipAuth: true,
+        skipAuthRefresh: true,
+      });
 
       return response;
     } catch (error) {
@@ -95,10 +96,10 @@ export class AuthApiService extends BaseApiService implements AuthApi {
     }
   }
 
-  async resetPassword(data: ResetPasswordDTO): Promise<ApiResponse> {
+  async changePassword(data: ChangePasswordDTO): Promise<ApiResponse> {
     try {
       const response = await this.post<ApiResponse>(
-        API_ENDPOINTS.auth.resetPassword,
+        API_ENDPOINTS.auth.changePassword,
         data,
       );
 
@@ -120,9 +121,9 @@ export class AuthApiService extends BaseApiService implements AuthApi {
     }
   }
 
-  async updateProfile(userData: Partial<User>): Promise<ApiResponse<User>> {
+  async updateProfile(userData: UpdateProfileDTO): Promise<ApiResponse<User>> {
     try {
-      const response = await this.put<ApiResponse<User>>(
+      const response = await this.patch<ApiResponse<User>>(
         API_ENDPOINTS.users.update,
         userData,
       );

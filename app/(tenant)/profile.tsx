@@ -22,7 +22,6 @@ import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
 import apiService from "../../lib/services/api";
-import { buildingsApi } from "../../lib/services/api/buildings";
 import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
 import { filterNotificationsByUser } from "../../lib/utils/helpers";
 import { APP_CONFIG } from "../../lib/utils/constants";
@@ -31,20 +30,12 @@ interface ProfileFormData {
   name: string;
   email: string;
   phone: string;
-  apartment: string;
-  tower: string;
-  emergencyContact: string;
-  emergencyPhone: string;
 }
 
 interface ValidationErrors {
   name?: string;
   email?: string;
   phone?: string;
-  apartment?: string;
-  tower?: string;
-  emergencyContact?: string;
-  emergencyPhone?: string;
 }
 
 export default function ProfileScreen() {
@@ -55,12 +46,8 @@ export default function ProfileScreen() {
     name: currentUser?.profile?.name || currentUser?.name || "",
     email: currentUser?.email || "",
     phone: currentUser?.profile?.phone || "",
-    apartment: currentUser?.profile?.apartment || "",
-    tower: currentUser?.profile?.tower || "",
-    emergencyContact: currentUser?.profile?.emergencyContact || "",
-    emergencyPhone: currentUser?.profile?.emergencyPhone || "",
   });
-  const [buildingName, setBuildingName] = useState<string>("Binghatti");
+  const buildingName = currentUser?.profile?.buildingName || "Not provided";
 
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
@@ -70,8 +57,10 @@ export default function ProfileScreen() {
   );
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
   const userNotifications = filterNotificationsByUser(
@@ -80,33 +69,6 @@ export default function ProfileScreen() {
   );
   const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
   const minPasswordLength = APP_CONFIG.validation.minPasswordLength;
-
-  useEffect(() => {
-    const fetchBuildingName = async () => {
-      const buildingId = currentUser?.profile?.buildingId;
-      if (!buildingId) {
-        console.log("[Profile] No buildingId found in user profile");
-        return;
-      }
-
-      try {
-        console.log("[Profile] Fetching building name for buildingId:", buildingId);
-        const response = await buildingsApi.getBuildingById(buildingId);
-
-        if (response.success && response.data) {
-          setBuildingName(response.data.name);
-          console.log("[Profile] Building name fetched:", response.data.name);
-        }
-      } catch (error) {
-        console.error("[Profile] Failed to fetch building name:", error);
-        // Keep default building name on error
-      }
-    };
-
-    if (currentUser?.profile?.buildingId) {
-      fetchBuildingName();
-    }
-  }, [currentUser?.profile?.buildingId]);
 
   const validateForm = (): ValidationErrors => {
     const errors: ValidationErrors = {};
@@ -159,23 +121,19 @@ export default function ProfileScreen() {
         throw new Error("User not found");
       }
 
-      // Update profile in context
-      const updatedUser: typeof currentUser = {
-        ...currentUser,
+      const updatedUser = await actions.updateProfile({
         name: profileData.name,
-        email: profileData.email,
         profile: {
-          ...currentUser.profile,
-          name: profileData.name,
           phone: profileData.phone,
-          apartment: profileData.apartment,
-          tower: profileData.tower,
-          emergencyContact: profileData.emergencyContact,
-          emergencyPhone: profileData.emergencyPhone,
+          name: profileData.name,
         },
-      };
+      } as any);
 
-      await actions.updateUser(currentUser.email, updatedUser);
+      setProfileData({
+        name: updatedUser.profile?.name || updatedUser.name || "",
+        email: updatedUser.email || "",
+        phone: updatedUser.profile?.phone || updatedUser.phone || "",
+      });
 
       showSuccessAlert("Profile updated successfully!");
       setIsEditing(false);
@@ -205,8 +163,10 @@ export default function ProfileScreen() {
   };
 
   const handleOpenPasswordModal = () => {
+    setCurrentPassword("");
     setNewPassword("");
     setPasswordError(null);
+    setShowCurrentPassword(false);
     setShowPassword(false);
     setShowPasswordModal(true);
   };
@@ -214,16 +174,15 @@ export default function ProfileScreen() {
   const handleClosePasswordModal = (force = false) => {
     if (!isResettingPassword || force) {
       setShowPasswordModal(false);
+      setCurrentPassword("");
       setNewPassword("");
       setPasswordError(null);
     }
   };
 
   const handleResetPassword = async () => {
-    const email = currentUser?.email || profileData.email;
-
-    if (!email) {
-      showErrorAlert(new Error("Email not found. Please log in again."));
+    if (!currentPassword.trim()) {
+      setPasswordError("Current password is required");
       return;
     }
 
@@ -242,8 +201,8 @@ export default function ProfileScreen() {
     setIsResettingPassword(true);
 
     try {
-      const response = await apiService.resetPassword({
-        email,
+      const response = await apiService.changePassword({
+        currentPassword,
         newPassword,
       });
 
@@ -371,36 +330,26 @@ export default function ProfileScreen() {
 
             <Text style={styles.sectionTitle}>Property Information</Text>
 
-            {renderProfileField(
-              "Apartment Number",
-              profileData.apartment,
-              "apartment",
-              "e.g., 1205",
-            )}
+            <View style={styles.fieldContainer}>
+              <Text style={styles.fieldLabel}>Unit</Text>
+              <Text style={styles.fieldValue}>
+                {currentUser?.profile?.apartment || "Not provided"}
+              </Text>
+            </View>
+
+            <View style={styles.fieldContainer}>
+              <Text style={styles.fieldLabel}>Floor</Text>
+              <Text style={styles.fieldValue}>
+                {currentUser?.profile?.floor || "Not provided"}
+              </Text>
+            </View>
 
             <View style={styles.fieldContainer}>
               <Text style={styles.fieldLabel}>Building</Text>
               <Text style={styles.fieldValue}>
-                {buildingName || "Not provided"}
+                {buildingName}
               </Text>
             </View>
-
-            <Text style={styles.sectionTitle}>Emergency Contact</Text>
-
-            {renderProfileField(
-              "Emergency Contact Name",
-              profileData.emergencyContact,
-              "emergencyContact",
-              "Contact person name",
-            )}
-
-            {renderProfileField(
-              "Emergency Contact Phone",
-              profileData.emergencyPhone,
-              "emergencyPhone",
-              "Emergency contact number",
-              "phone-pad",
-            )}
 
             {/* Action Buttons */}
             {isEditing && (
@@ -416,12 +365,6 @@ export default function ProfileScreen() {
                         currentUser?.profile?.name || currentUser?.name || "",
                       email: currentUser?.email || "",
                       phone: currentUser?.profile?.phone || "",
-                      apartment: currentUser?.profile?.apartment || "",
-                      tower: currentUser?.profile?.tower || "",
-                      emergencyContact:
-                        currentUser?.profile?.emergencyContact || "",
-                      emergencyPhone:
-                        currentUser?.profile?.emergencyPhone || "",
                     });
                   }}
                 >
@@ -524,6 +467,39 @@ export default function ProfileScreen() {
                 </Text>
               </View>
 
+              <Text style={styles.modalLabel}>Current Password</Text>
+              <View
+                style={[
+                  styles.modalInputRow,
+                  passwordError && styles.errorInput,
+                ]}
+              >
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="Enter current password"
+                  value={currentPassword}
+                  onChangeText={(text) => {
+                    setCurrentPassword(text);
+                    if (passwordError) {
+                      setPasswordError(null);
+                    }
+                  }}
+                  secureTextEntry={!showCurrentPassword}
+                  textContentType="password"
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity
+                  style={styles.passwordToggleButton}
+                  onPress={() => setShowCurrentPassword((prev) => !prev)}
+                >
+                  <Ionicons
+                    name={showCurrentPassword ? "eye-off-outline" : "eye-outline"}
+                    size={18}
+                    color="#475569"
+                  />
+                </TouchableOpacity>
+              </View>
+
               <Text style={styles.modalLabel}>New Password</Text>
               <View
                 style={[
@@ -574,11 +550,17 @@ export default function ProfileScreen() {
                 <TouchableOpacity
                   style={[
                     styles.modalPrimaryButton,
-                    (isResettingPassword || !newPassword.trim()) &&
+                    (isResettingPassword ||
+                      !currentPassword.trim() ||
+                      !newPassword.trim()) &&
                       styles.modalPrimaryButtonDisabled,
                   ]}
                   onPress={handleResetPassword}
-                  disabled={isResettingPassword || !newPassword.trim()}
+                  disabled={
+                    isResettingPassword ||
+                    !currentPassword.trim() ||
+                    !newPassword.trim()
+                  }
                 >
                   <LinearGradient
                     colors={["#2563EB", "#1D4ED8"]}

@@ -23,6 +23,7 @@ import { ImageViewer } from "../../components/ui/ImageViewer";
 import { useApp } from "../../lib/context/connected-app-provider";
 import apiService from "../../lib/services/api";
 import { maintenanceApi } from "../../lib/services/api/maintenance";
+import { residentRequestsApi } from "../../lib/services/api/resident-requests";
 import type { Job, Request } from "../../lib/types";
 
 
@@ -56,6 +57,7 @@ export default function RequestDetailsScreen() {
   const [loading, setLoading] = useState(false);
   const [showImageViewer, setShowImageViewer] = useState(false);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  const isTenantUser = currentUser?.role === "tenant";
 
   // Check if this is a backend request (don't show jobs for backend requests)
   const isBackendRequest = (selectedRequest as any)?._source === "backend";
@@ -72,88 +74,101 @@ export default function RequestDetailsScreen() {
     const fetchDetails = async () => {
       if (!selectedRequest?.id) return;
       setFetchingDetails(true);
-      const buildingIdForManagers =
-        selectedRequest.buildingId ||
-        (selectedRequest as any).profile?.buildingId ||
-        currentUser?.profile?.buildingId;
+      try {
+        if (!isTenantUser) {
+          const buildingIdForManagers =
+            selectedRequest.buildingId ||
+            (selectedRequest as any).profile?.buildingId ||
+            currentUser?.profile?.buildingId;
 
-      if (buildingIdForManagers) {
-        const buildingIdNum =
-          typeof buildingIdForManagers === "string"
-            ? parseInt(String(buildingIdForManagers).replace(/\D/g, ""), 10)
-            : buildingIdForManagers;
-        if (Number.isFinite(buildingIdNum)) {
-          try {
-            const managersResponse = await apiService.admin.getBuildingManagers(buildingIdNum);
-            if (managersResponse.success && Array.isArray(managersResponse.data)) {
-              const mapped: Record<string, string> = {};
-              managersResponse.data.forEach((mgr: any) => {
-                const id = mgr.id ?? mgr.userId ?? mgr.managerId;
-                if (id != null) {
-                  mapped[String(id)] =
-                    mgr.fullName ||
-                    mgr.name ||
-                    mgr.email ||
-                    (mgr.userId ? `User ${mgr.userId}` : "Manager");
+          if (buildingIdForManagers) {
+            const buildingIdNum =
+              typeof buildingIdForManagers === "string"
+                ? parseInt(String(buildingIdForManagers).replace(/\D/g, ""), 10)
+                : buildingIdForManagers;
+            if (Number.isFinite(buildingIdNum)) {
+              try {
+                const managersResponse = await apiService.admin.getBuildingManagers(buildingIdNum);
+                if (managersResponse.success && Array.isArray(managersResponse.data)) {
+                  const mapped: Record<string, string> = {};
+                  managersResponse.data.forEach((mgr: any) => {
+                    const id = mgr.id ?? mgr.userId ?? mgr.managerId;
+                    if (id != null) {
+                      mapped[String(id)] =
+                        mgr.fullName ||
+                        mgr.name ||
+                        mgr.email ||
+                        (mgr.userId ? `User ${mgr.userId}` : "Manager");
+                    }
+                  });
+                  managerNamesRef.current = mapped;
+                  setManagerNames(mapped);
                 }
-              });
-              managerNamesRef.current = mapped;
-              setManagerNames(mapped);
+              } catch (managerErr) {
+                console.warn("[RequestDetails] Failed to fetch building managers", managerErr);
+              }
             }
-          } catch (managerErr) {
-            console.warn("[RequestDetails] Failed to fetch building managers", managerErr);
           }
         }
-      }
 
-      try {
-        const response = await maintenanceApi.getMaintenanceRequestById(selectedRequest.id);
-        if (response.success && response.data) {
-          const apiRequest = response.data;
-          const assignedUserId =
-            apiRequest.assignedTo?.id != null ? String(apiRequest.assignedTo.id) : null;
-          const assignedUserName =
-            apiRequest.assignedTo?.fullName ||
-            apiRequest.assignedTo?.email ||
-            (assignedUserId ? `User ${assignedUserId}` : selectedRequest.assignedTo);
-          assignedUserIdRef.current = assignedUserId;
-          assignedUserNameRef.current = assignedUserName || null;
-          const mapPriority = (priority: any): Request["priority"] => {
-            if (priority === 1 || priority === "1" || priority === "low") return "low";
-            if (priority === 2 || priority === "2" || priority === "medium") return "medium";
-            if (priority === 3 || priority === "3" || priority === "high") return "high";
-            if (priority === 4 || priority === "4" || priority === "urgent") return "urgent";
-            return selectedRequest.priority;
-          };
+        if (isTenantUser) {
+          const response = await residentRequestsApi.getRequest(selectedRequest.id);
+          if (response.success && response.data) {
+            const apiRequest = response.data;
+            const assignedUserId =
+              apiRequest.assignedTo?.id != null
+                ? String(apiRequest.assignedTo.id)
+                : apiRequest.assignedToId != null
+                  ? String(apiRequest.assignedToId)
+                  : null;
+            const assignedUserName =
+              apiRequest.assignedTo?.fullName ||
+              apiRequest.assignedTo?.name ||
+              apiRequest.assignedTo?.email ||
+              (assignedUserId ? `User ${assignedUserId}` : selectedRequest.assignedTo);
+            assignedUserIdRef.current = assignedUserId;
+            assignedUserNameRef.current = assignedUserName || null;
 
-          const updatedRequest: Request = {
-            ...selectedRequest,
-            id: String(apiRequest.id ?? selectedRequest.id),
-            title: apiRequest.title ?? selectedRequest.title,
-            description: apiRequest.description ?? selectedRequest.description,
-            status: normalizeStatus(apiRequest.status ?? selectedRequest.status),
-            priority: normalizePriority(apiRequest.priority ?? selectedRequest.priority),
-            attachments: normalizeAttachments(
-              apiRequest.attachments ?? selectedRequest.attachments,
-            ),
-            assignedTo:
-              assignedUserName ||
-              apiRequest.assignedToId ||
-              selectedRequest.assignedTo,
-            buildingId: apiRequest.buildingId ? String(apiRequest.buildingId) : selectedRequest.buildingId,
-            apartment: apiRequest.unitNumber ?? selectedRequest.apartment,
-            floor: apiRequest.floorNumber != null ? String(apiRequest.floorNumber) : selectedRequest.floor,
-            buildingName: apiRequest.buildingName ?? resolvedBuildingName ?? selectedRequest.buildingName,
-            updatedAt: apiRequest.updatedAt ?? selectedRequest.updatedAt,
-          };
+            const updatedRequest: Request = {
+              ...selectedRequest,
+              id: String(apiRequest.id ?? selectedRequest.id),
+              title: apiRequest.title ?? selectedRequest.title,
+              description: apiRequest.description ?? selectedRequest.description,
+              status: normalizeStatus(apiRequest.status ?? selectedRequest.status),
+              priority: normalizePriority(apiRequest.priority ?? selectedRequest.priority),
+              attachments: normalizeAttachments(
+                apiRequest.attachments ?? selectedRequest.attachments,
+              ),
+              assignedTo: assignedUserName || selectedRequest.assignedTo,
+              buildingId: apiRequest.buildingId
+                ? String(apiRequest.buildingId)
+                : selectedRequest.buildingId,
+              apartment: apiRequest.unitNumber ?? selectedRequest.apartment,
+              floor: apiRequest.floorNumber != null ? String(apiRequest.floorNumber) : selectedRequest.floor,
+              buildingName:
+                apiRequest.buildingName ?? resolvedBuildingName ?? selectedRequest.buildingName,
+              createdAt: apiRequest.createdAt ?? selectedRequest.createdAt,
+              updatedAt: apiRequest.updatedAt ?? selectedRequest.updatedAt,
+            };
 
-          actions.setSelectedRequest?.(updatedRequest);
-          if (Array.isArray(apiRequest.comments)) {
-            const mappedComments = apiRequest.comments
+            actions.setSelectedRequest?.(updatedRequest);
+            if (updatedRequest.buildingName) {
+              setResolvedBuildingName(updatedRequest.buildingName);
+            }
+          }
+
+          const commentsResponse = await residentRequestsApi.getComments(selectedRequest.id);
+          const commentsPayload = Array.isArray(commentsResponse)
+            ? commentsResponse
+            : Array.isArray(commentsResponse?.data)
+              ? commentsResponse.data
+              : [];
+          if (commentsPayload.length > 0) {
+            const mappedComments = commentsPayload
               .map((comment: any, index: number) => {
-                const id = String(comment.id ?? `${apiRequest.id}-comment-${index}`);
+                const id = String(comment.id ?? `${selectedRequest.id}-comment-${index}`);
                 const message = comment.commentText || comment.message || comment.text || "";
-                const createdAt = comment.createdAt || new Date().toISOString();
+                const createdAt = comment.createdAt || comment.created_at || new Date().toISOString();
                 const author = resolveCommentAuthor(comment);
                 const attachments =
                   Array.isArray(comment.attachments) && comment.attachments.length > 0
@@ -173,8 +188,76 @@ export default function RequestDetailsScreen() {
           } else {
             setComments([]);
           }
-          if (updatedRequest.buildingName) {
-            setResolvedBuildingName(updatedRequest.buildingName);
+        } else {
+          const response = await maintenanceApi.getMaintenanceRequestById(selectedRequest.id);
+          if (response.success && response.data) {
+            const apiRequest = response.data;
+            const assignedUserId =
+              apiRequest.assignedTo?.id != null ? String(apiRequest.assignedTo.id) : null;
+            const assignedUserName =
+              apiRequest.assignedTo?.fullName ||
+              apiRequest.assignedTo?.email ||
+              (assignedUserId ? `User ${assignedUserId}` : selectedRequest.assignedTo);
+            assignedUserIdRef.current = assignedUserId;
+            assignedUserNameRef.current = assignedUserName || null;
+            const mapPriority = (priority: any): Request["priority"] => {
+              if (priority === 1 || priority === "1" || priority === "low") return "low";
+              if (priority === 2 || priority === "2" || priority === "medium") return "medium";
+              if (priority === 3 || priority === "3" || priority === "high") return "high";
+              if (priority === 4 || priority === "4" || priority === "urgent") return "urgent";
+              return selectedRequest.priority;
+            };
+
+            const updatedRequest: Request = {
+              ...selectedRequest,
+              id: String(apiRequest.id ?? selectedRequest.id),
+              title: apiRequest.title ?? selectedRequest.title,
+              description: apiRequest.description ?? selectedRequest.description,
+              status: normalizeStatus(apiRequest.status ?? selectedRequest.status),
+              priority: normalizePriority(apiRequest.priority ?? selectedRequest.priority),
+              attachments: normalizeAttachments(
+                apiRequest.attachments ?? selectedRequest.attachments,
+              ),
+              assignedTo:
+                assignedUserName ||
+                apiRequest.assignedToId ||
+                selectedRequest.assignedTo,
+              buildingId: apiRequest.buildingId ? String(apiRequest.buildingId) : selectedRequest.buildingId,
+              apartment: apiRequest.unitNumber ?? selectedRequest.apartment,
+              floor: apiRequest.floorNumber != null ? String(apiRequest.floorNumber) : selectedRequest.floor,
+              buildingName: apiRequest.buildingName ?? resolvedBuildingName ?? selectedRequest.buildingName,
+              updatedAt: apiRequest.updatedAt ?? selectedRequest.updatedAt,
+            };
+
+            actions.setSelectedRequest?.(updatedRequest);
+            if (Array.isArray(apiRequest.comments)) {
+              const mappedComments = apiRequest.comments
+                .map((comment: any, index: number) => {
+                  const id = String(comment.id ?? `${apiRequest.id}-comment-${index}`);
+                  const message = comment.commentText || comment.message || comment.text || "";
+                  const createdAt = comment.createdAt || new Date().toISOString();
+                  const author = resolveCommentAuthor(comment);
+                  const attachments =
+                    Array.isArray(comment.attachments) && comment.attachments.length > 0
+                      ? comment.attachments
+                          .map(
+                            (att: any) =>
+                              att.fileUrl || att.url || att.uri || att.file_url || att.path || null,
+                          )
+                          .filter(Boolean) as string[]
+                      : undefined;
+                  return { id, message, createdAt, author, attachments };
+                })
+                .sort(
+                  (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+                );
+              setComments(mappedComments);
+            } else {
+              setComments([]);
+            }
+            if (updatedRequest.buildingName) {
+              setResolvedBuildingName(updatedRequest.buildingName);
+            }
           }
         }
       } catch (error) {
@@ -190,6 +273,12 @@ export default function RequestDetailsScreen() {
   useEffect(() => {
     setDetailTab("overview");
     setNewComment("");
+    setShowEditMode(false);
+    setEditForm({
+      title: selectedRequest?.title || "",
+      description: selectedRequest?.description || "",
+      priority: selectedRequest?.priority || ("medium" as const),
+    });
     assignedUserIdRef.current = null;
     assignedUserNameRef.current = null;
     managerNamesRef.current = {};
@@ -242,6 +331,7 @@ export default function RequestDetailsScreen() {
 
     const normalized = String(status).toLowerCase().replace("_", "-");
     if (normalized === "pending") return "pending";
+    if (normalized === "open") return "pending";
     if (normalized === "on-hold" || normalized === "onhold") return "on-hold";
     if (normalized === "in-progress" || normalized === "inprogress" || normalized === "assigned") return "in-progress";
     if (normalized === "completed" || normalized === "complete" || normalized === "done") return "completed";
@@ -293,7 +383,12 @@ export default function RequestDetailsScreen() {
       comment.user?.fullName ||
       comment.user?.name ||
       comment.user?.email ||
-      comment.author;
+      (typeof comment.author === "string"
+        ? comment.author
+        : comment.author?.fullName ||
+          comment.author?.name ||
+          comment.author?.email ||
+          null);
 
     if (currentUserId && commentUserId && currentUserId === commentUserId) {
       return (
@@ -318,7 +413,7 @@ export default function RequestDetailsScreen() {
       return managerName;
     }
 
-    if (directName) return directName;
+    if (directName) return String(directName);
     if (comment.user?.userId) return `User ${comment.user.userId}`;
     return "User";
   }, [currentUser, selectedRequest?.assignedTo]);
@@ -534,6 +629,26 @@ export default function RequestDetailsScreen() {
 
     setLoading(true);
     try {
+      if (isTenantUser) {
+        console.log('[RequestDetails] Cancelling resident request:', selectedRequest.id);
+        const response = await residentRequestsApi.cancelRequest(selectedRequest.id);
+
+        const responseHasSuccess =
+          response && typeof response === "object" && "success" in response;
+        if (responseHasSuccess && response.success === false) {
+          throw new Error((response as any).message || "Failed to cancel request");
+        }
+
+        setShowDeleteConfirm(false);
+        Alert.alert("Success", "Request cancelled successfully", [
+          {
+            text: "OK",
+            onPress: () => router.back(),
+          },
+        ]);
+        return;
+      }
+
       console.log('[RequestDetails] Deleting maintenance request:', selectedRequest.id);
       const response = await maintenanceApi.deleteMaintenanceRequest(selectedRequest.id);
 
@@ -561,6 +676,43 @@ export default function RequestDetailsScreen() {
 
     setLoading(true);
     try {
+      if (isTenantUser) {
+        const payload = {
+          title: editForm.title,
+          description: editForm.description,
+        };
+        const response = await residentRequestsApi.updateRequest(selectedRequest.id, payload);
+
+        const responseHasSuccess =
+          response && typeof response === "object" && "success" in response;
+        if (responseHasSuccess && response.success === false) {
+          throw new Error((response as any)?.message || "Failed to update request");
+        }
+
+        const apiRequest =
+          response && typeof response === "object" && "data" in response && response.data
+            ? response.data
+            : response && typeof response === "object"
+              ? response
+              : {};
+        const updatedRequest: Request = {
+          ...selectedRequest,
+          title: apiRequest.title ?? payload.title ?? selectedRequest.title,
+          description: apiRequest.description ?? payload.description ?? selectedRequest.description,
+          status: normalizeStatus(apiRequest.status ?? selectedRequest.status),
+          priority: normalizePriority(apiRequest.priority ?? selectedRequest.priority),
+          attachments: normalizeAttachments(
+            apiRequest.attachments ?? selectedRequest.attachments,
+          ),
+          updatedAt: apiRequest.updatedAt ?? selectedRequest.updatedAt,
+        };
+
+        actions.setSelectedRequest?.(updatedRequest);
+        setShowEditMode(false);
+        Alert.alert("Success", "Request updated successfully");
+        return;
+      }
+
       await actions.updateRequest(selectedRequest.id, editForm);
       setShowEditMode(false);
       Alert.alert("Success", "Request updated successfully");
@@ -577,19 +729,60 @@ export default function RequestDetailsScreen() {
     const requestStatus = normalizeStatus(selectedRequest.status);
     if (requestStatus === "cancelled" || requestStatus === "completed") return;
 
-    const requestIdNum = Number(selectedRequest.id);
-    const userIdNum =
-      typeof currentUser.id === "string"
-        ? parseInt(currentUser.id, 10)
-        : currentUser.id;
-
-    if (!Number.isFinite(requestIdNum) || !Number.isFinite(userIdNum)) {
-      Alert.alert("Error", "Missing request or user details.");
-      return;
-    }
-
     setIsPostingComment(true);
     try {
+      if (isTenantUser) {
+        const response = await residentRequestsApi.addComment(
+          selectedRequest.id,
+          newComment.trim(),
+        );
+        if (response?.success === false) {
+          throw new Error(response?.message || "Failed to add comment");
+        }
+        setNewComment("");
+        const refreshed = await residentRequestsApi.getComments(selectedRequest.id);
+        const refreshedPayload = Array.isArray(refreshed)
+          ? refreshed
+          : Array.isArray(refreshed?.data)
+            ? refreshed.data
+            : [];
+        if (refreshedPayload.length > 0) {
+          const mappedComments = refreshedPayload
+            .map((comment: any, index: number) => {
+              const id = String(comment.id ?? `${selectedRequest.id}-comment-${index}`);
+              const message = comment.commentText || comment.message || comment.text || "";
+              const createdAt = comment.createdAt || comment.created_at || new Date().toISOString();
+              const author = resolveCommentAuthor(comment);
+              const attachments =
+                Array.isArray(comment.attachments) && comment.attachments.length > 0
+                  ? comment.attachments
+                      .map(
+                        (att: any) =>
+                          att.fileUrl || att.url || att.uri || att.file_url || att.path || null,
+                      )
+                      .filter(Boolean) as string[]
+                  : undefined;
+              return { id, message, createdAt, author, attachments };
+            })
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          setComments(mappedComments);
+        } else {
+          setComments([]);
+        }
+        return;
+      }
+
+      const requestIdNum = Number(selectedRequest.id);
+      const userIdNum =
+        typeof currentUser.id === "string"
+          ? parseInt(currentUser.id, 10)
+          : currentUser.id;
+
+      if (!Number.isFinite(requestIdNum) || !Number.isFinite(userIdNum)) {
+        Alert.alert("Error", "Missing request or user details.");
+        return;
+      }
+
       await maintenanceApi.addMaintenanceRequestComment({
         requestId: requestIdNum,
         userId: userIdNum,
@@ -757,7 +950,16 @@ export default function RequestDetailsScreen() {
           <View style={styles.headerActions}>
             {canEdit && (
               <TouchableOpacity
-                onPress={() => setShowEditMode(true)}
+                onPress={() => {
+                  if (selectedRequest) {
+                    setEditForm({
+                      title: selectedRequest.title || "",
+                      description: selectedRequest.description || "",
+                      priority: selectedRequest.priority || ("medium" as const),
+                    });
+                  }
+                  setShowEditMode(true);
+                }}
                 style={styles.editButton}
               >
                 <Ionicons name="pencil" size={20} color="#2563EB" />
@@ -842,37 +1044,39 @@ export default function RequestDetailsScreen() {
                       />
                     </View>
 
-                    <View style={styles.inputGroup}>
-                      <Text style={styles.label}>Priority</Text>
-                      <View style={styles.priorityButtons}>
-                        {(["low", "medium", "high", "urgent"] as const).map(
-                          (priority) => (
-                            <TouchableOpacity
-                              key={priority}
-                              onPress={() =>
-                                setEditForm((prev) => ({ ...prev, priority }))
-                              }
-                              style={[
-                                styles.priorityButton,
-                                editForm.priority === priority &&
-                                  styles.priorityButtonActive,
-                              ]}
-                            >
-                              <Text
+                    {!isTenantUser && (
+                      <View style={styles.inputGroup}>
+                        <Text style={styles.label}>Priority</Text>
+                        <View style={styles.priorityButtons}>
+                          {(["low", "medium", "high", "urgent"] as const).map(
+                            (priority) => (
+                              <TouchableOpacity
+                                key={priority}
+                                onPress={() =>
+                                  setEditForm((prev) => ({ ...prev, priority }))
+                                }
                                 style={[
-                                  styles.priorityButtonText,
+                                  styles.priorityButton,
                                   editForm.priority === priority &&
-                                    styles.priorityButtonTextActive,
+                                    styles.priorityButtonActive,
                                 ]}
                               >
-                                {priority.charAt(0).toUpperCase() +
-                                  priority.slice(1)}
-                              </Text>
-                            </TouchableOpacity>
-                          ),
-                        )}
+                                <Text
+                                  style={[
+                                    styles.priorityButtonText,
+                                    editForm.priority === priority &&
+                                      styles.priorityButtonTextActive,
+                                  ]}
+                                >
+                                  {priority.charAt(0).toUpperCase() +
+                                    priority.slice(1)}
+                                </Text>
+                              </TouchableOpacity>
+                            ),
+                          )}
+                        </View>
                       </View>
-                    </View>
+                    )}
 
                     <View style={styles.editActions}>
                       <TouchableOpacity
@@ -1071,11 +1275,9 @@ export default function RequestDetailsScreen() {
                   </View>
 
                   {/* Building Name (if available) */}
-                  {(resolvedBuildingName || selectedRequest.buildingName || selectedRequest.buildingId) && (
+                  {(resolvedBuildingName || selectedRequest.buildingName) && (
                     <Text style={styles.buildingName}>
-                      {resolvedBuildingName ||
-                        selectedRequest.buildingName ||
-                        (selectedRequest.buildingId ? `Building ${selectedRequest.buildingId}` : "")}
+                      {resolvedBuildingName || selectedRequest.buildingName}
                     </Text>
                   )}
 
@@ -1085,7 +1287,7 @@ export default function RequestDetailsScreen() {
                       <View style={styles.locationDetailRow}>
                         <Text style={styles.locationDetailLabel}>Unit:</Text>
                         <Text style={styles.locationDetailValue}>
-                           {currentUser?.profile?.apartment || "—"}
+                          {selectedRequest.apartment || currentUser?.profile?.apartment || "-"}
                     
                         </Text>
                       </View>
@@ -1479,32 +1681,6 @@ export default function RequestDetailsScreen() {
                       </View>
                     ))}
                   </View>
-                </Animated.View>
-              )}
-
-              {/* Contact Information */}
-              {selectedRequest.contactPhone && (
-                <Animated.View
-                  entering={FadeInDown.delay(220).duration(400)}
-                  style={styles.card}
-                >
-                  <View style={styles.cardHeader}>
-                    <Ionicons name="call-outline" size={20} color="#6B7280" />
-                    <Text style={styles.cardTitle}>Contact Information</Text>
-                  </View>
-                  <Text style={styles.contactPhone}>
-                    {selectedRequest.contactPhone}
-                  </Text>
-                  {selectedRequest.preferredTime && (
-                    <View style={styles.preferredTime}>
-                      <Text style={styles.preferredTimeLabel}>
-                        Preferred Time:
-                      </Text>
-                      <Text style={styles.preferredTimeValue}>
-                        {selectedRequest.preferredTime}
-                      </Text>
-                    </View>
-                  )}
                 </Animated.View>
               )}
 

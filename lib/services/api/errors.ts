@@ -65,6 +65,22 @@ const STATUS_CODE_MAPPING: Record<number, keyof typeof ERROR_MESSAGES> = {
 };
 
 export class ApiErrorNormalizer {
+  private static normalizeMessage(value: unknown): string {
+    if (typeof value === "string") return value;
+    if (typeof value === "number") return String(value);
+    if (value && typeof value === "object") {
+      const record = value as { message?: unknown; code?: unknown };
+      if (typeof record.message === "string") return record.message;
+      if (typeof record.code === "string") return record.code;
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return "";
+      }
+    }
+    return "";
+  }
+
   /**
    * Normalize any API error to a consistent format
    */
@@ -101,7 +117,8 @@ export class ApiErrorNormalizer {
       // Custom error messages from backend
       if (error.message) {
         // Check if the message matches any known patterns
-        const message = error.message.toLowerCase();
+        const messageText = this.normalizeMessage(error.message);
+        const message = messageText.toLowerCase();
 
         if (message.includes("network") || message.includes("connection")) {
           normalizedError.code = "NETWORK_ERROR";
@@ -117,7 +134,7 @@ export class ApiErrorNormalizer {
           normalizedError.error = ERROR_MESSAGES.VALIDATION_ERROR;
         } else {
           // Use the original message if it's user-friendly
-          normalizedError.error = error.message;
+          normalizedError.error = messageText || normalizedError.error;
         }
       }
 

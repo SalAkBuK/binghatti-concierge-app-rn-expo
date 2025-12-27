@@ -21,6 +21,7 @@ import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
 import apiService from "../../lib/services/api";
+import { orgBuildingsApi } from "../../lib/services/api/org-buildings";
 import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
 import { filterNotificationsByUser } from "../../lib/utils/helpers";
 import { APP_CONFIG } from "../../lib/utils/constants";
@@ -28,8 +29,10 @@ import { APP_CONFIG } from "../../lib/utils/constants";
 export default function BuildingEmployeeProfileScreen() {
   const { isAuthenticated, currentUser, actions, notifications } = useApp();
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [isResettingPassword, setIsResettingPassword] = useState(false);
   const [showSideMenu, setShowSideMenu] = useState(false);
@@ -57,13 +60,24 @@ export default function BuildingEmployeeProfileScreen() {
     const fetchBuildingName = async () => {
       if (!currentUser?.id) return;
 
-      try {
-        const response = await apiService.maintenance.getBuildingsByStaffId(
-          currentUser.id,
-        );
+      if (currentUser.profile?.buildingName) {
+        setBuildingName(currentUser.profile.buildingName);
+        return;
+      }
 
-        if (response.success && response.data?.length > 0) {
-          setBuildingName(response.data[0].name);
+      try {
+        const response = await orgBuildingsApi.getAssignedBuildings();
+        const payload = Array.isArray(response)
+          ? response
+          : Array.isArray(response?.data)
+            ? response.data
+            : [];
+
+        if (payload.length > 0) {
+          const first = payload[0];
+          const resolvedName =
+            first?.name || first?.buildingName || first?.title || "Assigned Building";
+          setBuildingName(resolvedName);
           return;
         }
       } catch (error) {
@@ -116,8 +130,10 @@ export default function BuildingEmployeeProfileScreen() {
   };
 
   const handleOpenPasswordModal = () => {
+    setCurrentPassword("");
     setNewPassword("");
     setPasswordError(null);
+    setShowCurrentPassword(false);
     setShowPassword(false);
     setShowPasswordModal(true);
   };
@@ -125,16 +141,15 @@ export default function BuildingEmployeeProfileScreen() {
   const handleClosePasswordModal = (force = false) => {
     if (!isResettingPassword || force) {
       setShowPasswordModal(false);
+      setCurrentPassword("");
       setNewPassword("");
       setPasswordError(null);
     }
   };
 
   const handleResetPassword = async () => {
-    const email = currentUser?.email;
-
-    if (!email) {
-      showErrorAlert(new Error("Email not found. Please log in again."));
+    if (!currentPassword.trim()) {
+      setPasswordError("Current password is required");
       return;
     }
 
@@ -153,8 +168,8 @@ export default function BuildingEmployeeProfileScreen() {
     setIsResettingPassword(true);
 
     try {
-      const response = await apiService.resetPassword({
-        email,
+      const response = await apiService.changePassword({
+        currentPassword,
         newPassword,
       });
 
@@ -314,6 +329,39 @@ export default function BuildingEmployeeProfileScreen() {
                 </Text>
               </View>
 
+              <Text style={styles.modalLabel}>Current Password</Text>
+              <View
+                style={[
+                  styles.modalInputRow,
+                  passwordError && styles.modalInputError,
+                ]}
+              >
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="Enter current password"
+                  value={currentPassword}
+                  onChangeText={(text) => {
+                    setCurrentPassword(text);
+                    if (passwordError) {
+                      setPasswordError(null);
+                    }
+                  }}
+                  secureTextEntry={!showCurrentPassword}
+                  textContentType="password"
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity
+                  style={styles.passwordToggleButton}
+                  onPress={() => setShowCurrentPassword((prev) => !prev)}
+                >
+                  <Ionicons
+                    name={showCurrentPassword ? "eye-off-outline" : "eye-outline"}
+                    size={18}
+                    color="#475569"
+                  />
+                </TouchableOpacity>
+              </View>
+
               <Text style={styles.modalLabel}>New Password</Text>
               <View
                 style={[
@@ -364,11 +412,17 @@ export default function BuildingEmployeeProfileScreen() {
                 <TouchableOpacity
                   style={[
                     styles.modalPrimaryButton,
-                    (isResettingPassword || !newPassword.trim()) &&
+                    (isResettingPassword ||
+                      !newPassword.trim() ||
+                      !currentPassword.trim()) &&
                       styles.modalPrimaryButtonDisabled,
                   ]}
                   onPress={handleResetPassword}
-                  disabled={isResettingPassword || !newPassword.trim()}
+                  disabled={
+                    isResettingPassword ||
+                    !newPassword.trim() ||
+                    !currentPassword.trim()
+                  }
                 >
                   <LinearGradient
                     colors={["#2563EB", "#1D4ED8"]}

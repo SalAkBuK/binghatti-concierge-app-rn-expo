@@ -24,7 +24,7 @@ import { HeaderBar } from "../../components/ui/HeaderBar";
 import { RequestsScreenSkeleton } from "../../components/ui/RequestsScreenSkeleton";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
-import { maintenanceApi } from "../../lib/services/api/maintenance";
+import { residentRequestsApi } from "../../lib/services/api/resident-requests";
 import type { Job, Request, RequestStatus } from "../../lib/types";
 import { filterNotificationsByUser } from "../../lib/utils/helpers";
 import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
@@ -34,38 +34,80 @@ const { width: SCREEN_WIDTH } = Dimensions.get("window");
 type FilterStatus = "all" | RequestStatus;
 
 // Map backend status codes to frontend statuses
-// 1=New, 2=Assigned, 3=InProgress, 4=OnHold, 5=Completed, 6=Cancelled
-const mapStatusFromBackend = (status: number): RequestStatus => {
-  switch (status) {
-    case 1:
-      return "pending";
-    case 2:
-    case 3:
-      return "in-progress";
-    case 4:
-      return "on-hold";
-    case 5:
-      return "completed";
-    case 6:
-      return "cancelled";
-    default:
-      return "pending";
+const mapStatusFromBackend = (status: any): RequestStatus => {
+  const numeric = Number(status);
+  if (!Number.isNaN(numeric)) {
+    switch (numeric) {
+      case 1:
+        return "pending";
+      case 2:
+      case 3:
+        return "in-progress";
+      case 4:
+        return "on-hold";
+      case 5:
+        return "completed";
+      case 6:
+        return "cancelled";
+      default:
+        return "pending";
+    }
   }
+
+  const normalized = String(status || "")
+    .toUpperCase()
+    .replace(/[\s-]/g, "_");
+
+  if (normalized === "OPEN") return "pending";
+  if (normalized === "ASSIGNED" || normalized === "IN_PROGRESS") {
+    return "in-progress";
+  }
+  if (normalized === "COMPLETED") return "completed";
+  if (normalized === "CANCELED" || normalized === "CANCELLED") return "cancelled";
+  return "pending";
 };
 
-// Map backend priority number to frontend priority string
-const mapPriorityFromBackend = (priority: number): Request["priority"] => {
-  switch (priority) {
-    case 1:
-      return "low";
-    case 2:
-      return "medium";
-    case 3:
-      return "high";
-    case 4:
-      return "urgent";
+// Map backend priority to frontend priority string
+const mapPriorityFromBackend = (priority: any): Request["priority"] => {
+  const numeric = Number(priority);
+  if (!Number.isNaN(numeric)) {
+    switch (numeric) {
+      case 1:
+        return "low";
+      case 2:
+        return "medium";
+      case 3:
+        return "high";
+      case 4:
+        return "urgent";
+      default:
+        return "medium";
+    }
+  }
+
+  const normalized = String(priority || "").toUpperCase();
+  if (normalized === "LOW") return "low";
+  if (normalized === "MEDIUM") return "medium";
+  if (normalized === "HIGH") return "high";
+  if (normalized === "URGENT") return "urgent";
+  return "medium";
+};
+
+const mapTypeFromBackend = (type: any): Request["type"] => {
+  const normalized = String(type || "").toUpperCase();
+  switch (normalized) {
+    case "CLEANING":
+      return "cleaning";
+    case "ELECTRICAL":
+      return "electrical";
+    case "MAINTENANCE":
+      return "maintenance";
+    case "PLUMBING_AC_HEATING":
+      return "hvac";
+    case "OTHER":
+      return "other";
     default:
-      return "medium";
+      return "maintenance";
   }
 };
 
@@ -99,37 +141,61 @@ export default function RequestsScreen() {
     if (showLoadingState) setIsLoading(true);
 
     try {
-      console.log('[Requests] Fetching maintenance requests for tenant:', currentUser.id);
-      const response = await maintenanceApi.getMaintenanceRequestsByTenantId(currentUser.id);
+      console.log("[Requests] Fetching resident requests for tenant:", currentUser.id);
+      const response = await residentRequestsApi.getRequests();
+      console.log("[Requests] Resident requests response:", response);
+      const items = Array.isArray(response)
+        ? response
+        : Array.isArray(response?.data)
+          ? response.data
+          : Array.isArray((response as any)?.items)
+            ? (response as any).items
+            : [];
+      console.log("[Requests] Resident requests items:", items.length);
 
-      if (response.success && response.data) {
+      if (items.length > 0) {
         // Map backend data to frontend Request type
-        const mappedRequests: Request[] = response.data.map((item: any) => ({
+        const mappedRequests: Request[] = items.map((item: any) => ({
           id: String(item.id),
           tenantId: currentUser.id,
           title: item.title || "Untitled Request",
           description: item.description || "",
-          type: "maintenance",
+          type: mapTypeFromBackend(item.type),
           status: mapStatusFromBackend(item.status),
           priority: mapPriorityFromBackend(item.priority),
-          assignedTo: item.assignedTo?.fullName || item.assignedTo?.email || undefined,
-          createdAt: item.createdAt || new Date().toISOString(),
-          updatedAt: item.updatedAt || item.createdAt || new Date().toISOString(),
-          apartment: currentUser?.profile?.apartment || "",
-          tower: currentUser?.profile?.tower || "",
+          assignedTo:
+            item.assignedTo?.name ||
+            item.assignedTo?.fullName ||
+            item.assignedTo?.email ||
+            item.assignedTo ||
+            undefined,
+          buildingId: item.buildingId ? String(item.buildingId) : undefined,
+          apartment: item.unit?.label || currentUser?.profile?.apartment || "",
+          floor:
+            item.unit?.floor != null
+              ? String(item.unit.floor)
+              : currentUser?.profile?.floor || "",
           contactPhone: currentUser?.profile?.phone || "",
           preferredTime: "",
           additionalNotes: "",
-          attachments: [],
+          attachments: Array.isArray(item.attachments)
+            ? item.attachments
+                .map((att: any) => att?.url || att?.fileUrl || att?.uri || null)
+                .filter(Boolean)
+            : [],
           comments: [],
           messages: [],
           notes: [],
           timeline: [],
+          createdAt: item.createdAt || new Date().toISOString(),
+          updatedAt: item.updatedAt || item.createdAt || new Date().toISOString(),
           _source: "backend" as const, // Mark as backend request to differentiate from mock data
         }));
 
         console.log('[Requests] Fetched and mapped requests:', mappedRequests.length);
         setBackendRequests(mappedRequests);
+      } else {
+        setBackendRequests([]);
       }
     } catch (error) {
       console.error('[Requests] Failed to fetch requests:', error);

@@ -1,7 +1,7 @@
 // Base API service implementation
 
 import * as SecureStore from "expo-secure-store";
-import { APP_CONFIG } from "../../utils/constants";
+import { APP_CONFIG, API_ENDPOINTS, STORAGE_KEYS } from "../../utils/constants";
 import type {
   ApiConfig,
   RequestConfig,
@@ -23,7 +23,10 @@ function createTimeoutSignal(ms: number): { signal: AbortSignal; cleanup: () => 
 
 export class BaseApiService {
   private config: ApiConfig;
-  private authToken: string | null = null;
+  private static accessToken: string | null = null;
+  private static refreshToken: string | null = null;
+  private static isInitialized = false;
+  private static refreshPromise: Promise<string | null> | null = null;
   private requestInterceptors: RequestInterceptor[] = [];
   private responseInterceptors: ResponseInterceptor[] = [];
   private errorHandlers: ErrorHandler[] = [];
@@ -41,42 +44,82 @@ export class BaseApiService {
     this.initializeAuth();
   }
 
-  // Initialize authentication token from secure storage
+  // Initialize authentication tokens from secure storage
   private async initializeAuth(): Promise<void> {
+    if (BaseApiService.isInitialized) {
+      return;
+    }
+
     try {
-      const token = await SecureStore.getItemAsync("auth_token");
-      if (token) {
-        this.authToken = token;
-      }
+      const [accessToken, refreshToken] = await Promise.all([
+        SecureStore.getItemAsync(STORAGE_KEYS.auth_token),
+        SecureStore.getItemAsync(STORAGE_KEYS.refresh_token),
+      ]);
+      BaseApiService.accessToken = accessToken ?? null;
+      BaseApiService.refreshToken = refreshToken ?? null;
     } catch (error) {
-      console.warn("Failed to load auth token:", error);
+      console.warn("Failed to load auth tokens:", error);
+    } finally {
+      BaseApiService.isInitialized = true;
     }
   }
 
   // Token management
-  async setAuthToken(token: string): Promise<void> {
-    this.authToken = token;
+  async setAuthTokens(accessToken: string, refreshToken: string): Promise<void> {
+    BaseApiService.isInitialized = true;
+    BaseApiService.accessToken = accessToken;
+    BaseApiService.refreshToken = refreshToken;
     try {
-      await SecureStore.setItemAsync("auth_token", token);
+      await SecureStore.setItemAsync(STORAGE_KEYS.auth_token, accessToken);
+      await SecureStore.setItemAsync(STORAGE_KEYS.refresh_token, refreshToken);
+    } catch (error) {
+      console.error("Failed to store auth tokens:", error);
+    }
+  }
+
+  async setAuthToken(token: string): Promise<void> {
+    BaseApiService.isInitialized = true;
+    BaseApiService.accessToken = token;
+    try {
+      await SecureStore.setItemAsync(STORAGE_KEYS.auth_token, token);
     } catch (error) {
       console.error("Failed to store auth token:", error);
     }
   }
 
-  async clearAuthToken(): Promise<void> {
-    this.authToken = null;
+  async setRefreshToken(token: string): Promise<void> {
+    BaseApiService.isInitialized = true;
+    BaseApiService.refreshToken = token;
     try {
-      await SecureStore.deleteItemAsync("auth_token");
+      await SecureStore.setItemAsync(STORAGE_KEYS.refresh_token, token);
     } catch (error) {
-      console.warn("Failed to clear auth token:", error);
+      console.error("Failed to store refresh token:", error);
+    }
+  }
+
+  async clearAuthToken(): Promise<void> {
+    BaseApiService.accessToken = null;
+    BaseApiService.refreshToken = null;
+    try {
+      await SecureStore.deleteItemAsync(STORAGE_KEYS.auth_token);
+      await SecureStore.deleteItemAsync(STORAGE_KEYS.refresh_token);
+    } catch (error) {
+      console.warn("Failed to clear auth tokens:", error);
     }
   }
 
   async getAuthToken(): Promise<string | null> {
-    if (!this.authToken) {
+    if (!BaseApiService.isInitialized) {
       await this.initializeAuth();
     }
-    return this.authToken;
+    return BaseApiService.accessToken;
+  }
+
+  async getRefreshToken(): Promise<string | null> {
+    if (!BaseApiService.isInitialized) {
+      await this.initializeAuth();
+    }
+    return BaseApiService.refreshToken;
   }
 
   // Interceptor management
@@ -142,6 +185,7 @@ export class BaseApiService {
   // Build request headers
   private async buildHeaders(
     customHeaders: Record<string, string> = {},
+    skipAuth: boolean = false,
   ): Promise<Record<string, string>> {
     const headers = {
       ...this.config.headers,
@@ -149,12 +193,72 @@ export class BaseApiService {
     };
 
     // Add auth token if available
-    const token = await this.getAuthToken();
-    if (token) {
-      headers.Authorization = `Bearer ${token}`;
+    if (!skipAuth) {
+      const token = await this.getAuthToken();
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
     }
 
     return headers;
+  }
+
+  private isRefreshRequest(url: string): boolean {
+    const refreshPath = API_ENDPOINTS.auth.refresh;
+    return url === refreshPath || url.endsWith(refreshPath);
+  }
+
+  private async refreshAccessToken(): Promise<string | null> {
+    if (BaseApiService.refreshPromise) {
+      return BaseApiService.refreshPromise;
+    }
+
+    BaseApiService.refreshPromise = (async () => {
+      const refreshToken = await this.getRefreshToken();
+      if (!refreshToken) {
+        await this.clearAuthToken();
+        return null;
+      }
+
+      try {
+        const response = await fetch(this.buildUrl(API_ENDPOINTS.auth.refresh), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ refreshToken }),
+        });
+
+        if (!response.ok) {
+          await this.clearAuthToken();
+          return null;
+        }
+
+        const contentType = response.headers.get("content-type");
+        const payload = contentType && contentType.includes("application/json")
+          ? await response.json()
+          : await response.text();
+
+        const accessToken = payload?.accessToken ?? payload?.data?.accessToken;
+        const newRefreshToken =
+          payload?.refreshToken ?? payload?.data?.refreshToken ?? refreshToken;
+
+        if (!accessToken) {
+          await this.clearAuthToken();
+          return null;
+        }
+
+        await this.setAuthTokens(accessToken, newRefreshToken);
+        return accessToken;
+      } catch (error) {
+        await this.clearAuthToken();
+        return null;
+      } finally {
+        BaseApiService.refreshPromise = null;
+      }
+    })();
+
+    return BaseApiService.refreshPromise;
   }
 
   // Core request method
@@ -165,7 +269,10 @@ export class BaseApiService {
 
       // Build full URL and headers
       const url = this.buildUrl(modifiedConfig.url);
-      const headers = await this.buildHeaders(modifiedConfig.headers);
+      const headers = await this.buildHeaders(
+        modifiedConfig.headers,
+        modifiedConfig.skipAuth,
+      );
 
       // Create timeout signal (compatible with Hermes/React Native)
       const { signal, cleanup } = createTimeoutSignal(
@@ -202,6 +309,22 @@ export class BaseApiService {
         response = await fetch(finalUrl, fetchOptions);
       } finally {
         cleanup(); // Clear timeout to prevent memory leaks
+      }
+
+      if (
+        response.status === 401 &&
+        !modifiedConfig.skipAuth &&
+        !modifiedConfig.skipAuthRefresh &&
+        !this.isRefreshRequest(modifiedConfig.url)
+      ) {
+        const refreshedToken = await this.refreshAccessToken();
+        if (refreshedToken) {
+          return this.request<T>({
+            ...modifiedConfig,
+            skipAuthRefresh: true,
+            retryCount: (modifiedConfig.retryCount ?? 0) + 1,
+          });
+        }
       }
 
       // Check if response is ok

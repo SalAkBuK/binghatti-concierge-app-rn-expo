@@ -2102,10 +2102,9 @@ export const usePropertyModule = ({
       }
 
       const role = auth.currentUser.role;
-      const isAdmin = role === "admin" || role === "super_admin";
       const isManagement = role === "management";
 
-      if (!isAdmin && !isManagement) {
+      if (!isManagement) {
         return Promise.reject(
           new Error("Only management or admin users can create visitor passes"),
         );

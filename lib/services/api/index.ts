@@ -57,10 +57,6 @@ export class MainApiService implements ApiService {
     return this.authService.login(credentials);
   }
 
-  async register(userData: any) {
-    return this.authService.register(userData);
-  }
-
   async logout() {
     return this.authService.logout();
   }
@@ -69,8 +65,8 @@ export class MainApiService implements ApiService {
     return this.authService.refreshToken();
   }
 
-  async resetPassword(data: any) {
-    return this.authService.resetPassword(data);
+  async changePassword(data: any) {
+    return this.authService.changePassword(data);
   }
 
   async getProfile() {
@@ -126,6 +122,24 @@ export class MainApiService implements ApiService {
     await this.tenants.setAuthToken(token);
   }
 
+  async setAuthTokens(tokens: { accessToken: string; refreshToken: string }): Promise<void> {
+    await this.authService.setAuthTokens(tokens.accessToken, tokens.refreshToken);
+    await this.requests.setAuthTokens(tokens.accessToken, tokens.refreshToken);
+    await this.notifications.setAuthTokens(tokens.accessToken, tokens.refreshToken);
+    await this.users.setAuthTokens(tokens.accessToken, tokens.refreshToken);
+    await this.admin.setAuthTokens(tokens.accessToken, tokens.refreshToken);
+    await this.employee.setAuthTokens(tokens.accessToken, tokens.refreshToken);
+    await this.parcels.setAuthTokens(tokens.accessToken, tokens.refreshToken);
+    await this.shifts.setAuthTokens(tokens.accessToken, tokens.refreshToken);
+    await this.maintenance.setAuthTokens(tokens.accessToken, tokens.refreshToken);
+    await this.billing.setAuthTokens(tokens.accessToken, tokens.refreshToken);
+    await this.maintenanceScheduler.setAuthTokens(tokens.accessToken, tokens.refreshToken);
+    await this.broadcast.setAuthTokens(tokens.accessToken, tokens.refreshToken);
+    await this.visitors.setAuthTokens(tokens.accessToken, tokens.refreshToken);
+    await this.buildings.setAuthTokens(tokens.accessToken, tokens.refreshToken);
+    await this.tenants.setAuthTokens(tokens.accessToken, tokens.refreshToken);
+  }
+
   async clearAuthToken(): Promise<void> {
     await this.authService.clearAuthToken();
     // Clear token from all services
@@ -147,6 +161,10 @@ export class MainApiService implements ApiService {
 
   async getAuthToken(): Promise<string | null> {
     return this.authService.getAuthToken();
+  }
+
+  async getRefreshToken(): Promise<string | null> {
+    return this.authService.getRefreshToken();
   }
 
   // Helper method to check authentication

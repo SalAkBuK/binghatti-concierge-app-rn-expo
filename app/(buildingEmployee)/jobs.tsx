@@ -1,7 +1,8 @@
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
-import * as DocumentPicker from 'expo-document-picker';
-import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from "expo-document-picker";
+import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system/legacy";
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -27,8 +28,7 @@ import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
 import apiService from "../../lib/services/api";
-import { getUserErrorMessage } from "../../lib/services/api/errors";
-import { maintenanceApi } from "../../lib/services/api/maintenance";
+import { orgBuildingsApi } from "../../lib/services/api/org-buildings";
 import { uploadFileToServer } from "../../lib/utils/fileUpload";
 import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
 
@@ -47,53 +47,72 @@ type StaffJob = {
   status: StaffRequestStatus;
   priority: "low" | "medium" | "high" | "urgent";
   createdAt?: string;
-  buildingId?: number;
+  buildingId?: string;
   buildingName?: string;
   unitNumber?: string;
 };
 
+type AssignedBuilding = {
+  id: string;
+  name: string;
+  address?: string;
+};
+
 type JobStatusFilter = "all" | StaffRequestStatus;
 
-// Map backend status codes to frontend-friendly statuses
-const mapStatusFromBackend = (status: number): StaffRequestStatus => {
-  switch (status) {
-    case 1:
-      return "pending";
-    case 2:
-      return "assigned";
-    case 3:
-      return "in-progress";
-    case 4:
-      return "on-hold";
-    case 5:
-      return "completed";
-    case 6:
-      return "cancelled";
-    default:
-      return "pending";
+const mapStatusFromBackend = (status: any): StaffRequestStatus => {
+  if (typeof status === "number") {
+    switch (status) {
+      case 0:
+      case 1:
+        return "assigned";
+      case 2:
+        return "in-progress";
+      case 3:
+        return "completed";
+      case 4:
+        return "cancelled";
+      case 5:
+        return "completed";
+      case 6:
+        return "cancelled";
+      default:
+        return "assigned";
+    }
   }
+
+  const normalized = String(status || "").toUpperCase();
+  if (["OPEN", "NEW", "PENDING", "ASSIGNED"].includes(normalized)) return "assigned";
+  if (["IN_PROGRESS", "INPROGRESS"].includes(normalized)) return "in-progress";
+  if (["COMPLETED", "DONE"].includes(normalized)) return "completed";
+  if (["CANCELLED", "CANCELED"].includes(normalized)) return "cancelled";
+  return "assigned";
 };
 
-const mapPriorityFromBackend = (priority: number): StaffJob["priority"] => {
-  switch (priority) {
-    case 1:
-      return "low";
-    case 2:
-      return "medium";
-    case 3:
-      return "high";
-    case 4:
-      return "urgent";
-    default:
-      return "medium";
+const mapPriorityFromBackend = (priority: any): StaffJob["priority"] => {
+  if (typeof priority === "number") {
+    switch (priority) {
+      case 0:
+      case 1:
+        return "low";
+      case 2:
+        return "medium";
+      case 3:
+        return "high";
+      case 4:
+        return "urgent";
+      default:
+        return "medium";
+    }
   }
-};
 
-const STATUS_CODES = {
-  inProgress: 3,
-  onHold: 4,
-  completed: 5,
-} as const;
+  const normalized = String(priority || "").toUpperCase();
+  if (["LOW", "1"].includes(normalized)) return "low";
+  if (["MEDIUM", "NORMAL", "2"].includes(normalized)) return "medium";
+  if (["HIGH", "3"].includes(normalized)) return "high";
+  if (["URGENT", "4"].includes(normalized)) return "urgent";
+  return "medium";
+};
 
 const normalizeId = (value: number | string | null | undefined): number | undefined => {
   if (value == null) return undefined;
@@ -108,6 +127,7 @@ export default function BuildingEmployeeJobsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState<JobStatusFilter>("all");
   const [assignedJobs, setAssignedJobs] = useState<StaffJob[]>([]);
+  const [assignedBuildings, setAssignedBuildings] = useState<AssignedBuilding[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedJob, setSelectedJob] = useState<StaffJob | null>(null);
   const [detailNote, setDetailNote] = useState("");
@@ -127,13 +147,13 @@ export default function BuildingEmployeeJobsScreen() {
     }[]
   >([]);
   const [jobAttachments, setJobAttachments] = useState<{
-    id: number;
+    id: string;
     fileUrl: string;
     fileName: string;
     contentType: string;
   }[]>([]);
   const [managerNames, setManagerNames] = useState<Record<string, string>>({});
-  const fetchedManagerBuildingsRef = useRef<Set<number>>(new Set());
+  const fetchedManagerBuildingsRef = useRef<Set<string>>(new Set());
   const managerNamesRef = useRef<Record<string, string>>({});
   const [tenantNames, setTenantNames] = useState<Record<string, string>>({});
   const tenantNamesRef = useRef<Record<string, string>>({});
@@ -146,51 +166,93 @@ export default function BuildingEmployeeJobsScreen() {
     }
   }, [isAuthenticated]);
 
-  const staffId = useMemo(() => {
-    if (!currentUser?.id) return null;
-    const parsed = Number(
-      (currentUser as any).staffId ||
-        (currentUser as any).maintenanceStaffId ||
-        (currentUser.profile as any)?.staffId ||
-        currentUser.id,
-    );
-    return Number.isFinite(parsed) ? parsed : null;
-  }, [currentUser]);
+  const staffId = useMemo(
+    () => (currentUser?.id ? String(currentUser.id) : null),
+    [currentUser?.id],
+  );
 
   const fetchAssignedJobs = useCallback(async () => {
-    if (!staffId) {
+    if (!isAuthenticated || currentUser?.role !== "building_employee") {
       setAssignedJobs([]);
+      setAssignedBuildings([]);
       setIsLoading(false);
       return;
     }
 
     setIsLoading(true);
     try {
-      const response = await maintenanceApi.getMaintenanceRequestsByStaffId(staffId);
-      if (response.success && Array.isArray(response.data)) {
-        const mapped: StaffJob[] = response.data.map((item: any) => ({
-          id: String(item.id),
-          title: item.title || "Maintenance request",
-          description: item.description || "",
-          status: mapStatusFromBackend(item.status),
-          priority: mapPriorityFromBackend(item.priority),
-          createdAt: item.createdAt,
-          buildingId: normalizeId(item.buildingId ?? item.building?.id ?? (item as any).buildingID),
-          buildingName: item.buildingName,
-          unitNumber: item.unitNumber,
-        }));
+      const buildingsResponse = await orgBuildingsApi.getAssignedBuildings();
+      const buildingsPayload = Array.isArray(buildingsResponse)
+        ? buildingsResponse
+        : Array.isArray(buildingsResponse?.data)
+          ? buildingsResponse.data
+          : [];
 
-        // Sort by createdAt date, newest first
-        mapped.sort((a, b) => {
-          if (!a.createdAt) return 1;
-          if (!b.createdAt) return -1;
-          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-        });
+      const mappedBuildings: AssignedBuilding[] = buildingsPayload.map((building: any) => ({
+        id: String(building?.id ?? building?.buildingId ?? ""),
+        name:
+          building?.name ||
+          building?.buildingName ||
+          building?.title ||
+          "Building",
+        address: building?.address,
+      }));
 
-        setAssignedJobs(mapped);
-      } else {
+      setAssignedBuildings(mappedBuildings);
+
+      if (mappedBuildings.length === 0) {
         setAssignedJobs([]);
+        return;
       }
+
+      const jobArrays = await Promise.all(
+        mappedBuildings.map(async (building) => {
+          try {
+            const response = await orgBuildingsApi.getBuildingRequests(building.id);
+            const payload = Array.isArray(response)
+              ? response
+              : Array.isArray(response?.data)
+                ? response.data
+                : [];
+            return payload.map((item: any) => {
+              const unit = item?.unit || item?.unitDetails;
+              return {
+                id: String(item?.id ?? item?.requestId ?? ""),
+                title: item?.title || "Maintenance request",
+                description: item?.description || "",
+                status: mapStatusFromBackend(item?.status),
+                priority: mapPriorityFromBackend(item?.priority),
+                createdAt: item?.createdAt || item?.created_at,
+                buildingId: String(item?.buildingId ?? item?.building?.id ?? building.id),
+                buildingName:
+                  item?.building?.name ||
+                  item?.buildingName ||
+                  building.name,
+                unitNumber:
+                  unit?.label ||
+                  item?.unitLabel ||
+                  item?.unitNumber ||
+                  item?.apartment ||
+                  "",
+              } as StaffJob;
+            });
+          } catch (error) {
+            console.error(
+              `[BuildingEmployeeJobs] Failed to fetch requests for building ${building.id}`,
+              error,
+            );
+            return [];
+          }
+        }),
+      );
+
+      const mapped = jobArrays.flat();
+      mapped.sort((a, b) => {
+        if (!a.createdAt) return 1;
+        if (!b.createdAt) return -1;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+      setAssignedJobs(mapped);
     } catch (error) {
       console.error("[BuildingEmployeeJobs] Failed to fetch assigned jobs", error);
       showErrorAlert(error);
@@ -198,7 +260,7 @@ export default function BuildingEmployeeJobsScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, [staffId]);
+  }, [currentUser?.role, isAuthenticated]);
 
   useEffect(() => {
     fetchAssignedJobs();
@@ -217,9 +279,12 @@ export default function BuildingEmployeeJobsScreen() {
   const stats = useMemo(
     () => ({
       total: assignedJobs.length,
+      assigned: assignedJobs.filter(
+        (job) => job.status === "assigned" || job.status === "pending",
+      ).length,
       inProgress: assignedJobs.filter((job) => job.status === "in-progress").length,
-      onHold: assignedJobs.filter((job) => job.status === "on-hold").length,
       completed: assignedJobs.filter((job) => job.status === "completed").length,
+      cancelled: assignedJobs.filter((job) => job.status === "cancelled").length,
     }),
     [assignedJobs],
   );
@@ -232,16 +297,17 @@ export default function BuildingEmployeeJobsScreen() {
 
   const filters: { label: string; value: JobStatusFilter }[] = [
     { label: "All", value: "all" },
+    { label: "Assigned", value: "assigned" },
     { label: "In Progress", value: "in-progress" },
-    { label: "On Hold", value: "on-hold" },
     { label: "Completed", value: "completed" },
+    { label: "Cancelled", value: "cancelled" },
   ];
 
   const statusBadgeStyle = (status: StaffRequestStatus) => {
     switch (status) {
       case "pending":
       case "assigned":
-        return { bg: "#FEF3C7", color: "#92400E", label: "Pending" };
+        return { bg: "#FEF3C7", color: "#92400E", label: "Assigned" };
       case "in-progress":
         return { bg: "#DBEAFE", color: "#1D4ED8", label: "In Progress" };
       case "on-hold":
@@ -259,42 +325,58 @@ export default function BuildingEmployeeJobsScreen() {
     async (buildingId?: number | string) => {
       if (buildingId == null) return;
 
-      const buildingIdNum =
-        typeof buildingId === "string"
-          ? parseInt(String(buildingId).replace(/\D/g, ""), 10)
-          : buildingId;
+      const buildingKey = String(buildingId);
+      if (fetchedManagerBuildingsRef.current.has(buildingKey)) return;
 
-      if (!Number.isFinite(buildingIdNum)) return;
-      if (fetchedManagerBuildingsRef.current.has(buildingIdNum)) return;
-
-      try {
-        const response = await apiService.admin.getBuildingManagers(buildingIdNum);
-        if (response.success && Array.isArray(response.data)) {
-          const mapped: Record<string, string> = {};
-          response.data.forEach((mgr: any) => {
-            const displayName =
-              mgr.fullName ||
-              mgr.name ||
-              mgr.email ||
-              (mgr.userId ? `User ${mgr.userId}` : "Manager");
-
-            const possibleIds = [mgr.userId, mgr.managerId, mgr.id];
-            possibleIds.forEach((pid) => {
-              if (pid != null) {
-                mapped[String(pid)] = displayName;
-              }
-            });
-          });
-
-          fetchedManagerBuildingsRef.current.add(buildingIdNum);
-          managerNamesRef.current = { ...managerNamesRef.current, ...mapped };
-          setManagerNames((prev) => ({ ...prev, ...mapped }));
-        }
-      } catch (error) {
-        console.warn("[BuildingEmployeeJobs] Failed to fetch building managers", error);
-      }
+      // Manager lookup endpoint is deprecated; rely on comment payloads instead.
+      fetchedManagerBuildingsRef.current.add(buildingKey);
     },
     [],
+  );
+
+  const mapComments = useCallback(
+    (payload: any[], jobId?: string): typeof jobComments => {
+      const idBase = jobId || selectedJob?.id || "job";
+      return payload.map((comment: any, index: number) => ({
+        id: comment?.id ?? `${idBase}-comment-${index}`,
+        commentText: comment?.message || comment?.commentText || comment?.text || "",
+        createdAt: comment?.createdAt || comment?.created_at || new Date().toISOString(),
+        userId: comment?.userId ?? comment?.user?.id ?? comment?.user?.userId,
+        user: comment?.user,
+        userName:
+          comment?.userName ||
+          comment?.author?.fullName ||
+          comment?.author?.name ||
+          comment?.author?.email,
+      }));
+    },
+    [selectedJob?.id],
+  );
+
+  const mapAttachments = useCallback(
+    (payload: any[], jobId?: string): typeof jobAttachments => {
+      const idBase = jobId || selectedJob?.id || "job";
+      return payload
+        .map((attachment: any, index: number) => ({
+          id: attachment?.id ?? `${idBase}-attachment-${index}`,
+          fileUrl:
+            attachment?.fileUrl ||
+            attachment?.url ||
+            attachment?.uri ||
+            attachment?.path ||
+            "",
+          fileName:
+            attachment?.fileName ||
+            attachment?.name ||
+            `Attachment ${index + 1}`,
+          contentType:
+            attachment?.mimeType ||
+            attachment?.contentType ||
+            "application/octet-stream",
+        }))
+        .filter((attachment) => Boolean(attachment.fileUrl));
+    },
+    [selectedJob?.id],
   );
 
   const resolveCommentAuthor = useCallback(
@@ -342,7 +424,7 @@ export default function BuildingEmployeeJobsScreen() {
 
   useEffect(() => {
     fetchManagerNamesForBuilding(
-      selectedJob?.buildingId ?? normalizeId(currentUser?.profile?.buildingId),
+      selectedJob?.buildingId ?? currentUser?.profile?.buildingId,
     );
   }, [selectedJob?.buildingId, currentUser?.profile?.buildingId, fetchManagerNamesForBuilding]);
 
@@ -422,42 +504,63 @@ export default function BuildingEmployeeJobsScreen() {
     // Fetch fresh details (description/building/comments/attachments) when opening the modal
     setDetailLoading(true);
     try {
-      const response = await maintenanceApi.getMaintenanceRequestById(job.id);
-      if (response.success && response.data) {
-        const apiRequest = response.data;
-        const resolvedBuildingId = normalizeId(
-          apiRequest.buildingId ??
-            apiRequest.building?.id ??
-            (apiRequest as any).buildingID ??
-            job.buildingId ??
-            currentUser?.profile?.buildingId,
-        );
-        const mappedJob: StaffJob = {
-          id: String(apiRequest.id ?? job.id),
-          title: apiRequest.title || job.title,
-          description: apiRequest.description || job.description || "",
-          status: mapStatusFromBackend(apiRequest.status ?? job.status),
-          priority: mapPriorityFromBackend(apiRequest.priority ?? job.priority),
-          createdAt: apiRequest.createdAt || job.createdAt,
-          buildingId: Number.isFinite(resolvedBuildingId) ? resolvedBuildingId : undefined,
-          buildingName: apiRequest.buildingName || job.buildingName,
-          unitNumber: apiRequest.unitNumber || job.unitNumber,
-        };
-        setSelectedJob(mappedJob);
-        setAssignedJobs((prev) =>
-          prev.map((item) => (item.id === mappedJob.id ? mappedJob : item)),
-        );
+      const buildingId =
+        job.buildingId || currentUser?.profile?.buildingId || assignedBuildings[0]?.id;
+      if (!buildingId) {
+        throw new Error("No building assignment found for this request.");
+      }
 
-        // Fetch managers for this building once so we can resolve names in comments
-        fetchManagerNamesForBuilding(mappedJob.buildingId);
+      const response = await orgBuildingsApi.getRequest(buildingId, job.id);
+      const apiRequest = response?.data ?? response ?? {};
+      const resolvedBuildingId = String(
+        apiRequest?.buildingId ??
+          apiRequest?.building?.id ??
+          job.buildingId ??
+          buildingId,
+      );
 
-        // Set comments and attachments
-        if (apiRequest.comments && Array.isArray(apiRequest.comments)) {
-          setJobComments(apiRequest.comments);
-        }
-        if (apiRequest.attachments && Array.isArray(apiRequest.attachments)) {
-          setJobAttachments(apiRequest.attachments);
-        }
+      const unit = apiRequest?.unit || apiRequest?.unitDetails;
+      const mappedJob: StaffJob = {
+        id: String(apiRequest?.id ?? job.id),
+        title: apiRequest?.title || job.title,
+        description: apiRequest?.description || job.description || "",
+        status: mapStatusFromBackend(apiRequest?.status ?? job.status),
+        priority: mapPriorityFromBackend(apiRequest?.priority ?? job.priority),
+        createdAt: apiRequest?.createdAt || job.createdAt,
+        buildingId: resolvedBuildingId,
+        buildingName:
+          apiRequest?.building?.name ||
+          apiRequest?.buildingName ||
+          job.buildingName,
+        unitNumber:
+          unit?.label ||
+          apiRequest?.unitLabel ||
+          apiRequest?.unitNumber ||
+          job.unitNumber,
+      };
+
+      setSelectedJob(mappedJob);
+      setAssignedJobs((prev) =>
+        prev.map((item) => (item.id === mappedJob.id ? mappedJob : item)),
+      );
+
+      fetchManagerNamesForBuilding(mappedJob.buildingId);
+
+      const commentsResponse = await orgBuildingsApi.getComments(
+        resolvedBuildingId,
+        mappedJob.id,
+      );
+      const commentsPayload = Array.isArray(commentsResponse)
+        ? commentsResponse
+        : Array.isArray(commentsResponse?.data)
+          ? commentsResponse.data
+          : [];
+      setJobComments(mapComments(commentsPayload, mappedJob.id));
+
+      if (Array.isArray(apiRequest?.attachments)) {
+        setJobAttachments(mapAttachments(apiRequest.attachments, mappedJob.id));
+      } else {
+        setJobAttachments([]);
       }
     } catch (error) {
       console.warn("[BuildingEmployeeJobs] Failed to refresh request details", error);
@@ -466,8 +569,11 @@ export default function BuildingEmployeeJobsScreen() {
     }
   };
 
-  const updateStatus = async (newStatusCode: number, nextStatus: StaffRequestStatus) => {
-    if (!selectedJob || !staffId) return;
+  const updateStatus = async (
+    apiStatus: "IN_PROGRESS" | "COMPLETED",
+    nextStatus: StaffRequestStatus,
+  ) => {
+    if (!selectedJob) return;
 
     // Show confirmation for marking as completed
     if (nextStatus === "completed") {
@@ -483,7 +589,7 @@ export default function BuildingEmployeeJobsScreen() {
             text: "Complete",
             style: "default",
             onPress: async () => {
-              await performStatusUpdate(newStatusCode, nextStatus);
+              await performStatusUpdate(apiStatus, nextStatus);
             }
           }
         ]
@@ -492,27 +598,44 @@ export default function BuildingEmployeeJobsScreen() {
     }
 
     // For other statuses, update directly
-    await performStatusUpdate(newStatusCode, nextStatus);
+    await performStatusUpdate(apiStatus, nextStatus);
   };
 
-  const performStatusUpdate = async (newStatusCode: number, nextStatus: StaffRequestStatus) => {
-    if (!selectedJob || !staffId) return;
+  const performStatusUpdate = async (
+    apiStatus: "IN_PROGRESS" | "COMPLETED",
+    nextStatus: StaffRequestStatus,
+  ) => {
+    if (!selectedJob) return;
     setStatusUpdating(true);
     try {
-      await maintenanceApi.updateMaintenanceRequestStatus({
-        requestId: Number(selectedJob.id),
-        newStatus: newStatusCode,
-        changedById: staffId,
-        note: detailNote.trim() || undefined,
-      });
+      const buildingId =
+        selectedJob.buildingId || currentUser?.profile?.buildingId || assignedBuildings[0]?.id;
+      if (!buildingId) {
+        throw new Error("No building assignment found for this request.");
+      }
+
+      const response = await orgBuildingsApi.updateRequestStatus(
+        buildingId,
+        selectedJob.id,
+        apiStatus,
+      );
+      const responseHasSuccess =
+        response && typeof response === "object" && "success" in response;
+      if (responseHasSuccess && response.success === false) {
+        throw new Error(response.message || "Failed to update request status");
+      }
+
+      const updatedStatus = mapStatusFromBackend(
+        response?.data?.status ?? apiStatus,
+      );
 
       setAssignedJobs((prev) =>
         prev.map((job) =>
-          job.id === selectedJob.id ? { ...job, status: nextStatus } : job,
+          job.id === selectedJob.id ? { ...job, status: updatedStatus } : job,
         ),
       );
-      setSelectedJob((prev) => (prev ? { ...prev, status: nextStatus } : prev));
-      showSuccessAlert(`Request marked as ${statusBadgeStyle(nextStatus).label}.`);
+      setSelectedJob((prev) => (prev ? { ...prev, status: updatedStatus } : prev));
+      showSuccessAlert(`Request marked as ${statusBadgeStyle(updatedStatus).label}.`);
     } catch (error) {
       console.error("[BuildingEmployeeJobs] Failed to update status", error);
       showErrorAlert(error);
@@ -522,21 +645,38 @@ export default function BuildingEmployeeJobsScreen() {
   };
 
   const handleAddComment = async () => {
-    if (!selectedJob || !staffId || !commentText.trim() || isJobClosed) return;
+    if (!selectedJob || !commentText.trim() || isJobClosed) return;
+
+    const buildingId =
+      selectedJob.buildingId || currentUser?.profile?.buildingId || assignedBuildings[0]?.id;
+    if (!buildingId) {
+      showErrorAlert(new Error("No building assignment found for this request."));
+      return;
+    }
 
     setIsAddingComment(true);
     try {
-      await maintenanceApi.addMaintenanceRequestComment({
-        requestId: Number(selectedJob.id),
-        userId: staffId,
-        commentText: commentText.trim(),
-      });
-
-      // Refresh comments list
-      const response = await maintenanceApi.getMaintenanceRequestById(selectedJob.id);
-      if (response.success && response.data?.comments) {
-        setJobComments(response.data.comments);
+      const response = await orgBuildingsApi.addComment(
+        buildingId,
+        selectedJob.id,
+        commentText.trim(),
+      );
+      const responseHasSuccess =
+        response && typeof response === "object" && "success" in response;
+      if (responseHasSuccess && response.success === false) {
+        throw new Error(response.message || "Failed to add comment");
       }
+
+      const refreshed = await orgBuildingsApi.getComments(
+        buildingId,
+        selectedJob.id,
+      );
+      const refreshedPayload = Array.isArray(refreshed)
+        ? refreshed
+        : Array.isArray(refreshed?.data)
+          ? refreshed.data
+          : [];
+      setJobComments(mapComments(refreshedPayload, selectedJob.id));
 
       showSuccessAlert("Comment added successfully");
       setCommentText("");
@@ -549,7 +689,7 @@ export default function BuildingEmployeeJobsScreen() {
   };
 
   const handlePickImage = async () => {
-    if (!selectedJob || !staffId) return;
+    if (!selectedJob) return;
 
     try {
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -574,7 +714,7 @@ export default function BuildingEmployeeJobsScreen() {
   };
 
   const handlePickDocument = async () => {
-    if (!selectedJob || !staffId) return;
+    if (!selectedJob) return;
 
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -593,12 +733,19 @@ export default function BuildingEmployeeJobsScreen() {
   };
 
   const uploadAttachment = async (fileUri: string, fileName: string) => {
-    if (!selectedJob || !staffId) return;
+    if (!selectedJob) return;
+
+    const buildingId =
+      selectedJob.buildingId || currentUser?.profile?.buildingId || assignedBuildings[0]?.id;
+    if (!buildingId) {
+      showErrorAlert(new Error("No building assignment found for this request."));
+      return;
+    }
 
     setIsUploadingAttachment(true);
     try {
       // Upload file to server (currently using mock - see fileUpload.ts)
-      const uploadedUrl = await uploadFileToServer(fileUri, Number(selectedJob.id));
+      const uploadedUrl = await uploadFileToServer(fileUri);
 
       // Get file extension to determine content type
       const extension = fileName.split('.').pop()?.toLowerCase() || '';
@@ -614,19 +761,32 @@ export default function BuildingEmployeeJobsScreen() {
         contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
       }
 
-      // Add attachment to maintenance request
-      await maintenanceApi.addMaintenanceRequestAttachment({
-        requestId: Number(selectedJob.id),
-        uploadedById: staffId,
-        fileUrl: uploadedUrl,
-        fileName: fileName,
-        contentType: contentType,
-      });
+      const fileInfo = await FileSystem.getInfoAsync(fileUri, { size: true });
+      const sizeBytes =
+        fileInfo.exists && typeof fileInfo.size === "number" ? fileInfo.size : 0;
 
-      // Refresh attachments list
-      const response = await maintenanceApi.getMaintenanceRequestById(selectedJob.id);
-      if (response.success && response.data?.attachments) {
-        setJobAttachments(response.data.attachments);
+      const response = await orgBuildingsApi.addAttachments(
+        buildingId,
+        selectedJob.id,
+        [
+          {
+            fileName,
+            mimeType: contentType,
+            sizeBytes,
+            url: uploadedUrl,
+          },
+        ],
+      );
+      const responseHasSuccess =
+        response && typeof response === "object" && "success" in response;
+      if (responseHasSuccess && response.success === false) {
+        throw new Error(response.message || "Failed to upload attachment");
+      }
+
+      const refreshed = await orgBuildingsApi.getRequest(buildingId, selectedJob.id);
+      const apiRequest = refreshed?.data ?? refreshed ?? {};
+      if (Array.isArray(apiRequest.attachments)) {
+        setJobAttachments(mapAttachments(apiRequest.attachments, selectedJob.id));
       }
 
       showSuccessAlert("Attachment uploaded successfully");
@@ -639,7 +799,7 @@ export default function BuildingEmployeeJobsScreen() {
   };
 
   const handleTakePhoto = async () => {
-    if (!selectedJob || !staffId) return;
+    if (!selectedJob) return;
 
     try {
       const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
@@ -777,15 +937,15 @@ export default function BuildingEmployeeJobsScreen() {
         >
           <View style={styles.summaryCard}>
             <Text style={styles.summaryValue}>
-              {stats.inProgress}
+              {stats.assigned}
             </Text>
-            <Text style={styles.summaryLabel}>In Progress</Text>
+            <Text style={styles.summaryLabel}>Assigned</Text>
           </View>
           <View style={styles.summaryCard}>
             <Text style={styles.summaryValue}>
-              {stats.onHold}
+              {stats.inProgress}
             </Text>
-            <Text style={styles.summaryLabel}>On Hold</Text>
+            <Text style={styles.summaryLabel}>In Progress</Text>
           </View>
           <View style={styles.summaryCard}>
             <Text style={styles.summaryValue}>
@@ -877,14 +1037,15 @@ export default function BuildingEmployeeJobsScreen() {
       >
         <View style={styles.modalBackdrop}>
           <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
             style={{ flex: 1 }}
-            keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+            keyboardVerticalOffset={0}
           >
             <View style={styles.modalCard}>
+              {/* Fixed Header */}
               <View style={styles.modalHeader}>
                 <View style={styles.modalTitleWrap}>
-                  <Ionicons name="construct-outline" size={22} color="#111827" />
+                  <Ionicons name="construct-outline" size={24} color="#2563EB" />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.modalTitle} numberOfLines={2}>
                       {selectedJob?.title}
@@ -892,254 +1053,251 @@ export default function BuildingEmployeeJobsScreen() {
                     {selectedJob?.buildingName ? (
                       <Text style={styles.modalSubtitle} numberOfLines={1}>
                         {selectedJob.buildingName}
-                        {selectedJob.unitNumber ? ` · ${selectedJob.unitNumber}` : ""}
+                        {selectedJob.unitNumber ? ` · Unit ${selectedJob.unitNumber}` : ""}
                       </Text>
                     ) : null}
                   </View>
                 </View>
-                <TouchableOpacity onPress={() => setSelectedJob(null)}>
-                  <Ionicons name="close" size={22} color="#6B7280" />
+                <TouchableOpacity
+                  onPress={() => setSelectedJob(null)}
+                  style={styles.closeButton}
+                >
+                  <Ionicons name="close" size={24} color="#6B7280" />
                 </TouchableOpacity>
               </View>
 
+              {/* Scrollable Content */}
               <ScrollView
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.modalScrollContent}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="none"
               >
               {selectedJob ? (
               <>
-                <View style={[styles.statusBadge, { backgroundColor: statusBadgeStyle(selectedJob.status).bg, alignSelf: "flex-start" }]}>
-                  <Text
-                    style={[
-                      styles.statusBadgeText,
-                      { color: statusBadgeStyle(selectedJob.status).color },
-                    ]}
-                  >
-                    {statusBadgeStyle(selectedJob.status).label}
-                  </Text>
-                </View>
-
-                <View style={styles.modalMeta}>
-                  <View style={styles.metaRow}>
-                    <Ionicons name="flag-outline" size={16} color="#6B7280" />
-                    <Text style={styles.metaText}>
-                      Priority: {selectedJob.priority.toUpperCase()}
-                    </Text>
+                {/* Status & Priority Section */}
+                <View style={styles.detailsCard}>
+                  <View style={styles.badgeRow}>
+                    <View style={[styles.statusBadge, { backgroundColor: statusBadgeStyle(selectedJob.status).bg }]}>
+                      <Text
+                        style={[
+                          styles.statusBadgeText,
+                          { color: statusBadgeStyle(selectedJob.status).color },
+                        ]}
+                      >
+                        {statusBadgeStyle(selectedJob.status).label}
+                      </Text>
+                    </View>
+                    <View style={styles.priorityBadge}>
+                      <Ionicons name="flag" size={14} color="#DC2626" />
+                      <Text style={styles.priorityBadgeText}>
+                        {selectedJob.priority.toUpperCase()}
+                      </Text>
+                    </View>
                   </View>
+
                   {selectedJob.createdAt && (
-                    <View style={styles.metaRow}>
-                      <Ionicons name="time-outline" size={16} color="#6B7280" />
-                      <Text style={styles.metaText}>
-                        Created {new Date(selectedJob.createdAt).toLocaleString()}
+                    <View style={styles.infoRow}>
+                      <Ionicons name="time-outline" size={18} color="#6B7280" />
+                      <Text style={styles.infoText}>
+                        {new Date(selectedJob.createdAt).toLocaleString()}
                       </Text>
                     </View>
                   )}
+
+                  {detailLoading ? (
+                    <View style={styles.loadingInline}>
+                      <ActivityIndicator size="small" color="#2563EB" />
+                      <Text style={styles.loadingText}>Loading details...</Text>
+                    </View>
+                  ) : selectedJob.description ? (
+                    <View style={styles.descriptionSection}>
+                      <Text style={styles.descriptionLabel}>Description</Text>
+                      <Text style={styles.descriptionText}>{selectedJob.description}</Text>
+                    </View>
+                  ) : null}
                 </View>
 
-                {detailLoading ? (
-                  <View style={styles.loadingInline}>
-                    <ActivityIndicator size="small" color="#2563EB" />
-                    <Text style={styles.emptyCardSubtitle}>Fetching latest details...</Text>
-                  </View>
-                ) : selectedJob.description ? (
-                  <Text style={styles.modalDescription}>{selectedJob.description}</Text>
-                ) : null}
+                {/* Action Buttons */}
+                {!isJobClosed && (
+                  <View style={styles.actionsCard}>
+                    {selectedJob.status === "assigned" && (
+                      <TouchableOpacity
+                        style={[styles.actionButton, styles.startButton, statusUpdating && styles.disabledButton]}
+                        disabled={statusUpdating}
+                        onPress={() => updateStatus("IN_PROGRESS", "in-progress")}
+                      >
+                        <Ionicons name="play-circle" size={20} color="#FFFFFF" />
+                        <Text style={styles.actionButtonText}>Start Work</Text>
+                      </TouchableOpacity>
+                    )}
 
-                
+                    {selectedJob.status === "in-progress" && (
+                      <TouchableOpacity
+                        style={[styles.actionButton, styles.completeButton, statusUpdating && styles.disabledButton]}
+                        disabled={statusUpdating}
+                        onPress={() => updateStatus("COMPLETED", "completed")}
+                      >
+                        <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+                        <Text style={styles.actionButtonText}>Mark as Completed</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
 
                 {isJobClosed && (
-                  <View style={styles.completedBanner}>
-                    <Ionicons name="checkmark-done-outline" size={18} color="#047857" />
-                    <Text style={styles.completedBannerText}>
+                  <View style={styles.closedBanner}>
+                    <Ionicons
+                      name={selectedJob.status === "cancelled" ? "close-circle" : "checkmark-done-circle"}
+                      size={20}
+                      color={selectedJob.status === "cancelled" ? "#DC2626" : "#047857"}
+                    />
+                    <Text style={[styles.closedBannerText, selectedJob.status === "cancelled" && { color: "#DC2626" }]}>
                       {selectedJob.status === "cancelled"
-                        ? "This request is cancelled. Commenting and attachments are disabled."
-                        : "This request is completed. Commenting and attachments are disabled."}
+                        ? "This request has been cancelled"
+                        : "This request has been completed"}
                     </Text>
                   </View>
                 )}
 
-                {/* Comment Section */}
-                <View style={styles.commentBox}>
-                  <Text style={styles.label}>Add Comment</Text>
-                  <TextInput
-                    style={styles.noteInput}
-                    placeholder={
-                      isJobClosed
-                        ? "Commenting is disabled for closed requests."
-                        : "Add a comment about this request..."
-                    }
-                    multiline
-                    value={commentText}
-                    onChangeText={setCommentText}
-                    editable={!isJobClosed}
-                  />
-                  <TouchableOpacity
-                    style={[
-                      styles.addCommentButton,
-                      (!commentText.trim() || isAddingComment || isJobClosed) && styles.disabledButton
-                    ]}
-                    onPress={handleAddComment}
-                    disabled={!commentText.trim() || isAddingComment || isJobClosed}
-                  >
-                    {isAddingComment ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <>
-                        <Ionicons name="chatbox-outline" size={18} color="#FFFFFF" />
-                        <Text style={styles.addCommentButtonText}>Add Comment</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                </View>
+                {/* Comments Section */}
+                <View style={styles.sectionCard}>
+                  <View style={styles.sectionHeader}>
+                    <Ionicons name="chatbubbles" size={20} color="#2563EB" />
+                    <Text style={styles.sectionTitle}>
+                      Comments {jobComments.length > 0 ? `(${jobComments.length})` : ""}
+                    </Text>
+                  </View>
 
-                {/* Attachment Section */}
-                <View style={styles.attachmentBox}>
-                  <Text style={styles.label}>Add Attachment</Text>
-                  <TouchableOpacity
-                    style={[
-                      styles.attachmentButton,
-                      (isUploadingAttachment || isJobClosed) && styles.disabledButton
-                    ]}
-                    onPress={showAttachmentOptions}
-                    disabled={isUploadingAttachment || isJobClosed}
-                  >
-                    {isUploadingAttachment ? (
-                      <ActivityIndicator size="small" color="#2563EB" />
-                    ) : (
-                      <>
-                        <Ionicons name="attach" size={20} color="#2563EB" />
-                        <Text style={styles.attachmentButtonText}>Upload Photo or Document</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                </View>
+                  {!isJobClosed && (
+                    <View style={styles.inputSection}>
+                      <TextInput
+                        style={styles.commentInput}
+                        placeholder="Add a comment..."
+                        placeholderTextColor="#9CA3AF"
+                        multiline
+                        value={commentText}
+                        onChangeText={setCommentText}
+                        maxLength={500}
+                      />
+                      <TouchableOpacity
+                        style={[
+                          styles.sendButton,
+                          (!commentText.trim() || isAddingComment) && styles.disabledButton
+                        ]}
+                        onPress={handleAddComment}
+                        disabled={!commentText.trim() || isAddingComment}
+                      >
+                        {isAddingComment ? (
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                        ) : (
+                          <Ionicons name="send" size={18} color="#FFFFFF" />
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  )}
 
-                {/* Display Existing Comments */}
-                {jobComments.length > 0 && (
-                  <View style={styles.displaySection}>
-                    <Text style={styles.sectionTitle}>Comments ({jobComments.length})</Text>
-                    <View style={styles.commentsList}>
+                  {jobComments.length > 0 ? (
+                    <View style={styles.commentsContainer}>
                       {jobComments
                         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
                         .map((comment) => {
                           const author = resolveCommentAuthor(comment);
                           return (
-                            <View key={comment.id} style={styles.commentItem}>
+                            <View key={comment.id} style={styles.commentBubble}>
                               <View style={styles.commentHeader}>
-                                <Ionicons name="person-circle" size={20} color="#6B7280" />
-                                <Text style={styles.commentUser}>{author}</Text>
-                                <Text style={styles.commentTime}>
-                                  {new Date(comment.createdAt).toLocaleString()}
-                                </Text>
+                                <View style={styles.avatarCircle}>
+                                  <Text style={styles.avatarText}>
+                                    {author.charAt(0).toUpperCase()}
+                                  </Text>
+                                </View>
+                                <View style={styles.commentMeta}>
+                                  <Text style={styles.commentAuthor}>{author}</Text>
+                                  <Text style={styles.commentDate}>
+                                    {new Date(comment.createdAt).toLocaleString()}
+                                  </Text>
+                                </View>
                               </View>
-                              <Text style={styles.commentContent}>{comment.commentText}</Text>
+                              <Text style={styles.commentText}>{comment.commentText}</Text>
                             </View>
                           );
                         })}
                     </View>
-                  </View>
-                )}
+                  ) : (
+                    <View style={styles.emptySection}>
+                      <Ionicons name="chatbubbles-outline" size={32} color="#CBD5E1" />
+                      <Text style={styles.emptyText}>No comments yet</Text>
+                    </View>
+                  )}
+                </View>
 
-                {/* Display Existing Attachments */}
-                {jobAttachments.length > 0 && (
-                  <View style={styles.displaySection}>
-                    <Text style={styles.sectionTitle}>Attachments ({jobAttachments.length})</Text>
+                {/* Attachments Section */}
+                <View style={styles.sectionCard}>
+                  <View style={styles.sectionHeader}>
+                    <Ionicons name="attach" size={20} color="#2563EB" />
+                    <Text style={styles.sectionTitle}>
+                      Attachments {jobAttachments.length > 0 ? `(${jobAttachments.length})` : ""}
+                    </Text>
+                  </View>
+
+                  {!isJobClosed && (
+                    <TouchableOpacity
+                      style={[
+                        styles.uploadButton,
+                        isUploadingAttachment && styles.disabledButton
+                      ]}
+                      onPress={showAttachmentOptions}
+                      disabled={isUploadingAttachment}
+                    >
+                      {isUploadingAttachment ? (
+                        <ActivityIndicator size="small" color="#2563EB" />
+                      ) : (
+                        <>
+                          <Ionicons name="cloud-upload-outline" size={20} color="#2563EB" />
+                          <Text style={styles.uploadButtonText}>Upload Photo or Document</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  )}
+
+                  {jobAttachments.length > 0 ? (
                     <ScrollView
                       horizontal
                       showsHorizontalScrollIndicator={false}
-                      style={styles.attachmentsList}
+                      contentContainerStyle={styles.attachmentsScroll}
                     >
                       {jobAttachments.map((attachment) => {
                         const isImage = attachment.contentType.startsWith('image/');
                         return (
                           <TouchableOpacity
                             key={attachment.id}
-                            style={styles.attachmentItem}
-                            onPress={() => {
-                              if (isImage) {
-                                // Open image in full screen or external viewer
-                                Linking.openURL(attachment.fileUrl);
-                              } else {
-                                // Open document in browser
-                                Linking.openURL(attachment.fileUrl);
-                              }
-                            }}
+                            style={styles.attachmentCard}
+                            onPress={() => Linking.openURL(attachment.fileUrl)}
                           >
                             {isImage ? (
                               <Image
                                 source={{ uri: attachment.fileUrl }}
-                                style={styles.attachmentImage}
+                                style={styles.attachmentPreview}
                                 resizeMode="cover"
                               />
                             ) : (
-                              <View style={styles.attachmentDoc}>
-                                <Ionicons name="document-outline" size={40} color="#2563EB" />
+                              <View style={styles.documentPreview}>
+                                <Ionicons name="document-text" size={32} color="#2563EB" />
                               </View>
                             )}
-                            <Text style={styles.attachmentName} numberOfLines={1}>
+                            <Text style={styles.attachmentLabel} numberOfLines={2}>
                               {attachment.fileName}
                             </Text>
                           </TouchableOpacity>
                         );
                       })}
                     </ScrollView>
-                  </View>
-                )}
-
-                <View style={styles.modalActions}>
-                  {selectedJob.status === "in-progress" && (
-                    <>
-                      <TouchableOpacity
-                        style={[styles.secondaryButton, statusUpdating && styles.disabledButton]}
-                        disabled={statusUpdating}
-                        onPress={() => updateStatus(STATUS_CODES.onHold, "on-hold")}
-                      >
-                        <Ionicons name="pause" size={18} color="#1F2937" />
-                        <Text style={styles.secondaryButtonText}>Put On Hold</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.primaryButton, statusUpdating && styles.disabledButton]}
-                        disabled={statusUpdating}
-                        onPress={() => updateStatus(STATUS_CODES.completed, "completed")}
-                      >
-                        <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
-                        <Text style={styles.primaryButtonText}>Mark Completed</Text>
-                      </TouchableOpacity>
-                    </>
+                  ) : (
+                    <View style={styles.emptySection}>
+                      <Ionicons name="document-attach-outline" size={32} color="#CBD5E1" />
+                      <Text style={styles.emptyText}>No attachments yet</Text>
+                    </View>
                   )}
-
-                  {selectedJob.status === "on-hold" && (
-                    <>
-                      <TouchableOpacity
-                        style={[styles.secondaryButton, statusUpdating && styles.disabledButton]}
-                        disabled={statusUpdating}
-                        onPress={() => updateStatus(STATUS_CODES.inProgress, "in-progress")}
-                      >
-                        <Ionicons name="play" size={18} color="#1F2937" />
-                        <Text style={styles.secondaryButtonText}>Resume Work</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.primaryButton, statusUpdating && styles.disabledButton]}
-                        disabled={statusUpdating}
-                        onPress={() => updateStatus(STATUS_CODES.completed, "completed")}
-                      >
-                        <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
-                        <Text style={styles.primaryButtonText}>Mark Completed</Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
-
-                  {selectedJob.status === "completed" && (
-                    <Text style={styles.completedHint}>This request is already completed.</Text>
-                  )}
-
-                  {selectedJob.status !== "in-progress" &&
-                    selectedJob.status !== "on-hold" &&
-                    selectedJob.status !== "completed" && (
-                      <Text style={styles.completedHint}>
-                        This request is awaiting progress updates.
-                      </Text>
-                    )}
                 </View>
               </>
             ) : null}
@@ -1325,49 +1483,55 @@ const styles = StyleSheet.create({
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.35)",
+    backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "flex-end",
   },
   modalCard: {
     backgroundColor: "#FFFFFF",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    gap: 16,
-    maxHeight: "85%",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: "90%",
+    overflow: "hidden",
   },
   modalHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
+    backgroundColor: "#FFFFFF",
   },
   modalScrollContent: {
-    paddingBottom: 32,
+    paddingHorizontal: 20,
+    paddingBottom: 24,
     gap: 16,
   },
   modalTitleWrap: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 12,
     flex: 1,
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 19,
     fontWeight: "700",
     color: "#111827",
+    lineHeight: 24,
   },
   modalSubtitle: {
     fontSize: 13,
     color: "#6B7280",
+    marginTop: 2,
   },
-  modalMeta: {
-    gap: 6,
-  },
-  modalDescription: {
-    fontSize: 14,
-    color: "#374151",
-    lineHeight: 20,
+  closeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#F3F4F6",
+    alignItems: "center",
+    justifyContent: "center",
   },
   noteBox: {
     gap: 8,
@@ -1556,5 +1720,262 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#6B7280",
     textAlign: "center",
+  },
+  // New redesigned modal styles
+  detailsCard: {
+    backgroundColor: "#F9FAFB",
+    borderRadius: 16,
+    padding: 16,
+    gap: 12,
+  },
+  badgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  priorityBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: "#FEF2F2",
+    borderRadius: 999,
+  },
+  priorityBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#DC2626",
+    letterSpacing: 0.5,
+  },
+  infoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  infoText: {
+    fontSize: 13,
+    color: "#6B7280",
+  },
+  loadingText: {
+    fontSize: 13,
+    color: "#6B7280",
+  },
+  descriptionSection: {
+    gap: 6,
+    marginTop: 4,
+  },
+  descriptionLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#6B7280",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  descriptionText: {
+    fontSize: 14,
+    color: "#374151",
+    lineHeight: 20,
+  },
+  actionsCard: {
+    gap: 10,
+  },
+  actionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    paddingVertical: 14,
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  startButton: {
+    backgroundColor: "#2563EB",
+  },
+  completeButton: {
+    backgroundColor: "#16A34A",
+  },
+  actionButtonText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    letterSpacing: 0.3,
+  },
+  closedBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#F0FDF4",
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
+    borderRadius: 12,
+    padding: 14,
+  },
+  closedBannerText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#047857",
+  },
+  sectionCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    padding: 16,
+    gap: 14,
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  inputSection: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 10,
+  },
+  commentInput: {
+    flex: 1,
+    backgroundColor: "#F9FAFB",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: "#111827",
+    maxHeight: 100,
+    minHeight: 44,
+    textAlignVertical: "top",
+  },
+  sendButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: "#2563EB",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#2563EB",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  commentsContainer: {
+    gap: 12,
+  },
+  commentBubble: {
+    backgroundColor: "#F9FAFB",
+    borderRadius: 12,
+    padding: 12,
+    gap: 10,
+  },
+  commentHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  avatarCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#2563EB",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  commentMeta: {
+    flex: 1,
+    gap: 2,
+  },
+  commentAuthor: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#111827",
+  },
+  commentDate: {
+    fontSize: 11,
+    color: "#9CA3AF",
+  },
+  commentText: {
+    fontSize: 14,
+    color: "#374151",
+    lineHeight: 20,
+    marginLeft: 42,
+  },
+  emptySection: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 32,
+    gap: 8,
+  },
+  emptyText: {
+    fontSize: 13,
+    color: "#9CA3AF",
+  },
+  uploadButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#EFF6FF",
+    borderWidth: 2,
+    borderColor: "#BFDBFE",
+    borderStyle: "dashed",
+    borderRadius: 12,
+    paddingVertical: 16,
+  },
+  uploadButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#2563EB",
+  },
+  attachmentsScroll: {
+    gap: 12,
+    paddingVertical: 4,
+  },
+  attachmentCard: {
+    width: 100,
+    gap: 8,
+  },
+  attachmentPreview: {
+    width: 100,
+    height: 100,
+    borderRadius: 12,
+    backgroundColor: "#F3F4F6",
+  },
+  documentPreview: {
+    width: 100,
+    height: 100,
+    borderRadius: 12,
+    backgroundColor: "#EFF6FF",
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  attachmentLabel: {
+    fontSize: 11,
+    color: "#6B7280",
+    textAlign: "center",
+    lineHeight: 14,
   },
 });

@@ -1014,7 +1014,6 @@ export const useApp = () => {
       // Auth actions
       setAuth: auth.actions.setAuth,
       login: auth.actions.login,
-      register: auth.actions.register,
       logout: auth.actions.logout,
       updateProfile: auth.actions.updateProfile,
       updateUser: auth.actions.updateUser,

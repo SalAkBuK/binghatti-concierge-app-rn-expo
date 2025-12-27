@@ -14,8 +14,9 @@ import { Alert, BackHandler, Platform } from "react-native";
 import "react-native-reanimated";
 
 import { useColorScheme } from "@/hooks/use-color-scheme";
-import { ConnectedAppProvider as AppProvider } from "../lib/context/connected-app-provider";
+import { ConnectedAppProvider as AppProvider, useApp } from "../lib/context/connected-app-provider";
 import { ErrorBoundary } from "../components/ErrorBoundary";
+import { formatCrashReport, getLastCrashReport } from "../lib/utils/crashReporter";
 
 void SplashScreen.preventAutoHideAsync();
 
@@ -40,11 +41,7 @@ function ExitConfirmationHandler() {
         const isPortal =
           segments[0] === "(tenant)" ||
           segments[0] === "(management)" ||
-          segments[0] === "(admin)" ||
-          segments[0] === "(superadmin)" ||
-          segments[0] === "(employee)" ||
-          segments[0] === "(buildingEmployee)" ||
-          segments[0] === "(serviceProvider)";
+          segments[0] === "(buildingEmployee)";
 
         // Treat as "home" only when at portal root or its index tab (not deep screens)
         const isAtPortalHome =
@@ -86,6 +83,24 @@ function ExitConfirmationHandler() {
   return null;
 }
 
+function PasswordChangeGate() {
+  const { isAuthenticated, currentUser } = useApp();
+  const router = useRouter();
+  const segments = useSegments();
+
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser?.mustChangePassword) {
+      return;
+    }
+
+    if (segments[0] !== "change-password") {
+      router.replace("/change-password");
+    }
+  }, [currentUser?.mustChangePassword, isAuthenticated, router, segments]);
+
+  return null;
+}
+
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
     // Load the icon fonts explicitly so they are packaged in release builds
@@ -100,6 +115,17 @@ export default function RootLayout() {
     }
   }, [fontsLoaded, fontError]);
 
+  useEffect(() => {
+    const logCrashReport = async () => {
+      const report = await getLastCrashReport();
+      if (report) {
+        console.warn("[CrashReport] Last crash report:\n" + formatCrashReport(report));
+      }
+    };
+
+    logCrashReport();
+  }, []);
+
   if (!fontsLoaded && !fontError) {
     return null;
   }
@@ -108,16 +134,14 @@ export default function RootLayout() {
     <ErrorBoundary>
       <AppProvider>
         <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
+          <PasswordChangeGate />
           <ExitConfirmationHandler />
           <Stack>
           <Stack.Screen name="index" options={{ headerShown: false }} />
           <Stack.Screen name="auth" options={{ headerShown: false }} />
+          <Stack.Screen name="change-password" options={{ headerShown: false }} />
           <Stack.Screen name="(tenant)" options={{ headerShown: false }} />
           <Stack.Screen name="(management)" options={{ headerShown: false }} />
-          <Stack.Screen name="(admin)" options={{ headerShown: false }} />
-          <Stack.Screen name="(superadmin)" options={{ headerShown: false }} />
-          <Stack.Screen name="(serviceProvider)" options={{ headerShown: false }} />
-          <Stack.Screen name="(employee)" options={{ headerShown: false }} />
           <Stack.Screen name="(buildingEmployee)" options={{ headerShown: false }} />
           <Stack.Screen
             name="modal"

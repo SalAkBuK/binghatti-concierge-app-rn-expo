@@ -5,8 +5,8 @@ import type {
   Request,
   Notification,
   LoginDTO,
-  RegisterDTO,
-  ResetPasswordDTO,
+  ChangePasswordDTO,
+  UpdateProfileDTO,
   CreateRequestDTO,
   UpdateRequestDTO,
   ApiResponse,
@@ -41,6 +41,9 @@ export interface RequestConfig {
   params?: Record<string, any>;
   headers?: Record<string, string>;
   timeout?: number;
+  skipAuth?: boolean;
+  skipAuthRefresh?: boolean;
+  retryCount?: number;
 }
 
 // API Error types
@@ -54,12 +57,11 @@ export interface ApiError {
 // Auth API endpoints
 export interface AuthApi {
   login(credentials: LoginDTO): Promise<AuthResponse>;
-  register(userData: RegisterDTO): Promise<ApiResponse>;
   logout(): Promise<ApiResponse>;
   refreshToken(): Promise<AuthResponse>;
-  resetPassword(data: ResetPasswordDTO): Promise<ApiResponse>;
+  changePassword(data: ChangePasswordDTO): Promise<ApiResponse>;
   getProfile(): Promise<ApiResponse<User>>;
-  updateProfile(userData: Partial<User>): Promise<ApiResponse<User>>;
+  updateProfile(userData: UpdateProfileDTO): Promise<ApiResponse<User>>;
 }
 
 // Requests API endpoints
@@ -91,6 +93,7 @@ export interface UsersApi {
   getUser(id: string): Promise<ApiResponse<User>>;
   updateUser(id: string, data: Partial<User>): Promise<ApiResponse<User>>;
   deleteUser(id: string): Promise<ApiResponse>;
+  getMyAssignments(): Promise<ApiResponse<any[]>>;
 }
 
 // Employee API endpoints
@@ -171,8 +174,10 @@ export interface ApiService extends AuthApi {
 
   // Token management
   setAuthToken(token: string): void;
+  setAuthTokens(tokens: { accessToken: string; refreshToken: string }): void;
   clearAuthToken(): void;
   getAuthToken(): Promise<string | null>;
+  getRefreshToken(): Promise<string | null>;
 }
 
 // Response interceptor type

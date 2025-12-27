@@ -7,9 +7,20 @@ import { getUserErrorMessage } from "../services/api/errors";
 export function isNetworkError(error: any): boolean {
   if (!error) return false;
 
-  const errorString = JSON.stringify(error).toLowerCase();
-  const messageString = error?.message?.toLowerCase() || "";
-  const errorCode = error?.code?.toLowerCase() || "";
+  const toLowerSafe = (value: unknown) => {
+    if (typeof value === "string") return value.toLowerCase();
+    if (typeof value === "number") return String(value).toLowerCase();
+    if (!value) return "";
+    try {
+      return JSON.stringify(value).toLowerCase();
+    } catch {
+      return "";
+    }
+  };
+
+  const errorString = toLowerSafe(error);
+  const messageString = toLowerSafe(error?.message);
+  const errorCode = toLowerSafe(error?.code);
 
   // Common network error patterns
   const networkPatterns = [

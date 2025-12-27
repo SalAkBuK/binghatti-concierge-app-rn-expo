@@ -104,13 +104,6 @@ export default function BuildingEmployeeLayout() {
           ),
         }}
       />
-      {/* Hidden screens - accessible via navigation but not shown in tab bar */}
-      <Tabs.Screen
-        name="requests"
-        options={{
-          href: null,
-        }}
-      />
     </Tabs>
   );
 }

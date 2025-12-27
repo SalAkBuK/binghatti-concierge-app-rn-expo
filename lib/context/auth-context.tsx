@@ -8,9 +8,9 @@ import React, {
 } from "react";
 import * as SecureStore from "expo-secure-store";
 import { useAsyncStorage } from "../hooks/useAsyncStorage";
-import { APP_CONFIG, STORAGE_KEYS, generateId } from "../utils";
+import { API_ENDPOINTS, STORAGE_KEYS } from "../utils";
 import apiService from "../services/api";
-import type { User, LoginDTO, RegisterDTO } from "../types";
+import type { ApiResponse, LoginDTO, User } from "../types";
 
 // Auth State Interface
 interface AuthState {
@@ -30,7 +30,6 @@ interface AuthActions {
     userRole: string | null;
   }) => void;
   login: (credentials: LoginDTO) => Promise<void>;
-  register: (userData: RegisterDTO) => Promise<void>;
   logout: () => Promise<void>;
   updateProfile: (userData: Partial<User>) => Promise<User>;
   updateUser: (email: string, userData: User) => Promise<User>;
@@ -153,54 +152,93 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
-const ADMIN_LOGIN_EMAIL = "admin@towerdesk.com";
+const resolveUserRole = (payloadUser: any): User["role"] => {
+  const candidates: Array<string | undefined> = [
+    payloadUser?.role,
+    payloadUser?.roleKey,
+    payloadUser?.roleName,
+    payloadUser?.userRole,
+    payloadUser?.type,
+  ];
 
-const safeJsonParse = (raw: string): any => {
-  if (!raw) {
-    return {};
+  if (Array.isArray(payloadUser?.roles) && payloadUser.roles.length > 0) {
+    candidates.push(
+      payloadUser.roles[0]?.roleName ??
+        payloadUser.roles[0]?.key ??
+        payloadUser.roles[0]?.name,
+    );
   }
 
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return raw;
+  const rawRole = candidates.find((value) => typeof value === "string");
+  const normalized = rawRole ? rawRole.toLowerCase() : "tenant";
+
+  if (["superadmin", "super_admin", "towerdesk"].includes(normalized)) {
+    return "super_admin";
   }
+
+  if (["admin"].includes(normalized)) {
+    return "admin";
+  }
+
+  if (["manager", "management"].includes(normalized)) {
+    return "management";
+  }
+
+  if (["serviceprovider", "service_provider", "provider"].includes(normalized)) {
+    return "service_provider";
+  }
+
+  if (["building_employee", "maintenancestaff", "maintenance_staff", "staff"].includes(normalized)) {
+    return "building_employee";
+  }
+
+  if (["employee"].includes(normalized)) {
+    return "employee";
+  }
+
+  return "tenant";
 };
 
-const extractAuthToken = (payload: any): string | undefined => {
-  if (!payload || typeof payload !== "object") {
-    return undefined;
+const resolveRoleFromAssignments = (assignments: any[]): User["role"] | null => {
+  if (!Array.isArray(assignments) || assignments.length === 0) {
+    return null;
   }
 
-  return (
-    payload.token ??
-    payload.access_token ??
-    payload.accessToken ??
-    payload.data?.token ??
-    payload.data?.access_token ??
-    payload.data?.accessToken ??
-    payload.result?.token ??
-    payload.data?.result?.token
-  );
+  const types = assignments
+    .map((assignment) => assignment?.type)
+    .filter((value) => typeof value === "string")
+    .map((value) => value.toUpperCase());
+
+  if (types.some((type) => type.includes("MANAGER") || type.includes("MANAGEMENT"))) {
+    return "management";
+  }
+
+  if (types.some((type) => type.includes("STAFF") || type.includes("EMPLOYEE"))) {
+    return "building_employee";
+  }
+
+  return null;
 };
 
-const extractUserPayload = (payload: any): any => {
-  if (!payload || typeof payload !== "object") {
-    return undefined;
-  }
-
-  if (payload.user && typeof payload.user === "object") {
-    return payload.user;
-  }
-
-  if (payload.data && typeof payload.data === "object") {
-    if (payload.data.user && typeof payload.data.user === "object") {
-      return payload.data.user;
+const buildAssignmentProfile = (assignments: any[], role: User["role"]) => {
+  const assignmentBuildingIds = assignments
+    .map((assignment) => assignment?.buildingId)
+    .filter((id) => id != null)
+    .map((id) => String(id));
+  const assignmentBuildingName = assignments.find(
+    (assignment) => assignment?.buildingName,
+  )?.buildingName;
+  const assignmentProfile: Record<string, any> = {};
+  if (assignmentBuildingIds.length > 0) {
+    assignmentProfile.buildingId = assignmentBuildingIds[0];
+    if (role === "management") {
+      assignmentProfile.managedBuildingIds = assignmentBuildingIds;
     }
-    return payload.data;
   }
-
-  return undefined;
+  if (assignmentBuildingName) {
+    assignmentProfile.buildingName = assignmentBuildingName;
+  }
+  return assignmentProfile;
 };
 
 // Auth Provider Component
@@ -335,17 +373,60 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           if (savedUserData) {
             try {
               const userData = JSON.parse(savedUserData);
-              console.log('[AuthProvider] Restored user from storage:', { email: userData.email, role: userData.role });
+              let resolvedUser = userData;
+              let assignmentsPayload: any[] = [];
+              try {
+                const assignmentsResponse = await apiService.users.getMyAssignments();
+                assignmentsPayload = Array.isArray(assignmentsResponse)
+                  ? assignmentsResponse
+                  : Array.isArray(assignmentsResponse?.data)
+                    ? assignmentsResponse.data
+                    : [];
+                console.log("[AuthProvider] Assignments response:", assignmentsPayload);
+              } catch (assignmentError) {
+                console.warn("[AuthProvider] Failed to load assignments:", assignmentError);
+              }
+
+              const assignmentRole = resolveRoleFromAssignments(assignmentsPayload);
+              if (
+                assignmentRole &&
+                ["tenant", "employee", "management", "building_employee"].includes(
+                  resolvedUser?.role,
+                )
+              ) {
+                resolvedUser = {
+                  ...resolvedUser,
+                  role: assignmentRole,
+                  profile: {
+                    ...(resolvedUser?.profile ?? {}),
+                    ...buildAssignmentProfile(assignmentsPayload, assignmentRole),
+                  },
+                };
+              }
+
+              if (resolvedUser?.role === "tenant") {
+                resolvedUser = await enrichTenantProfile(resolvedUser);
+              }
+              console.log('[AuthProvider] Restored user from storage:', { email: resolvedUser.email, role: resolvedUser.role });
 
               // Restore auth state from saved data
               dispatch({
                 type: AUTH_ACTIONS.SET_AUTH,
                 payload: {
                   isAuthenticated: true,
-                  currentUser: userData,
-                  userRole: userData.role,
+                  currentUser: resolvedUser,
+                  userRole: resolvedUser.role,
                 },
               });
+
+              try {
+                await SecureStore.setItemAsync(
+                  STORAGE_KEYS.user_data,
+                  JSON.stringify(resolvedUser)
+                );
+              } catch (storageError) {
+                console.warn("[Auth] Failed to update user data in SecureStore:", storageError);
+              }
 
               console.log('[AuthProvider] Session restored successfully!');
             } catch (parseError) {
@@ -353,11 +434,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               // Clear invalid data
               await SecureStore.deleteItemAsync(STORAGE_KEYS.user_data);
               await SecureStore.deleteItemAsync(STORAGE_KEYS.auth_token);
+              await SecureStore.deleteItemAsync(STORAGE_KEYS.refresh_token);
             }
           } else {
             console.log('[AuthProvider] No saved user data found, clearing session');
             // Token exists but no user data - clear the orphaned token
             await SecureStore.deleteItemAsync(STORAGE_KEYS.auth_token);
+            await SecureStore.deleteItemAsync(STORAGE_KEYS.refresh_token);
           }
         } else {
           console.log('[AuthProvider] No active session found');
@@ -373,6 +456,88 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   }, [isInitialized]);
 
+  const enrichTenantProfile = async (user: User): Promise<User> => {
+    try {
+      const response = await apiService.get<ApiResponse<any> | any>(
+        API_ENDPOINTS.resident.me,
+      );
+
+      const responseData =
+        (response as ApiResponse<any>)?.data ?? response ?? {};
+      const occupancy = responseData.occupancy ?? null;
+      const residentUser = responseData.user ?? null;
+
+      if (!occupancy && !residentUser) {
+        return user;
+      }
+
+      const nextProfile = { ...(user.profile ?? {}) };
+
+      const buildingId =
+        occupancy?.buildingId ??
+        occupancy?.building?.id ??
+        occupancy?.building?.buildingId ??
+        occupancy?.building_id;
+      if (buildingId != null) {
+        nextProfile.buildingId = String(buildingId);
+      }
+
+      const buildingName =
+        occupancy?.building?.name ??
+        occupancy?.buildingName ??
+        occupancy?.building?.buildingName ??
+        occupancy?.building_name;
+      if (buildingName) {
+        nextProfile.buildingName = String(buildingName);
+      }
+
+      const unitNumber =
+        occupancy?.unitNumber ??
+        occupancy?.unit?.label ??
+        occupancy?.unit?.number ??
+        occupancy?.unit?.unitNumber ??
+        occupancy?.unit?.name;
+      if (unitNumber != null) {
+        nextProfile.apartment = String(unitNumber);
+      }
+
+      const floorNumber =
+        occupancy?.floorNumber ??
+        occupancy?.unit?.floor ??
+        occupancy?.unit?.floorNumber ??
+        occupancy?.floor;
+      if (floorNumber != null) {
+        nextProfile.floor = String(floorNumber);
+      }
+
+      return {
+        ...user,
+        name:
+          residentUser?.name ??
+          residentUser?.fullName ??
+          user.name,
+        phone:
+          residentUser?.phone ??
+          residentUser?.phoneNumber ??
+          user.phone,
+        profile: {
+          ...nextProfile,
+          name:
+            residentUser?.name ??
+            residentUser?.fullName ??
+            nextProfile.name,
+          phone:
+            residentUser?.phone ??
+            residentUser?.phoneNumber ??
+            nextProfile.phone,
+        },
+      };
+    } catch (error) {
+      console.warn("[Auth] Failed to load resident profile:", error);
+      return user;
+    }
+  };
+
   // Action Creators
   const actions: AuthActions = {
     setAuth: (authData) => {
@@ -385,245 +550,150 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         actions.clearError();
 
         const normalizedEmail = credentials.email.trim().toLowerCase();
-
-        console.log("[Auth] Login attempt for:", normalizedEmail);
-        console.log("[Auth] Available users:", Object.keys(state.users));
-
-        const existingUser =
-          state.users[normalizedEmail] || state.users[credentials.email];
-
-        // Try backend login first for all users
-        // Only fall back to mock authentication if backend login fails with 404
-        let authenticatedUser: User | null = null;
-        let backendLoginAttempted = false;
-
-        try {
-          backendLoginAttempted = true;
-          const response = await fetch(APP_CONFIG.api.adminLoginUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              email: credentials.email,
-              password: credentials.password,
-            }),
-          });
-
-          const rawPayload = await response.text();
-          const payload = safeJsonParse(rawPayload);
-
-          if (!response.ok) {
-            // Handle specific HTTP status codes
-            if (response.status === 401 || response.status === 403) {
-              throw new Error("Invalid email or password");
-            }
-
-            if (response.status === 404) {
-              throw new Error("User not found");
-            }
-
-            if (response.status === 500) {
-              throw new Error("Server error. Please try again later");
-            }
-
-            // Try to extract error message from response
-            const errorMessage =
-              (payload &&
-                typeof payload === "object" &&
-                (payload.message || payload.error || payload.title)) ||
-              (typeof payload === "string" ? payload : null) ||
-              response.statusText ||
-              "Invalid email or password";
-            throw new Error(errorMessage);
-          }
-
-          const token = extractAuthToken(payload);
-          if (!token) {
-            throw new Error("Login response did not include an auth token");
-          }
-
-          await apiService.setAuthToken(token);
-
-          const payloadUser = extractUserPayload(payload);
-          const nowIso = new Date().toISOString();
-
-          // Determine user role from backend response
-          // Backend returns roles array with roleName, frontend expects single role string
-          let userRole: User["role"] = "admin"; // default
-          if (payloadUser?.roles && Array.isArray(payloadUser.roles) && payloadUser.roles.length > 0) {
-            const backendRole = payloadUser.roles[0].roleName?.toLowerCase();
-            console.log('[Auth] Backend role from API:', payloadUser.roles[0].roleName, '→ lowercase:', backendRole);
-
-            // Map backend role names to frontend role types
-            if (backendRole === "towerdesk" || backendRole === "superadmin") {
-              userRole = "super_admin";
-            } else if (backendRole === "admin") {
-              userRole = "admin";
-            } else if (backendRole === "manager" || backendRole === "management") {
-              userRole = "management";
-            } else if (backendRole === "tenant") {
-              userRole = "tenant";
-            } else if (backendRole === "maintenancestaff") {
-              userRole = "building_employee";
-            } else if (backendRole === "serviceprovider") {
-              userRole = "service_provider";
-            }
-            console.log('[Auth] Mapped frontend role:', userRole);
-          }
-
-          const adminUser: User = {
-            id: payloadUser?.id
-              ? String(payloadUser.id)
-              : existingUser?.id ?? "admin-live",
-            email: normalizedEmail,
-            name:
-              payloadUser?.fullName ??
-              payloadUser?.name ??
-              payloadUser?.username ??
-              existingUser?.name ??
-              "Tower Desk Admin",
-            role: userRole,
-            phone:
-              payloadUser?.phoneNumber ??
-              payloadUser?.phone ??
-              payloadUser?.mobile ??
-              existingUser?.phone,
-            profile: {
-              ...(existingUser?.profile ?? {}),
-              ...(payloadUser?.profile && typeof payloadUser.profile === "object"
-                ? payloadUser.profile
-                : {}),
-              name:
-                payloadUser?.fullName ??
-                payloadUser?.name ??
-                existingUser?.profile?.name ??
-                "Tower Desk Admin",
-              phone:
-                payloadUser?.phoneNumber ??
-                payloadUser?.phone ??
-                payloadUser?.mobile ??
-                existingUser?.profile?.phone,
-            },
-            createdAt: existingUser?.createdAt ?? nowIso,
-            updatedAt: nowIso,
-          };
-
-          dispatch({
-            type: AUTH_ACTIONS.UPDATE_USER,
-            payload: { email: normalizedEmail, user: adminUser },
-          });
-
-          authenticatedUser = adminUser;
-
-          // Fetch full tenant profile if user is a tenant
-          if (userRole === "tenant" && payloadUser?.id) {
-            try {
-              console.log("[Auth] Fetching tenant profile for ID:", payloadUser.id);
-              const { tenantsApi } = await import("../services/api/tenants");
-              const tenantProfileResponse = await tenantsApi.getTenantById(payloadUser.id);
-
-              if (tenantProfileResponse.success && tenantProfileResponse.data) {
-                const tenantData = tenantProfileResponse.data;
-                console.log("[Auth] Tenant profile fetched:", tenantData);
-
-                // Update authenticated user with complete tenant profile
-                authenticatedUser = {
-                  ...authenticatedUser,
-                  name: tenantData.fullName || authenticatedUser.name,
-                  phone: tenantData.phoneNumber || authenticatedUser.phone,
-                  profile: {
-                    ...authenticatedUser.profile,
-                    buildingId: tenantData.profile?.buildingId
-                      ? String(tenantData.profile.buildingId)
-                      : authenticatedUser.profile?.buildingId,
-                    apartment: tenantData.profile?.unitNumber || authenticatedUser.profile?.apartment,
-                    floor: tenantData.profile?.floorNumber
-                      ? String(tenantData.profile.floorNumber)
-                      : authenticatedUser.profile?.floor,
-                    phone: tenantData.phoneNumber || authenticatedUser.profile?.phone,
-                    address: tenantData.address || authenticatedUser.profile?.address,
-                    nationality: tenantData.nationality || authenticatedUser.profile?.nationality,
-                  },
-                };
-
-                // Update in storage
-                dispatch({
-                  type: AUTH_ACTIONS.UPDATE_USER,
-                  payload: { email: normalizedEmail, user: authenticatedUser },
-                });
-
-                console.log("[Auth] Tenant profile updated with buildingId:", authenticatedUser.profile?.buildingId);
-              }
-            } catch (tenantError) {
-              console.error("[Auth] Failed to fetch tenant profile:", tenantError);
-              // Don't fail login if profile fetch fails - continue with basic data
-            }
-          }
-        } catch (backendError: any) {
-          // If backend login fails with 404 (user not found in backend),
-          // fall back to mock authentication for demo users
-          const is404 = backendError.message?.includes("User not found") ||
-                        backendError.message?.includes("404");
-
-          if (is404 && existingUser) {
-            console.log("[Auth] Backend user not found, falling back to mock authentication");
-            authenticatedUser = existingUser;
-          } else {
-            // For any other error (401, 403, 500, network error, etc.), re-throw
-            throw backendError;
-          }
-        }
-
-        if (!authenticatedUser) {
-          throw new Error("Authentication failed");
-        }
-
-        console.log("[Auth] User authenticated:", {
-          email: authenticatedUser.email,
-          role: authenticatedUser.role,
+        const response = await apiService.login({
+          email: normalizedEmail,
+          password: credentials.password,
         });
 
-        // In production, verify password for non-admin users here
+        const accessToken = response?.accessToken ?? response?.data?.accessToken;
+        const refreshToken = response?.refreshToken ?? response?.data?.refreshToken;
+        const payloadUser = response?.user ?? response?.data?.user;
 
-        // Set auth state
+        console.log("[Auth] Login response summary:", {
+          hasAccessToken: Boolean(accessToken),
+          hasRefreshToken: Boolean(refreshToken),
+          responseKeys: response && typeof response === "object" ? Object.keys(response) : null,
+          dataKeys:
+            response?.data && typeof response.data === "object"
+              ? Object.keys(response.data)
+              : null,
+        });
+        console.log("[Auth] Login payload user:", payloadUser);
+        console.log("[Auth] Login user payload role fields:", {
+          id: payloadUser?.id,
+          email: payloadUser?.email,
+          name: payloadUser?.name ?? payloadUser?.fullName,
+          role: payloadUser?.role,
+          roleKey: payloadUser?.roleKey,
+          roleName: payloadUser?.roleName,
+          userRole: payloadUser?.userRole,
+          type: payloadUser?.type,
+          roles: payloadUser?.roles,
+        });
+
+        if (!accessToken || !refreshToken || !payloadUser) {
+          throw new Error("Login response did not include required credentials");
+        }
+
+        await apiService.setAuthTokens({ accessToken, refreshToken });
+
+        let assignmentsPayload: any[] = [];
+        try {
+          const assignmentsResponse = await apiService.users.getMyAssignments();
+          console.log("[Auth] Assignments raw response:", assignmentsResponse);
+          assignmentsPayload = Array.isArray(assignmentsResponse)
+            ? assignmentsResponse
+            : Array.isArray(assignmentsResponse?.data)
+              ? assignmentsResponse.data
+              : [];
+          console.log("[Auth] Assignments response:", assignmentsPayload);
+        } catch (assignmentError) {
+          console.warn("[Auth] Failed to load assignments:", assignmentError);
+        }
+
+        const nowIso = new Date().toISOString();
+        const userEmail = (payloadUser.email || normalizedEmail).toLowerCase();
+        const existingUser = state.users[userEmail];
+        let userRole = resolveUserRole(payloadUser);
+        const assignmentRole = resolveRoleFromAssignments(assignmentsPayload);
+        if (
+          assignmentRole &&
+          ["tenant", "employee", "management", "building_employee"].includes(userRole)
+        ) {
+          userRole = assignmentRole;
+        }
+        console.log("[Auth] Resolved user role:", {
+          rawRole: payloadUser?.role ?? payloadUser?.roleKey ?? payloadUser?.roleName ?? payloadUser?.userRole ?? payloadUser?.type,
+          resolvedRole: userRole,
+          assignmentRole,
+        });
+
+        const assignmentProfile = buildAssignmentProfile(assignmentsPayload, userRole);
+
+        const authenticatedUser: User = {
+          id: payloadUser?.id
+            ? String(payloadUser.id)
+            : existingUser?.id ?? userEmail,
+          email: userEmail,
+          name:
+            payloadUser?.name ??
+            payloadUser?.fullName ??
+            existingUser?.name ??
+            userEmail,
+          role: userRole,
+          mustChangePassword: !!payloadUser?.mustChangePassword,
+          phone:
+            payloadUser?.phone ??
+            payloadUser?.phoneNumber ??
+            existingUser?.phone,
+          profile: {
+            ...(existingUser?.profile ?? {}),
+            ...(payloadUser?.profile && typeof payloadUser.profile === "object"
+              ? payloadUser.profile
+              : {}),
+            name:
+              payloadUser?.name ??
+              payloadUser?.fullName ??
+              existingUser?.profile?.name,
+            phone:
+              payloadUser?.phone ??
+              payloadUser?.phoneNumber ??
+              existingUser?.profile?.phone,
+            ...assignmentProfile,
+          },
+          createdAt: existingUser?.createdAt ?? payloadUser?.createdAt ?? nowIso,
+          updatedAt: payloadUser?.updatedAt ?? nowIso,
+        };
+
+        let resolvedUser = authenticatedUser;
+        if (userRole === "tenant") {
+          resolvedUser = await enrichTenantProfile(authenticatedUser);
+        }
+
+        dispatch({
+          type: AUTH_ACTIONS.UPDATE_USER,
+          payload: { email: userEmail, user: resolvedUser },
+        });
+
         actions.setAuth({
           isAuthenticated: true,
-          currentUser: authenticatedUser,
-          userRole: authenticatedUser.role,
+          currentUser: resolvedUser,
+          userRole: resolvedUser.role,
         });
 
-        // Persist user data to SecureStore for session restoration
         try {
           await SecureStore.setItemAsync(
             STORAGE_KEYS.user_data,
-            JSON.stringify(authenticatedUser)
+            JSON.stringify(resolvedUser)
           );
-          console.log("[Auth] User data saved to SecureStore for session persistence");
         } catch (storageError) {
           console.warn("[Auth] Failed to save user data to SecureStore:", storageError);
-          // Don't fail login if storage fails - user is still authenticated
         }
 
-        console.log("[Auth] Auth state set successfully");
         actions.setLoading(false);
       } catch (error: any) {
         console.error("[Auth] Login error:", error);
 
-        // Enhanced error handling
         let errorMessage = "Login failed. Please try again.";
 
-        if (error.message) {
+        if (error?.status === 401 || error?.status === 403) {
+          errorMessage = "Invalid email or password";
+        } else if (error?.status === 404) {
+          errorMessage = "User not found";
+        } else if (error?.status === 500) {
+          errorMessage = "Server error. Please try again later";
+        } else if (error.message) {
           errorMessage = error.message;
-        } else if (error.response) {
-          // Handle API error responses
-          if (error.response.status === 401 || error.response.status === 403) {
-            errorMessage = "Invalid email or password";
-          } else if (error.response.status === 404) {
-            errorMessage = "User not found";
-          } else if (error.response.status === 500) {
-            errorMessage = "Server error. Please try again later";
-          } else if (error.response.data) {
-            errorMessage = error.response.data.message || error.response.data.error || errorMessage;
-          }
         } else if (error.code === "NETWORK_ERROR" || error.message?.includes("Network")) {
           errorMessage = "Network error. Please check your connection.";
         }
@@ -633,57 +703,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         throw new Error(errorMessage);
       }
     },
-
-    register: async (userData: RegisterDTO): Promise<void> => {
-      try {
-        actions.setLoading(true);
-        actions.clearError();
-
-        // TODO: Replace with real API call
-        // const response = await apiService.register(userData);
-
-        // Check if user already exists
-        if (state.users[userData.email]) {
-          throw new Error("User with this email already exists");
-        }
-
-        // Create new user with provided role (default to tenant)
-        const generatedId = generateId(Object.values(state.users));
-
-        // Validate generated ID
-        if (isNaN(generatedId) || generatedId < 1) {
-          console.error("[Auth] generateId returned invalid ID:", generatedId);
-          throw new Error("Failed to generate valid user ID");
-        }
-
-        const newUser: User = {
-          id: generatedId.toString(),
-          email: userData.email,
-          name: userData.name,
-          role: (userData as any).role || "tenant", // Use role from signup or default to tenant
-          phone: userData.phone,
-          profile: {
-            name: userData.name,
-            phone: userData.phone,
-            apartment: userData.apartment,
-            tower: userData.tower,
-          },
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-
-        console.log("[Auth] Created new user with ID:", newUser.id);
-
-        // Add user to users record
-        actions.addUser(userData.email, newUser);
-
-        actions.setLoading(false);
-      } catch (error: any) {
-        actions.setError(error.message || "Registration failed");
-        throw error;
-      }
-    },
-
     logout: async (): Promise<void> => {
       try {
         actions.setLoading(true);
@@ -700,16 +719,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         // Clear persisted session data from SecureStore
         try {
+          await apiService.logout();
           await SecureStore.deleteItemAsync(STORAGE_KEYS.user_data);
           await SecureStore.deleteItemAsync(STORAGE_KEYS.auth_token);
+          await SecureStore.deleteItemAsync(STORAGE_KEYS.refresh_token);
           console.log('[Auth] Session data cleared from SecureStore');
         } catch (storageError) {
           console.warn('[Auth] Failed to clear SecureStore:', storageError);
           // Don't fail logout if storage clear fails
         }
-
-        // TODO: Call backend logout API if needed
-        // await apiService.logout();
 
         actions.setLoading(false);
         console.log('[Auth] Logout completed');
@@ -732,6 +750,27 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const profileData = userData.profile || {};
         let response;
         let apiCallSuccess = false;
+        const resolvedName = (
+          userData.name ??
+          profileData.name
+        )?.trim();
+        const resolvedPhone = (
+          userData.phone ??
+          profileData.phone
+        )?.trim();
+        const resolvedAvatar =
+          (profileData as any).avatarUrl ??
+          profileData.avatar ??
+          (userData as any).avatarUrl ??
+          (userData as any).avatar;
+        const resolvedAvatarUrl =
+          typeof resolvedAvatar === "string" ? resolvedAvatar.trim() : undefined;
+        const updatePayload = {
+          ...(resolvedName ? { name: resolvedName } : {}),
+          ...(resolvedPhone ? { phone: resolvedPhone } : {}),
+          ...(resolvedAvatarUrl ? { avatarUrl: resolvedAvatarUrl } : {}),
+        };
+        console.log("[Auth] Updating profile with payload:", updatePayload);
 
         // Try to call backend API, but gracefully handle if endpoints don't exist yet
         try {
@@ -749,31 +788,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               break;
 
             case "management":
-              response = await apiService.users.updateManagementProfile({
-                name: userData.name || profileData.name || "",
-                phone: profileData.phone || "",
-                buildingId: profileData.buildingId || "",
-                managedBuildingIds: profileData.managedBuildingIds || [],
-                jobTitle: profileData.jobTitle,
-                department: profileData.department,
-                bio: profileData.bio,
-                avatar: profileData.avatar,
-              });
-              break;
-
             case "tenant":
-              response = await apiService.users.updateTenantProfile({
-                name: userData.name || profileData.name || "",
-                phone: profileData.phone || "",
-                buildingId: profileData.buildingId || "",
-                apartment: profileData.apartment || "",
-                floor: profileData.floor || "",
-                tower: profileData.tower,
-                emergencyContact: profileData.emergencyContact,
-                emergencyPhone: profileData.emergencyPhone,
-                emiratesId: profileData.emiratesId,
-                avatar: profileData.avatar,
-              });
+            case "building_employee":
+              if (Object.keys(updatePayload).length > 0) {
+                response = await apiService.updateProfile(updatePayload);
+              } else {
+                response = { success: true };
+              }
               break;
 
             default:
@@ -783,6 +804,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           if (response && response.success) {
             apiCallSuccess = true;
           }
+          console.log("[Auth] Profile update response:", response);
         } catch (apiError: any) {
           // Check if it's a 404 or network error - gracefully handle for demo/development
           const is404 = apiError.status === 404 || apiError.message?.includes("404") || apiError.message?.includes("Not Found");
@@ -798,17 +820,35 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           }
         }
 
+        const mergedProfile = {
+          ...state.currentUser.profile,
+          ...profileData,
+        };
+
+        if (resolvedName) {
+          mergedProfile.name = resolvedName;
+        }
+        if (resolvedPhone) {
+          mergedProfile.phone = resolvedPhone;
+        }
+        if (profileData.avatar) {
+          mergedProfile.avatar = profileData.avatar;
+        } else if (resolvedAvatarUrl) {
+          mergedProfile.avatar = resolvedAvatarUrl;
+        }
+
+        const responseProfile =
+          response?.data?.profile ?? response?.data;
+
         // Update local state (either from server response or with local data)
         const updatedUser = {
           ...state.currentUser,
-          name: userData.name || state.currentUser.name,
-          phone: profileData.phone || state.currentUser.phone,
-          profile: apiCallSuccess && response?.data
-            ? response.data
-            : {
-                ...state.currentUser.profile,
-                ...profileData,
-              },
+          name: resolvedName || state.currentUser.name,
+          phone: resolvedPhone || state.currentUser.phone,
+          profile:
+            apiCallSuccess && responseProfile
+              ? responseProfile
+              : mergedProfile,
           profileCompleted: true,
         };
 
@@ -901,3 +941,4 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
+

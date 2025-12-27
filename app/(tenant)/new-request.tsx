@@ -21,18 +21,29 @@ import { AttachmentPicker } from "../../components/ui/AttachmentPicker";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
-import { maintenanceApi } from "../../lib/services/api/maintenance";
-import type { CreateRequestDTO } from "../../lib/types";
+import {
+  residentRequestsApi,
+  type ResidentRequestPriority,
+  type ResidentRequestType,
+} from "../../lib/services/api/resident-requests";
 import { filterNotificationsByUser } from "../../lib/utils/helpers";
 import { uploadFileToServer } from "../../lib/utils/fileUpload";
 import { IMAGE_CONFIG } from "../../lib/utils/imageUtils";
 import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
+import * as FileSystem from "expo-file-system/legacy";
 
 interface ValidationErrors {
   title?: string;
   description?: string;
   type?: string;
   priority?: string;
+}
+
+interface ResidentRequestForm {
+  type: ResidentRequestType;
+  title: string;
+  description: string;
+  priority: ResidentRequestPriority;
 }
 
 const getFileNameFromUri = (uri: string): string => {
@@ -73,21 +84,11 @@ export default function NewRequestScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const maxAttachments = IMAGE_CONFIG.MAX_ATTACHMENTS;
 
-  const [newRequest, setNewRequest] = useState<CreateRequestDTO>({
-    type: "maintenance",
+  const [newRequest, setNewRequest] = useState<ResidentRequestForm>({
+    type: "MAINTENANCE",
     title: "",
     description: "",
-    priority: "medium",
-    apartment: currentUser?.profile?.apartment || "",
-    floor: currentUser?.profile?.floor || currentUser?.profile?.floorNumber
-      ? String(currentUser.profile.floorNumber)
-      : "",
-    buildingId:
-      currentUser?.profile?.buildingId ||
-      currentUser?.profile?.managedBuildingIds?.[0] ||
-      "",
-    preferredTime: "",
-    contactPhone: currentUser?.profile?.phone || "",
+    priority: "MEDIUM",
   });
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -130,7 +131,10 @@ export default function NewRequestScreen() {
     return errors;
   };
 
-  const handleInputChange = (field: keyof CreateRequestDTO, value: string) => {
+  const handleInputChange = (
+    field: keyof ResidentRequestForm,
+    value: string,
+  ) => {
     setNewRequest((prev) => ({ ...prev, [field]: value }));
 
     // Clear validation error for this field
@@ -143,23 +147,22 @@ export default function NewRequestScreen() {
     }
   };
 
-  const uploadAttachmentForRequest = async (
-    localUri: string,
-    requestIdNum: number,
-    uploadedById: number,
-  ): Promise<void> => {
+  const uploadAttachmentForRequest = async (localUri: string) => {
     const fileName = getFileNameFromUri(localUri);
-    const contentType = getContentTypeFromName(fileName);
+    const mimeType = getContentTypeFromName(fileName);
+    const fileInfo = await FileSystem.getInfoAsync(localUri);
+    const sizeBytes =
+      fileInfo.exists && typeof fileInfo.size === "number"
+        ? fileInfo.size
+        : 0;
+    const url = await uploadFileToServer(localUri);
 
-    const uploadedUrl = await uploadFileToServer(localUri, requestIdNum);
-
-    await maintenanceApi.addMaintenanceRequestAttachment({
-      requestId: requestIdNum,
-      uploadedById,
-      fileUrl: uploadedUrl,
+    return {
       fileName,
-      contentType,
-    });
+      mimeType,
+      sizeBytes,
+      url,
+    };
   };
 
   const handleSubmit = async (): Promise<void> => {
@@ -181,138 +184,40 @@ export default function NewRequestScreen() {
     setIsSubmitting(true);
 
     try {
-      // Get tenant ID and building ID from current user
-      const tenantId = currentUser?.id;
-      const buildingId = currentUser?.profile?.buildingId;
+      let attachmentPayloads: Awaited<ReturnType<typeof uploadAttachmentForRequest>>[] = [];
 
-      if (!tenantId) {
-        throw new Error("Tenant ID not found. Please log in again.");
+      if (attachments.length > 0) {
+        setIsUploadingAttachments(true);
+        attachmentPayloads = await Promise.all(
+          attachments.map((uri) => uploadAttachmentForRequest(uri)),
+        );
+        setIsUploadingAttachments(false);
       }
 
-      if (!buildingId) {
-        throw new Error("Building ID not found. Please ensure your profile is complete.");
-      }
-
-      // Map priority string to number (1=Low, 2=Medium, 3=High, 4=Urgent)
-      const priorityMap: { [key: string]: number } = {
-        low: 1,
-        medium: 2,
-        high: 3,
-        urgent: 4,
-      };
-
-      const priorityNumber = priorityMap[newRequest.priority] || 2;
-
-      // Convert buildingId and tenantId to numbers
-      const buildingIdNum = typeof buildingId === 'string'
-        ? parseInt(buildingId.replace(/\D/g, ''), 10)
-        : buildingId;
-
-      const tenantIdNum = typeof tenantId === 'string'
-        ? parseInt(tenantId.replace(/\D/g, ''), 10)
-        : tenantId;
-
-      console.log("[NewRequest] Submitting maintenance request:", {
-        buildingId: buildingIdNum,
-        createdById: tenantIdNum,
+      console.log("[NewRequest] Submitting resident request:", {
         title: newRequest.title,
         description: newRequest.description,
-        priority: priorityNumber,
-        attachmentsCount: attachments.length,
+        attachmentsCount: attachmentPayloads.length,
       });
 
-      // Call the backend API
-      const response = await maintenanceApi.createMaintenanceRequest({
-        buildingId: buildingIdNum,
-        createdById: tenantIdNum,
-        title: newRequest.title,
-        description: newRequest.description,
-        priority: priorityNumber,
+      const response = await residentRequestsApi.createRequest({
+        title: newRequest.title.trim(),
+        description: newRequest.description.trim(),
+        type: newRequest.type,
+        priority: newRequest.priority,
+        attachments: attachmentPayloads.length > 0 ? attachmentPayloads : undefined,
       });
 
       console.log("[NewRequest] Request created successfully:", response);
-
-      // Extract requestId from the response
-      const requestId =
-        response?.data?.id ||
-        response?.data?.requestId ||
-        response?.id ||
-        response?.requestId ||
-        (typeof response === "number" ? response : null);
-      let requestIdNum = Number(requestId);
-
-      if ((!requestId || Number.isNaN(requestIdNum)) && tenantIdNum) {
-        try {
-          const tenantRequests = await maintenanceApi.getMaintenanceRequestsByTenantId(
-            tenantIdNum,
-          );
-          if (tenantRequests.success && Array.isArray(tenantRequests.data) && tenantRequests.data.length > 0) {
-            const latest = tenantRequests.data
-              .map((req: any) => ({
-                ...req,
-                createdAt: req.createdAt || req.created_at || new Date().toISOString(),
-              }))
-              .sort(
-                (a: any, b: any) =>
-                  new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-              )[0];
-            if (latest?.id) {
-              requestIdNum = Number(latest.id);
-            }
-          }
-        } catch (lookupErr) {
-          console.warn("[NewRequest] Fallback fetch for latest tenant request failed", lookupErr);
-        }
-      }
-
-      if (!requestIdNum || Number.isNaN(requestIdNum)) {
-        console.warn("[NewRequest] No requestId returned from API; skipping attachment upload");
-      }
-
-      // Upload attachments if any
-      if (attachments.length > 0 && requestIdNum && !Number.isNaN(requestIdNum)) {
-        console.log(`[NewRequest] Uploading ${attachments.length} attachments for request ${requestIdNum}`);
-        setIsUploadingAttachments(true);
-
-        let failedCount = 0;
-        for (let i = 0; i < attachments.length; i++) {
-          const localUri = attachments[i];
-          try {
-            console.log(`[NewRequest] Uploading attachment ${i + 1}/${attachments.length}`);
-            await uploadAttachmentForRequest(localUri, requestIdNum, tenantIdNum);
-          } catch (attachmentError) {
-            failedCount += 1;
-            console.error(`[NewRequest] Failed to upload attachment ${i + 1}:`, attachmentError);
-          }
-        }
-
-        setIsUploadingAttachments(false);
-
-        if (failedCount > 0) {
-          Alert.alert(
-            "Partial Success",
-            `Your request was created, but ${failedCount} attachment${failedCount > 1 ? "s" : ""} failed to upload. You can try adding them later.`,
-          );
-        } else {
-          console.log("[NewRequest] All attachments processed");
-        }
-      }
 
       showSuccessAlert("Your request has been submitted successfully!");
 
       // Reset form
       setNewRequest({
-        type: "maintenance",
+        type: "MAINTENANCE",
         title: "",
         description: "",
-        priority: "medium",
-        apartment: currentUser?.profile?.apartment || "",
-        buildingId:
-          currentUser?.profile?.buildingId ||
-          currentUser?.profile?.managedBuildingIds?.[0] ||
-          "",
-        preferredTime: "",
-        contactPhone: currentUser?.profile?.phone || "",
+        priority: "MEDIUM",
       });
       setAttachments([]);
       // Navigate back to home
@@ -365,13 +270,11 @@ export default function NewRequestScreen() {
                   dropdownIconColor="#111827"
                   itemStyle={{ color: "#111827" }}
                 >
-                  <Picker.Item label="Maintenance" value="maintenance" color="#111827" />
-                  <Picker.Item label="Repair" value="repair" color="#111827" />
-                  <Picker.Item label="Cleaning" value="cleaning" color="#111827" />
-                  <Picker.Item label="Electrical" value="electrical" color="#111827" />
-                  <Picker.Item label="Plumbing" value="plumbing" color="#111827" />
-                  <Picker.Item label="AC/Heating" value="hvac" color="#111827" />
-                  <Picker.Item label="Other" value="other" color="#111827" />
+                  <Picker.Item label="Cleaning" value="CLEANING" color="#111827" />
+                  <Picker.Item label="Electrical" value="ELECTRICAL" color="#111827" />
+                  <Picker.Item label="Maintenance" value="MAINTENANCE" color="#111827" />
+                  <Picker.Item label="Plumbing/AC/Heating" value="PLUMBING_AC_HEATING" color="#111827" />
+                  <Picker.Item label="Other" value="OTHER" color="#111827" />
                 </Picker>
               </View>
               {validationErrors.type && (
@@ -433,10 +336,9 @@ export default function NewRequestScreen() {
                   dropdownIconColor="#111827"
                   itemStyle={{ color: "#111827" }}
                 >
-                  <Picker.Item label="Low" value="low" color="#111827" />
-                  <Picker.Item label="Medium" value="medium" color="#111827" />
-                  <Picker.Item label="High" value="high" color="#111827" />
-                  <Picker.Item label="Urgent" value="urgent" color="#111827" />
+                  <Picker.Item label="Low" value="LOW" color="#111827" />
+                  <Picker.Item label="Medium" value="MEDIUM" color="#111827" />
+                  <Picker.Item label="High" value="HIGH" color="#111827" />
                 </Picker>
               </View>
               {validationErrors.priority && (
@@ -444,42 +346,6 @@ export default function NewRequestScreen() {
                   {validationErrors.priority}
                 </Text>
               )}
-            </View>
-
-            {/* Apartment */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Apartment</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="e.g., 1205"
-                value={newRequest.apartment}
-                onChangeText={(text) => handleInputChange("apartment", text)}
-              />
-            </View>
-
-            {/* Contact Phone */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Contact Phone</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="Your phone number"
-                value={newRequest.contactPhone}
-                onChangeText={(text) => handleInputChange("contactPhone", text)}
-                keyboardType="phone-pad"
-              />
-            </View>
-
-            {/* Preferred Time */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Preferred Time</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="e.g., Morning, Afternoon, Evening"
-                value={newRequest.preferredTime}
-                onChangeText={(text) =>
-                  handleInputChange("preferredTime", text)
-                }
-              />
             </View>
 
             {/* Attachment Picker */}

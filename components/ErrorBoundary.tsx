@@ -1,6 +1,7 @@
 import React, { Component, ReactNode } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { recordCrash } from '../lib/utils/crashReporter';
 
 interface Props {
   children: ReactNode;
@@ -63,6 +64,8 @@ export class ErrorBoundary extends Component<Props, State> {
     this.setState({
       errorInfo,
     });
+
+    void recordCrash(error, errorInfo);
 
     // Call optional error handler
     if (this.props.onError) {

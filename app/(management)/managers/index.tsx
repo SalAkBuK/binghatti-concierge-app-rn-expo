@@ -1,13 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo, useState } from "react";
 import {
-  Alert,
   Modal,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
   useWindowDimensions,
@@ -27,16 +25,8 @@ export default function ManagersScreen() {
   const { currentUser, notifications, actions } = useApp();
   const { width } = useWindowDimensions();
   const [showSideMenu, setShowSideMenu] = useState(false);
-  const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedManager, setSelectedManager] = useState<User | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
-  const [isCreating, setIsCreating] = useState(false);
-  const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    phone: "+971",
-    buildingIds: [] as string[],
-  });
 
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
 
@@ -68,83 +58,6 @@ export default function ManagersScreen() {
     currentUser?.id
   );
   const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
-
-  const handlePhoneChange = (text: string) => {
-    if (!text.startsWith("+971")) {
-      text = "+971" + text.replace(/^\+971/, "");
-    }
-    const prefix = "+971";
-    const numbers = text.slice(prefix.length).replace(/\D/g, "");
-    setFormData({ ...formData, phone: prefix + numbers });
-  };
-
-  const toggleBuilding = (buildingId: string) => {
-    setFormData((prev) => {
-      const isSelected = prev.buildingIds.includes(buildingId);
-      return {
-        ...prev,
-        buildingIds: isSelected
-          ? prev.buildingIds.filter((id) => id !== buildingId)
-          : [...prev.buildingIds, buildingId],
-      };
-    });
-  };
-
-  const resetForm = () => {
-    setFormData({
-      name: "",
-      email: "",
-      phone: "+971",
-      buildingIds: [],
-    });
-  };
-
-  const handleCreateManager = async () => {
-    // Validation
-    if (!formData.name.trim()) {
-      Alert.alert("Error", "Please enter manager name");
-      return;
-    }
-    if (!formData.email.trim()) {
-      Alert.alert("Error", "Please enter manager email");
-      return;
-    }
-    if (!formData.email.includes("@")) {
-      Alert.alert("Error", "Please enter a valid email address");
-      return;
-    }
-    const phoneWithoutPrefix = formData.phone.replace("+971", "").trim();
-    if (!phoneWithoutPrefix || phoneWithoutPrefix.length !== 9) {
-      Alert.alert("Error", "Please enter a valid 9-digit phone number after +971");
-      return;
-    }
-    if (formData.buildingIds.length === 0) {
-      Alert.alert("Error", "Please select at least one building to manage");
-      return;
-    }
-
-    setIsCreating(true);
-    try {
-      await actions.createUser({
-        name: formData.name,
-        email: formData.email,
-        phone: formData.phone,
-        role: "management",
-        profile: {
-          managedBuildingIds: formData.buildingIds,
-        },
-      });
-
-      Alert.alert("Success", `Manager "${formData.name}" created successfully`);
-      setShowCreateModal(false);
-      resetForm();
-    } catch (error) {
-      console.error("Failed to create manager:", error);
-      Alert.alert("Error", "Failed to create manager");
-    } finally {
-      setIsCreating(false);
-    }
-  };
 
   const getBuildingName = (buildingId: string) => {
     const building = managedBuildings.find((b) => b.id === buildingId);
@@ -224,23 +137,6 @@ export default function ManagersScreen() {
           notificationRoute={MANAGEMENT_NOTIFICATION_ROUTE}
         />
 
-        {/* Create Button */}
-        <Animated.View
-          entering={FadeInDown.delay(20).duration(260)}
-          style={styles.createButtonContainer}
-        >
-          <TouchableOpacity
-            style={styles.createButton}
-            onPress={() => {
-              resetForm();
-              setShowCreateModal(true);
-            }}
-          >
-            <Ionicons name="person-add" size={20} color="#FFFFFF" />
-            <Text style={styles.createButtonText}>Add Manager</Text>
-          </TouchableOpacity>
-        </Animated.View>
-
         {/* Stats */}
         <Animated.View
           entering={FadeInDown.delay(40).duration(260)}
@@ -274,7 +170,7 @@ export default function ManagersScreen() {
               <Ionicons name="people-outline" size={48} color="#9CA3AF" />
               <Text style={styles.emptyTitle}>No Other Managers</Text>
               <Text style={styles.emptySubtitle}>
-                Create a new manager to help manage your buildings
+                Managers are created in the web portal.
               </Text>
             </View>
           )}
@@ -285,144 +181,6 @@ export default function ManagersScreen() {
         isVisible={showSideMenu}
         onClose={() => setShowSideMenu(false)}
       />
-
-      {/* Create Manager Modal */}
-      <Modal
-        visible={showCreateModal}
-        animationType="slide"
-        onRequestClose={() => setShowCreateModal(false)}
-      >
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setShowCreateModal(false)}>
-              <Ionicons name="close" size={28} color="#111827" />
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Add New Manager</Text>
-            <View style={{ width: 28 }} />
-          </View>
-
-          <ScrollView
-            style={styles.modalContent}
-            contentContainerStyle={styles.modalContentContainer}
-            showsVerticalScrollIndicator={false}
-          >
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Full Name *</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="Enter manager's full name"
-                value={formData.name}
-                onChangeText={(text) => setFormData({ ...formData, name: text })}
-                maxLength={100}
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Email *</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="manager@example.com"
-                value={formData.email}
-                onChangeText={(text) =>
-                  setFormData({ ...formData, email: text.toLowerCase() })
-                }
-                keyboardType="email-address"
-                autoCapitalize="none"
-                maxLength={100}
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Phone *</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="+971XXXXXXXXX"
-                value={formData.phone}
-                onChangeText={handlePhoneChange}
-                keyboardType="phone-pad"
-                maxLength={13}
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Buildings to Manage *</Text>
-              <Text style={styles.inputHint}>
-                Select the buildings this manager will be responsible for
-              </Text>
-              <View style={styles.buildingSelection}>
-                {managedBuildings.map((building) => (
-                  <TouchableOpacity
-                    key={building.id}
-                    style={[
-                      styles.buildingOption,
-                      formData.buildingIds.includes(building.id) &&
-                        styles.buildingOptionSelected,
-                    ]}
-                    onPress={() => toggleBuilding(building.id)}
-                  >
-                    <Ionicons
-                      name={
-                        formData.buildingIds.includes(building.id)
-                          ? "checkbox"
-                          : "square-outline"
-                      }
-                      size={20}
-                      color={
-                        formData.buildingIds.includes(building.id)
-                          ? "#7034FF"
-                          : "#9CA3AF"
-                      }
-                    />
-                    <Text
-                      style={[
-                        styles.buildingOptionText,
-                        formData.buildingIds.includes(building.id) &&
-                          styles.buildingOptionTextSelected,
-                      ]}
-                    >
-                      {building.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            <View style={styles.infoBox}>
-              <Ionicons name="information-circle" size={22} color="#2563EB" />
-              <Text style={styles.infoText}>
-                The new manager will receive an email with login credentials and
-                will have access to manage the selected buildings.
-              </Text>
-            </View>
-          </ScrollView>
-
-          <View style={styles.modalFooter}>
-            <TouchableOpacity
-              style={styles.cancelButton}
-              onPress={() => setShowCreateModal(false)}
-            >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.submitButton,
-                isCreating && styles.submitButtonDisabled,
-              ]}
-              onPress={handleCreateManager}
-              disabled={isCreating}
-            >
-              {isCreating ? (
-                <Text style={styles.submitButtonText}>Creating...</Text>
-              ) : (
-                <>
-                  <Ionicons name="person-add" size={18} color="#FFFFFF" />
-                  <Text style={styles.submitButtonText}>Create Manager</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
-        </SafeAreaView>
-      </Modal>
 
       {/* Manager Detail Modal */}
       <Modal

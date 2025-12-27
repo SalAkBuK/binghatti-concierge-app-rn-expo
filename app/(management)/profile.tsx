@@ -65,8 +65,10 @@ export default function ManagementProfileScreen() {
   );
   const [isSaving, setIsSaving] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [isResettingPassword, setIsResettingPassword] = useState(false);
   const minPasswordLength = APP_CONFIG.validation.minPasswordLength;
@@ -74,7 +76,7 @@ export default function ManagementProfileScreen() {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      const updates: Partial<UserProfile> = {
+      const profileUpdates: Partial<UserProfile> = {
         name: profileForm.name.trim() || undefined,
         jobTitle: profileForm.jobTitle.trim() || undefined,
         department: profileForm.department.trim() || undefined,
@@ -83,7 +85,10 @@ export default function ManagementProfileScreen() {
         avatar: avatar[0] || undefined,
       };
 
-      await actions.updateProfile(updates as any);
+      await actions.updateProfile({
+        name: profileForm.name.trim() || undefined,
+        profile: profileUpdates,
+      } as any);
 
       // Mark profile as completed after saving details if needed
       if (currentUser && !currentUser.profileCompleted) {
@@ -103,8 +108,10 @@ export default function ManagementProfileScreen() {
   };
 
   const handleOpenPasswordModal = () => {
+    setCurrentPassword("");
     setNewPassword("");
     setPasswordError(null);
+    setShowCurrentPassword(false);
     setShowPassword(false);
     setShowPasswordModal(true);
   };
@@ -112,16 +119,15 @@ export default function ManagementProfileScreen() {
   const handleClosePasswordModal = (force = false) => {
     if (!isResettingPassword || force) {
       setShowPasswordModal(false);
+      setCurrentPassword("");
       setNewPassword("");
       setPasswordError(null);
     }
   };
 
   const handleResetPassword = async () => {
-    const email = currentUser?.email || profileForm.email;
-
-    if (!email) {
-      showErrorAlert(new Error("Email not found. Please log in again."));
+    if (!currentPassword.trim()) {
+      setPasswordError("Current password is required");
       return;
     }
 
@@ -140,8 +146,8 @@ export default function ManagementProfileScreen() {
     setIsResettingPassword(true);
 
     try {
-      const response = await apiService.resetPassword({
-        email,
+      const response = await apiService.changePassword({
+        currentPassword,
         newPassword,
       });
 
@@ -376,6 +382,39 @@ export default function ManagementProfileScreen() {
                 </Text>
               </View>
 
+              <Text style={styles.modalLabel}>Current Password</Text>
+              <View
+                style={[
+                  styles.modalInputRow,
+                  passwordError && styles.modalInputError,
+                ]}
+              >
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="Enter current password"
+                  value={currentPassword}
+                  onChangeText={(text) => {
+                    setCurrentPassword(text);
+                    if (passwordError) {
+                      setPasswordError(null);
+                    }
+                  }}
+                  secureTextEntry={!showCurrentPassword}
+                  textContentType="password"
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity
+                  style={styles.passwordToggleButton}
+                  onPress={() => setShowCurrentPassword((prev) => !prev)}
+                >
+                  <Ionicons
+                    name={showCurrentPassword ? "eye-off-outline" : "eye-outline"}
+                    size={18}
+                    color="#475569"
+                  />
+                </TouchableOpacity>
+              </View>
+
               <Text style={styles.modalLabel}>New Password</Text>
               <View
                 style={[
@@ -426,11 +465,17 @@ export default function ManagementProfileScreen() {
                 <TouchableOpacity
                   style={[
                     styles.modalPrimaryButton,
-                    (isResettingPassword || !newPassword.trim()) &&
+                    (isResettingPassword ||
+                      !currentPassword.trim() ||
+                      !newPassword.trim()) &&
                       styles.modalPrimaryButtonDisabled,
                   ]}
                   onPress={handleResetPassword}
-                  disabled={isResettingPassword || !newPassword.trim()}
+                  disabled={
+                    isResettingPassword ||
+                    !currentPassword.trim() ||
+                    !newPassword.trim()
+                  }
                 >
                   <LinearGradient
                     colors={["#2563EB", "#1D4ED8"]}

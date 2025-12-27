@@ -91,30 +91,14 @@ export class DirectApiExamples {
         password: "password123",
       });
 
-      if (response.success) {
-        console.log("✅ User logged in:", response.user);
-        console.log("🔑 Token stored automatically");
+      if (response.accessToken) {
+        console.log("User logged in:", response.user);
+        console.log("Token stored automatically");
       }
     } catch (error: any) {
-      console.error("❌ Login error:", error.message);
+      console.error("Login error:", error.message);
     }
   }
-
-  static async registerExample() {
-    try {
-      await apiService.register({
-        email: "newtenant@example.com",
-        password: "password123",
-        name: "John Doe",
-        apartment: "102",
-        tower: "B",
-      });
-      console.log("✅ Registration successful");
-    } catch (error: any) {
-      console.error("❌ Registration error:", error.message);
-    }
-  }
-
   // Requests examples
   static async getRequestsExample() {
     try {
@@ -360,3 +344,4 @@ export class RealTimeExamples {
     }, intervalMs);
   }
 }
+

@@ -1,7 +1,7 @@
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Dimensions,
   ScrollView,
@@ -23,15 +23,72 @@ import { HeaderBar } from "../../components/ui/HeaderBar";
 import { HomeScreenSkeleton } from "../../components/ui/HomeScreenSkeleton";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
-import { buildingsApi } from "../../lib/services/api/buildings";
+import { residentRequestsApi } from "../../lib/services/api/resident-requests";
+import type { Request, RequestStatus } from "../../lib/types";
 import { filterNotificationsByUser } from "../../lib/utils/helpers";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
+const mapStatusFromBackend = (status: any): RequestStatus => {
+  const numeric = Number(status);
+  if (!Number.isNaN(numeric)) {
+    switch (numeric) {
+      case 1:
+        return "pending";
+      case 2:
+      case 3:
+        return "in-progress";
+      case 4:
+        return "on-hold";
+      case 5:
+        return "completed";
+      case 6:
+        return "cancelled";
+      default:
+        return "pending";
+    }
+  }
+
+  const normalized = String(status || "")
+    .toUpperCase()
+    .replace(/[\s-]/g, "_");
+
+  if (normalized === "OPEN") return "pending";
+  if (normalized === "ASSIGNED" || normalized === "IN_PROGRESS") {
+    return "in-progress";
+  }
+  if (normalized === "COMPLETED") return "completed";
+  if (normalized === "CANCELED" || normalized === "CANCELLED") return "cancelled";
+  return "pending";
+};
+
+const mapPriorityFromBackend = (priority: any): Request["priority"] => {
+  const numeric = Number(priority);
+  if (!Number.isNaN(numeric)) {
+    switch (numeric) {
+      case 1:
+        return "low";
+      case 2:
+        return "medium";
+      case 3:
+        return "high";
+      case 4:
+        return "urgent";
+      default:
+        return "medium";
+    }
+  }
+
+  const normalized = String(priority || "").toLowerCase();
+  if (normalized === "low") return "low";
+  if (normalized === "high") return "high";
+  if (normalized === "urgent") return "urgent";
+  return "medium";
+};
+
 export default function TenantHomeScreen() {
   const {
     currentUser,
-    requests,
     notifications,
     notices,
     actions,
@@ -39,8 +96,17 @@ export default function TenantHomeScreen() {
   } = useApp();
   const [isLoading, setIsLoading] = useState(true);
   const [showSideMenu, setShowSideMenu] = useState(false);
-  const [buildingName, setBuildingName] = useState<string>("Binghatti");
   const tabBarHeight = useBottomTabBarHeight();
+  const buildingName = currentUser?.profile?.buildingName || "-";
+  const unitLabel = currentUser?.profile?.apartment;
+  const floorLabel = currentUser?.profile?.floor;
+  const unitInfo =
+    unitLabel || floorLabel
+      ? [unitLabel, floorLabel ? `Floor ${floorLabel}` : null]
+          .filter(Boolean)
+          .join(" - ")
+      : "-";
+  const [residentRequests, setResidentRequests] = useState<Request[]>([]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -59,33 +125,66 @@ export default function TenantHomeScreen() {
     return () => clearTimeout(timer);
   }, [currentUser]);
 
-  // Fetch building name
   useEffect(() => {
-    const fetchBuildingName = async () => {
-      const buildingId = currentUser?.profile?.buildingId;
-      if (!buildingId) {
-        console.log('[TenantHome] No buildingId found in user profile');
-        return;
-      }
+    const fetchResidentRequests = async () => {
+      if (!currentUser?.id) return;
 
       try {
-        console.log('[TenantHome] Fetching building name for buildingId:', buildingId);
-        const response = await buildingsApi.getBuildingById(buildingId);
+        const response = await residentRequestsApi.getRequests();
+        const items = Array.isArray(response)
+          ? response
+          : Array.isArray(response?.data)
+            ? response.data
+            : Array.isArray((response as any)?.items)
+              ? (response as any).items
+              : [];
 
-        if (response.success && response.data) {
-          setBuildingName(response.data.name);
-          console.log('[TenantHome] Building name fetched:', response.data.name);
-        }
+        const mappedRequests: Request[] = items.map((item: any) => ({
+          id: String(item.id),
+          tenantId: currentUser.id,
+          title: item.title || "Untitled Request",
+          description: item.description || "",
+          type: "maintenance",
+          status: mapStatusFromBackend(item.status),
+          priority: mapPriorityFromBackend(item.priority),
+          assignedTo: item.assignedTo?.fullName || item.assignedTo?.email || undefined,
+          buildingId: item.buildingId ? String(item.buildingId) : undefined,
+          buildingName: item.buildingName || currentUser?.profile?.buildingName,
+          apartment: currentUser?.profile?.apartment || "",
+          floor: currentUser?.profile?.floor || "",
+          tower: currentUser?.profile?.tower || "",
+          contactPhone: currentUser?.profile?.phone || "",
+          preferredTime: "",
+          additionalNotes: "",
+          attachments: Array.isArray(item.attachments)
+            ? item.attachments
+                .map((att: any) => att?.url || att?.fileUrl || att?.uri || null)
+                .filter(Boolean)
+            : [],
+          comments: [],
+          messages: [],
+          notes: [],
+          timeline: [],
+          createdAt: item.createdAt || new Date().toISOString(),
+          updatedAt: item.updatedAt || item.createdAt || new Date().toISOString(),
+          _source: "backend" as const,
+        }));
+
+        setResidentRequests(mappedRequests);
       } catch (error) {
-        console.error('[TenantHome] Failed to fetch building name:', error);
-        // Keep default building name on error
+        console.error("[TenantHome] Failed to fetch resident requests:", error);
+        setResidentRequests([]);
       }
     };
 
-    if (currentUser?.profile?.buildingId) {
-      fetchBuildingName();
-    }
-  }, [currentUser?.profile?.buildingId]);
+    fetchResidentRequests();
+  }, [currentUser?.id, currentUser?.profile?.apartment, currentUser?.profile?.floor]);
+
+  const recentRequests = useMemo(() => {
+    return [...residentRequests]
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+      .slice(0, 3);
+  }, [residentRequests]);
 
   const handleNoticePress = (notice: any) => {
     actions.setSelectedNotice(notice);
@@ -146,10 +245,8 @@ export default function TenantHomeScreen() {
               <View style={styles.infoRow}>
                 <NewHomeIcon size={44} color="rgba(255,255,255,0.8)" />
                 <View>
-                  <Text style={styles.infoLabel}>Your Apartment</Text>
-                  <Text style={styles.infoValue}>
-                    {currentUser?.profile?.apartment || "—"}
-                  </Text>
+                  <Text style={styles.infoLabel}>Your Unit</Text>
+                  <Text style={styles.infoValue}>{unitInfo}</Text>
                 </View>
               </View>
             </View>
@@ -272,9 +369,7 @@ export default function TenantHomeScreen() {
         >
           <Text style={styles.recentActivityTitle}>Recent Activity</Text>
 
-          {requests
-            .filter((req) => req.tenantId === currentUser?.id)
-            .slice(0, 3)
+          {recentRequests
             .map((request) => {
               const statusConfig = {
                 pending: {
@@ -329,8 +424,7 @@ export default function TenantHomeScreen() {
               );
             })}
 
-          {requests.filter((req) => req.tenantId === currentUser?.id).length ===
-            0 && (
+          {residentRequests.length === 0 && (
             <View style={styles.emptyActivityState}>
               <Text style={styles.emptyActivityText}>
                 No recent activity to display

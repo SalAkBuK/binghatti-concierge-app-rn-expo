@@ -6,7 +6,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ClipboardTabIcon from "../icons/ClipboardTabIcon";
 import GridTabIcon from "../icons/GridTabIcon";
 import MoreTabIcon from "../icons/MoreTabIcon";
-import TenantsTabIcon from "../icons/TenantsTabIcon";
 
 interface TabItem {
   name: string;
@@ -27,12 +26,6 @@ const TABS: TabItem[] = [
     label: "Requests",
     icon: ClipboardTabIcon,
     route: "/(management)/requests",
-  },
-  {
-    name: "tenants",
-    label: "Tenants",
-    icon: TenantsTabIcon,
-    route: "/(management)/tenants",
   },
   {
     name: "more",

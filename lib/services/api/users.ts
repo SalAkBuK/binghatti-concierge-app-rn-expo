@@ -6,6 +6,18 @@ import type { UsersApi, UserListParams } from "./types";
 import type { ApiResponse, User } from "../../types";
 
 export class UsersApiService extends BaseApiService implements UsersApi {
+  async getMyAssignments(): Promise<ApiResponse<any[]>> {
+    try {
+      const response = await this.get<ApiResponse<any[]>>(
+        API_ENDPOINTS.users.assignments,
+      );
+
+      return response;
+    } catch (error) {
+      throw error;
+    }
+  }
+
   async getUsers(params?: UserListParams): Promise<ApiResponse<User[]>> {
     try {
       const response = await this.get<ApiResponse<User[]>>(
@@ -89,19 +101,19 @@ export class UsersApiService extends BaseApiService implements UsersApi {
   async getServiceProviders(
     params?: Omit<UserListParams, "role">,
   ): Promise<ApiResponse<User[]>> {
-    return this.getUsersByRole("service_provider", params);
+    return this.getUsersByRole("building_employee", params);
   }
 
   async getEmployees(
     params?: Omit<UserListParams, "role">,
   ): Promise<ApiResponse<User[]>> {
-    return this.getUsersByRole("employee", params);
+    return this.getUsersByRole("building_employee", params);
   }
 
   async getAdmins(
     params?: Omit<UserListParams, "role">,
   ): Promise<ApiResponse<User[]>> {
-    return this.getUsersByRole("admin", params);
+    return this.getUsersByRole("management", params);
   }
 
   // User activation/deactivation

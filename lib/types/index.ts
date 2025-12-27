@@ -8,12 +8,9 @@ export interface User {
   name: string;
   role:
     | "tenant"
-    | "admin"
-    | "super_admin"
     | "management"
-    | "service_provider"
-    | "employee"
     | "building_employee";
+  mustChangePassword?: boolean;
   phone?: string;
   status?: UserStatus;
   profile?: UserProfile;
@@ -28,6 +25,7 @@ export interface UserProfile {
   apartment?: string;
   tower?: string;
   floor?: string;
+  buildingName?: string;
   emergencyContact?: string;
   emergencyPhone?: string;
   avatar?: string;
@@ -127,7 +125,13 @@ export interface Request {
     | "plumbing"
     | "hvac"
     | "other";
-  status: "pending" | "in-progress" | "on-hold" | "completed" | "cancelled";
+  status:
+    | "pending"
+    | "assigned"
+    | "in-progress"
+    | "on-hold"
+    | "completed"
+    | "cancelled";
   priority: "low" | "medium" | "high" | "urgent";
   tenantId: string;
   assignedTo?: string;
@@ -159,6 +163,23 @@ export interface RequestComment {
   createdAt: string;
   channel?: RequestMessageChannel;
   attachments?: string[];
+  visibility?: RequestMessageChannel | "internal";
+}
+
+export interface RequestCommentAuthor {
+  id: string;
+  name?: string;
+  email?: string;
+}
+
+export interface OrgBuildingRequestComment {
+  id: string;
+  message?: string;
+  commentText?: string;
+  createdAt: string;
+  author?: RequestCommentAuthor | null;
+  attachments?: Array<{ fileUrl?: string; url?: string; uri?: string } | string>;
+  channel?: RequestMessageChannel;
   visibility?: RequestMessageChannel | "internal";
 }
 
@@ -194,9 +215,10 @@ export interface ApiResponse<T = any> {
 }
 
 export interface AuthResponse {
-  success: boolean;
+  accessToken?: string;
+  refreshToken?: string;
   user?: User;
-  token?: string;
+  success?: boolean;
   message?: string;
 }
 
@@ -262,6 +284,17 @@ export interface CreateRequestTimelineEventDTO {
 export interface LoginDTO {
   email: string;
   password: string;
+}
+
+export interface ChangePasswordDTO {
+  currentPassword: string;
+  newPassword: string;
+}
+
+export interface UpdateProfileDTO {
+  name?: string;
+  phone?: string;
+  avatarUrl?: string;
 }
 
 export interface RegisterDTO {
@@ -909,7 +942,7 @@ export interface RatingSummary {
   id: string;
   entityId: string;
   entityName: string;
-  role: "service_provider" | "employee";
+  role: "building_employee";
   averageRating: number;
   reviewsCount: number;
   lastReviewDate?: string;
@@ -1090,10 +1123,10 @@ export interface EmployeeMessage {
   id: string;
   senderId: string;
   senderName: string;
-  senderRole: "service_provider" | "employee";
+  senderRole: "building_employee";
   recipientId: string;
   recipientName: string;
-  recipientRole: "service_provider" | "employee";
+  recipientRole: "building_employee";
   jobId?: string;
   subject?: string;
   body: string;
@@ -1525,10 +1558,10 @@ export interface OverrideJobCompletionDTO {
 export interface SendEmployeeMessageDTO {
   senderId: string;
   senderName: string;
-  senderRole: "service_provider" | "employee";
+  senderRole: "building_employee";
   recipientId: string;
   recipientName: string;
-  recipientRole: "service_provider" | "employee";
+  recipientRole: "building_employee";
   jobId?: string;
   subject?: string;
   body: string;

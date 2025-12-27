@@ -22,46 +22,67 @@ import { ManagementTile } from "../../components/management/ManagementTile";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
-import apiService from "../../lib/services/api";
-import { maintenanceApi } from "../../lib/services/api/maintenance";
+import { orgBuildingsApi } from "../../lib/services/api/org-buildings";
 import type { Building, NotificationType, Request, RequestPriority, RequestStatus } from "../../lib/types";
 import {
   filterNotificationsByUser,
 } from "../../lib/utils/helpers";
 
 // Helper function to map backend status to frontend status
-// 1=New, 2=Assigned, 3=InProgress, 4=OnHold, 5=Completed, 6=Cancelled
-const mapStatusFromApi = (status: number): RequestStatus => {
-  switch (status) {
-    case 1:
-      return "pending"; // New
-    case 2:
-    case 3:
-    case 4: // treat OnHold as in-progress for now
-      return "in-progress"; // Assigned, InProgress, OnHold
-    case 5:
-      return "completed"; // Completed
-    case 6:
-      return "cancelled"; // Cancelled
-    default:
-      return "pending";
+const mapStatusFromApi = (status: any): RequestStatus => {
+  if (typeof status === "number") {
+    switch (status) {
+      case 0:
+      case 1:
+        return "pending";
+      case 2:
+        return "assigned";
+      case 3:
+        return "in-progress";
+      case 4:
+        return "on-hold";
+      case 5:
+        return "completed";
+      case 6:
+        return "cancelled";
+      default:
+        return "pending";
+    }
   }
+
+  const normalized = String(status || "").toUpperCase();
+  if (["OPEN"].includes(normalized)) return "pending";
+  if (["ASSIGNED"].includes(normalized)) return "assigned";
+  if (["IN_PROGRESS"].includes(normalized)) return "in-progress";
+  if (["ON_HOLD"].includes(normalized)) return "on-hold";
+  if (["COMPLETED"].includes(normalized)) return "completed";
+  if (["CANCELED", "CANCELLED"].includes(normalized)) return "cancelled";
+  return "pending";
 };
 
 // Helper function to map backend priority to frontend priority
-const mapPriorityFromApi = (priority: number): RequestPriority => {
-  switch (priority) {
-    case 1:
-      return "low";
-    case 2:
-      return "medium";
-    case 3:
-      return "high";
-    case 4:
-      return "urgent";
-    default:
-      return "medium";
+const mapPriorityFromApi = (priority: any): RequestPriority => {
+  if (typeof priority === "number") {
+    switch (priority) {
+      case 1:
+        return "low";
+      case 2:
+        return "medium";
+      case 3:
+        return "high";
+      case 4:
+        return "urgent";
+      default:
+        return "medium";
+    }
   }
+
+  const normalized = String(priority || "").toUpperCase();
+  if (normalized === "LOW") return "low";
+  if (normalized === "NORMAL" || normalized === "MEDIUM") return "medium";
+  if (normalized === "HIGH") return "high";
+  if (normalized === "URGENT") return "urgent";
+  return "medium";
 };
 
 const MANAGEMENT_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
@@ -159,6 +180,87 @@ export default function ManagementDashboard() {
   );
   const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
 
+  const mapAssignedBuildings = (payload: any[]): Building[] =>
+    payload.map((building: any): Building => ({
+      id: String(building?.id ?? building?.buildingId ?? ""),
+      name:
+        building?.name ||
+        building?.buildingName ||
+        building?.title ||
+        "Building",
+      address: building?.address || "",
+      city: building?.city || "",
+      country: building?.country || "",
+      emirate: building?.emirate,
+      community: building?.community,
+      street: building?.street,
+      plotNumber: building?.plotNumber,
+      buildingNumber: building?.buildingNumber,
+      makaniNumber: building?.makaniNumber,
+      buildingType: building?.buildingType,
+      developer: building?.developer,
+      yearBuilt: building?.yearBuilt,
+      totalFloors: building?.totalFloors,
+      utilityPremisesNumber: building?.utilityPremisesNumber,
+      managerId: building?.managerId,
+      managerName: building?.managerName,
+      totalUnits: building?.totalUnits ?? 0,
+      occupiedUnits: building?.occupiedUnits ?? 0,
+      unitBreakdown: building?.unitBreakdown,
+      amenities: building?.amenities ?? [],
+      status: building?.status ?? "active",
+      createdAt: building?.createdAt ?? new Date().toISOString(),
+      updatedAt: building?.updatedAt ?? new Date().toISOString(),
+      location: building?.location,
+      units: building?.units,
+    }));
+
+  const attachBuildingCounts = async (buildings: Building[]) => {
+    if (!buildings.length) return buildings;
+
+    const updated = await Promise.all(
+      buildings.map(async (building) => {
+        if (!building.id) return building;
+        try {
+          const [occupancyResponse, unitsResponse] = await Promise.all([
+            orgBuildingsApi.getOccupancyCount(building.id),
+            orgBuildingsApi.getUnitsCount(building.id),
+          ]);
+          const occupancyPayload =
+            (occupancyResponse as any)?.data ?? occupancyResponse ?? {};
+          const unitsPayload =
+            (unitsResponse as any)?.data ?? unitsResponse ?? {};
+          const active =
+            typeof occupancyPayload?.active === "number"
+              ? occupancyPayload.active
+              : undefined;
+          const total =
+            typeof unitsPayload?.total === "number" ? unitsPayload.total : undefined;
+          const vacant =
+            typeof unitsPayload?.vacant === "number" ? unitsPayload.vacant : undefined;
+          const derivedActive =
+            total != null && vacant != null ? Math.max(0, total - vacant) : undefined;
+
+          return {
+            ...building,
+            totalUnits: total ?? building.totalUnits,
+            occupiedUnits:
+              active ?? derivedActive ?? building.occupiedUnits,
+          };
+        } catch (error) {
+          console.warn(
+            "[Management] Failed to fetch unit/occupancy counts for building:",
+            building.id,
+            error,
+          );
+          return building;
+        }
+      }),
+    );
+
+    return updated;
+  };
+
   // Fetch buildings assigned to this manager from the API
   useEffect(() => {
     const fetchBuildings = async () => {
@@ -169,16 +271,22 @@ export default function ManagementDashboard() {
 
       setLoadingBuildings(true);
       try {
-        console.log('[Management] Fetching buildings for manager:', currentUser.id);
-        const response = await apiService.admin.getBuildingsByManagerId(currentUser.id);
+        console.log("[Management] Fetching assigned buildings for manager:", currentUser.id);
+        const response = await orgBuildingsApi.getAssignedBuildings();
+        const buildingsPayload = Array.isArray(response)
+          ? response
+          : Array.isArray(response?.data)
+            ? response.data
+            : [];
 
-        if (response.success && response.data) {
-          console.log('[Management] Buildings fetched:', response.data.length);
-          console.log('[Management] Building data:', JSON.stringify(response.data, null, 2));
-          setManagedBuildings(response.data);
-          // Note: selectedBuildingId and broadcastScope are set by the sync useEffect (line 274)
+        if (buildingsPayload.length > 0) {
+          const mappedBuildings = mapAssignedBuildings(buildingsPayload);
+          const buildingsWithCounts = await attachBuildingCounts(mappedBuildings);
+          console.log("[Management] Buildings fetched:", mappedBuildings.length);
+          setManagedBuildings(buildingsWithCounts);
+          // Note: selectedBuildingId and broadcastScope are set by the sync useEffect
         } else {
-          console.log('[Management] No buildings assigned to this manager');
+          console.log("[Management] No buildings assigned to this manager");
           setManagedBuildings([]);
           setSelectedBuildingId(null);
           setBroadcastScope([]);
@@ -218,35 +326,70 @@ export default function ManagementDashboard() {
       }
 
       try {
-        console.log('[Management] Fetching requests for building:', selectedBuildingId);
-        const response = await maintenanceApi.getMaintenanceRequestsByBuildingId(selectedBuildingId);
+        console.log("[Management] Fetching requests for building:", selectedBuildingId);
+        const response = await orgBuildingsApi.getBuildingRequests(selectedBuildingId);
+        const payload = Array.isArray(response)
+          ? response
+          : Array.isArray(response?.data)
+            ? response.data
+            : [];
 
-        if (response.success && response.data) {
-          // Map backend data to frontend Request type
-          const mappedRequests: Request[] = response.data.map((item: any) => ({
-            id: String(item.id),
-            type: "maintenance",
-            tenantId: "", // Not provided by this API
-            title: item.title || "Untitled Request",
-            description: item.description || "",
-            category: "maintenance",
-            status: mapStatusFromApi(item.status),
-            priority: mapPriorityFromApi(item.priority),
-            createdAt: item.createdAt || new Date().toISOString(),
-            updatedAt: item.updatedAt || item.createdAt || new Date().toISOString(),
-            apartment: "",
-            tower: "",
-            contactPhone: "",
-            preferredTime: "",
-            additionalNotes: "",
-            attachments: [],
-            comments: [],
-            messages: [],
-            notes: [],
-            timeline: [],
-          }));
+        if (payload.length > 0) {
+          const buildingName = managedBuildings.find(
+            (building) => building.id === selectedBuildingId,
+          )?.name;
+          const mappedRequests: Request[] = payload.map((item: any) => {
+            const unit = item.unit || item.unitDetails;
+            return {
+              id: String(item.id),
+              type: "maintenance",
+              buildingId: String(item.buildingId ?? selectedBuildingId),
+              buildingName: item.buildingName || buildingName,
+              tenantId:
+                item.createdByUserId != null
+                  ? String(item.createdByUserId)
+                  : item.createdById != null
+                    ? String(item.createdById)
+                    : "",
+              title: item.title || "Untitled Request",
+              description: item.description || "",
+              status: mapStatusFromApi(item.status),
+              priority: mapPriorityFromApi(item.priority),
+              createdAt: item.createdAt || new Date().toISOString(),
+              updatedAt: item.updatedAt || item.createdAt || new Date().toISOString(),
+              apartment:
+                unit?.label ||
+                item.unitLabel ||
+                item.unitNumber ||
+                item.apartment ||
+                "",
+              floor:
+                item.floorNumber != null
+                  ? String(item.floorNumber)
+                  : unit?.floor != null
+                    ? String(unit.floor)
+                    : "",
+              contactPhone: item.contactPhone || "",
+              preferredTime: item.preferredTime || "",
+              additionalNotes: item.additionalNotes || "",
+              assignedTo:
+                item.assignedTo?.fullName ||
+                item.assignedTo?.name ||
+                item.assignedTo?.email ||
+                (item.assignedToId ? String(item.assignedToId) : undefined),
+              attachments: Array.isArray(item.attachments)
+                ? item.attachments
+                    .map((att: any) => att.fileUrl || att.url || att.uri || "")
+                    .filter(Boolean)
+                : [],
+              comments: [],
+              messages: [],
+              notes: [],
+              timeline: [],
+            } as Request;
+          });
 
-          console.log('[Management] Mapped requests:', mappedRequests.length);
+          console.log("[Management] Mapped requests:", mappedRequests.length);
           setBuildingRequests(mappedRequests);
         } else {
           setBuildingRequests([]);
@@ -258,7 +401,7 @@ export default function ManagementDashboard() {
     };
 
     fetchBuildingRequests();
-  }, [selectedBuildingId]);
+  }, [selectedBuildingId, managedBuildings]);
 
   const allManagedBuildingIds = useMemo(
     () => managedBuildings.map((building) => building.id),
@@ -342,7 +485,9 @@ export default function ManagementDashboard() {
         bookingsToday: 0, // TODO: Fetch from bookings API when available
         visitorsToday: 0, // TODO: Fetch from visitors API when available
         completionRate,
-        occupancyRate: Math.round((selectedBuilding.occupiedUnits / selectedBuilding.totalUnits) * 100),
+        occupancyRate: selectedBuilding.totalUnits
+          ? Math.round((selectedBuilding.occupiedUnits / selectedBuilding.totalUnits) * 100)
+          : 0,
         openJobsCount: 0, // TODO: Fetch from jobs API when available
       },
       lists: {
@@ -477,12 +622,19 @@ export default function ManagementDashboard() {
     setRefreshing(true);
     try {
       if (currentUser?.id) {
-        console.log('[Management] Refreshing buildings for manager:', currentUser.id);
-        const response = await apiService.admin.getBuildingsByManagerId(currentUser.id);
+        console.log("[Management] Refreshing assigned buildings for manager:", currentUser.id);
+        const response = await orgBuildingsApi.getAssignedBuildings();
+        const buildingsPayload = Array.isArray(response)
+          ? response
+          : Array.isArray(response?.data)
+            ? response.data
+            : [];
 
-        if (response.success && response.data) {
-          console.log('[Management] Buildings refreshed:', response.data.length);
-          setManagedBuildings(response.data);
+        if (buildingsPayload.length > 0) {
+          const mappedBuildings = mapAssignedBuildings(buildingsPayload);
+          const buildingsWithCounts = await attachBuildingCounts(mappedBuildings);
+          console.log("[Management] Buildings refreshed:", mappedBuildings.length);
+          setManagedBuildings(buildingsWithCounts);
           // Note: selectedBuildingId and broadcastScope are managed by the sync useEffect
         }
       }

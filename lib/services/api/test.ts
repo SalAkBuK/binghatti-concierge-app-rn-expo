@@ -1,7 +1,7 @@
 // Simple test for API service functionality
 
 import { apiService } from "./index";
-import type { LoginDTO, RegisterDTO, CreateRequestDTO } from "../../types";
+import type { LoginDTO, CreateRequestDTO } from "../../types";
 
 export class ApiServiceTest {
   static async testAuthFlow() {

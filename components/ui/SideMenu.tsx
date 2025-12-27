@@ -235,12 +235,6 @@ const managementMenu: MenuItem[] = [
     icon: "clipboard-outline",
     action: () => navigateAndClose("/(management)/requests"),
   },
-  {
-    id: "management-tenants",
-    title: "Tenant Directory",
-    icon: "people-outline",
-    action: () => navigateAndClose("/(management)/tenants"),
-  },
 
   {
     id: "management-notices",

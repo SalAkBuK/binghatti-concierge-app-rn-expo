@@ -78,7 +78,7 @@ export const DEFAULT_USERS: Record<string, User> = {
     id: "0",
     email: "superadmin@demo.com",
     name: "Super Admin",
-    role: "super_admin",
+    role: "management",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     profile: {
@@ -121,7 +121,7 @@ export const DEFAULT_USERS: Record<string, User> = {
     id: "3",
     email: "admin@demo.com",
     name: "Admin User",
-    role: "admin",
+    role: "management",
     profileCompleted: false, // Will trigger profile setup on first login
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -134,7 +134,7 @@ export const DEFAULT_USERS: Record<string, User> = {
     id: "admin-live",
     email: "admin@towerdesk.com",
     name: "Tower Desk Admin",
-    role: "admin",
+    role: "management",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     profile: {
@@ -146,7 +146,7 @@ export const DEFAULT_USERS: Record<string, User> = {
     id: "4",
     email: "sp1@demo.com",
     name: "Mike Johnson",
-    role: "service_provider",
+    role: "building_employee",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     profile: {
@@ -158,7 +158,7 @@ export const DEFAULT_USERS: Record<string, User> = {
     id: "5",
     email: "sp2@demo.com",
     name: "Alex Wilson",
-    role: "service_provider",
+    role: "building_employee",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     profile: {
@@ -170,7 +170,7 @@ export const DEFAULT_USERS: Record<string, User> = {
     id: "7",
     email: "sp3@demo.com",
     name: "Hassan Abdullah",
-    role: "service_provider",
+    role: "building_employee",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     profile: {
@@ -224,7 +224,7 @@ export const DEFAULT_USERS: Record<string, User> = {
     id: "sp-emp-1",
     email: "employee1@demo.com",
     name: "Ahmed Al-Mansoori",
-    role: "employee",
+    role: "building_employee",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     profile: {
@@ -240,7 +240,7 @@ export const DEFAULT_USERS: Record<string, User> = {
     id: "sp-emp-2",
     email: "employee2@demo.com",
     name: "Rashid Ibrahim",
-    role: "employee",
+    role: "building_employee",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     profile: {
@@ -256,7 +256,7 @@ export const DEFAULT_USERS: Record<string, User> = {
     id: "sp-emp-3",
     email: "employee3@demo.com",
     name: "Khalid Hassan",
-    role: "employee",
+    role: "building_employee",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     profile: {
@@ -634,7 +634,7 @@ export const DEFAULT_REQUESTS: Request[] = [
         requestId: "2",
         senderId: "4",
         senderName: "Mike Johnson",
-        senderRole: "service_provider",
+        senderRole: "building_employee",
         channel: "provider",
         body: "I'll arrive at 9am tomorrow. Please ensure access to the service closet.",
         createdAt: new Date(Date.now() - 18 * 60 * 60 * 1000).toISOString(),
@@ -725,7 +725,7 @@ export const DEFAULT_REQUESTS: Request[] = [
         requestId: "3",
         senderId: "5",
         senderName: "Alex Wilson",
-        senderRole: "service_provider",
+        senderRole: "building_employee",
         channel: "provider",
         body: "Maintenance completed. Certification uploaded to job record.",
         attachments: ["https://example.com/docs/elevator-cert.pdf"],
@@ -798,7 +798,7 @@ export const DEFAULT_REQUESTS: Request[] = [
         requestId: "21",
         senderId: "sp-emp-2",
         senderName: "Rashid Ibrahim",
-        senderRole: "employee",
+        senderRole: "building_employee",
         channel: "provider",
         body: "Service complete. Awaiting tenant confirmation of airflow.",
         createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
@@ -880,7 +880,7 @@ export const DEFAULT_REQUESTS: Request[] = [
         requestId: "22",
         senderId: "sp-emp-2",
         senderName: "Rashid Ibrahim",
-        senderRole: "employee",
+        senderRole: "building_employee",
         channel: "provider",
         body: "Photos uploaded. Awaiting your go-ahead on the additional scope.",
         createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
@@ -962,7 +962,7 @@ export const DEFAULT_REQUESTS: Request[] = [
         requestId: "23",
         senderId: "sp-emp-1",
         senderName: "Ahmed Al-Mansoori",
-        senderRole: "employee",
+        senderRole: "building_employee",
         channel: "provider",
         body: "Yes, insulation prevents condensation dripping. Estimate submitted for approval.",
         createdAt: new Date(Date.now() - 90 * 60 * 1000).toISOString(),
@@ -2866,7 +2866,7 @@ export const DEFAULT_RATING_SUMMARIES: RatingSummary[] = [
     id: "rating-summary-sp1",
     entityId: "sp-profile-1",
     entityName: "Mike Johnson",
-    role: "service_provider",
+    role: "building_employee",
     averageRating: 4.9,
     reviewsCount: 86,
     lastReviewDate: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
@@ -2875,7 +2875,7 @@ export const DEFAULT_RATING_SUMMARIES: RatingSummary[] = [
     id: "rating-summary-emp1",
     entityId: "emp-1",
     entityName: "Ali Hassan",
-    role: "employee",
+    role: "building_employee",
     averageRating: 4.8,
     reviewsCount: 63,
     lastReviewDate: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
@@ -5069,11 +5069,11 @@ export const MOCK_MAINTENANCE_SCHEDULES: MaintenanceSchedule[] = [
 
 export const DEFAULT_ROLE_PERMISSIONS: RolePermissions[] = [
   {
-    role: "super_admin",
+    role: "management",
     permissions: PERMISSIONS,
   },
   {
-    role: "admin",
+    role: "management",
     permissions: PERMISSIONS, // Admin has all permissions
   },
   {
@@ -5096,7 +5096,7 @@ export const DEFAULT_ROLE_PERMISSIONS: RolePermissions[] = [
     ),
   },
   {
-    role: "service_provider",
+    role: "building_employee",
     permissions: PERMISSIONS.filter(p =>
       ["jobs", "requests"].includes(p.resource) &&
       ["read", "update"].includes(p.action)
@@ -5110,7 +5110,7 @@ export const DEFAULT_ROLE_PERMISSIONS: RolePermissions[] = [
     ),
   },
   {
-    role: "employee",
+    role: "building_employee",
     permissions: PERMISSIONS.filter(p =>
       ["requests", "jobs"].includes(p.resource) &&
       ["read"].includes(p.action)

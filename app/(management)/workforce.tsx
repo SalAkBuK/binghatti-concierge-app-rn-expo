@@ -2,11 +2,9 @@ import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
-  Modal,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
   useWindowDimensions,
@@ -17,7 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
-import apiService from "../../lib/services/api";
+import { orgBuildingsApi } from "../../lib/services/api/org-buildings";
 import { getUserErrorMessage } from "../../lib/services/api/errors";
 import type {
   Building,
@@ -36,27 +34,13 @@ export default function WorkforceManagementScreen() {
   const { currentUser, notifications, actions } = useApp();
   const {
     getBuildingEmployees,
-    getServiceProviderBuildingAssignments,
     updateBuildingEmployee,
     removeBuildingEmployee,
   } = actions;
   const { width } = useWindowDimensions();
   const [showSideMenu, setShowSideMenu] = useState(false);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [formData, setFormData] = useState({
-    name: "",
-    role: "",
-    phone: "",
-    email: "",
-    password: "",
-    address: "",
-    nationality: "",
-    shift: "morning" as NonNullable<BuildingEmployee["shift"]>,
-    buildingId: "",
-  });
-  const [isSaving, setIsSaving] = useState(false);
   const [maintenanceStaff, setMaintenanceStaff] = useState<{
-    id: number;
+    id: string;
     fullName: string;
     email: string;
     phoneNumber: string;
@@ -64,7 +48,7 @@ export default function WorkforceManagementScreen() {
   }[]>([]);
   const [isLoadingStaff, setIsLoadingStaff] = useState(false);
   const [serviceProviders, setServiceProviders] = useState<{
-    id: number;
+    id: string;
     fullName: string;
     email: string;
     phoneNumber: string;
@@ -88,15 +72,52 @@ export default function WorkforceManagementScreen() {
 
       setLoadingBuildings(true);
       try {
-        console.log('[Workforce] Fetching buildings for manager:', currentUser.id);
-        const response = await apiService.admin.getBuildingsByManagerId(currentUser.id);
+        console.log("[Workforce] Fetching assigned buildings for manager:", currentUser.id);
+        const response = await orgBuildingsApi.getAssignedBuildings();
+        const buildingsPayload = Array.isArray(response)
+          ? response
+          : Array.isArray(response?.data)
+            ? response.data
+            : [];
 
-        if (response.success && response.data) {
-          console.log('[Workforce] Buildings fetched:', response.data.length);
-          console.log('[Workforce] Building data:', response.data);
-          setManagedBuildings(response.data);
+        if (buildingsPayload.length > 0) {
+          const mappedBuildings = buildingsPayload.map((building: any): Building => ({
+            id: String(building?.id ?? building?.buildingId ?? ""),
+            name:
+              building?.name ||
+              building?.buildingName ||
+              building?.title ||
+              "Building",
+            address: building?.address || "",
+            city: building?.city || "",
+            country: building?.country || "",
+            emirate: building?.emirate,
+            community: building?.community,
+            street: building?.street,
+            plotNumber: building?.plotNumber,
+            buildingNumber: building?.buildingNumber,
+            makaniNumber: building?.makaniNumber,
+            buildingType: building?.buildingType,
+            developer: building?.developer,
+            yearBuilt: building?.yearBuilt,
+            totalFloors: building?.totalFloors,
+            utilityPremisesNumber: building?.utilityPremisesNumber,
+            managerId: building?.managerId,
+            managerName: building?.managerName,
+            totalUnits: building?.totalUnits ?? 0,
+            occupiedUnits: building?.occupiedUnits ?? 0,
+            unitBreakdown: building?.unitBreakdown,
+            amenities: building?.amenities ?? [],
+            status: building?.status ?? "active",
+            createdAt: building?.createdAt ?? new Date().toISOString(),
+            updatedAt: building?.updatedAt ?? new Date().toISOString(),
+            location: building?.location,
+            units: building?.units,
+          }));
+          console.log("[Workforce] Buildings fetched:", mappedBuildings.length);
+          setManagedBuildings(mappedBuildings);
         } else {
-          console.log('[Workforce] No buildings assigned to this manager');
+          console.log("[Workforce] No buildings assigned to this manager");
           setManagedBuildings([]);
         }
       } catch (error) {
@@ -138,50 +159,110 @@ export default function WorkforceManagementScreen() {
   // Fetch maintenance staff from API when building selection changes
   useEffect(() => {
     const fetchMaintenanceStaff = async () => {
+      const mapAssignments = (assignments: any[]) => {
+        const mapped = assignments
+          .map((item) => {
+            const user = item?.user || {};
+            const id = String(item?.userId ?? user?.id ?? item?.id ?? "");
+            if (!id) return null;
+            const fullName =
+              user?.fullName ||
+              user?.name ||
+              item?.name ||
+              item?.fullName ||
+              user?.email ||
+              item?.email ||
+              "Staff";
+            const email = item?.email || user?.email || "";
+            const phoneNumber = item?.phoneNumber || user?.phone || "";
+            const assignmentType = String(item?.type || item?.assignmentType || "").toUpperCase();
+            return {
+              id,
+              fullName,
+              email,
+              phoneNumber,
+              isActive: item?.isActive ?? true,
+              assignmentType,
+            };
+          })
+          .filter(Boolean) as Array<{
+          id: string;
+          fullName: string;
+          email: string;
+          phoneNumber: string;
+          isActive: boolean;
+          assignmentType: string;
+        }>;
+
+        const unique = Array.from(new Map(mapped.map((staff) => [staff.id, staff])).values());
+        return {
+          staff: unique.filter((staff) => staff.assignmentType !== "SERVICE_PROVIDER"),
+          providers: unique.filter((staff) => staff.assignmentType === "SERVICE_PROVIDER"),
+        };
+      };
+
       if (selectedBuildingId === "all") {
         // Fetch staff for all managed buildings
         setIsLoadingStaff(true);
+        setIsLoadingProviders(true);
         try {
           const scopedBuildingIds = isManagement && managedBuildings.length
             ? managedBuildings.map((building) => building.id)
             : allBuildings.map((building) => building.id);
 
           const staffPromises = scopedBuildingIds.map(async (buildingId) => {
-            const buildingIdNum = typeof buildingId === 'string'
-              ? parseInt(buildingId.replace(/\D/g, ''), 10)
-              : buildingId;
             try {
-              const response = await apiService.maintenance.getMaintenanceStaffByBuilding(buildingIdNum);
-              return response.success ? response.data : [];
+              const response = await orgBuildingsApi.getAssignments(buildingId);
+              const payload = Array.isArray(response)
+                ? response
+                : Array.isArray(response?.data)
+                  ? response.data
+                  : [];
+              return mapAssignments(payload);
             } catch (error) {
-              console.error(`Failed to fetch staff for building ${buildingId}:`, error);
-              return [];
+              console.error(`Failed to fetch assignments for building ${buildingId}:`, error);
+              return { staff: [], providers: [] };
             }
           });
 
           const staffArrays = await Promise.all(staffPromises);
-          const allStaff = staffArrays.flat();
-          setMaintenanceStaff(allStaff);
+          const allStaff = staffArrays.flatMap((entry) => entry.staff);
+          const allProviders = staffArrays.flatMap((entry) => entry.providers);
+          const uniqueStaff = Array.from(new Map(allStaff.map((staff) => [staff.id, staff])).values());
+          const uniqueProviders = Array.from(
+            new Map(allProviders.map((provider) => [provider.id, provider])).values(),
+          );
+          setMaintenanceStaff(uniqueStaff);
+          setServiceProviders(uniqueProviders);
         } catch (error) {
-          console.error('Failed to fetch maintenance staff:', error);
+          console.error("Failed to fetch maintenance staff:", error);
           setMaintenanceStaff([]);
+          setServiceProviders([]);
         } finally {
           setIsLoadingStaff(false);
+          setIsLoadingProviders(false);
         }
       } else {
         // Fetch staff for selected building
         setIsLoadingStaff(true);
+        setIsLoadingProviders(true);
         try {
-          const buildingIdNum = typeof selectedBuildingId === 'string'
-            ? parseInt(selectedBuildingId.replace(/\D/g, ''), 10)
-            : selectedBuildingId;
-          const response = await apiService.maintenance.getMaintenanceStaffByBuilding(buildingIdNum);
-          setMaintenanceStaff(response.success ? response.data : []);
+          const response = await orgBuildingsApi.getAssignments(selectedBuildingId);
+          const payload = Array.isArray(response)
+            ? response
+            : Array.isArray(response?.data)
+              ? response.data
+              : [];
+          const mapped = mapAssignments(payload);
+          setMaintenanceStaff(mapped.staff);
+          setServiceProviders(mapped.providers);
         } catch (error) {
-          console.error('Failed to fetch maintenance staff:', error);
+          console.error("Failed to fetch maintenance staff:", error);
           setMaintenanceStaff([]);
+          setServiceProviders([]);
         } finally {
           setIsLoadingStaff(false);
+          setIsLoadingProviders(false);
         }
       }
     };
@@ -189,63 +270,7 @@ export default function WorkforceManagementScreen() {
     fetchMaintenanceStaff();
   }, [selectedBuildingId, isManagement, managedBuildings, allBuildings]);
 
-  // Fetch service providers from API when building selection changes
-  useEffect(() => {
-    const fetchServiceProviders = async () => {
-      if (selectedBuildingId === "all") {
-        // Fetch providers for all managed buildings
-        setIsLoadingProviders(true);
-        try {
-          const scopedBuildingIds = isManagement && managedBuildings.length
-            ? managedBuildings.map((building) => building.id)
-            : allBuildings.map((building) => building.id);
-
-          const providerPromises = scopedBuildingIds.map(async (buildingId) => {
-            const buildingIdNum = typeof buildingId === 'string'
-              ? parseInt(buildingId.replace(/\D/g, ''), 10)
-              : buildingId;
-            try {
-              const response = await apiService.maintenance.getServiceProvidersByBuilding(buildingIdNum);
-              return response.success ? response.data : [];
-            } catch (error) {
-              console.error(`Failed to fetch providers for building ${buildingId}:`, error);
-              return [];
-            }
-          });
-
-          const providerArrays = await Promise.all(providerPromises);
-          const allProviders = providerArrays.flat();
-          // Remove duplicates by id
-          const uniqueProviders = Array.from(
-            new Map(allProviders.map(p => [p.id, p])).values()
-          );
-          setServiceProviders(uniqueProviders);
-        } catch (error) {
-          console.error('Failed to fetch service providers:', error);
-          setServiceProviders([]);
-        } finally {
-          setIsLoadingProviders(false);
-        }
-      } else {
-        // Fetch providers for selected building
-        setIsLoadingProviders(true);
-        try {
-          const buildingIdNum = typeof selectedBuildingId === 'string'
-            ? parseInt(selectedBuildingId.replace(/\D/g, ''), 10)
-            : selectedBuildingId;
-          const response = await apiService.maintenance.getServiceProvidersByBuilding(buildingIdNum);
-          setServiceProviders(response.success ? response.data : []);
-        } catch (error) {
-          console.error('Failed to fetch service providers:', error);
-          setServiceProviders([]);
-        } finally {
-          setIsLoadingProviders(false);
-        }
-      }
-    };
-
-    fetchServiceProviders();
-  }, [selectedBuildingId, isManagement, managedBuildings, allBuildings]);
+  // Service providers are derived from assignments in the staff fetch.
 
   const buildingMap = useMemo(() => {
     const map = new Map<string, Building>();
@@ -355,109 +380,6 @@ export default function WorkforceManagementScreen() {
     );
   };
 
-  const resetForm = () => {
-    setFormData({
-      name: "",
-      role: "",
-      phone: "",
-      email: "",
-      password: "",
-      address: "",
-      nationality: "",
-      shift: "morning",
-      buildingId:
-        selectedBuildingId !== "all" ? selectedBuildingId : managedBuildings[0]?.id || "",
-    });
-  };
-
-  useEffect(() => {
-    resetForm();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedBuildingId, managedBuildings.length]);
-
-  const handleCreateEmployee = async () => {
-    if (!formData.name.trim() || !formData.phone.trim() || !formData.email.trim() || !formData.password.trim()) {
-      Alert.alert("Validation", "Name, phone, email, and password are required.");
-      return;
-    }
-
-    const targetBuildingId =
-      formData.buildingId ||
-      (selectedBuildingId !== "all" ? selectedBuildingId : "");
-
-    if (!targetBuildingId) {
-      Alert.alert("Validation", "Select a building for the employee.");
-      return;
-    }
-
-    setIsSaving(true);
-    try {
-      // Step 1: Create the maintenance staff
-      const createResponse = await apiService.maintenance.createMaintenanceStaff({
-        fullName: formData.name.trim(),
-        email: formData.email.trim(),
-        password: formData.password.trim(),
-        phoneNumber: formData.phone.trim(),
-        address: formData.address.trim() || "N/A",
-        nationality: formData.nationality.trim() || "N/A",
-      });
-
-      if (!createResponse.success || !createResponse.data?.id) {
-        throw new Error(createResponse.message || "Failed to create maintenance staff");
-      }
-
-      const staffId = createResponse.data.id;
-
-      // Step 2: Assign the staff to the building
-      const buildingIdNum = typeof targetBuildingId === 'string'
-        ? parseInt(targetBuildingId.replace(/\D/g, ''), 10)
-        : targetBuildingId;
-
-      await apiService.maintenance.assignMaintenanceStaffToBuilding({
-        buildingId: buildingIdNum,
-        staffId: staffId,
-      });
-
-      Alert.alert("Employee added", `${formData.name} has been created and assigned to the building.`);
-      setShowAddModal(false);
-      resetForm();
-
-      // Refresh the maintenance staff list
-      try {
-        const response = await apiService.maintenance.getMaintenanceStaffByBuilding(buildingIdNum);
-        if (response.success) {
-          if (selectedBuildingId === targetBuildingId) {
-            setMaintenanceStaff(response.data);
-          } else {
-            // If viewing all buildings, refetch all
-            const scopedBuildingIds = isManagement && managedBuildings.length
-              ? managedBuildings.map((building) => building.id)
-              : allBuildings.map((building) => building.id);
-
-            const staffPromises = scopedBuildingIds.map(async (bId) => {
-              const bIdNum = typeof bId === 'string' ? parseInt(bId.replace(/\D/g, ''), 10) : bId;
-              try {
-                const res = await apiService.maintenance.getMaintenanceStaffByBuilding(bIdNum);
-                return res.success ? res.data : [];
-              } catch {
-                return [];
-              }
-            });
-
-            const staffArrays = await Promise.all(staffPromises);
-            setMaintenanceStaff(staffArrays.flat());
-          }
-        }
-      } catch (error) {
-        console.error('Failed to refresh staff list:', error);
-      }
-    } catch (error) {
-      const errorMessage = getUserErrorMessage(error);
-      Alert.alert("Creation failed", errorMessage);
-    } finally {
-      setIsSaving(false);
-    }
-  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -569,22 +491,6 @@ export default function WorkforceManagementScreen() {
           </Animated.View>
         )}
 
-        <Animated.View
-          entering={FadeInDown.delay(160).duration(320)}
-          style={styles.actionsRow}
-        >
-          <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={() => {
-              resetForm();
-              setShowAddModal(true);
-            }}
-          >
-            <Ionicons name="person-add-outline" size={18} color="#FFFFFF" />
-            <Text style={styles.primaryButtonText}>Add Building Employee</Text>
-          </TouchableOpacity>
-        </Animated.View>
-
         {/* Maintenance Staff Section (from API) */}
         <View style={styles.employeesList}>
           <View style={styles.sectionHeader}>
@@ -610,7 +516,7 @@ export default function WorkforceManagementScreen() {
               <Ionicons name="people-circle-outline" size={48} color="#D1D5DB" />
               <Text style={styles.emptyTitle}>No maintenance staff found</Text>
               <Text style={styles.emptySubtitle}>
-                Add staff members using the button above.
+                Staff members are created in the web portal.
               </Text>
             </Animated.View>
           ) : (
@@ -820,207 +726,6 @@ export default function WorkforceManagementScreen() {
 
       <SideMenu isVisible={showSideMenu} onClose={() => setShowSideMenu(false)} />
 
-      <Modal
-        visible={showAddModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowAddModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { marginHorizontal: pagePadding }]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Building Employee</Text>
-              <TouchableOpacity onPress={() => setShowAddModal(false)}>
-                <Ionicons name="close" size={22} color="#6B7280" />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.modalSection}>
-              <Text style={styles.modalLabel}>Assign to building *</Text>
-              {loadingBuildings ? (
-                <View style={styles.buildingSelectRow}>
-                  <Text style={styles.emptyBuildingText}>Loading buildings...</Text>
-                </View>
-              ) : managedBuildings.length > 0 ? (
-                <View style={styles.buildingSelectRow}>
-                  {managedBuildings.map((building) => {
-                    const active = formData.buildingId === building.id;
-                    console.log('[Workforce Modal] Building:', building.name, 'ID:', building.id, 'Active:', active);
-                    return (
-                      <TouchableOpacity
-                        key={building.id}
-                        style={[
-                          styles.buildingChip,
-                          active && styles.buildingChipActive,
-                        ]}
-                        onPress={() =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            buildingId: building.id,
-                          }))
-                        }
-                      >
-                        <Text
-                          style={[
-                            styles.buildingChipText,
-                            active && styles.buildingChipTextActive,
-                          ]}
-                        >
-                          {building.name}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              ) : (
-                <View style={styles.emptyBuildingNotice}>
-                  <Text style={styles.emptyBuildingText}>
-                    No buildings available. Please contact your administrator.
-                  </Text>
-                  <Text style={styles.debugInfo}>
-                    Debug: isManagement={String(isManagement)},
-                    managedBuildings.length={managedBuildings.length},
-                    allBuildings.length={allBuildings.length}
-                  </Text>
-                </View>
-              )}
-            </View>
-
-            <View style={styles.modalSection}>
-              <Text style={styles.modalLabel}>Name *</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="Employee name"
-                value={formData.name}
-                onChangeText={(text) =>
-                  setFormData((prev) => ({ ...prev, name: text }))
-                }
-              />
-            </View>
-
-            <View style={styles.modalSection}>
-              <Text style={styles.modalLabel}>Email *</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="employee@example.com"
-                keyboardType="email-address"
-                autoCapitalize="none"
-                value={formData.email}
-                onChangeText={(text) =>
-                  setFormData((prev) => ({ ...prev, email: text }))
-                }
-              />
-            </View>
-
-            <View style={styles.modalSection}>
-              <Text style={styles.modalLabel}>Password *</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="Minimum 6 characters"
-                secureTextEntry
-                value={formData.password}
-                onChangeText={(text) =>
-                  setFormData((prev) => ({ ...prev, password: text }))
-                }
-              />
-            </View>
-
-            <View style={styles.modalSection}>
-              <Text style={styles.modalLabel}>Phone *</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="+971 50 000 0000"
-                keyboardType="phone-pad"
-                value={formData.phone}
-                onChangeText={(text) =>
-                  setFormData((prev) => ({ ...prev, phone: text }))
-                }
-              />
-            </View>
-
-            <View style={styles.modalSection}>
-              <Text style={styles.modalLabel}>Address</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="Address (optional)"
-                value={formData.address}
-                onChangeText={(text) =>
-                  setFormData((prev) => ({ ...prev, address: text }))
-                }
-              />
-            </View>
-
-            <View style={styles.modalSection}>
-              <Text style={styles.modalLabel}>Nationality</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="Nationality (optional)"
-                value={formData.nationality}
-                onChangeText={(text) =>
-                  setFormData((prev) => ({ ...prev, nationality: text }))
-                }
-              />
-            </View>
-
-            <View style={styles.modalSection}>
-              <Text style={styles.modalLabel}>Role</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="Concierge, Technician..."
-                value={formData.role}
-                onChangeText={(text) =>
-                  setFormData((prev) => ({ ...prev, role: text }))
-                }
-              />
-            </View>
-
-            <View style={styles.modalSection}>
-              <Text style={styles.modalLabel}>Shift</Text>
-              <View style={styles.shiftRow}>
-                {SHIFT_SEQUENCE.map((shift) => {
-                  const active = formData.shift === shift;
-                  return (
-                    <TouchableOpacity
-                      key={shift}
-                      style={[
-                        styles.shiftChip,
-                        active && styles.shiftChipActive,
-                      ]}
-                      onPress={() =>
-                        setFormData((prev) => ({ ...prev, shift }))
-                      }
-                    >
-                      <Text
-                        style={[
-                          styles.shiftChipText,
-                          active && styles.shiftChipTextActive,
-                        ]}
-                      >
-                        {shift.charAt(0).toUpperCase() + shift.slice(1)}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-
-            <TouchableOpacity
-              style={[
-                styles.primaryButton,
-                { justifyContent: "center" },
-                isSaving && styles.primaryButtonDisabled,
-              ]}
-              onPress={handleCreateEmployee}
-              disabled={isSaving}
-            >
-              <Ionicons name="save-outline" size={18} color="#FFFFFF" />
-              <Text style={styles.primaryButtonText}>
-                {isSaving ? "Saving..." : "Save Employee"}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }

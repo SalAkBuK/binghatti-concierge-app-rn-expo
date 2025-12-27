@@ -16,23 +16,22 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
-import apiService from "../../lib/services/api";
-import { maintenanceApi } from "../../lib/services/api/maintenance";
+import { orgBuildingsApi } from "../../lib/services/api/org-buildings";
 
 type MaintenanceRequest = {
-  id: number;
+  id: string;
   title: string;
   description?: string;
   priority: number;
   status: number;
   createdAt: string;
   updatedAt?: string;
-  buildingId?: number;
+  buildingId?: string;
   buildingName?: string;
 };
 
 type BuildingAssignment = {
-  id: number;
+  id: string;
   name: string;
   address?: string;
 };
@@ -54,104 +53,119 @@ export default function BuildingEmployeeDashboard() {
   }, [isAuthenticated]);
 
   // Fetch assigned buildings and maintenance requests
+  const normalizeStatus = (status: any): number => {
+    if (typeof status === "number") return status;
+    const normalized = String(status || "").toUpperCase();
+    if (["OPEN", "NEW", "PENDING"].includes(normalized)) return 1;
+    if (["ASSIGNED"].includes(normalized)) return 2;
+    if (["IN_PROGRESS", "INPROGRESS"].includes(normalized)) return 3;
+    if (["ON_HOLD", "ON-HOLD", "HOLD"].includes(normalized)) return 4;
+    if (["COMPLETED", "DONE"].includes(normalized)) return 5;
+    if (["CANCELLED", "CANCELED"].includes(normalized)) return 6;
+    return 1;
+  };
+
+  const normalizePriority = (priority: any): number => {
+    if (typeof priority === "number") return priority;
+    const normalized = String(priority || "").toUpperCase();
+    if (["LOW", "1"].includes(normalized)) return 1;
+    if (["MEDIUM", "2"].includes(normalized)) return 2;
+    if (["HIGH", "3"].includes(normalized)) return 3;
+    if (["URGENT", "4"].includes(normalized)) return 4;
+    return 2;
+  };
+
   useEffect(() => {
     const fetchData = async () => {
-      console.log('[BuildingEmployee] fetchData useEffect triggered');
+      console.log("[BuildingEmployee] fetchData useEffect triggered");
 
       if (!currentUser?.id) {
-        console.log('[BuildingEmployee] No currentUser.id, skipping fetch');
+        console.log("[BuildingEmployee] No currentUser.id, skipping fetch");
         setIsLoading(false);
         return;
       }
 
-      console.log('[BuildingEmployee] Starting data fetch for user:', currentUser.id);
+      console.log("[BuildingEmployee] Starting data fetch for user:", currentUser.id);
       setIsLoading(true);
       try {
-        console.log('[BuildingEmployee] Fetching assigned buildings for staff:', currentUser.id);
+        console.log("[BuildingEmployee] Fetching assigned buildings for staff:", currentUser.id);
 
-        // Get staff ID (similar to jobs.tsx logic)
-        const staffId = Number(
-          (currentUser as any).staffId ||
-            (currentUser as any).maintenanceStaffId ||
-            (currentUser.profile as any)?.staffId ||
-            currentUser.id,
-        );
+        const buildingsResponse = await orgBuildingsApi.getAssignedBuildings();
+        const buildingsPayload = Array.isArray(buildingsResponse)
+          ? buildingsResponse
+          : Array.isArray(buildingsResponse?.data)
+            ? buildingsResponse.data
+            : [];
+        const mappedBuildings = buildingsPayload.map((building: any) => ({
+          id: String(building?.id ?? building?.buildingId ?? ""),
+          name:
+            building?.name ||
+            building?.buildingName ||
+            building?.title ||
+            "Building",
+          address: building?.address,
+        }));
 
-        // Fetch buildings assigned to this maintenance staff
-        const buildingsResponse = await apiService.maintenance.getBuildingsByStaffId(currentUser.id);
-        if (buildingsResponse.success && buildingsResponse.data) {
-          console.log('[BuildingEmployee] Assigned buildings fetched:', buildingsResponse.data.length);
-          console.log('[BuildingEmployee] Building IDs:', buildingsResponse.data.map((b: any) => b.id));
-          setAssignedBuildings(buildingsResponse.data);
+        if (mappedBuildings.length > 0) {
+          console.log("[BuildingEmployee] Assigned buildings fetched:", mappedBuildings.length);
+          setAssignedBuildings(mappedBuildings);
 
-          // Fetch maintenance requests for each building (building-level stats)
-          console.log('[BuildingEmployee] Fetching requests for', buildingsResponse.data.length, 'buildings');
-          const requestPromises = buildingsResponse.data.map(async (building) => {
+          console.log(
+            "[BuildingEmployee] Fetching requests for",
+            mappedBuildings.length,
+            "buildings",
+          );
+          const requestPromises = mappedBuildings.map(async (building) => {
             try {
-              const response = await apiService.maintenance.getMaintenanceRequestsByBuildingId(building.id);
-              if (response.success && response.data) {
-                return response.data.map((request: any) => ({
-                  ...request,
-                  buildingId: building.id,
-                  buildingName: building.name,
-                }));
-              }
-              return [];
+              const response = await orgBuildingsApi.getBuildingRequests(building.id);
+              const payload = Array.isArray(response)
+                ? response
+                : Array.isArray(response?.data)
+                  ? response.data
+                  : [];
+              return payload.map((request: any) => ({
+                id: String(request?.id ?? request?.requestId ?? ""),
+                title: request?.title || "Maintenance request",
+                description: request?.description || "",
+                priority: normalizePriority(request?.priority),
+                status: normalizeStatus(request?.status),
+                createdAt: request?.createdAt || new Date().toISOString(),
+                updatedAt: request?.updatedAt,
+                buildingId: String(
+                  request?.buildingId ?? request?.building?.id ?? building.id,
+                ),
+                buildingName:
+                  request?.buildingName ??
+                  request?.building?.name ??
+                  building.name,
+              }));
             } catch (error) {
-              console.error(`[BuildingEmployee] Failed to fetch requests for building ${building.id}:`, error);
+              console.error(
+                `[BuildingEmployee] Failed to fetch requests for building ${building.id}:`,
+                error,
+              );
               return [];
             }
           });
 
           const requestArrays = await Promise.all(requestPromises);
           const allRequests = requestArrays.flat();
-          console.log('[BuildingEmployee] All building requests fetched:', allRequests.length);
+          console.log("[BuildingEmployee] All building requests fetched:", allRequests.length);
           setMaintenanceRequests(allRequests);
-          console.log('[BuildingEmployee] State updated - Total maintenance requests:', allRequests.length);
+          setMyAssignedRequests(allRequests);
         } else {
-          console.log('[BuildingEmployee] No buildings assigned to this staff');
+          console.log("[BuildingEmployee] No buildings assigned to this staff");
           setAssignedBuildings([]);
           setMaintenanceRequests([]);
-        }
-
-        // Fetch requests assigned specifically to this staff member
-        console.log('[BuildingEmployee] Fetching staff-specific requests for staffId:', staffId);
-        if (Number.isFinite(staffId)) {
-          try {
-            const myRequestsResponse = await maintenanceApi.getMaintenanceRequestsByStaffId(staffId);
-            if (myRequestsResponse.success && Array.isArray(myRequestsResponse.data)) {
-              const mappedRequests = myRequestsResponse.data.map((item: any) => ({
-                id: item.id,
-                title: item.title || "Maintenance request",
-                description: item.description || "",
-                priority: item.priority,
-                status: item.status,
-                createdAt: item.createdAt,
-                updatedAt: item.updatedAt,
-                buildingId: item.buildingId ?? item.building?.id,
-                buildingName: item.buildingName,
-              }));
-              console.log('[BuildingEmployee] Staff requests fetched:', mappedRequests.length);
-              setMyAssignedRequests(mappedRequests);
-              console.log('[BuildingEmployee] State updated - My assigned requests:', mappedRequests.length);
-            } else {
-              console.log('[BuildingEmployee] No staff requests found or invalid response');
-              setMyAssignedRequests([]);
-            }
-          } catch (error) {
-            console.error('[BuildingEmployee] Failed to fetch my assigned requests:', error);
-            setMyAssignedRequests([]);
-          }
-        } else {
-          console.log('[BuildingEmployee] Invalid staffId, skipping staff-specific requests');
+          setMyAssignedRequests([]);
         }
       } catch (error) {
-        console.error('[BuildingEmployee] Failed to fetch dashboard data:', error);
+        console.error("[BuildingEmployee] Failed to fetch dashboard data:", error);
         setAssignedBuildings([]);
         setMaintenanceRequests([]);
         setMyAssignedRequests([]);
       } finally {
-        console.log('[BuildingEmployee] Data fetch completed, setIsLoading(false)');
+        console.log("[BuildingEmployee] Data fetch completed, setIsLoading(false)");
         setIsLoading(false);
       }
     };
@@ -168,11 +182,14 @@ export default function BuildingEmployeeDashboard() {
   );
 
   const priorityRequests = useMemo(() => {
-    return myAssignedRequests
-      .filter((request) => request.priority === 4 || request.priority === 3) // Urgent or High
-      .sort((a, b) => b.priority - a.priority) // Sort by priority descending
+    return [...maintenanceRequests]
+      .sort((a, b) => {
+        const aTime = new Date(a.createdAt || a.updatedAt || 0).getTime();
+        const bTime = new Date(b.createdAt || b.updatedAt || 0).getTime();
+        return bTime - aTime;
+      })
       .slice(0, 3);
-  }, [myAssignedRequests]);
+  }, [maintenanceRequests]);
 
   const totalJobsInProgress = useMemo(
     () => maintenanceRequests.filter((request) => request.status === 3).length, // In Progress
@@ -180,7 +197,7 @@ export default function BuildingEmployeeDashboard() {
   );
 
   const pendingJobs = useMemo(
-    () => maintenanceRequests.filter((request) => request.status === 1 || request.status === 2).length, // New or Assigned
+    () => maintenanceRequests.filter((request) => request.status === 1).length, // Open only
     [maintenanceRequests],
   );
 
@@ -204,33 +221,52 @@ export default function BuildingEmployeeDashboard() {
 
     setRefreshing(true);
     try {
-      // Get staff ID
-      const staffId = Number(
-        (currentUser as any).staffId ||
-          (currentUser as any).maintenanceStaffId ||
-          (currentUser.profile as any)?.staffId ||
-          currentUser.id,
-      );
-      console.log('[BuildingEmployee] Refresh - staffId:', staffId);
-
       // Refetch buildings and building-level requests
       console.log('[BuildingEmployee] Refresh - fetching buildings');
-      const buildingsResponse = await apiService.maintenance.getBuildingsByStaffId(currentUser.id);
-      if (buildingsResponse.success && buildingsResponse.data) {
-        console.log('[BuildingEmployee] Refresh - buildings fetched:', buildingsResponse.data.length);
-        setAssignedBuildings(buildingsResponse.data);
+      const buildingsResponse = await orgBuildingsApi.getAssignedBuildings();
+      const buildingsPayload = Array.isArray(buildingsResponse)
+        ? buildingsResponse
+        : Array.isArray(buildingsResponse?.data)
+          ? buildingsResponse.data
+          : [];
+      const mappedBuildings = buildingsPayload.map((building: any) => ({
+        id: String(building?.id ?? building?.buildingId ?? ""),
+        name:
+          building?.name ||
+          building?.buildingName ||
+          building?.title ||
+          "Building",
+        address: building?.address,
+      }));
 
-        const requestPromises = buildingsResponse.data.map(async (building) => {
+      if (mappedBuildings.length > 0) {
+        console.log('[BuildingEmployee] Refresh - buildings fetched:', mappedBuildings.length);
+        setAssignedBuildings(mappedBuildings);
+
+        const requestPromises = mappedBuildings.map(async (building) => {
           try {
-            const response = await apiService.maintenance.getMaintenanceRequestsByBuildingId(building.id);
-            if (response.success && response.data) {
-              return response.data.map((request: any) => ({
-                ...request,
-                buildingId: building.id,
-                buildingName: building.name,
-              }));
-            }
-            return [];
+            const response = await orgBuildingsApi.getBuildingRequests(building.id);
+            const payload = Array.isArray(response)
+              ? response
+              : Array.isArray(response?.data)
+                ? response.data
+                : [];
+            return payload.map((request: any) => ({
+              id: String(request?.id ?? request?.requestId ?? ""),
+              title: request?.title || "Maintenance request",
+              description: request?.description || "",
+              priority: normalizePriority(request?.priority),
+              status: normalizeStatus(request?.status),
+              createdAt: request?.createdAt || new Date().toISOString(),
+              updatedAt: request?.updatedAt,
+              buildingId: String(
+                request?.buildingId ?? request?.building?.id ?? building.id,
+              ),
+              buildingName:
+                request?.buildingName ??
+                request?.building?.name ??
+                building.name,
+            }));
           } catch (error) {
             console.error(`Failed to fetch requests for building ${building.id}:`, error);
             return [];
@@ -241,35 +277,11 @@ export default function BuildingEmployeeDashboard() {
         const allRequests = requestArrays.flat();
         console.log('[BuildingEmployee] Refresh - building requests fetched:', allRequests.length);
         setMaintenanceRequests(allRequests);
-      }
-
-      // Refetch my assigned requests
-      console.log('[BuildingEmployee] Refresh - fetching staff-specific requests');
-      if (Number.isFinite(staffId)) {
-        try {
-          const myRequestsResponse = await maintenanceApi.getMaintenanceRequestsByStaffId(staffId);
-          if (myRequestsResponse.success && Array.isArray(myRequestsResponse.data)) {
-            const mappedRequests = myRequestsResponse.data.map((item: any) => ({
-              id: item.id,
-              title: item.title || "Maintenance request",
-              description: item.description || "",
-              priority: item.priority,
-              status: item.status,
-              createdAt: item.createdAt,
-              updatedAt: item.updatedAt,
-              buildingId: item.buildingId ?? item.building?.id,
-              buildingName: item.buildingName,
-            }));
-            console.log('[BuildingEmployee] Refresh - staff requests fetched:', mappedRequests.length);
-            setMyAssignedRequests(mappedRequests);
-          } else {
-            console.log('[BuildingEmployee] Refresh - no staff requests found');
-            setMyAssignedRequests([]);
-          }
-        } catch (error) {
-          console.error('[BuildingEmployee] Failed to refresh my assigned requests:', error);
-          setMyAssignedRequests([]);
-        }
+        setMyAssignedRequests(allRequests);
+      } else {
+        setAssignedBuildings([]);
+        setMaintenanceRequests([]);
+        setMyAssignedRequests([]);
       }
     } catch (error) {
       console.error('[BuildingEmployee] Failed to refresh:', error);
@@ -404,7 +416,7 @@ export default function BuildingEmployeeDashboard() {
               {priorityRequests.length === 0 ? (
                 <View style={styles.emptyCard}>
                   <Ionicons name="checkmark-circle-outline" size={32} color="#A5B4FC" />
-                  <Text style={styles.emptyCardText}>No high priority requests</Text>
+                  <Text style={styles.emptyCardText}>No recent requests</Text>
                 </View>
               ) : (
                 priorityRequests.map((request) => (

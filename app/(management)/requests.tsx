@@ -23,11 +23,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
-import apiService from "../../lib/services/api";
-import { getUserErrorMessage } from "../../lib/services/api/errors";
-import { maintenanceApi } from "../../lib/services/api/maintenance";
+import { orgBuildingsApi } from "../../lib/services/api/org-buildings";
 import type {
   Building,
+  OrgBuildingRequestComment,
   Request,
   RequestComment,
   RequestPriority,
@@ -41,38 +40,72 @@ import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
 
 // Helper function to map backend status to frontend status
 // 1=New, 2=Assigned, 3=InProgress, 4=OnHold, 5=Completed, 6=Cancelled
-const mapStatusFromApi = (status: number): RequestStatus => {
-  switch (status) {
-    case 1:
-      return "pending";
-    case 2:
-    case 3:
-      return "in-progress";
-    case 4:
-      return "on-hold";
-    case 5:
-      return "completed";
-    case 6:
-      return "cancelled";
-    default:
-      return "pending";
+const mapStatusFromApi = (status: any): RequestStatus => {
+  if (typeof status === "number") {
+    switch (status) {
+      case 0:
+      case 1:
+        return "pending";
+      case 2:
+        return "assigned";
+      case 3:
+        return "in-progress";
+      case 4:
+        return "on-hold";
+      case 5:
+        return "completed";
+      case 6:
+        return "cancelled";
+      default:
+        return "pending";
+    }
   }
+
+  const normalized = String(status || "").toUpperCase();
+  if (["OPEN"].includes(normalized)) return "pending";
+  if (["ASSIGNED"].includes(normalized)) return "assigned";
+  if (["IN_PROGRESS"].includes(normalized)) return "in-progress";
+  if (["COMPLETED"].includes(normalized)) return "completed";
+  if (["CANCELED", "CANCELLED"].includes(normalized)) return "cancelled";
+  return "pending";
 };
 
 // Helper function to map backend priority to frontend priority
-const mapPriorityFromApi = (priority: number): RequestPriority => {
-  switch (priority) {
-    case 1:
-      return "low";
-    case 2:
-      return "medium";
-    case 3:
-      return "high";
-    case 4:
-      return "urgent";
-    default:
-      return "medium";
+const mapPriorityFromApi = (priority: any): RequestPriority => {
+  if (typeof priority === "number") {
+    switch (priority) {
+      case 1:
+        return "low";
+      case 2:
+        return "medium";
+      case 3:
+        return "high";
+      case 4:
+        return "urgent";
+      default:
+        return "medium";
+    }
   }
+
+  const normalized = String(priority || "").toUpperCase();
+  if (normalized === "LOW") return "low";
+  if (normalized === "NORMAL" || normalized === "MEDIUM") return "medium";
+  if (normalized === "HIGH") return "high";
+  if (normalized === "URGENT") return "urgent";
+  return "medium";
+};
+
+const formatUserLabel = (value?: string | null) => {
+  if (!value) return "";
+  if (!value.includes("@")) return value;
+  const namePart = value.split("@")[0] || "";
+  const cleaned = namePart.replace(/[._-]+/g, " ").trim();
+  if (!cleaned) return value;
+  return cleaned
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 };
 
 const MANAGEMENT_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
@@ -84,8 +117,8 @@ type TypeFilter = "all" | NonNullable<Request["type"]>;
 const STATUS_OPTIONS: { label: string; value: StatusFilter }[] = [
   { label: "All", value: "all" },
   { label: "Pending", value: "pending" },
+  { label: "Assigned", value: "assigned" },
   { label: "In Progress", value: "in-progress" },
-  { label: "On Hold", value: "on-hold" },
   { label: "Completed", value: "completed" },
   { label: "Cancelled", value: "cancelled" },
 ];
@@ -129,20 +162,19 @@ export default function ManagementRequestsScreen() {
     { id: string; fileUrl: string; fileName?: string; contentType?: string }[]
   >([]);
   const [isSendingMessage, setIsSendingMessage] = useState(false);
-  const [tenantName, setTenantName] = useState<string | null>(null);
 
   // Assignment modal state
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [assignmentMode, setAssignmentMode] = useState<"service_provider" | "building_employee">("building_employee");
   const [maintenanceStaff, setMaintenanceStaff] = useState<{
-    id: number;
+    id: string;
     fullName: string;
     email: string;
     phoneNumber: string;
     isActive: boolean;
   }[]>([]);
   const [serviceProviders, setServiceProviders] = useState<{
-    id: number;
+    id: string;
     fullName: string;
     email: string;
     phoneNumber: string;
@@ -186,18 +218,56 @@ export default function ManagementRequestsScreen() {
       setLoadingData(true);
       try {
         // Fetch buildings for this manager
-        console.log('[ManagementRequests] Fetching buildings for manager:', currentUser.id);
-        const buildingsResponse = await apiService.admin.getBuildingsByManagerId(currentUser.id);
+        console.log("[ManagementRequests] Fetching assigned buildings for manager:", currentUser.id);
+        const buildingsResponse = await orgBuildingsApi.getAssignedBuildings();
+        const buildingsPayload = Array.isArray(buildingsResponse)
+          ? buildingsResponse
+          : Array.isArray(buildingsResponse?.data)
+            ? buildingsResponse.data
+            : [];
 
-        if (buildingsResponse.success && buildingsResponse.data) {
-          const buildings = buildingsResponse.data;
+        if (buildingsPayload.length > 0) {
+          const buildings = buildingsPayload.map((building: any): Building => ({
+            id: String(building?.id ?? building?.buildingId ?? ""),
+            name:
+              building?.name ||
+              building?.buildingName ||
+              building?.title ||
+              "Building",
+            address: building?.address || "",
+            city: building?.city || "",
+            country: building?.country || "",
+            emirate: building?.emirate,
+            community: building?.community,
+            street: building?.street,
+            plotNumber: building?.plotNumber,
+            buildingNumber: building?.buildingNumber,
+            makaniNumber: building?.makaniNumber,
+            buildingType: building?.buildingType,
+            developer: building?.developer,
+            yearBuilt: building?.yearBuilt,
+            totalFloors: building?.totalFloors,
+            utilityPremisesNumber: building?.utilityPremisesNumber,
+            managerId: building?.managerId,
+            managerName: building?.managerName,
+            totalUnits: building?.totalUnits ?? 0,
+            occupiedUnits: building?.occupiedUnits ?? 0,
+            unitBreakdown: building?.unitBreakdown,
+            amenities: building?.amenities ?? [],
+            status: building?.status ?? "active",
+            createdAt: building?.createdAt ?? new Date().toISOString(),
+            updatedAt: building?.updatedAt ?? new Date().toISOString(),
+            location: building?.location,
+            units: building?.units,
+          }));
+
           setManagedBuildings(buildings);
-          console.log('[ManagementRequests] Buildings fetched:', buildings.length);
+          console.log("[ManagementRequests] Buildings fetched:", buildings.length);
 
           // Fetch requests for all buildings in parallel
           if (buildings.length > 0) {
-            const requestsPromises = buildings.map(building =>
-              maintenanceApi.getMaintenanceRequestsByBuildingId(building.id)
+            const requestsPromises = buildings.map((building) =>
+              orgBuildingsApi.getBuildingRequests(building.id),
             );
 
             const requestsResponses = await Promise.all(requestsPromises);
@@ -205,75 +275,75 @@ export default function ManagementRequestsScreen() {
             // Combine all requests from all buildings
             const allRequests: Request[] = [];
             requestsResponses.forEach((response, index) => {
-              if (response.success && response.data) {
+              const payload = Array.isArray(response)
+                ? response
+                : Array.isArray(response?.data)
+                  ? response.data
+                  : [];
+
+              if (payload.length > 0) {
                 const buildingId = buildings[index].id;
-                const mappedRequests = response.data.map((item: any) => ({
-                  id: String(item.id),
-                  type: "maintenance",
-                  buildingId: String(buildingId),
-                  tenantId: item.createdById ? String(item.createdById) : "",
-                  title: item.title || "Untitled Request",
-                  description: item.description || "",
-                  category: "maintenance",
-                  status: mapStatusFromApi(item.status),
-                  priority: mapPriorityFromApi(item.priority),
-                  createdAt: item.createdAt || new Date().toISOString(),
-                  updatedAt: item.updatedAt || item.createdAt || new Date().toISOString(),
-                  apartment: item.unitNumber ? String(item.unitNumber) : "",
-                  floor: item.floorNumber != null ? String(item.floorNumber) : "",
-                  contactPhone: item.contactPhone || "",
-                  preferredTime: item.preferredTime || "",
-                  additionalNotes: item.additionalNotes || "",
-                  assignedTo:
-                    item.assignedTo?.fullName ||
-                    item.assignedTo?.email ||
-                    (item.assignedToId ? String(item.assignedToId) : undefined),
-                  attachments: Array.isArray(item.attachments)
-                    ? item.attachments.map((att: any) => att.fileUrl || att.url || att.uri || "").filter(Boolean)
-                    : [],
-                  comments: [],
-                  messages: [],
-                  notes: [],
-                  timeline: [],
-                }));
+                const buildingName = buildings[index].name;
+                const mappedRequests = payload.map((item: any) => {
+                  const unit = item.unit || item.unitDetails;
+                  return {
+                    id: String(item.id),
+                    type: "maintenance",
+                    buildingId: String(item.buildingId ?? buildingId),
+                    buildingName: item.buildingName || buildingName,
+                    tenantId:
+                      item.createdByUserId != null
+                        ? String(item.createdByUserId)
+                        : item.createdById != null
+                          ? String(item.createdById)
+                          : item.createdByTenantId != null
+                            ? String(item.createdByTenantId)
+                            : "",
+                    title: item.title || "Untitled Request",
+                    description: item.description || "",
+                    status: mapStatusFromApi(item.status),
+                    priority: mapPriorityFromApi(item.priority),
+                    createdAt: item.createdAt || new Date().toISOString(),
+                    updatedAt: item.updatedAt || item.createdAt || new Date().toISOString(),
+                    apartment:
+                      unit?.label ||
+                      item.unitLabel ||
+                      item.unitNumber ||
+                      item.apartment ||
+                      "",
+                    floor:
+                      item.floorNumber != null
+                        ? String(item.floorNumber)
+                        : unit?.floor != null
+                          ? String(unit.floor)
+                          : "",
+                    contactPhone: item.contactPhone || "",
+                    preferredTime: item.preferredTime || "",
+                    additionalNotes: item.additionalNotes || "",
+                    assignedTo: formatUserLabel(
+                      item.assignedTo?.fullName ||
+                        item.assignedTo?.name ||
+                        item.assignedTo?.email ||
+                        (item.assignedEmployeeId ? String(item.assignedEmployeeId) : undefined) ||
+                        (item.assignedToId ? String(item.assignedToId) : undefined),
+                    ),
+                    attachments: Array.isArray(item.attachments)
+                      ? item.attachments
+                          .map((att: any) => att.fileUrl || att.url || att.uri || "")
+                          .filter(Boolean)
+                      : [],
+                    comments: [],
+                    messages: [],
+                    notes: [],
+                    timeline: [],
+                  } as Request;
+                });
                 allRequests.push(...mappedRequests);
               }
             });
 
             console.log('[ManagementRequests] Total requests fetched:', allRequests.length);
             setBuildingRequests(allRequests);
-
-            // Fetch full details for assigned/in-progress requests to get worker names
-            const assignedRequests = allRequests.filter(
-              req => (req.status === 'in-progress' || req.assignedTo) && !req.assignedTo?.includes('@')
-            );
-
-            if (assignedRequests.length > 0) {
-              console.log('[ManagementRequests] Fetching details for', assignedRequests.length, 'assigned requests');
-
-              // Fetch details in parallel (limit to first 20 to avoid overload)
-              const detailsPromises = assignedRequests.slice(0, 20).map(req =>
-                maintenanceApi.getMaintenanceRequestById(req.id)
-                  .then(response => {
-                    if (response.success && response.data) {
-                      return {
-                        id: req.id,
-                        assignedTo: response.data.assignedTo?.fullName || response.data.assignedTo?.email || req.assignedTo
-                      };
-                    }
-                    return null;
-                  })
-                  .catch(() => null)
-              );
-
-              const detailsResults = await Promise.all(detailsPromises);
-
-              // Update requests with fetched assignment details
-              setBuildingRequests(prev => prev.map(req => {
-                const details = detailsResults.find(d => d && d.id === req.id);
-                return details ? { ...req, assignedTo: details.assignedTo } : req;
-              }));
-            }
           } else {
             setBuildingRequests([]);
           }
@@ -424,7 +494,7 @@ export default function ManagementRequestsScreen() {
     });
 
     const inProgressRequests = buildingScoped.filter(
-      (req) => req.status === "in-progress",
+      (req) => req.status === "in-progress" || req.status === "assigned",
     );
     const resolvedRequests = buildingScoped.filter(
       (req) => req.status === "completed",
@@ -473,23 +543,22 @@ export default function ManagementRequestsScreen() {
     if (!selectedRequest || !newMessage.trim() || !currentUser) return;
     if (isRequestClosed) return;
 
-    const requestIdNum = Number(selectedRequest.id);
-    const userIdNum =
-      typeof currentUser.id === "string"
-        ? parseInt(currentUser.id, 10)
-        : currentUser.id;
-    if (!Number.isFinite(requestIdNum) || !Number.isFinite(userIdNum)) {
-      Alert.alert("Cannot send message", "Missing request or user information.");
+    const buildingId = selectedRequest.buildingId;
+    if (!buildingId) {
+      Alert.alert("Cannot send message", "Missing building information.");
       return;
     }
 
     setIsSendingMessage(true);
     try {
-      await maintenanceApi.addMaintenanceRequestComment({
-        requestId: requestIdNum,
-        userId: userIdNum,
-        commentText: newMessage.trim(),
-      });
+      const response = await orgBuildingsApi.addComment(
+        buildingId,
+        selectedRequest.id,
+        newMessage.trim(),
+      );
+      if (response?.success === false) {
+        throw new Error(response.message || "Failed to add comment");
+      }
       setNewMessage("");
       await fetchRequestDetails(selectedRequest.id, { force: true });
     } catch (error) {
@@ -510,21 +579,64 @@ export default function ManagementRequestsScreen() {
 
       setIsLoadingWorkers(true);
       try {
-        const buildingIdNum = typeof selectedRequest.buildingId === 'string'
-          ? parseInt(selectedRequest.buildingId.replace(/\D/g, ''), 10)
-          : selectedRequest.buildingId;
+        const buildingId = selectedRequest.buildingId;
+        console.log(
+          "[ManagementRequests] Loading assignments for building:",
+          buildingId,
+        );
+        const assignmentsResponse = await orgBuildingsApi.getAssignments(buildingId);
+        const assignmentsPayload = Array.isArray(assignmentsResponse)
+          ? assignmentsResponse
+          : Array.isArray(assignmentsResponse?.data)
+            ? assignmentsResponse.data
+            : [];
 
-        // Fetch maintenance staff
-        const staffResponse = await apiService.maintenance.getMaintenanceStaffByBuilding(buildingIdNum);
-        if (staffResponse.success) {
-          setMaintenanceStaff(staffResponse.data.filter(s => s.isActive));
-        }
+        console.log("[ManagementRequests] Assignments response:", assignmentsPayload);
+        console.log(
+          "[ManagementRequests] Assignments count:",
+          assignmentsPayload.length,
+        );
 
-        // Fetch service providers
-        const providersResponse = await apiService.maintenance.getServiceProvidersByBuilding(buildingIdNum);
-        if (providersResponse.success) {
-          setServiceProviders(providersResponse.data.filter(p => p.isActive));
-        }
+        const staffList = assignmentsPayload
+          .map((assignment: any) => {
+            const assignmentType = String(assignment?.type || "").toUpperCase();
+            if (assignmentType !== "STAFF") {
+              return null;
+            }
+            const user = assignment.user ?? assignment;
+            const id = String(assignment.userId ?? user?.id ?? user?.userId ?? "");
+            if (!id) return null;
+            return {
+              id,
+              fullName:
+                user?.fullName ||
+                user?.name ||
+                user?.email ||
+                "Staff Member",
+              email: user?.email || "",
+              phoneNumber: user?.phone || user?.phoneNumber || "",
+              isActive: true,
+            };
+          })
+          .filter(Boolean) as Array<{
+          id: string;
+          fullName: string;
+          email: string;
+          phoneNumber: string;
+          isActive: boolean;
+        }>;
+
+        console.log(
+          "[ManagementRequests] Scoped staff list:",
+          staffList.map((staff) => ({
+            id: staff.id,
+            name: staff.fullName,
+            email: staff.email,
+          })),
+        );
+
+        setMaintenanceStaff(staffList);
+        setServiceProviders([]);
       } catch (error) {
         console.error('[Requests] Failed to fetch workers:', error);
         setMaintenanceStaff([]);
@@ -537,73 +649,98 @@ export default function ManagementRequestsScreen() {
     fetchWorkers();
   }, [showAssignModal, selectedRequest?.buildingId]);
 
-  const handleAssignRequest = async (workerId: number, workerName: string) => {
+  const handleAssignRequest = async (workerId: string, workerName: string) => {
     if (!selectedRequest || !currentUser?.id) return;
-
-    const requestIdNum = parseInt(selectedRequest.id, 10);
 
     setIsAssigning(true);
     try {
-      const assignedByIdNum = typeof currentUser.id === 'string'
-        ? parseInt(currentUser.id, 10)
-        : currentUser.id;
+      const buildingId = selectedRequest.buildingId;
+      if (!buildingId) {
+        throw new Error("Missing building information for this request.");
+      }
 
-      await apiService.maintenance.assignMaintenanceRequest({
-        requestId: requestIdNum,
-        assignedToId: workerId,
-        assignedById: assignedByIdNum,
-      });
+      const response = await orgBuildingsApi.assignRequest(
+        buildingId,
+        selectedRequest.id,
+        workerId,
+      );
+      if (response?.success === false) {
+        throw new Error(response.message || "Failed to assign request");
+      }
 
       showSuccessAlert(`Request assigned to ${workerName}`);
       setShowAssignModal(false);
       setSelectedRequest(null);
 
-      // Refresh the requests list
-      if (managedBuildings.length > 0) {
-        const requestsPromises = managedBuildings.map(building =>
-          maintenanceApi.getMaintenanceRequestsByBuildingId(building.id)
-        );
+      // Refresh requests for this building
+      const refreshed = await orgBuildingsApi.getBuildingRequests(buildingId);
+      const payload = Array.isArray(refreshed)
+        ? refreshed
+        : Array.isArray(refreshed?.data)
+          ? refreshed.data
+          : [];
 
-        const requestsResponses = await Promise.all(requestsPromises);
-
-        const allRequests: Request[] = [];
-        requestsResponses.forEach((response, index) => {
-          if (response.success && response.data) {
-            const buildingId = managedBuildings[index].id;
-            const mappedRequests = response.data.map((item: any) => ({
-              id: String(item.id),
-              type: "maintenance",
-              buildingId: String(buildingId),
-              tenantId: item.createdById ? String(item.createdById) : "",
-              title: item.title || "Untitled Request",
-              description: item.description || "",
-              category: "maintenance",
-              status: mapStatusFromApi(item.status),
-              priority: mapPriorityFromApi(item.priority),
-              createdAt: item.createdAt || new Date().toISOString(),
-              updatedAt: item.updatedAt || item.createdAt || new Date().toISOString(),
-              apartment: item.unitNumber ? String(item.unitNumber) : "",
-              floor: item.floorNumber != null ? String(item.floorNumber) : "",
-              contactPhone: item.contactPhone || "",
-              preferredTime: item.preferredTime || "",
-              additionalNotes: item.additionalNotes || "",
-              assignedTo:
-                item.assignedTo?.fullName ||
+      if (payload.length > 0) {
+        const buildingName = managedBuildings.find((b) => b.id === buildingId)?.name;
+        const mappedRequests = payload.map((item: any) => {
+          const unit = item.unit || item.unitDetails;
+          return {
+            id: String(item.id),
+            type: "maintenance",
+            buildingId: String(item.buildingId ?? buildingId),
+            buildingName: item.buildingName || buildingName,
+            tenantId:
+              item.createdByUserId != null
+                ? String(item.createdByUserId)
+                : item.createdById != null
+                  ? String(item.createdById)
+                  : item.createdByTenantId != null
+                    ? String(item.createdByTenantId)
+                    : "",
+            title: item.title || "Untitled Request",
+            description: item.description || "",
+            status: mapStatusFromApi(item.status),
+            priority: mapPriorityFromApi(item.priority),
+            createdAt: item.createdAt || new Date().toISOString(),
+            updatedAt: item.updatedAt || item.createdAt || new Date().toISOString(),
+            apartment:
+              unit?.label ||
+              item.unitLabel ||
+              item.unitNumber ||
+              item.apartment ||
+              "",
+            floor:
+              item.floorNumber != null
+                ? String(item.floorNumber)
+                : unit?.floor != null
+                  ? String(unit.floor)
+                  : "",
+            contactPhone: item.contactPhone || "",
+            preferredTime: item.preferredTime || "",
+            additionalNotes: item.additionalNotes || "",
+            assignedTo: formatUserLabel(
+              item.assignedTo?.fullName ||
+                item.assignedTo?.name ||
                 item.assignedTo?.email ||
+                (item.assignedEmployeeId ? String(item.assignedEmployeeId) : undefined) ||
                 (item.assignedToId ? String(item.assignedToId) : undefined),
-              attachments: Array.isArray(item.attachments)
-                ? item.attachments.map((att: any) => att.fileUrl || att.url || att.uri || "").filter(Boolean)
-                : [],
-              comments: [],
-              messages: [],
-              notes: [],
-              timeline: [],
-            }));
-            allRequests.push(...mappedRequests);
-          }
+            ),
+            attachments: Array.isArray(item.attachments)
+              ? item.attachments
+                  .map((att: any) => att.fileUrl || att.url || att.uri || "")
+                  .filter(Boolean)
+              : [],
+            comments: [],
+            messages: [],
+            notes: [],
+            timeline: [],
+          } as Request;
         });
 
-        setBuildingRequests(allRequests);
+        setBuildingRequests((prev) => {
+          const next = prev.filter((req) => req.buildingId !== buildingId);
+          return [...next, ...mappedRequests];
+        });
       }
     } catch (error) {
       console.error('[Requests] Assignment failed:', error);
@@ -616,11 +753,15 @@ export default function ManagementRequestsScreen() {
   const openAssignModal = () => {
     if (!selectedRequest) return;
 
-    // Allow assignment for pending and in-progress requests
-    if (selectedRequest.status !== "pending" && selectedRequest.status !== "in-progress") {
+    // Allow assignment for pending, assigned, and in-progress requests
+    if (
+      selectedRequest.status !== "pending" &&
+      selectedRequest.status !== "in-progress" &&
+      (selectedRequest.status as string) !== "assigned"
+    ) {
       Alert.alert(
         "Cannot Assign",
-        "Only pending or in-progress requests can be (re)assigned. This request is already completed or cancelled."
+        "Only pending, assigned, or in-progress requests can be (re)assigned. This request is already completed or cancelled."
       );
       return;
     }
@@ -630,6 +771,13 @@ export default function ManagementRequestsScreen() {
 
   const handleMarkAsCompleted = async () => {
     if (!selectedRequest || !currentUser?.id) return;
+    if ((selectedRequest.status as string) === "assigned") {
+      Alert.alert(
+        "Cannot mark as completed",
+        "This request is still assigned. The worker has not started the job yet.",
+      );
+      return;
+    }
 
     // Confirm action
     Alert.alert(
@@ -644,20 +792,21 @@ export default function ManagementRequestsScreen() {
           text: "Complete",
           style: "default",
           onPress: async () => {
-            const requestIdNum = parseInt(selectedRequest.id, 10);
-            const changedByIdNum = typeof currentUser.id === 'string'
-              ? parseInt(currentUser.id, 10)
-              : currentUser.id;
-
             setIsRequestDetailLoading(true);
             try {
-              // Status 5 = Completed
-              await maintenanceApi.updateMaintenanceRequestStatus({
-                requestId: requestIdNum,
-                newStatus: 5,
-                changedById: changedByIdNum,
-                note: "Marked as completed by manager"
-              });
+              const buildingId = selectedRequest.buildingId;
+              if (!buildingId) {
+                throw new Error("Missing building information for this request.");
+              }
+
+              const response = await orgBuildingsApi.updateRequestStatus(
+                buildingId,
+                selectedRequest.id,
+                "COMPLETED",
+              );
+              if (response?.success === false) {
+                throw new Error(response.message || "Failed to update status");
+              }
 
               showSuccessAlert('Request marked as completed');
 
@@ -675,7 +824,16 @@ export default function ManagementRequestsScreen() {
               await fetchRequestDetails(selectedRequest.id, { force: true });
             } catch (error) {
               console.error('[Requests] Failed to mark as completed:', error);
-              showErrorAlert(error);
+              const errorStatus = (error as any)?.status;
+              const errorCode = (error as any)?.code;
+              if (errorStatus === 409 || errorCode === "409") {
+                Alert.alert(
+                  "Cannot mark as completed",
+                  "This request is still assigned. The worker has not started the job yet.",
+                );
+              } else {
+                showErrorAlert(error);
+              }
             } finally {
               setIsRequestDetailLoading(false);
             }
@@ -686,59 +844,52 @@ export default function ManagementRequestsScreen() {
   };
 
   const handleCancelRequest = async () => {
-    if (!selectedRequest || !currentUser?.id) return;
-
-    // Confirm action
+    if (!selectedRequest) return;
     Alert.alert(
       "Cancel Request",
-      "Are you sure you want to cancel this request? This action cannot be undone.",
+      "Are you sure you want to cancel this request?",
       [
+        { text: "No", style: "cancel" },
         {
-          text: "No, Keep It",
-          style: "cancel"
-        },
-        {
-          text: "Yes, Cancel Request",
+          text: "Yes, Cancel",
           style: "destructive",
           onPress: async () => {
-            const requestIdNum = parseInt(selectedRequest.id, 10);
-            const changedByIdNum = typeof currentUser.id === 'string'
-              ? parseInt(currentUser.id, 10)
-              : currentUser.id;
-
             setIsRequestDetailLoading(true);
             try {
-              // Status 6 = Cancelled
-              await maintenanceApi.updateMaintenanceRequestStatus({
-                requestId: requestIdNum,
-                newStatus: 6,
-                changedById: changedByIdNum,
-                note: "Request cancelled by manager"
-              });
+              const buildingId = selectedRequest.buildingId;
+              if (!buildingId) {
+                throw new Error("Missing building information for this request.");
+              }
 
-              showSuccessAlert('Request has been cancelled');
+              const response = await orgBuildingsApi.cancelRequest(
+                buildingId,
+                selectedRequest.id,
+              );
+              if (response?.success === false) {
+                throw new Error(response.message || "Failed to cancel request");
+              }
 
-              // Update the selected request locally
-              setSelectedRequest(prev => prev ? { ...prev, status: 'cancelled' } : null);
-
-              // Update in the list
-              setBuildingRequests(prev => prev.map(req =>
-                req.id === selectedRequest.id
-                  ? { ...req, status: 'cancelled' as RequestStatus }
-                  : req
-              ));
-
-              // Fetch fresh details
+              showSuccessAlert("Request cancelled");
+              setSelectedRequest((prev) =>
+                prev ? { ...prev, status: "cancelled" } : null,
+              );
+              setBuildingRequests((prev) =>
+                prev.map((req) =>
+                  req.id === selectedRequest.id
+                    ? { ...req, status: "cancelled" as RequestStatus }
+                    : req,
+                ),
+              );
               await fetchRequestDetails(selectedRequest.id, { force: true });
             } catch (error) {
-              console.error('[Requests] Failed to cancel request:', error);
+              console.error("[ManagementRequests] Failed to cancel request:", error);
               showErrorAlert(error);
             } finally {
               setIsRequestDetailLoading(false);
             }
-          }
-        }
-      ]
+          },
+        },
+      ],
     );
   };
 
@@ -764,92 +915,138 @@ export default function ManagementRequestsScreen() {
 
     lastRequestsFetchAtRef.current = 0;
     try {
-      // Fetch buildings
-      const buildingsResponse = await apiService.admin.getBuildingsByManagerId(currentUser.id);
+      console.log("[ManagementRequests] Refreshing assigned buildings for manager:", currentUser.id);
+      const buildingsResponse = await orgBuildingsApi.getAssignedBuildings();
+      const buildingsPayload = Array.isArray(buildingsResponse)
+        ? buildingsResponse
+        : Array.isArray(buildingsResponse?.data)
+          ? buildingsResponse.data
+          : [];
 
-      if (buildingsResponse.success && buildingsResponse.data) {
-        const buildings = buildingsResponse.data;
+      if (buildingsPayload.length > 0) {
+        const buildings = buildingsPayload.map((building: any): Building => ({
+          id: String(building?.id ?? building?.buildingId ?? ""),
+          name:
+            building?.name ||
+            building?.buildingName ||
+            building?.title ||
+            "Building",
+          address: building?.address || "",
+          city: building?.city || "",
+          country: building?.country || "",
+          emirate: building?.emirate,
+          community: building?.community,
+          street: building?.street,
+          plotNumber: building?.plotNumber,
+          buildingNumber: building?.buildingNumber,
+          makaniNumber: building?.makaniNumber,
+          buildingType: building?.buildingType,
+          developer: building?.developer,
+          yearBuilt: building?.yearBuilt,
+          totalFloors: building?.totalFloors,
+          utilityPremisesNumber: building?.utilityPremisesNumber,
+          managerId: building?.managerId,
+          managerName: building?.managerName,
+          totalUnits: building?.totalUnits ?? 0,
+          occupiedUnits: building?.occupiedUnits ?? 0,
+          unitBreakdown: building?.unitBreakdown,
+          amenities: building?.amenities ?? [],
+          status: building?.status ?? "active",
+          createdAt: building?.createdAt ?? new Date().toISOString(),
+          updatedAt: building?.updatedAt ?? new Date().toISOString(),
+          location: building?.location,
+          units: building?.units,
+        }));
+
         setManagedBuildings(buildings);
 
-        // Fetch requests for all buildings
         if (buildings.length > 0) {
-          const requestsPromises = buildings.map(building =>
-            maintenanceApi.getMaintenanceRequestsByBuildingId(building.id)
+          const requestsPromises = buildings.map((building) =>
+            orgBuildingsApi.getBuildingRequests(building.id),
           );
 
           const requestsResponses = await Promise.all(requestsPromises);
-
           const allRequests: Request[] = [];
+
           requestsResponses.forEach((response, index) => {
-            if (response.success && response.data) {
+            const payload = Array.isArray(response)
+              ? response
+              : Array.isArray(response?.data)
+                ? response.data
+                : [];
+
+            if (payload.length > 0) {
               const buildingId = buildings[index].id;
-              const mappedRequests = response.data.map((item: any) => ({
-                id: String(item.id),
-                type: "maintenance",
-                buildingId,
-                tenantId: "",
-                title: item.title || "Untitled Request",
-                description: item.description || "",
-                category: "maintenance",
-                status: mapStatusFromApi(item.status),
-                priority: mapPriorityFromApi(item.priority),
-                createdAt: item.createdAt || new Date().toISOString(),
-                updatedAt: item.updatedAt || item.createdAt || new Date().toISOString(),
-                apartment: "",
-                tower: "",
-                contactPhone: "",
-                preferredTime: "",
-                additionalNotes: "",
-                attachments: [],
-                comments: [],
-                messages: [],
-                notes: [],
-                timeline: [],
-              }));
+              const buildingName = buildings[index].name;
+              const mappedRequests = payload.map((item: any) => {
+                const unit = item.unit || item.unitDetails;
+                return {
+                  id: String(item.id),
+                  type: "maintenance",
+                  buildingId: String(item.buildingId ?? buildingId),
+                  buildingName: item.buildingName || buildingName,
+                  tenantId:
+                    item.createdByUserId != null
+                      ? String(item.createdByUserId)
+                      : item.createdById != null
+                        ? String(item.createdById)
+                        : item.createdByTenantId != null
+                          ? String(item.createdByTenantId)
+                          : "",
+                  title: item.title || "Untitled Request",
+                  description: item.description || "",
+                  status: mapStatusFromApi(item.status),
+                  priority: mapPriorityFromApi(item.priority),
+                  createdAt: item.createdAt || new Date().toISOString(),
+                  updatedAt: item.updatedAt || item.createdAt || new Date().toISOString(),
+                  apartment:
+                    unit?.label ||
+                    item.unitLabel ||
+                    item.unitNumber ||
+                    item.apartment ||
+                    "",
+                  floor:
+                    item.floorNumber != null
+                      ? String(item.floorNumber)
+                      : unit?.floor != null
+                        ? String(unit.floor)
+                        : "",
+                  contactPhone: item.contactPhone || "",
+                  preferredTime: item.preferredTime || "",
+                  additionalNotes: item.additionalNotes || "",
+                  assignedTo: formatUserLabel(
+                    item.assignedTo?.fullName ||
+                      item.assignedTo?.name ||
+                      item.assignedTo?.email ||
+                      (item.assignedEmployeeId ? String(item.assignedEmployeeId) : undefined) ||
+                      (item.assignedToId ? String(item.assignedToId) : undefined),
+                  ),
+                  attachments: Array.isArray(item.attachments)
+                    ? item.attachments
+                        .map((att: any) => att.fileUrl || att.url || att.uri || "")
+                        .filter(Boolean)
+                    : [],
+                  comments: [],
+                  messages: [],
+                  notes: [],
+                  timeline: [],
+                } as Request;
+              });
               allRequests.push(...mappedRequests);
             }
           });
 
-          console.log('[ManagementRequests] Refreshed requests:', allRequests.length);
+          console.log("[ManagementRequests] Refreshed requests:", allRequests.length);
           setBuildingRequests(allRequests);
-
-          // Fetch full details for assigned/in-progress requests to get worker names
-          const assignedRequests = allRequests.filter(
-            req => (req.status === 'in-progress' || req.assignedTo) && !req.assignedTo?.includes('@')
-          );
-
-          if (assignedRequests.length > 0) {
-            console.log('[ManagementRequests] Fetching details for', assignedRequests.length, 'assigned requests');
-
-            // Fetch details in parallel (limit to first 20 to avoid overload)
-            const detailsPromises = assignedRequests.slice(0, 20).map(req =>
-              maintenanceApi.getMaintenanceRequestById(req.id)
-                .then(response => {
-                  if (response.success && response.data) {
-                    return {
-                      id: req.id,
-                      assignedTo: response.data.assignedTo?.fullName || response.data.assignedTo?.email || req.assignedTo
-                    };
-                  }
-                  return null;
-                })
-                .catch(() => null)
-            );
-
-            const detailsResults = await Promise.all(detailsPromises);
-
-            // Update requests with fetched assignment details
-            setBuildingRequests(prev => prev.map(req => {
-              const details = detailsResults.find(d => d && d.id === req.id);
-              return details ? { ...req, assignedTo: details.assignedTo } : req;
-            }));
-          }
         } else {
           setBuildingRequests([]);
         }
+      } else {
+        setManagedBuildings([]);
+        setBuildingRequests([]);
       }
     } catch (error) {
-      console.error('[ManagementRequests] Failed to refresh:', error);
+      console.error("[ManagementRequests] Failed to refresh:", error);
     } finally {
       setIsRefreshing(false);
     }
@@ -858,22 +1055,24 @@ export default function ManagementRequestsScreen() {
   const requestStatusBadge = (status: RequestStatus) => {
     const palette = {
       pending: { bg: "#FEF3C7", text: "#92400E" },
+      assigned: { bg: "#DBEAFE", text: "#1D4ED8" },
       "in-progress": { bg: "#DBEAFE", text: "#1D4ED8" },
       "on-hold": { bg: "#FED7AA", text: "#9A3412" },
       completed: { bg: "#DCFCE7", text: "#047857" },
       cancelled: { bg: "#FEE2E2", text: "#DC2626" },
     };
+    const colors = palette[status] ?? palette.pending;
     return (
       <View
         style={[
           styles.statusBadge,
-          { backgroundColor: palette[status].bg },
+          { backgroundColor: colors.bg },
         ]}
       >
         <Text
           style={[
             styles.statusBadgeText,
-            { color: palette[status].text },
+            { color: colors.text },
           ]}
         >
           {status.toUpperCase()}
@@ -884,13 +1083,18 @@ export default function ManagementRequestsScreen() {
 
   const openRequestDetails = (request: Request) => {
     const sameRequest = selectedRequestRef.current?.id === request.id;
+    console.log("[ManagementRequests] Opening request details modal:", {
+      requestId: request.id,
+      buildingId: request.buildingId,
+      status: request.status,
+      assignedTo: request.assignedTo,
+    });
     setSelectedRequest(request);
     setSelectedRequestContext(request);
     setDetailTab("overview");
     if (!sameRequest) {
       setRequestComments([]);
       setRequestAttachments([]);
-      setTenantName(null);
       lastFetchedRequestIdRef.current = null;
     }
   };
@@ -901,7 +1105,6 @@ export default function ManagementRequestsScreen() {
     setNewMessage("");
     setDetailTab("overview");
     setIsRequestDetailLoading(false);
-    setTenantName(null);
   };
 
   const fetchRequestDetails = useCallback(
@@ -911,82 +1114,49 @@ export default function ManagementRequestsScreen() {
         return;
       }
 
+      console.log("[ManagementRequests] Fetching request details:", {
+        requestId: normalizedId,
+        force: options?.force ?? false,
+      });
       setIsRequestDetailLoading(true);
       try {
-        const response = await maintenanceApi.getMaintenanceRequestById(requestId);
-        if (response.success && response.data) {
-          const data = response.data;
+        const baseRequest =
+          buildingRequestsRef.current.find((req) => req.id === normalizedId) || null;
+        const buildingId = baseRequest?.buildingId || selectedRequestRef.current?.buildingId;
+        if (!buildingId) {
+          throw new Error("Missing building information for this request.");
+        }
+
+        const response = await orgBuildingsApi.getRequest(buildingId, requestId);
+        const data = (response as any)?.data ?? response ?? {};
+        console.log("[ManagementRequests] Raw request detail response:", response);
+
+        const commentsResponse = await orgBuildingsApi.getComments(buildingId, requestId);
+        console.log("[ManagementRequests] Raw comments response:", commentsResponse);
+        const commentsPayload = Array.isArray(commentsResponse)
+          ? commentsResponse
+          : Array.isArray(commentsResponse?.data)
+            ? commentsResponse.data
+            : Array.isArray(data.comments)
+              ? data.comments
+              : [];
+
+        if (data) {
           const currentSelected = selectedRequestRef.current;
-          const baseRequest =
+          const baseResolved =
             (currentSelected && currentSelected.id === normalizedId
               ? currentSelected
               : null) ||
-            buildingRequestsRef.current.find((req) => req.id === normalizedId) ||
+            baseRequest ||
             null;
           const mappedStatus = mapStatusFromApi(data.status);
           const mappedPriority = mapPriorityFromApi(data.priority);
-          const assignedWorkerId = data.assignedTo?.id;
-          const assignedWorkerName =
-            data.assignedTo?.fullName || data.assignedTo?.email || baseRequest?.assignedTo;
-          const resolvedAssignedTo = assignedWorkerName;
-          const managerId =
-            currentUser?.id !== undefined && currentUser?.id !== null
-              ? String(currentUser.id)
-              : null;
-          const managerName =
-            (currentUser as any)?.name ||
-            (currentUser as any)?.fullName ||
-            currentUser?.email ||
-            undefined;
-
-          // Fetch tenant information using process of elimination
-          // Find tenant ID by looking at comments and eliminating manager and assigned worker IDs
-          let tenantId: string | null = null;
-          let fetchedTenantName: string | null = null;
-
-          if (Array.isArray(data.comments) && data.comments.length > 0) {
-            // Collect all unique user IDs from comments
-            const userIds = new Set<string>();
-            data.comments.forEach((comment: any) => {
-              const userId = comment.userId ?? comment.user?.userId;
-              if (userId) {
-                userIds.add(String(userId));
-              }
-            });
-
-            // Process of elimination: remove manager ID and assigned worker ID
-            const managerIdStr = managerId ? String(managerId) : null;
-            const assignedWorkerIdStr = assignedWorkerId ? String(assignedWorkerId) : null;
-
-            // Find the tenant ID (the one that's not manager or assigned worker)
-            for (const userId of userIds) {
-              if (userId !== managerIdStr && userId !== assignedWorkerIdStr) {
-                tenantId = userId;
-                break;
-              }
-            }
-
-            // Fetch tenant details if we found a tenant ID
-            if (tenantId) {
-              try {
-                console.log('[ManagementRequests] Fetching tenant details for ID:', tenantId);
-                const tenantResponse = await apiService.tenants.getTenantById(tenantId);
-                console.log('[ManagementRequests] Tenant API response:', tenantResponse);
-                if (tenantResponse.success && tenantResponse.data) {
-                  console.log('[ManagementRequests] Tenant data:', tenantResponse.data);
-                  fetchedTenantName = tenantResponse.data.fullName || tenantResponse.data.email || null;
-                  setTenantName(fetchedTenantName);
-                  console.log('[ManagementRequests] Tenant name fetched:', fetchedTenantName);
-                } else {
-                  console.log('[ManagementRequests] Tenant API returned no data or unsuccessful');
-                }
-              } catch (error) {
-                console.log('[ManagementRequests] Could not fetch tenant details:', error);
-              }
-            } else {
-              console.log('[ManagementRequests] No tenant ID found through process of elimination');
-            }
-          }
+          const resolvedAssignedTo = formatUserLabel(
+            data.assignedTo?.fullName ||
+              data.assignedTo?.name ||
+              data.assignedTo?.email ||
+              baseResolved?.assignedTo,
+          );
 
           const timelineEvents =
             Array.isArray(data.statusHistory) && data.statusHistory.length > 0
@@ -1022,45 +1192,25 @@ export default function ManagementRequestsScreen() {
                 })
               : [];
 
-          const mappedComments: RequestComment[] = Array.isArray(data.comments)
-            ? data.comments
-                .map((comment: any) => {
-                  const commentUserIdRaw = comment.userId ?? comment.user?.userId ?? "";
-                  const commentUserId = commentUserIdRaw ? String(commentUserIdRaw) : "";
-                  const matchesAssigned =
-                    assignedWorkerId &&
-                    (comment.user?.userId === assignedWorkerId ||
-                      comment.userId === assignedWorkerId ||
-                      commentUserId === String(assignedWorkerId));
-                  const matchesManager = managerId && commentUserId === managerId;
-                  const matchesTenant = tenantId && commentUserId === tenantId;
-                  const directName =
-                    comment.user?.fullName ||
-                    comment.user?.email ||
-                    comment.userName;
+          const mappedComments: RequestComment[] = Array.isArray(commentsPayload)
+            ? (commentsPayload as OrgBuildingRequestComment[])
+                .map((comment) => {
+                  const author = comment.author ?? undefined;
                   const userName =
-                    directName ||
-                    (matchesManager ? managerName || "Manager" : null) ||
-                    (matchesAssigned ? assignedWorkerName || "Assigned worker" : null) ||
-                    (matchesTenant ? fetchedTenantName || "Tenant" : null) ||
-                    (comment.user?.userId ? `User ${comment.user.userId}` : "User");
-
-                  // Debug log for tenant comments
-                  if (matchesTenant) {
-                    console.log('[ManagementRequests] Tenant comment found:', {
-                      commentUserId,
-                      tenantId,
-                      fetchedTenantName,
-                      userName
-                    });
-                  }
+                    author?.name?.trim() ||
+                    author?.email?.trim() ||
+                    "User";
+                  const userId = author?.id ? String(author.id) : "";
 
                   return {
                     id: String(comment.id ?? `${data.id}-comment-${Math.random().toString(36).slice(2)}`),
                     requestId: String(data.id ?? requestId),
-                    userId: commentUserId,
+                    userId,
                     userName,
-                    message: comment.commentText || comment.message || comment.text || "",
+                    message:
+                      comment.message ||
+                      comment.commentText ||
+                      "",
                     createdAt: comment.createdAt || new Date().toISOString(),
                     channel: comment.channel || comment.visibility || "internal",
                     attachments: Array.isArray(comment.attachments)
@@ -1101,6 +1251,7 @@ export default function ManagementRequestsScreen() {
           setRequestComments(mappedComments);
           setRequestAttachments(attachmentsForRequest);
 
+          const unit = data.unit || data.unitDetails;
           const mappedRequest: Request = {
             id: String(data.id ?? baseRequest?.id ?? requestId),
             title: data.title || baseRequest?.title || "Untitled Request",
@@ -1112,9 +1263,19 @@ export default function ManagementRequestsScreen() {
             assignedTo: resolvedAssignedTo,
             buildingId: String(data.buildingId ?? baseRequest?.buildingId ?? ""),
             buildingName: data.buildingName || baseRequest?.buildingName,
-            apartment: data.unitNumber ? String(data.unitNumber) : baseRequest?.apartment || "",
+            apartment:
+              unit?.label ||
+              data.unitLabel ||
+              data.unitNumber ||
+              baseRequest?.apartment ||
+              "",
             tower: baseRequest?.tower,
-            floor: data.floorNumber != null ? String(data.floorNumber) : baseRequest?.floor,
+            floor:
+              data.floorNumber != null
+                ? String(data.floorNumber)
+                : unit?.floor != null
+                  ? String(unit.floor)
+                  : baseRequest?.floor,
             preferredTime: data.preferredTime || baseRequest?.preferredTime,
             contactPhone: data.contactPhone || baseRequest?.contactPhone,
             additionalNotes: data.additionalNotes || baseRequest?.additionalNotes,
@@ -1520,7 +1681,10 @@ export default function ManagementRequestsScreen() {
               <Ionicons name="close" size={24} color="#6B7280" />
             </TouchableOpacity>
             <Text style={styles.modalTitle}>
-              {selectedRequest?.status === "in-progress" ? "Re-assign Request" : "Assign Request"}
+              {selectedRequest?.status === "in-progress" ||
+              (selectedRequest?.status as string) === "assigned"
+                ? "Re-assign Request"
+                : "Assign Request"}
             </Text>
             <View style={{ width: 24 }} />
           </View>
@@ -1661,7 +1825,7 @@ export default function ManagementRequestsScreen() {
 
           {/* Tab Navigation */}
           <View style={styles.tabBar}>
-            {(["overview", "messages", "timeline"] as const).map((tab) => (
+            {(["overview", "messages"] as const).map((tab) => (
               <TouchableOpacity
                 key={tab}
                 style={[styles.tab, detailTab === tab && styles.tabActive]}
@@ -1761,7 +1925,8 @@ export default function ManagementRequestsScreen() {
                           </Text>
                         </View>
                       </View>
-                      {selectedRequest.status === "in-progress" && (
+                      {(selectedRequest.status === "in-progress" ||
+                        (selectedRequest.status as string) === "assigned") && (
                         <>
                           <View style={styles.actionButtonsRow}>
                             <TouchableOpacity
@@ -1968,33 +2133,6 @@ export default function ManagementRequestsScreen() {
               </View>
             )}
 
-            {detailTab === "timeline" && (
-              <View style={styles.timelineSection}>
-                <Text style={styles.sectionTitle}>Activity Timeline</Text>
-                <Text style={styles.sectionSubtitle}>Full history of this request</Text>
-
-                {selectedRequest?.timeline && selectedRequest.timeline.length > 0 ? (
-                  selectedRequest.timeline.map((event, index) => (
-                    <View key={event.id} style={styles.timelineItem}>
-                      <View style={styles.timelineDot} />
-                      {index < (selectedRequest.timeline?.length || 0) - 1 && <View style={styles.timelineLine} />}
-                      <View style={styles.timelineContent}>
-                        <Text style={styles.timelineTitle}>{event.title}</Text>
-                        {event.description && (
-                          <Text style={styles.timelineDescription}>{event.description}</Text>
-                        )}
-                        {event.actorName && (
-                          <Text style={styles.timelineActor}>by {event.actorName}</Text>
-                        )}
-                        <Text style={styles.timelineTime}>{formatDateTime(event.createdAt)}</Text>
-                      </View>
-                    </View>
-                  ))
-                ) : (
-                  <Text style={styles.emptyText}>No timeline events</Text>
-                )}
-              </View>
-            )}
           </ScrollView>
         </SafeAreaView>
       </Modal>
