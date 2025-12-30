@@ -13,6 +13,7 @@
       "bundleIdentifier": "com.codefier.towerdesk"
     },
     "android": {
+      "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -23,7 +24,9 @@
       "predictiveBackGestureEnabled": false,
       "package": "com.codefier.towerdesk",
       "permissions": [
-        "WAKE_LOCK"
+        "WAKE_LOCK",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE"
       ]
     },
     "web": {
