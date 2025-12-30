@@ -10,6 +10,10 @@ import {
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import type { Notification, UserRole } from "../../lib/types";
+import {
+  isNotificationDismissed,
+  isNotificationUnread,
+} from "../../lib/utils/helpers";
 import { AnimatedButton } from "../ui/AnimatedButton";
 import { SkeletonCard } from "../ui/SkeletonCard";
 import { NotificationItem } from "./NotificationItem";
@@ -18,9 +22,10 @@ interface NotificationsListProps {
   notifications: Notification[];
   userId: string;
   userRole: UserRole;
+  onPress?: (notification: Notification) => void;
   onMarkAsRead: (id: string) => void;
   onMarkAllAsRead: () => void;
-  onDelete: (id: string) => void;
+  onDismiss: (id: string) => void;
   onRefresh?: () => Promise<void>;
   loading?: boolean;
 }
@@ -29,9 +34,10 @@ export function NotificationsList({
   notifications,
   userId,
   userRole,
+  onPress,
   onMarkAsRead,
   onMarkAllAsRead,
-  onDelete,
+  onDismiss,
   onRefresh,
   loading = false,
 }: NotificationsListProps) {
@@ -40,7 +46,8 @@ export function NotificationsList({
   // Filter notifications for current user
   const userNotifications = useMemo(() => {
     return notifications
-      .filter((notif) => notif.userId === userId)
+      .filter((notif) => !isNotificationDismissed(notif))
+      .filter((notif) => !notif.userId || notif.userId === userId)
       .sort(
         (a, b) =>
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
@@ -48,7 +55,7 @@ export function NotificationsList({
   }, [notifications, userId]);
 
   const unreadCount = useMemo(() => {
-    return userNotifications.filter((n) => !n.read).length;
+    return userNotifications.filter(isNotificationUnread).length;
   }, [userNotifications]);
 
   const handleRefresh = async () => {
@@ -80,16 +87,16 @@ export function NotificationsList({
     );
   };
 
-  const handleDelete = (id: string) => {
+  const handleDismiss = (id: string) => {
     Alert.alert(
-      "Delete Notification",
-      "Are you sure you want to delete this notification?",
+      "Dismiss Notification",
+      "Dismiss this notification? You can restore it later.",
       [
         { text: "Cancel", style: "cancel" },
         {
-          text: "Delete",
+          text: "Dismiss",
           style: "destructive",
-          onPress: () => onDelete(id),
+          onPress: () => onDismiss(id),
         },
       ],
     );
@@ -186,8 +193,9 @@ export function NotificationsList({
           >
             <NotificationItem
               notification={notification}
+              onPress={onPress ? () => onPress(notification) : undefined}
               onMarkAsRead={onMarkAsRead}
-              onDelete={handleDelete}
+              onDismiss={handleDismiss}
             />
           </Animated.View>
         ))}

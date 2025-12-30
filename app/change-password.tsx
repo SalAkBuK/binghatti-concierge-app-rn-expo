@@ -16,7 +16,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useApp } from "../lib/context/connected-app-provider";
-import apiService from "../lib/services/api";
+import { apiService } from "../lib/services/api";
 import { getUserErrorMessage } from "../lib/services/api/errors";
 import { APP_CONFIG, STORAGE_KEYS } from "../lib/utils/constants";
 import * as SecureStore from "expo-secure-store";

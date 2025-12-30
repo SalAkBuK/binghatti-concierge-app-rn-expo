@@ -84,7 +84,8 @@ export interface NotificationsApi {
   ): Promise<ApiResponse<Notification[]>>;
   markAsRead(id: string): Promise<ApiResponse>;
   markAllAsRead(): Promise<ApiResponse>;
-  deleteNotification(id: string): Promise<ApiResponse>;
+  dismissNotification(id: string): Promise<ApiResponse>;
+  undismissNotification(id: string): Promise<ApiResponse>;
 }
 
 // Users API endpoints
@@ -127,6 +128,8 @@ export interface RequestListParams {
 export interface NotificationListParams {
   page?: number;
   limit?: number;
+  cursor?: string;
+  unreadOnly?: boolean;
   read?: boolean;
   type?: Notification["type"];
 }

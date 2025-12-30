@@ -1,7 +1,10 @@
 import { useMemo } from "react";
 
 import { useApp } from "../../../../lib/context/connected-app-provider";
-import { filterNotificationsByUser } from "../../../../lib/utils/helpers";
+import {
+  filterNotificationsByUser,
+  getUnreadNotificationsCount,
+} from "../../../../lib/utils/helpers";
 import type { UseMaintenanceDataResult } from "../_types";
 
 export function useMaintenanceData(): UseMaintenanceDataResult {
@@ -13,7 +16,8 @@ export function useMaintenanceData(): UseMaintenanceDataResult {
     notifications || [],
     currentUser?.id,
   );
-  const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
+  const hasUnreadNotifications =
+    getUnreadNotificationsCount(userNotifications) > 0;
 
   return {
     buildingOptions,

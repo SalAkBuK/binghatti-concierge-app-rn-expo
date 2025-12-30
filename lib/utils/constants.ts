@@ -28,6 +28,10 @@ export const ROLE_HOME_VIEWS: Record<User["role"], string> = {
   tenant: "tenant-home",
   management: "management-dashboard",
   building_employee: "be-dashboard",
+  admin: "management-dashboard",
+  super_admin: "management-dashboard",
+  service_provider: "service-provider-dashboard",
+  employee: "be-dashboard",
 };
 
 // Status and Priority color mappings
@@ -133,6 +137,8 @@ export const API_ENDPOINTS = {
     list: "/notifications",
     markRead: (id: string) => `/notifications/${id}/read`,
     markAllRead: "/notifications/read-all",
+    dismiss: (id: string) => `/notifications/${id}/dismiss`,
+    undismiss: (id: string) => `/notifications/${id}/undismiss`,
   },
   employee: {
     jobs: "/employee/jobs",

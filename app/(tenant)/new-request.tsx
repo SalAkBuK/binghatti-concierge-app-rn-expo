@@ -26,7 +26,10 @@ import {
   type ResidentRequestPriority,
   type ResidentRequestType,
 } from "../../lib/services/api/resident-requests";
-import { filterNotificationsByUser } from "../../lib/utils/helpers";
+import {
+  filterNotificationsByUser,
+  getUnreadNotificationsCount,
+} from "../../lib/utils/helpers";
 import { uploadFileToServer } from "../../lib/utils/fileUpload";
 import { IMAGE_CONFIG } from "../../lib/utils/imageUtils";
 import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
@@ -92,7 +95,6 @@ export default function NewRequestScreen() {
   });
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>(
     {},
   );
@@ -103,7 +105,8 @@ export default function NewRequestScreen() {
     notifications || [],
     currentUser?.id,
   );
-  const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
+  const hasUnreadNotifications =
+    getUnreadNotificationsCount(userNotifications) > 0;
 
   const validateForm = (): ValidationErrors => {
     const errors: ValidationErrors = {};

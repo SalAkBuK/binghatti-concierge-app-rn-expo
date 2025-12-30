@@ -22,7 +22,10 @@ import { SideMenu } from "../../components/ui/SideMenu";
 import { StarRating } from "../../components/ui/StarRating";
 import { useApp } from "../../lib/context/connected-app-provider";
 import type { Rating } from "../../lib/types";
-import { filterNotificationsByUser } from "../../lib/utils/helpers";
+import {
+  filterNotificationsByUser,
+  getUnreadNotificationsCount,
+} from "../../lib/utils/helpers";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -76,7 +79,8 @@ export default function MyRatingsScreen() {
     notifications || [],
     currentUser?.id,
   );
-  const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
+  const hasUnreadNotifications =
+    getUnreadNotificationsCount(userNotifications) > 0;
 
   return (
     <SafeAreaView style={styles.container}>

@@ -2,7 +2,10 @@ import { useMemo } from "react";
 
 import { useApp } from "../../../../lib/context/connected-app-provider";
 import type { Building, User } from "../../../../lib/types";
-import { filterNotificationsByUser } from "../../../../lib/utils/helpers";
+import {
+  filterNotificationsByUser,
+  getUnreadNotificationsCount,
+} from "../../../../lib/utils/helpers";
 
 export interface UseParcelsDataResult {
   currentUser: User | null;
@@ -21,7 +24,8 @@ export function useParcelsData(): UseParcelsDataResult {
     notifications || [],
     currentUser?.id,
   );
-  const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
+  const hasUnreadNotifications =
+    getUnreadNotificationsCount(userNotifications) > 0;
 
   return {
     currentUser,

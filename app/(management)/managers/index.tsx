@@ -17,7 +17,10 @@ import { HeaderBar } from "../../../components/ui/HeaderBar";
 import { SideMenu } from "../../../components/ui/SideMenu";
 import { useApp } from "../../../lib/context/connected-app-provider";
 import type { User } from "../../../lib/types";
-import { filterNotificationsByUser } from "../../../lib/utils/helpers";
+import {
+  filterNotificationsByUser,
+  getUnreadNotificationsCount,
+} from "../../../lib/utils/helpers";
 
 const MANAGEMENT_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
 
@@ -57,7 +60,8 @@ export default function ManagersScreen() {
     notifications || [],
     currentUser?.id
   );
-  const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
+  const hasUnreadNotifications =
+    getUnreadNotificationsCount(userNotifications) > 0;
 
   const getBuildingName = (buildingId: string) => {
     const building = managedBuildings.find((b) => b.id === buildingId);

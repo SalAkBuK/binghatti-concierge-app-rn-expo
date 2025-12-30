@@ -1,8 +1,8 @@
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { router, useLocalSearchParams } from "expo-router";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Dimensions,
   Alert,
@@ -26,7 +26,10 @@ import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
 import { residentRequestsApi } from "../../lib/services/api/resident-requests";
 import type { Job, Request, RequestStatus } from "../../lib/types";
-import { filterNotificationsByUser } from "../../lib/utils/helpers";
+import {
+  filterNotificationsByUser,
+  getUnreadNotificationsCount,
+} from "../../lib/utils/helpers";
 import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -119,6 +122,8 @@ const getRequestTimestamp = (request: Request): number => {
 
 export default function RequestsScreen() {
   const { currentUser, notifications, actions, jobs } = useApp();
+  const params = useLocalSearchParams<{ requestId?: string }>();
+  const handledRequestIdRef = useRef<string | null>(null);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
   const [isLoading, setIsLoading] = useState(true);
@@ -204,7 +209,12 @@ export default function RequestsScreen() {
     } finally {
       if (showLoadingState) setIsLoading(false);
     }
-  }, [currentUser?.id]);
+  }, [
+    currentUser?.id,
+    currentUser?.profile?.apartment,
+    currentUser?.profile?.floor,
+    currentUser?.profile?.phone,
+  ]);
 
   // Initial fetch on mount with loading state
   useEffect(() => {
@@ -356,7 +366,7 @@ export default function RequestsScreen() {
           text: "Approve",
           onPress: async () => {
             try {
-              await actions.reviewJobEstimateAsTenant?.(jobId, "approve");
+              await actions.reviewJobEstimateAsTenant?.(jobId, { decision: "approve" });
               showSuccessAlert("Thank you for confirming the estimate.");
             } catch (error: any) {
               showErrorAlert(error);
@@ -387,8 +397,7 @@ export default function RequestsScreen() {
             try {
               await actions.reviewJobEstimateAsTenant?.(
                 jobId,
-                "decline",
-                reason.trim(),
+                { decision: "decline", notes: reason.trim() },
               );
               showSuccessAlert("The service provider has been notified of your decline.");
             } catch (error: any) {
@@ -406,12 +415,25 @@ export default function RequestsScreen() {
     router.push("/(modals)/request-details");
   };
 
+  useEffect(() => {
+    const requestId = params.requestId ? String(params.requestId) : null;
+    if (!requestId || handledRequestIdRef.current === requestId) return;
+
+    const request = backendRequests.find((item) => item.id === requestId);
+    if (!request) return;
+
+    handledRequestIdRef.current = requestId;
+    actions.setSelectedRequest(request);
+    router.push("/(modals)/request-details");
+  }, [backendRequests, params.requestId, actions]);
+
   // Calculate unread notifications
   const userNotifications = filterNotificationsByUser(
     notifications || [],
     currentUser?.id,
   );
-  const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
+  const hasUnreadNotifications =
+    getUnreadNotificationsCount(userNotifications) > 0;
 
   // FilterButton component removed - not used in current UI
 
@@ -423,16 +445,8 @@ export default function RequestsScreen() {
     const estimate = job?.estimate;
     const awaitingCompletionApproval =
       job?.completionStatus === "awaiting_tenant_approval";
-    const completionApproved =
-      job?.completionStatus === "tenant_approved";
-    const completionDeclaredByProvider =
-      job?.completionStatus === "sp_override_approved";
     const estimateAwaitingTenant =
       estimate?.status === "sp_approved";
-    const estimateApproved =
-      estimate?.status === "tenant_approved";
-    const estimateDeclined =
-      estimate?.status === "tenant_declined";
 
     return (
       <AnimatedButton
@@ -636,7 +650,7 @@ export default function RequestsScreen() {
           <Ionicons name="document-outline" size={64} color="#d1d5db" />
           <Text style={styles.emptyStateTitle}>No requests found</Text>
           <Text style={styles.emptyStateText}>
-            You haven't submitted any requests yet
+            You have not submitted any requests yet
           </Text>
         </View>
       );

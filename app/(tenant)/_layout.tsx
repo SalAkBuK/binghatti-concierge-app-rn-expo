@@ -1,6 +1,5 @@
 import { Tabs, router } from "expo-router";
 import React, { useEffect, useRef } from "react";
-import { Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import NewHomeTabIcon from "../../components/icons/NewHomeTabIcon";
 import NewTabIcon from "../../components/icons/NewTabIcon";

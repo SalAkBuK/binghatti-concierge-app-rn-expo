@@ -14,6 +14,8 @@ import { NoticesList } from "../../components/notifications/NoticesList";
 import { NotificationsList } from "../../components/notifications/NotificationsList";
 import { NotificationsTabBar } from "../../components/notifications/NotificationsTabBar";
 import { useApp } from "../../lib/context/connected-app-provider";
+import type { Notification } from "../../lib/types";
+import { isNotificationUnread } from "../../lib/utils/helpers";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -24,6 +26,7 @@ export default function NotificationsHubScreen() {
     userRole,
     notifications,
     unreadCount,
+    requests,
     notices,
     activeNoticesCount,
     actions,
@@ -51,11 +54,11 @@ export default function NotificationsHubScreen() {
     }
   };
 
-  const handleDeleteNotification = async (id: string) => {
+  const handleDismissNotification = async (id: string) => {
     try {
-      await actions.deleteNotification(id);
+      await actions.dismissNotification(id);
     } catch (error) {
-      console.error("Error deleting notification:", error);
+      console.error("Error dismissing notification:", error);
     }
   };
 
@@ -84,6 +87,59 @@ export default function NotificationsHubScreen() {
     return new Promise<void>((resolve) => {
       setTimeout(resolve, 1000);
     });
+  };
+
+  const handleNotificationPress = (notification: Notification) => {
+    const data = notification.data as Record<string, any> | undefined;
+    const requestId =
+      data?.requestId ?? data?.request_id ?? data?.requestID ?? null;
+    if (!requestId) return;
+
+    const normalizedRequestId = String(requestId);
+    const buildingId =
+      data?.buildingId ?? data?.building_id ?? data?.buildingID ?? null;
+
+    if (isNotificationUnread(notification)) {
+      actions.markNotificationAsRead(notification.id);
+    }
+
+    if (userRole === "tenant") {
+      const request = requests.find((item) => item.id === normalizedRequestId);
+      if (request) {
+        actions.setSelectedRequest(request);
+        router.back();
+        setTimeout(() => {
+          router.push("/(modals)/request-details" as any);
+        }, 120);
+        return;
+      }
+
+      router.back();
+      setTimeout(() => {
+        router.push({
+          pathname: "/(tenant)/requests" as any,
+          params: { requestId: normalizedRequestId },
+        });
+      }, 120);
+      return;
+    }
+
+    if (userRole === "management" || userRole === "admin") {
+      const params: Record<string, string> = {
+        requestId: normalizedRequestId,
+      };
+      if (buildingId != null) {
+        params.buildingId = String(buildingId);
+      }
+
+      router.back();
+      setTimeout(() => {
+        router.push({
+          pathname: "/(management)/requests" as any,
+          params,
+        });
+      }, 120);
+    }
   };
 
   if (!currentUser) {
@@ -134,9 +190,10 @@ export default function NotificationsHubScreen() {
                   | "service_provider"
                   | "employee"
               }
+              onPress={handleNotificationPress}
               onMarkAsRead={handleMarkAsRead}
               onMarkAllAsRead={handleMarkAllAsRead}
-              onDelete={handleDeleteNotification}
+              onDismiss={handleDismissNotification}
               onRefresh={handleRefresh}
             />
           ) : (

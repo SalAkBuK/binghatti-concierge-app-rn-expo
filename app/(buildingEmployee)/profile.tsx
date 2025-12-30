@@ -20,10 +20,13 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
-import apiService from "../../lib/services/api";
+import { apiService } from "../../lib/services/api";
 import { orgBuildingsApi } from "../../lib/services/api/org-buildings";
 import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
-import { filterNotificationsByUser } from "../../lib/utils/helpers";
+import {
+  filterNotificationsByUser,
+  getUnreadNotificationsCount,
+} from "../../lib/utils/helpers";
 import { APP_CONFIG } from "../../lib/utils/constants";
 
 export default function BuildingEmployeeProfileScreen() {
@@ -48,7 +51,8 @@ export default function BuildingEmployeeProfileScreen() {
     notifications || [],
     currentUser?.id || "",
   );
-  const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
+  const hasUnreadNotifications =
+    getUnreadNotificationsCount(userNotifications) > 0;
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -90,7 +94,7 @@ export default function BuildingEmployeeProfileScreen() {
     };
 
     fetchBuildingName();
-  }, [building?.name, currentUser?.id]);
+  }, [building?.name, currentUser?.id, currentUser?.profile?.buildingName]);
 
   if (!isAuthenticated || !currentUser) {
     return null;

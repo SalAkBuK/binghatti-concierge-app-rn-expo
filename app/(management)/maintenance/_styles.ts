@@ -410,6 +410,11 @@ const styles = StyleSheet.create({
     height: 100,
     textAlignVertical: "top",
   },
+  formRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 4,
+  },
   pickerWrapper: {
     gap: 8,
   },
@@ -455,6 +460,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     gap: 8,
     marginTop: 24,
+  },
+  submitButtonDisabled: {
+    opacity: 0.6,
   },
   submitButtonText: {
     color: "#fff",

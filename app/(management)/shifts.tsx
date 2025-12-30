@@ -21,7 +21,10 @@ import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
 import type { Shift, ShiftStatus } from "../../lib/types";
-import { filterNotificationsByUser } from "../../lib/utils/helpers";
+import {
+  filterNotificationsByUser,
+  getUnreadNotificationsCount,
+} from "../../lib/utils/helpers";
 import { MOCK_SHIFTS } from "../../lib/utils/mockData";
 
 const MANAGEMENT_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
@@ -514,7 +517,8 @@ export default function ShiftsScreen() {
     notifications || [],
     currentUser?.id,
   );
-  const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
+  const hasUnreadNotifications =
+    getUnreadNotificationsCount(userNotifications) > 0;
 
   // Extract unique employees from shifts
   const employees = useMemo(() => {

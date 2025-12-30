@@ -288,7 +288,20 @@ export class BaseApiService {
 
       // Add body for non-GET requests
       if (modifiedConfig.data && modifiedConfig.method !== "GET") {
-        fetchOptions.body = JSON.stringify(modifiedConfig.data);
+        if (modifiedConfig.data instanceof FormData) {
+          fetchOptions.body = modifiedConfig.data;
+          if (fetchOptions.headers && typeof fetchOptions.headers === "object") {
+            const headers = fetchOptions.headers as Record<string, string>;
+            if (
+              headers["Content-Type"] &&
+              headers["Content-Type"].includes("application/json")
+            ) {
+              delete headers["Content-Type"];
+            }
+          }
+        } else {
+          fetchOptions.body = JSON.stringify(modifiedConfig.data);
+        }
       }
 
       // Add query parameters for GET requests or if specified

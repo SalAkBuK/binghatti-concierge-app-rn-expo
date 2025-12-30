@@ -45,9 +45,11 @@ export const getRoleHomeView = (role: User["role"]): string => {
   const roleViews = {
     tenant: "tenant-home",
     management: "management-dashboard",
-    admin: "admin-dashboard",
+    admin: "management-dashboard",
+    super_admin: "management-dashboard",
     service_provider: "service-provider-dashboard",
-    employee: "employee-dashboard",
+    building_employee: "be-dashboard",
+    employee: "be-dashboard",
   };
   return roleViews[role] || "tenant-home";
 };
@@ -114,22 +116,77 @@ export const filterRequestsByUser = (
   return requests.filter((req) => req.tenantId === userId);
 };
 
+// Notification helpers
+export const getNotificationBody = (notification: Notification): string => {
+  if (notification.body) return notification.body;
+  if (notification.message) return notification.message;
+  return "";
+};
+
+export const isNotificationDismissed = (
+  notification: Notification,
+): boolean => {
+  return Boolean(notification.dismissedAt);
+};
+
+export const isNotificationRead = (notification: Notification): boolean => {
+  if (notification.readAt) return true;
+  return Boolean(notification.read);
+};
+
+export const isNotificationUnread = (notification: Notification): boolean => {
+  return !isNotificationRead(notification);
+};
+
+export const normalizeNotification = (
+  notification: Notification,
+): Notification => {
+  const body = getNotificationBody(notification);
+  return {
+    ...notification,
+    body: notification.body ?? body,
+    message: notification.message || body,
+    read: isNotificationRead(notification),
+  };
+};
+
+export const normalizeNotifications = (
+  notifications: Notification[],
+): Notification[] => {
+  if (!notifications || !Array.isArray(notifications)) return [];
+  return notifications.map(normalizeNotification);
+};
+
 // Filter notifications by user
 export const filterNotificationsByUser = (
   notifications: Notification[],
-  userId: string,
+  userId?: string,
 ): Notification[] => {
   if (!notifications || !Array.isArray(notifications)) return [];
-  return notifications.filter((n) => n.userId === userId);
+  return notifications.filter((notification) => {
+    if (isNotificationDismissed(notification)) return false;
+    if (!userId) return true;
+    return !notification.userId || notification.userId === userId;
+  });
 };
 
 // Get unread notifications count
 export const getUnreadNotificationsCount = (
   notifications: Notification[],
-  userId: string,
+  userId?: string,
 ): number => {
   if (!notifications || !Array.isArray(notifications)) return 0;
-  return notifications.filter((n) => n.userId === userId && !n.read).length;
+  const scopedNotifications = userId
+    ? notifications.filter(
+        (notification) =>
+          !notification.userId || notification.userId === userId,
+      )
+    : notifications;
+  return scopedNotifications.filter(
+    (notification) =>
+      !isNotificationDismissed(notification) &&
+      isNotificationUnread(notification),
+  ).length;
 };
 
 // React Native screen size helpers (replacing web-specific ones)
@@ -343,8 +400,11 @@ export const createSystemNotification = (
     userId,
     title,
     message,
+    body: message,
     type,
     read: false,
+    readAt: null,
+    dismissedAt: null,
     createdAt: new Date().toISOString(),
   };
 };

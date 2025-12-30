@@ -35,6 +35,7 @@ import type {
 import {
   filterNotificationsByUser,
   formatDateTime,
+  getUnreadNotificationsCount,
 } from "../../lib/utils/helpers";
 import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
 
@@ -126,14 +127,17 @@ const STATUS_OPTIONS: { label: string; value: StatusFilter }[] = [
 const REQUESTS_REFETCH_COOLDOWN_MS = 15000;
 
 export default function ManagementRequestsScreen() {
-  const params = useLocalSearchParams<{ statusFilter?: string }>();
+  const params = useLocalSearchParams<{
+    statusFilter?: string;
+    requestId?: string;
+    buildingId?: string;
+  }>();
   const {
     currentUser,
     notifications,
     actions,
   } = useApp();
   const {
-    getBuildings,
     setSelectedRequest: setSelectedRequestContext,
   } = actions;
 
@@ -191,9 +195,9 @@ export default function ManagementRequestsScreen() {
   const hasAnimatedHeaderRef = useRef(false);
   const lastRequestsFetchAtRef = useRef(0);
   const isRequestsFetchInFlightRef = useRef(false);
+  const pendingRequestIdRef = useRef<string | null>(null);
 
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
-  const isCompact = width < 900;
   const isRequestClosed =
     selectedRequest?.status === "completed" || selectedRequest?.status === "cancelled";
 
@@ -389,12 +393,6 @@ export default function ManagementRequestsScreen() {
     }
   }, [params.statusFilter]);
 
-  const buildingMap = useMemo(() => {
-    const map = new Map<string, Building>();
-    managedBuildings.forEach((building) => map.set(building.id, building));
-    return map;
-  }, [managedBuildings]);
-
   const priorityOptions = useMemo(() => {
     const priorities = new Set<Request["priority"]>();
     buildingRequests.forEach((request) => {
@@ -482,50 +480,17 @@ export default function ManagementRequestsScreen() {
 
   // Removed jobForSelectedRequest - no longer needed since we handle assignment directly
 
-  const summary = useMemo(() => {
-    const buildingScoped = buildingRequests.filter((request) => {
-      if (!request.buildingId) return false;
-      if (selectedBuildingId === "all") {
-        return managedBuildings.some(
-          (building) => building.id === request.buildingId,
-        );
-      }
-      return request.buildingId === selectedBuildingId;
-    });
-
-    const inProgressRequests = buildingScoped.filter(
-      (req) => req.status === "in-progress" || req.status === "assigned",
-    );
-    const resolvedRequests = buildingScoped.filter(
-      (req) => req.status === "completed",
-    );
-    const pendingRequests = buildingScoped.filter(
-      (req) => req.status === "pending",
-    );
-
-    return {
-      total: buildingScoped.length,
-      open: inProgressRequests.length,
-      resolved: resolvedRequests.length,
-      pending: pendingRequests.length,
-    };
-  }, [buildingRequests, selectedBuildingId, managedBuildings]);
-
   const userNotifications = filterNotificationsByUser(
     notifications || [],
     currentUser?.id,
   );
-  const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
+  const hasUnreadNotifications =
+    getUnreadNotificationsCount(userNotifications) > 0;
 
   const buildingFilterOptions = useMemo(() => {
     if (!managedBuildings.length) return [];
     return managedBuildings;
   }, [managedBuildings]);
-
-  const selectedBuildingName =
-    selectedBuildingId !== "all"
-      ? buildingMap.get(selectedBuildingId)?.name
-      : "All Buildings";
 
   const isImageAttachment = (attachment: {
     fileUrl: string;
@@ -618,13 +583,13 @@ export default function ManagementRequestsScreen() {
               isActive: true,
             };
           })
-          .filter(Boolean) as Array<{
+          .filter(Boolean) as {
           id: string;
           fullName: string;
           email: string;
           phoneNumber: string;
           isActive: boolean;
-        }>;
+        }[];
 
         console.log(
           "[ManagementRequests] Scoped staff list:",
@@ -1081,7 +1046,7 @@ export default function ManagementRequestsScreen() {
     );
   };
 
-  const openRequestDetails = (request: Request) => {
+  const openRequestDetails = useCallback((request: Request) => {
     const sameRequest = selectedRequestRef.current?.id === request.id;
     console.log("[ManagementRequests] Opening request details modal:", {
       requestId: request.id,
@@ -1097,7 +1062,7 @@ export default function ManagementRequestsScreen() {
       setRequestAttachments([]);
       lastFetchedRequestIdRef.current = null;
     }
-  };
+  }, [setSelectedRequestContext]);
 
   const closeRequestDetails = () => {
     setSelectedRequest(null);
@@ -1108,7 +1073,10 @@ export default function ManagementRequestsScreen() {
   };
 
   const fetchRequestDetails = useCallback(
-    async (requestId: string, options?: { force?: boolean }) => {
+    async (
+      requestId: string,
+      options?: { force?: boolean; buildingId?: string },
+    ) => {
       const normalizedId = String(requestId);
       if (!options?.force && lastFetchedRequestIdRef.current === normalizedId) {
         return;
@@ -1122,7 +1090,10 @@ export default function ManagementRequestsScreen() {
       try {
         const baseRequest =
           buildingRequestsRef.current.find((req) => req.id === normalizedId) || null;
-        const buildingId = baseRequest?.buildingId || selectedRequestRef.current?.buildingId;
+        const buildingId =
+          options?.buildingId ||
+          baseRequest?.buildingId ||
+          selectedRequestRef.current?.buildingId;
         if (!buildingId) {
           throw new Error("Missing building information for this request.");
         }
@@ -1328,6 +1299,35 @@ export default function ManagementRequestsScreen() {
     },
     [currentUser, setSelectedRequestContext],
   );
+
+  useEffect(() => {
+    const requestId = params.requestId ? String(params.requestId) : null;
+    if (!requestId || pendingRequestIdRef.current === requestId) {
+      return;
+    }
+
+    const request = buildingRequests.find((item) => item.id === requestId);
+    if (request) {
+      pendingRequestIdRef.current = requestId;
+      openRequestDetails(request);
+      fetchRequestDetails(requestId, { force: true });
+      return;
+    }
+
+    if (params.buildingId) {
+      pendingRequestIdRef.current = requestId;
+      fetchRequestDetails(requestId, {
+        force: true,
+        buildingId: String(params.buildingId),
+      });
+    }
+  }, [
+    buildingRequests,
+    fetchRequestDetails,
+    openRequestDetails,
+    params.buildingId,
+    params.requestId,
+  ]);
 
   useEffect(() => {
     if (selectedRequest?.id) {

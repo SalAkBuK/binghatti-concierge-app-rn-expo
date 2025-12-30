@@ -26,7 +26,7 @@ export class NotificationsApiService
 
   async markAsRead(id: string): Promise<ApiResponse> {
     try {
-      const response = await this.patch<ApiResponse>(
+      const response = await this.post<ApiResponse>(
         API_ENDPOINTS.notifications.markRead(id),
       );
 
@@ -38,7 +38,7 @@ export class NotificationsApiService
 
   async markAllAsRead(): Promise<ApiResponse> {
     try {
-      const response = await this.patch<ApiResponse>(
+      const response = await this.post<ApiResponse>(
         API_ENDPOINTS.notifications.markAllRead,
       );
 
@@ -48,10 +48,22 @@ export class NotificationsApiService
     }
   }
 
-  async deleteNotification(id: string): Promise<ApiResponse> {
+  async dismissNotification(id: string): Promise<ApiResponse> {
     try {
-      const response = await this.delete<ApiResponse>(
-        `${API_ENDPOINTS.notifications.list}/${id}`,
+      const response = await this.post<ApiResponse>(
+        API_ENDPOINTS.notifications.dismiss(id),
+      );
+
+      return response;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async undismissNotification(id: string): Promise<ApiResponse> {
+    try {
+      const response = await this.post<ApiResponse>(
+        API_ENDPOINTS.notifications.undismiss(id),
       );
 
       return response;
@@ -62,9 +74,9 @@ export class NotificationsApiService
 
   // Helper methods for filtering notifications
   async getUnreadNotifications(
-    params?: Omit<NotificationListParams, "read">,
+    params?: Omit<NotificationListParams, "read" | "unreadOnly">,
   ): Promise<ApiResponse<Notification[]>> {
-    return this.getNotifications({ ...params, read: false });
+    return this.getNotifications({ ...params, unreadOnly: true });
   }
 
   async getReadNotifications(

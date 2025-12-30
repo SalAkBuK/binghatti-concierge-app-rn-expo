@@ -17,6 +17,7 @@ import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
 import type { Shift, ShiftStatus } from "../../lib/types";
+import { getUnreadNotificationsCount } from "../../lib/utils/helpers";
 
 type ViewMode = "week" | "month" | "list";
 
@@ -221,7 +222,7 @@ export default function BuildingEmployeeShiftsScreen() {
   }, [allShifts, monthDates]);
 
   const hasUnreadNotifications =
-    notifications?.some((notification) => !notification.read) ?? false;
+    getUnreadNotificationsCount(notifications || []) > 0;
 
   const onRefresh = async () => {
     setRefreshing(true);

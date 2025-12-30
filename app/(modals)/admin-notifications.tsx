@@ -15,7 +15,8 @@ import { NoticesList } from "../../components/notifications/NoticesList";
 import { NotificationsList } from "../../components/notifications/NotificationsList";
 import { NotificationsTabBar } from "../../components/notifications/NotificationsTabBar";
 import { useApp } from "../../lib/context/connected-app-provider";
-import type { UserRole } from "../../lib/types";
+import type { Notification, UserRole } from "../../lib/types";
+import { isNotificationUnread } from "../../lib/utils/helpers";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -65,8 +66,8 @@ export default function AdminNotificationsModal() {
     await actions.markAllNotificationsAsRead(currentUser.id);
   };
 
-  const handleDeleteNotification = async (id: string) => {
-    await actions.deleteNotification(id);
+  const handleDismissNotification = async (id: string) => {
+    await actions.dismissNotification(id);
   };
 
   const handleDeleteNotice = async (id: string) => {
@@ -79,6 +80,36 @@ export default function AdminNotificationsModal() {
 
   const handleRefresh = async () =>
     new Promise<void>((resolve) => setTimeout(resolve, 1000));
+
+  const handleNotificationPress = (notification: Notification) => {
+    const data = notification.data as Record<string, any> | undefined;
+    const requestId =
+      data?.requestId ?? data?.request_id ?? data?.requestID ?? null;
+    if (!requestId) return;
+
+    const normalizedRequestId = String(requestId);
+    const buildingId =
+      data?.buildingId ?? data?.building_id ?? data?.buildingID ?? null;
+
+    if (isNotificationUnread(notification)) {
+      actions.markNotificationAsRead(notification.id);
+    }
+
+    const params: Record<string, string> = {
+      requestId: normalizedRequestId,
+    };
+    if (buildingId != null) {
+      params.buildingId = String(buildingId);
+    }
+
+    router.back();
+    setTimeout(() => {
+      router.push({
+        pathname: "/(management)/requests" as any,
+        params,
+      });
+    }, 120);
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -127,9 +158,10 @@ export default function AdminNotificationsModal() {
               notifications={notifications}
               userId={currentUser.id}
               userRole={(userRole || "admin") as UserRole}
+              onPress={handleNotificationPress}
               onMarkAsRead={handleMarkAsRead}
               onMarkAllAsRead={handleMarkAllAsRead}
-              onDelete={handleDeleteNotification}
+              onDismiss={handleDismissNotification}
               onRefresh={handleRefresh}
             />
           ) : (

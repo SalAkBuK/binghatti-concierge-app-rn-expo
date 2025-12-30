@@ -1,5 +1,5 @@
 import React from "react";
-import Svg, { Path, Line, Rect } from "react-native-svg";
+import Svg, { Path, Line } from "react-native-svg";
 
 interface BusinessTabIconProps {
   color?: string;

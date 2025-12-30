@@ -31,7 +31,7 @@ export function CreateScheduleModal({
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
-        <View style={styles.createModalContent}>
+        <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Schedule Maintenance</Text>
             <TouchableOpacity onPress={onClose}>
@@ -39,7 +39,10 @@ export function CreateScheduleModal({
             </TouchableOpacity>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.modalBody}
+          >
             <Text style={styles.formLabel}>Building *</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               {buildings.map((building) => {

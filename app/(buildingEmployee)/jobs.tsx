@@ -27,10 +27,11 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
-import apiService from "../../lib/services/api";
+import { apiService } from "../../lib/services/api";
 import { orgBuildingsApi } from "../../lib/services/api/org-buildings";
 import { uploadFileToServer } from "../../lib/utils/fileUpload";
 import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
+import { getUnreadNotificationsCount } from "../../lib/utils/helpers";
 
 type StaffRequestStatus =
   | "pending"
@@ -130,7 +131,6 @@ export default function BuildingEmployeeJobsScreen() {
   const [assignedBuildings, setAssignedBuildings] = useState<AssignedBuilding[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedJob, setSelectedJob] = useState<StaffJob | null>(null);
-  const [detailNote, setDetailNote] = useState("");
   const [detailLoading, setDetailLoading] = useState(false);
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [commentText, setCommentText] = useState("");
@@ -142,7 +142,7 @@ export default function BuildingEmployeeJobsScreen() {
       commentText: string;
       createdAt: string;
       userId?: number | string;
-      user?: { userId?: number; fullName?: string; name?: string; email?: string };
+      user?: { id?: number | string; userId?: number; fullName?: string; name?: string; email?: string };
       userName?: string;
     }[]
   >([]);
@@ -152,7 +152,6 @@ export default function BuildingEmployeeJobsScreen() {
     fileName: string;
     contentType: string;
   }[]>([]);
-  const [managerNames, setManagerNames] = useState<Record<string, string>>({});
   const fetchedManagerBuildingsRef = useRef<Set<string>>(new Set());
   const managerNamesRef = useRef<Record<string, string>>({});
   const [tenantNames, setTenantNames] = useState<Record<string, string>>({});
@@ -274,7 +273,7 @@ export default function BuildingEmployeeJobsScreen() {
   }, [assignedJobs, selectedStatus]);
 
   const hasUnreadNotifications =
-    notifications?.some((notification) => !notification.read) ?? false;
+    getUnreadNotificationsCount(notifications || []) > 0;
 
   const stats = useMemo(
     () => ({
@@ -493,11 +492,10 @@ export default function BuildingEmployeeJobsScreen() {
         storeTenantName("Tenant");
       }
     })();
-  }, [jobComments, staffId, currentUser, managerNames, tenantNames]);
+  }, [jobComments, staffId, currentUser, tenantNames]);
 
   const handleOpenJob = async (job: StaffJob) => {
     setSelectedJob(job);
-    setDetailNote("");
     setJobComments([]);
     setJobAttachments([]);
 
@@ -761,7 +759,7 @@ export default function BuildingEmployeeJobsScreen() {
         contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
       }
 
-      const fileInfo = await FileSystem.getInfoAsync(fileUri, { size: true });
+      const fileInfo = await FileSystem.getInfoAsync(fileUri);
       const sizeBytes =
         fileInfo.exists && typeof fileInfo.size === "number" ? fileInfo.size : 0;
 
@@ -1651,75 +1649,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-  },
-  displaySection: {
-    gap: 12,
-    marginTop: 16,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#111827",
-  },
-  commentsList: {
-    gap: 12,
-  },
-  commentItem: {
-    backgroundColor: "#F9FAFB",
-    borderRadius: 10,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    gap: 8,
-  },
-  commentHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  commentUser: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#374151",
-    flex: 1,
-  },
-  commentTime: {
-    fontSize: 11,
-    color: "#9CA3AF",
-  },
-  commentContent: {
-    fontSize: 14,
-    color: "#1F2937",
-    lineHeight: 20,
-  },
-  attachmentsList: {
-    flexDirection: "row",
-  },
-  attachmentItem: {
-    marginRight: 12,
-    width: 120,
-    gap: 8,
-  },
-  attachmentImage: {
-    width: 120,
-    height: 120,
-    borderRadius: 10,
-    backgroundColor: "#F3F4F6",
-  },
-  attachmentDoc: {
-    width: 120,
-    height: 120,
-    borderRadius: 10,
-    backgroundColor: "#EFF6FF",
-    borderWidth: 1,
-    borderColor: "#BFDBFE",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  attachmentName: {
-    fontSize: 12,
-    color: "#6B7280",
-    textAlign: "center",
   },
   // New redesigned modal styles
   detailsCard: {

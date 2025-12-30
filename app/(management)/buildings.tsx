@@ -29,7 +29,11 @@ import type {
   UnitType,
   VisitorLog
 } from "../../lib/types";
-import { filterNotificationsByUser, formatDate } from "../../lib/utils/helpers";
+import {
+  filterNotificationsByUser,
+  formatDate,
+  getUnreadNotificationsCount,
+} from "../../lib/utils/helpers";
 
 const MANAGEMENT_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
 
@@ -97,7 +101,8 @@ export default function BuildingsScreen() {
     notifications || [],
     currentUser?.id,
   );
-  const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
+  const hasUnreadNotifications =
+    getUnreadNotificationsCount(userNotifications) > 0;
 
   const onRefresh = async () => {
     setRefreshing(true);

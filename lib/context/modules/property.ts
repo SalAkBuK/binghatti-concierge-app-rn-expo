@@ -803,6 +803,17 @@ export const usePropertyModule = ({
 
   const getServiceProviders = useCallback(() => serviceProviders, [serviceProviders]);
 
+  const parseNumericId = useCallback((value: string | number, fieldName: string): number => {
+    if (typeof value === "number" && !isNaN(value)) return value;
+    const raw = String(value ?? "").trim();
+    const match = raw.match(/(\d+)/);
+    const parsed = match ? parseInt(match[1], 10) : NaN;
+    if (isNaN(parsed)) {
+      throw new Error(`Invalid ${fieldName}: "${raw}" - must include a number`);
+    }
+    return parsed;
+  }, []);
+
   const updateServiceProvider = useCallback(
     async (
       id: string,
@@ -858,17 +869,6 @@ export const usePropertyModule = ({
     },
     [parseNumericId, serviceProviders],
   );
-
-  const parseNumericId = useCallback((value: string | number, fieldName: string): number => {
-    if (typeof value === "number" && !isNaN(value)) return value;
-    const raw = String(value ?? "").trim();
-    const match = raw.match(/(\d+)/);
-    const parsed = match ? parseInt(match[1], 10) : NaN;
-    if (isNaN(parsed)) {
-      throw new Error(`Invalid ${fieldName}: "${raw}" - must include a number`);
-    }
-    return parsed;
-  }, []);
 
 
   const getServiceProviderBuildingAssignments = useCallback(
@@ -1852,13 +1852,13 @@ export const usePropertyModule = ({
         console.log('[PropertyModule.assignAdminToBuilding] ✅ API call successful');
 
         // If the current user is the admin being assigned, refresh their assigned buildings
-        const isCurrentUserAssignment = auth.currentUser.id === String(adminId) || auth.currentUser.id === adminId;
+        const adminIdStr = String(adminId);
+        const isCurrentUserAssignment = auth.currentUser.id === adminIdStr;
         console.log('[PropertyModule.assignAdminToBuilding] Is current user being assigned?', {
           isCurrentUserAssignment,
           currentUserId: auth.currentUser.id,
           adminId: adminId,
-          match1: auth.currentUser.id === String(adminId),
-          match2: auth.currentUser.id === adminId,
+          match1: auth.currentUser.id === adminIdStr,
         });
 
         if (isCurrentUserAssignment) {

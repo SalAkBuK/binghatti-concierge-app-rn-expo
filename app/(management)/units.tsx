@@ -20,7 +20,10 @@ import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
 import type { Building, BuildingUnit, Lease, UnitType } from "../../lib/types";
 import { getUserErrorMessage } from "../../lib/services/api/errors";
-import { filterNotificationsByUser } from "../../lib/utils/helpers";
+import {
+  filterNotificationsByUser,
+  getUnreadNotificationsCount,
+} from "../../lib/utils/helpers";
 
 const MANAGEMENT_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
 
@@ -502,7 +505,8 @@ export default function ManagementUnitsScreen() {
     notifications || [],
     currentUser?.id,
   );
-  const hasUnread = userNotificationsByBuilding.some((notif) => !notif.read);
+  const hasUnread =
+    getUnreadNotificationsCount(userNotificationsByBuilding) > 0;
 
   return (
     <SafeAreaView style={styles.container}>

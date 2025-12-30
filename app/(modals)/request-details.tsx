@@ -21,7 +21,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ImageViewer } from "../../components/ui/ImageViewer";
 import { useApp } from "../../lib/context/connected-app-provider";
-import apiService from "../../lib/services/api";
+import { apiService } from "../../lib/services/api";
 import { maintenanceApi } from "../../lib/services/api/maintenance";
 import { residentRequestsApi } from "../../lib/services/api/resident-requests";
 import type { Job, Request } from "../../lib/types";
@@ -45,7 +45,6 @@ export default function RequestDetailsScreen() {
   const assignedUserIdRef = useRef<string | null>(null);
   const assignedUserNameRef = useRef<string | null>(null);
   const managerNamesRef = useRef<Record<string, string>>({});
-  const [managerNames, setManagerNames] = useState<Record<string, string>>({});
   const [resolvedBuildingName, setResolvedBuildingName] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showEditMode, setShowEditMode] = useState(false);
@@ -70,6 +69,49 @@ export default function RequestDetailsScreen() {
   }, [jobs, selectedRequest, isBackendRequest]);
 
   // Fetch fresh request details from backend when modal opens
+  const resolveCommentAuthor = useCallback((comment: any): string => {
+    const commentUserIdRaw = comment.userId ?? comment.user?.userId ?? "";
+    const commentUserId = commentUserIdRaw ? String(commentUserIdRaw) : "";
+    const currentUserId =
+      currentUser?.id !== undefined && currentUser?.id !== null
+        ? String(currentUser.id)
+        : null;
+
+    const directName =
+      comment.user?.fullName ||
+      comment.user?.name ||
+      comment.user?.email ||
+      (typeof comment.author === "string"
+        ? comment.author
+        : comment.author?.fullName ||
+          comment.author?.name ||
+          comment.author?.email ||
+          null);
+
+    if (currentUserId && commentUserId && currentUserId === commentUserId) {
+      return (
+        (currentUser as any)?.name ||
+        (currentUser as any)?.fullName ||
+        currentUser?.email ||
+        "You"
+      );
+    }
+
+    const assignedId = assignedUserIdRef.current;
+    if (assignedId && commentUserId && commentUserId === assignedId) {
+      return assignedUserNameRef.current || selectedRequest?.assignedTo || "Assigned";
+    }
+
+    const managerName = managerNamesRef.current[commentUserId];
+    if (managerName) {
+      return managerName;
+    }
+
+    if (directName) return String(directName);
+    if (comment.user?.userId) return `User ${comment.user.userId}`;
+    return "User";
+  }, [currentUser, selectedRequest?.assignedTo]);
+
   useEffect(() => {
     const fetchDetails = async () => {
       if (!selectedRequest?.id) return;
@@ -102,7 +144,6 @@ export default function RequestDetailsScreen() {
                     }
                   });
                   managerNamesRef.current = mapped;
-                  setManagerNames(mapped);
                 }
               } catch (managerErr) {
                 console.warn("[RequestDetails] Failed to fetch building managers", managerErr);
@@ -145,8 +186,7 @@ export default function RequestDetailsScreen() {
                 : selectedRequest.buildingId,
               apartment: apiRequest.unitNumber ?? selectedRequest.apartment,
               floor: apiRequest.floorNumber != null ? String(apiRequest.floorNumber) : selectedRequest.floor,
-              buildingName:
-                apiRequest.buildingName ?? resolvedBuildingName ?? selectedRequest.buildingName,
+              buildingName: apiRequest.buildingName ?? selectedRequest.buildingName,
               createdAt: apiRequest.createdAt ?? selectedRequest.createdAt,
               updatedAt: apiRequest.updatedAt ?? selectedRequest.updatedAt,
             };
@@ -200,14 +240,6 @@ export default function RequestDetailsScreen() {
               (assignedUserId ? `User ${assignedUserId}` : selectedRequest.assignedTo);
             assignedUserIdRef.current = assignedUserId;
             assignedUserNameRef.current = assignedUserName || null;
-            const mapPriority = (priority: any): Request["priority"] => {
-              if (priority === 1 || priority === "1" || priority === "low") return "low";
-              if (priority === 2 || priority === "2" || priority === "medium") return "medium";
-              if (priority === 3 || priority === "3" || priority === "high") return "high";
-              if (priority === 4 || priority === "4" || priority === "urgent") return "urgent";
-              return selectedRequest.priority;
-            };
-
             const updatedRequest: Request = {
               ...selectedRequest,
               id: String(apiRequest.id ?? selectedRequest.id),
@@ -225,7 +257,7 @@ export default function RequestDetailsScreen() {
               buildingId: apiRequest.buildingId ? String(apiRequest.buildingId) : selectedRequest.buildingId,
               apartment: apiRequest.unitNumber ?? selectedRequest.apartment,
               floor: apiRequest.floorNumber != null ? String(apiRequest.floorNumber) : selectedRequest.floor,
-              buildingName: apiRequest.buildingName ?? resolvedBuildingName ?? selectedRequest.buildingName,
+              buildingName: apiRequest.buildingName ?? selectedRequest.buildingName,
               updatedAt: apiRequest.updatedAt ?? selectedRequest.updatedAt,
             };
 
@@ -268,7 +300,13 @@ export default function RequestDetailsScreen() {
     };
 
     fetchDetails();
-  }, [selectedRequest?.id, resolveCommentAuthor]);
+  }, [
+    actions,
+    currentUser?.profile?.buildingId,
+    isTenantUser,
+    resolveCommentAuthor,
+    selectedRequest,
+  ]);
 
   useEffect(() => {
     setDetailTab("overview");
@@ -282,8 +320,12 @@ export default function RequestDetailsScreen() {
     assignedUserIdRef.current = null;
     assignedUserNameRef.current = null;
     managerNamesRef.current = {};
-    setManagerNames({});
-  }, [selectedRequest?.id]);
+  }, [
+    selectedRequest?.id,
+    selectedRequest?.title,
+    selectedRequest?.description,
+    selectedRequest?.priority,
+  ]);
 
   // Resolve building name to mirror the welcome card display
   useEffect(() => {
@@ -371,53 +413,6 @@ export default function RequestDetailsScreen() {
 
   const isImageUri = (uri: string) => /\.(png|jpe?g|gif|webp|bmp)$/i.test(uri);
 
-  const resolveCommentAuthor = useCallback((comment: any): string => {
-    const commentUserIdRaw = comment.userId ?? comment.user?.userId ?? "";
-    const commentUserId = commentUserIdRaw ? String(commentUserIdRaw) : "";
-    const currentUserId =
-      currentUser?.id !== undefined && currentUser?.id !== null
-        ? String(currentUser.id)
-        : null;
-
-    const directName =
-      comment.user?.fullName ||
-      comment.user?.name ||
-      comment.user?.email ||
-      (typeof comment.author === "string"
-        ? comment.author
-        : comment.author?.fullName ||
-          comment.author?.name ||
-          comment.author?.email ||
-          null);
-
-    if (currentUserId && commentUserId && currentUserId === commentUserId) {
-      return (
-        (currentUser as any)?.name ||
-        (currentUser as any)?.fullName ||
-        currentUser?.email ||
-        "You"
-      );
-    }
-
-    const assignedId = assignedUserIdRef.current;
-    if (
-      assignedId &&
-      commentUserId &&
-      commentUserId === assignedId
-    ) {
-      return assignedUserNameRef.current || selectedRequest?.assignedTo || "Assigned";
-    }
-
-    const managerName = managerNamesRef.current[commentUserId];
-    if (managerName) {
-      return managerName;
-    }
-
-    if (directName) return String(directName);
-    if (comment.user?.userId) return `User ${comment.user.userId}`;
-    return "User";
-  }, [currentUser, selectedRequest?.assignedTo]);
-
   const getStatusColor = (status: Request["status"]) => {
     const colors = {
       pending: { bg: "#FEF3C7", text: "#92400E", border: "#FDE68A" },
@@ -496,6 +491,12 @@ export default function RequestDetailsScreen() {
         text: "#0369A1",
         border: "#BAE6FD",
       },
+      "follow-up": {
+        label: "Follow-up Required",
+        bg: "#FEF3C7",
+        text: "#92400E",
+        border: "#FDE68A",
+      },
       completed: {
         label: "Completed",
         bg: "#D1FAE5",
@@ -561,7 +562,7 @@ export default function RequestDetailsScreen() {
           text: "Approve",
           onPress: async () => {
             try {
-              await actions.reviewJobEstimateAsTenant?.(jobId, "approve");
+              await actions.reviewJobEstimateAsTenant?.(jobId, { decision: "approve" });
               Alert.alert("Estimate Approved", "Thank you for confirming.");
             } catch (error: any) {
               Alert.alert(
@@ -596,8 +597,7 @@ export default function RequestDetailsScreen() {
             try {
               await actions.reviewJobEstimateAsTenant?.(
                 jobId,
-                "decline",
-                reason.trim(),
+                { decision: "decline", notes: reason.trim() },
               );
               Alert.alert(
                 "Changes Requested",
@@ -1940,6 +1940,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#6B7280",
     marginTop: 2,
+  },
+  buildingName: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#374151",
+    marginTop: 4,
+  },
+  locationDetails: {
+    marginTop: 8,
+    gap: 6,
+  },
+  locationDetailRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  locationDetailLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#6B7280",
+  },
+  locationDetailValue: {
+    fontSize: 12,
+    color: "#374151",
   },
   headerActions: {
     flexDirection: "row",

@@ -21,7 +21,10 @@ import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
 import { getUserErrorMessage } from "../../lib/services/api/errors";
 import type { Building, BuildingAmenityConfig } from "../../lib/types";
-import { filterNotificationsByUser } from "../../lib/utils/helpers";
+import {
+  filterNotificationsByUser,
+  getUnreadNotificationsCount,
+} from "../../lib/utils/helpers";
 
 const MANAGEMENT_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
 
@@ -128,7 +131,8 @@ export default function ManagementAmenitiesScreen() {
     notifications || [],
     currentUser?.id,
   );
-  const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
+  const hasUnreadNotifications =
+    getUnreadNotificationsCount(userNotifications) > 0;
 
   const toggleAmenityStatus = async (config: BuildingAmenityConfig) => {
     const nextStatus = config.status === "active" ? "inactive" : "active";

@@ -21,7 +21,10 @@ import type {
   Building,
   BuildingEmployee
 } from "../../lib/types";
-import { filterNotificationsByUser } from "../../lib/utils/helpers";
+import {
+  filterNotificationsByUser,
+  getUnreadNotificationsCount,
+} from "../../lib/utils/helpers";
 
 const MANAGEMENT_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
 const SHIFT_SEQUENCE: NonNullable<BuildingEmployee["shift"]>[] = [
@@ -56,7 +59,6 @@ export default function WorkforceManagementScreen() {
   }[]>([]);
   const [isLoadingProviders, setIsLoadingProviders] = useState(false);
   const [managedBuildings, setManagedBuildings] = useState<Building[]>([]);
-  const [loadingBuildings, setLoadingBuildings] = useState(true);
 
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
   const isCompact = width < 900;
@@ -66,11 +68,8 @@ export default function WorkforceManagementScreen() {
   useEffect(() => {
     const fetchBuildings = async () => {
       if (!currentUser?.id) {
-        setLoadingBuildings(false);
         return;
       }
-
-      setLoadingBuildings(true);
       try {
         console.log("[Workforce] Fetching assigned buildings for manager:", currentUser.id);
         const response = await orgBuildingsApi.getAssignedBuildings();
@@ -124,7 +123,7 @@ export default function WorkforceManagementScreen() {
         console.error('[Workforce] Failed to fetch buildings:', error);
         setManagedBuildings([]);
       } finally {
-        setLoadingBuildings(false);
+        // no-op
       }
     };
 
@@ -185,14 +184,14 @@ export default function WorkforceManagementScreen() {
               assignmentType,
             };
           })
-          .filter(Boolean) as Array<{
+          .filter(Boolean) as {
           id: string;
           fullName: string;
           email: string;
           phoneNumber: string;
           isActive: boolean;
           assignmentType: string;
-        }>;
+        }[];
 
         const unique = Array.from(new Map(mapped.map((staff) => [staff.id, staff])).values());
         return {
@@ -328,7 +327,8 @@ export default function WorkforceManagementScreen() {
     notifications || [],
     currentUser?.id,
   );
-  const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
+  const hasUnreadNotifications =
+    getUnreadNotificationsCount(userNotifications) > 0;
 
   const buildingFilterOptions = useMemo(() => {
     const scope = isManagement ? managedBuildings : allBuildings;

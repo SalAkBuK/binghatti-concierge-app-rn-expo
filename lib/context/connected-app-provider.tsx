@@ -50,7 +50,7 @@ import {
   DEFAULT_ANALYTICS,
   DEFAULT_ROLE_PERMISSIONS,
 } from "../utils/mockData";
-import { generateId } from "../utils";
+import { generateId, getUnreadNotificationsCount } from "../utils";
 import { adminApi } from "../services/api/admin";
 
 interface ConnectedAppProviderProps {
@@ -965,11 +965,10 @@ export const useApp = () => {
 
       // Notification state
       notifications: notifications.notifications,
-      unreadCount: auth.currentUser
-        ? notifications.notifications.filter(
-            (n) => n.userId === auth.currentUser?.id && !n.read
-          ).length
-        : 0,
+      unreadCount: getUnreadNotificationsCount(
+        notifications.notifications,
+        auth.currentUser?.id,
+      ),
 
       // Notices state
       notices: notices.notices,
@@ -1057,8 +1056,8 @@ export const useApp = () => {
       markNotificationAsRead: notifications.actions.markNotificationAsRead,
       markAllNotificationsAsRead:
         notifications.actions.markAllNotificationsAsRead,
-      deleteNotification: notifications.actions.deleteNotification,
-      deleteAllNotifications: notifications.actions.deleteAllNotifications,
+      dismissNotification: notifications.actions.dismissNotification,
+      undismissNotification: notifications.actions.undismissNotification,
 
       // Notice actions
       createNotice: notices.actions.createNotice,
@@ -1206,8 +1205,6 @@ export const useApp = () => {
       getPermissionsByRole,
 
       // Management helpers
-      getManagedBuildingIds,
-      getManagedBuildings,
       getRequestsByBuilding,
       getBookingsByBuilding,
       getVisitorsByBuilding,

@@ -132,7 +132,7 @@ export type JobModuleActions = {
   ) => Promise<Job>;
   reviewJobEstimateAsProvider: (
     jobId: string,
-    decision: JobEstimateStatus,
+    decision: JobEstimateStatus | "approved" | "rejected",
     reason?: string,
   ) => Promise<Job>;
   approveTenantJobCompletion: (
@@ -145,7 +145,10 @@ export type JobModuleActions = {
   ) => Promise<Job>;
   reviewJobEstimateAsTenant: (
     jobId: string,
-    payload: { decision: JobEstimateStatus; notes?: string },
+    payload: {
+      decision: JobEstimateStatus | "approve" | "decline" | "approved" | "rejected";
+      notes?: string;
+    },
   ) => Promise<Job>;
 };
 
@@ -311,6 +314,7 @@ export const useJobModule = ({
             id: `job-${Date.now()}`,
             title: jobData.title,
             description: jobData.description,
+            type: jobData.type,
             buildingId: jobData.buildingId,
             buildingName: building.name,
             requestedBy: jobData.requestedBy,
@@ -326,6 +330,9 @@ export const useJobModule = ({
             assignedBuildingEmployeeId: buildingEmployeeAssignment?.id,
             assignedBuildingEmployeeName: buildingEmployeeAssignment?.name,
             assignmentTargetType,
+            createdBy: auth.currentUser!.id,
+            attachments: jobData.attachments ?? [],
+            notes: [],
             estimatedHours: jobData.estimatedHours,
             completionNotes: jobData.completionNotes,
             costBreakdown,
@@ -946,7 +953,7 @@ export const useJobModule = ({
                 updatedJob = {
                   ...job,
                   status: "in-progress",
-                  workStartedAt: new Date().toISOString(),
+                  startedAt: new Date().toISOString(),
                   updatedAt: new Date().toISOString(),
                 };
                 return updatedJob;
@@ -1275,15 +1282,12 @@ export const useJobModule = ({
           }
 
           // Send notification to employee
-          notifications.actions.addNotification({
-            id: `notif-emp-assign-${Date.now()}`,
-            type: "info",
-            title: "New Job Assignment",
-            message: `You have been assigned to: ${updatedJob.title}`,
-            userId: employeeId,
-            read: false,
-            createdAt: new Date().toISOString(),
-          });
+          notifications.actions.createNotification(
+            employeeId,
+            "New Job Assignment",
+            `You have been assigned to: ${updatedJob.title}`,
+            "info",
+          );
 
           resolve(updatedJob);
         }, 400);
@@ -1451,7 +1455,7 @@ export const useJobModule = ({
   const reviewJobEstimateAsProvider = useCallback(
     async (
       jobId: string,
-      decision: JobEstimateStatus,
+      decision: JobEstimateStatus | "approved" | "rejected",
       reason?: string,
     ): Promise<Job> => {
       if (!auth.currentUser || auth.currentUser.role !== "service_provider") {
@@ -1460,7 +1464,14 @@ export const useJobModule = ({
         );
       }
 
-      if (!["approved", "rejected"].includes(decision)) {
+      const normalizedDecision =
+        decision === "approved"
+          ? ("sp_approved" as JobEstimateStatus)
+          : decision === "rejected"
+            ? ("sp_rejected" as JobEstimateStatus)
+            : decision;
+
+      if (!["sp_approved", "sp_rejected"].includes(normalizedDecision)) {
         return Promise.reject(
           new Error("Invalid decision. Must be approved or rejected."),
         );
@@ -1481,20 +1492,23 @@ export const useJobModule = ({
                 ...job,
                 estimate: {
                   ...job.estimate,
-                  status: decision,
+                  status: normalizedDecision,
                   spApprovedBy:
-                    decision === "approved" ? auth.currentUser!.id : undefined,
+                    normalizedDecision === "sp_approved"
+                      ? auth.currentUser!.id
+                      : undefined,
                   spApprovedByName:
-                    decision === "approved"
+                    normalizedDecision === "sp_approved"
                       ? auth.currentUser!.name || auth.currentUser!.email || ""
                       : undefined,
                   spDecisionAt: now,
-                  rejectionReason: decision === "rejected" ? reason : undefined,
+                  rejectionReason:
+                    normalizedDecision === "sp_rejected" ? reason : undefined,
                 },
                 updatedAt: now,
               };
 
-              if (decision === "approved") {
+              if (normalizedDecision === "sp_approved") {
                 updatedJob.assignmentHistory = [
                   ...(job.assignmentHistory ?? []),
                   {

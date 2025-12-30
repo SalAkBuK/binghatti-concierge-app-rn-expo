@@ -18,6 +18,8 @@ import type { Notification } from "../../lib/types";
 import {
   filterNotificationsByUser,
   formatDateTime,
+  getNotificationBody,
+  isNotificationUnread,
 } from "../../lib/utils/helpers";
 
 const MANAGEMENT_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
@@ -40,7 +42,9 @@ export default function ActivityFeedScreen() {
     [notifications, currentUser?.id],
   );
 
-  const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
+  const hasUnreadNotifications = userNotifications.some((notif) =>
+    isNotificationUnread(notif),
+  );
 
   const timeline = useMemo(
     () =>
@@ -54,7 +58,7 @@ export default function ActivityFeedScreen() {
   );
 
   const markNotification = (notification: Notification) => {
-    if (notification.read) return;
+    if (!isNotificationUnread(notification)) return;
     actions.markNotificationAsRead(notification.id);
   };
 
@@ -215,7 +219,8 @@ export default function ActivityFeedScreen() {
                     <TouchableOpacity
                       style={[
                         styles.notificationItem,
-                        !notification.read && styles.notificationUnread,
+                        isNotificationUnread(notification) &&
+                          styles.notificationUnread,
                       ]}
                       onPress={() => markNotification(notification)}
                     >
@@ -231,13 +236,13 @@ export default function ActivityFeedScreen() {
                           {notification.title}
                         </Text>
                         <Text style={styles.notificationMessage}>
-                          {notification.message}
+                          {getNotificationBody(notification)}
                         </Text>
                         <Text style={styles.notificationFooter}>
                           {formatDateTime(notification.createdAt)}
                         </Text>
                       </View>
-                      {!notification.read && (
+                      {isNotificationUnread(notification) && (
                         <View style={styles.unreadDot} />
                       )}
                     </TouchableOpacity>

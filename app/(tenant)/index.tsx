@@ -25,7 +25,10 @@ import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
 import { residentRequestsApi } from "../../lib/services/api/resident-requests";
 import type { Request, RequestStatus } from "../../lib/types";
-import { filterNotificationsByUser } from "../../lib/utils/helpers";
+import {
+  filterNotificationsByUser,
+  getUnreadNotificationsCount,
+} from "../../lib/utils/helpers";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -178,7 +181,14 @@ export default function TenantHomeScreen() {
     };
 
     fetchResidentRequests();
-  }, [currentUser?.id, currentUser?.profile?.apartment, currentUser?.profile?.floor]);
+  }, [
+    currentUser?.id,
+    currentUser?.profile?.apartment,
+    currentUser?.profile?.floor,
+    currentUser?.profile?.buildingName,
+    currentUser?.profile?.phone,
+    currentUser?.profile?.tower,
+  ]);
 
   const recentRequests = useMemo(() => {
     return [...residentRequests]
@@ -199,7 +209,8 @@ export default function TenantHomeScreen() {
     notifications || [],
     currentUser?.id,
   );
-  const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
+  const hasUnreadNotifications =
+    getUnreadNotificationsCount(userNotifications) > 0;
 
   return (
     <SafeAreaView style={styles.container}>

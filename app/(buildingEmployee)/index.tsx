@@ -17,6 +17,7 @@ import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
 import { orgBuildingsApi } from "../../lib/services/api/org-buildings";
+import { getUnreadNotificationsCount } from "../../lib/utils/helpers";
 
 type MaintenanceRequest = {
   id: string;
@@ -43,7 +44,6 @@ export default function BuildingEmployeeDashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [assignedBuildings, setAssignedBuildings] = useState<BuildingAssignment[]>([]);
   const [maintenanceRequests, setMaintenanceRequests] = useState<MaintenanceRequest[]>([]);
-  const [myAssignedRequests, setMyAssignedRequests] = useState<MaintenanceRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -152,18 +152,15 @@ export default function BuildingEmployeeDashboard() {
           const allRequests = requestArrays.flat();
           console.log("[BuildingEmployee] All building requests fetched:", allRequests.length);
           setMaintenanceRequests(allRequests);
-          setMyAssignedRequests(allRequests);
         } else {
           console.log("[BuildingEmployee] No buildings assigned to this staff");
           setAssignedBuildings([]);
           setMaintenanceRequests([]);
-          setMyAssignedRequests([]);
         }
       } catch (error) {
         console.error("[BuildingEmployee] Failed to fetch dashboard data:", error);
         setAssignedBuildings([]);
         setMaintenanceRequests([]);
-        setMyAssignedRequests([]);
       } finally {
         console.log("[BuildingEmployee] Data fetch completed, setIsLoading(false)");
         setIsLoading(false);
@@ -209,7 +206,7 @@ export default function BuildingEmployeeDashboard() {
   const buildingName = assignedBuildings.length > 0 ? assignedBuildings[0].name : "Building";
 
   const hasUnreadNotifications =
-    notifications?.some((notification) => !notification.read) ?? false;
+    getUnreadNotificationsCount(notifications || []) > 0;
 
   const onRefresh = async () => {
     console.log('[BuildingEmployee] Refresh triggered');
@@ -277,11 +274,9 @@ export default function BuildingEmployeeDashboard() {
         const allRequests = requestArrays.flat();
         console.log('[BuildingEmployee] Refresh - building requests fetched:', allRequests.length);
         setMaintenanceRequests(allRequests);
-        setMyAssignedRequests(allRequests);
       } else {
         setAssignedBuildings([]);
         setMaintenanceRequests([]);
-        setMyAssignedRequests([]);
       }
     } catch (error) {
       console.error('[BuildingEmployee] Failed to refresh:', error);

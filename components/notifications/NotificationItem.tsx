@@ -3,12 +3,16 @@ import { View, Text, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { AnimatedButton } from "../ui/AnimatedButton";
 import type { Notification } from "../../lib/types";
+import {
+  getNotificationBody,
+  isNotificationUnread,
+} from "../../lib/utils/helpers";
 
 interface NotificationItemProps {
   notification: Notification;
   onPress?: (id: string) => void;
   onMarkAsRead?: (id: string) => void;
-  onDelete?: (id: string) => void;
+  onDismiss?: (id: string) => void;
 }
 
 const getTypeConfig = (type: Notification["type"]) => {
@@ -65,10 +69,11 @@ export function NotificationItem({
   notification,
   onPress,
   onMarkAsRead,
-  onDelete,
+  onDismiss,
 }: NotificationItemProps) {
   const config = getTypeConfig(notification.type);
-  const isUnread = !notification.read;
+  const isUnread = isNotificationUnread(notification);
+  const notificationBody = getNotificationBody(notification);
 
   return (
     <AnimatedButton
@@ -98,7 +103,7 @@ export function NotificationItem({
           </View>
 
           <Text style={styles.message} numberOfLines={2}>
-            {notification.message}
+            {notificationBody}
           </Text>
 
           <Text style={styles.time}>{formatTime(notification.createdAt)}</Text>
@@ -118,15 +123,15 @@ export function NotificationItem({
             </AnimatedButton>
           )}
 
-          {onDelete && (
+          {onDismiss && (
             <AnimatedButton
               style={styles.actionButton}
               onPress={(e) => {
                 e?.stopPropagation?.();
-                onDelete(notification.id);
+                onDismiss(notification.id);
               }}
             >
-              <Ionicons name="trash-outline" size={20} color="#EF4444" />
+              <Ionicons name="eye-off-outline" size={20} color="#EF4444" />
             </AnimatedButton>
           )}
         </View>

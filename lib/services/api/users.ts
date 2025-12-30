@@ -208,15 +208,14 @@ export class UsersApiService extends BaseApiService implements UsersApi {
    */
   async uploadAdminFile(file: FormData): Promise<ApiResponse<{ url: string }>> {
     try {
-      const response = await this.post<ApiResponse<{ url: string }>>(
-        API_ENDPOINTS.profile.admin.upload,
-        file,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-        }
-      );
+      const response = await this.request<ApiResponse<{ url: string }>>({
+        method: "POST",
+        url: API_ENDPOINTS.profile.admin.upload,
+        data: file,
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
       return response;
     } catch (error) {
       throw error;
@@ -267,15 +266,14 @@ export class UsersApiService extends BaseApiService implements UsersApi {
    */
   async uploadManagementFile(file: FormData): Promise<ApiResponse<{ url: string }>> {
     try {
-      const response = await this.post<ApiResponse<{ url: string }>>(
-        API_ENDPOINTS.profile.management.upload,
-        file,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-        }
-      );
+      const response = await this.request<ApiResponse<{ url: string }>>({
+        method: "POST",
+        url: API_ENDPOINTS.profile.management.upload,
+        data: file,
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
       return response;
     } catch (error) {
       throw error;
@@ -328,15 +326,14 @@ export class UsersApiService extends BaseApiService implements UsersApi {
    */
   async uploadTenantFile(file: FormData): Promise<ApiResponse<{ url: string }>> {
     try {
-      const response = await this.post<ApiResponse<{ url: string }>>(
-        API_ENDPOINTS.profile.tenant.upload,
-        file,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-        }
-      );
+      const response = await this.request<ApiResponse<{ url: string }>>({
+        method: "POST",
+        url: API_ENDPOINTS.profile.tenant.upload,
+        data: file,
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
       return response;
     } catch (error) {
       throw error;

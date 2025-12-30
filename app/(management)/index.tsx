@@ -26,6 +26,7 @@ import { orgBuildingsApi } from "../../lib/services/api/org-buildings";
 import type { Building, NotificationType, Request, RequestPriority, RequestStatus } from "../../lib/types";
 import {
   filterNotificationsByUser,
+  getUnreadNotificationsCount,
 } from "../../lib/utils/helpers";
 
 // Helper function to map backend status to frontend status
@@ -178,7 +179,8 @@ export default function ManagementDashboard() {
     notifications || [],
     currentUser?.id,
   );
-  const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
+  const hasUnreadNotifications =
+    getUnreadNotificationsCount(userNotifications) > 0;
 
   const mapAssignedBuildings = (payload: any[]): Building[] =>
     payload.map((building: any): Building => ({

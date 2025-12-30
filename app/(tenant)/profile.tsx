@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -21,9 +21,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
-import apiService from "../../lib/services/api";
+import { apiService } from "../../lib/services/api";
 import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
-import { filterNotificationsByUser } from "../../lib/utils/helpers";
+import {
+  filterNotificationsByUser,
+  getUnreadNotificationsCount,
+} from "../../lib/utils/helpers";
 import { APP_CONFIG } from "../../lib/utils/constants";
 
 interface ProfileFormData {
@@ -67,7 +70,8 @@ export default function ProfileScreen() {
     notifications || [],
     currentUser?.id,
   );
-  const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
+  const hasUnreadNotifications =
+    getUnreadNotificationsCount(userNotifications) > 0;
   const minPasswordLength = APP_CONFIG.validation.minPasswordLength;
 
   const validateForm = (): ValidationErrors => {
@@ -421,7 +425,7 @@ export default function ProfileScreen() {
         animationType="fade"
         transparent
         visible={showPasswordModal}
-        onRequestClose={handleClosePasswordModal}
+        onRequestClose={() => handleClosePasswordModal()}
       >
         <KeyboardAvoidingView
           style={styles.modalOverlay}
@@ -430,7 +434,7 @@ export default function ProfileScreen() {
           <TouchableOpacity
             style={styles.modalBackdrop}
             activeOpacity={1}
-            onPress={handleClosePasswordModal}
+            onPress={() => handleClosePasswordModal()}
           />
           <View style={styles.modalCard}>
             <LinearGradient
@@ -452,7 +456,7 @@ export default function ProfileScreen() {
               </View>
               <TouchableOpacity
                 style={styles.modalCloseButton}
-                onPress={handleClosePasswordModal}
+                onPress={() => handleClosePasswordModal()}
                 disabled={isResettingPassword}
               >
                 <Ionicons name="close" size={18} color="#fff" />
@@ -542,7 +546,7 @@ export default function ProfileScreen() {
               <View style={styles.modalActions}>
                 <TouchableOpacity
                   style={styles.modalSecondaryButton}
-                  onPress={handleClosePasswordModal}
+                  onPress={() => handleClosePasswordModal()}
                   disabled={isResettingPassword}
                 >
                   <Text style={styles.modalSecondaryText}>Cancel</Text>

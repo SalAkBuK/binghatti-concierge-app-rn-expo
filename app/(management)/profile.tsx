@@ -21,10 +21,13 @@ import { AttachmentPicker } from "../../components/ui/AttachmentPicker";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
-import apiService from "../../lib/services/api";
+import { apiService } from "../../lib/services/api";
 import type { UserProfile } from "../../lib/types";
 import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
-import { filterNotificationsByUser } from "../../lib/utils/helpers";
+import {
+  filterNotificationsByUser,
+  getUnreadNotificationsCount,
+} from "../../lib/utils/helpers";
 import { APP_CONFIG } from "../../lib/utils/constants";
 
 const MANAGEMENT_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
@@ -39,7 +42,8 @@ export default function ManagementProfileScreen() {
     notifications || [],
     currentUser?.id,
   );
-  const hasUnreadNotifications = userNotifications.some((notif) => !notif.read);
+  const hasUnreadNotifications =
+    getUnreadNotificationsCount(userNotifications) > 0;
 
   // Get managed buildings
   const managedBuildings = useMemo(() => {

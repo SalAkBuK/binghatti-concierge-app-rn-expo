@@ -24,7 +24,6 @@ void SplashScreen.preventAutoHideAsync();
 
 // Component to handle Android back button exit confirmation
 function ExitConfirmationHandler() {
-  const router = useRouter();
   const segments = useSegments();
 
   useEffect(() => {
@@ -44,13 +43,14 @@ function ExitConfirmationHandler() {
           segments[0] === "(buildingEmployee)";
 
         // Treat as "home" only when at portal root or its index tab (not deep screens)
+        const secondSegment = segments[1] as string | undefined;
         const isAtPortalHome =
           isPortal &&
           (segments.length === 1 ||
             (segments.length === 2 &&
-              (segments[1] === undefined ||
-                segments[1] === "index" ||
-                segments[1] === "")));
+              (secondSegment === undefined ||
+                secondSegment === "index" ||
+                secondSegment === "")));
 
         if (isAtPortalHome) {
           // Show confirmation dialog

@@ -6,13 +6,24 @@ export interface User {
   id: string;
   email: string;
   name: string;
+  fullName?: string;
   role:
     | "tenant"
     | "management"
-    | "building_employee";
+    | "building_employee"
+    | "admin"
+    | "super_admin"
+    | "service_provider"
+    | "employee";
   mustChangePassword?: boolean;
   phone?: string;
+  phoneNumber?: string;
   status?: UserStatus;
+  roleKey?: string;
+  roleName?: string;
+  userRole?: string;
+  type?: string;
+  roles?: Array<{ roleName?: string; key?: string; name?: string }>;
   profile?: UserProfile;
   profileCompleted?: boolean; // Track if user has completed initial profile setup
   createdAt: string;
@@ -26,6 +37,8 @@ export interface UserProfile {
   tower?: string;
   floor?: string;
   buildingName?: string;
+  department?: string;
+  bio?: string;
   emergencyContact?: string;
   emergencyPhone?: string;
   avatar?: string;
@@ -160,6 +173,7 @@ export interface RequestComment {
   userId: string;
   userName: string;
   message: string;
+  body?: string;
   createdAt: string;
   channel?: RequestMessageChannel;
   attachments?: string[];
@@ -185,11 +199,15 @@ export interface OrgBuildingRequestComment {
 
 export interface Notification {
   id: string;
-  userId: string;
+  userId?: string;
   title: string;
-  message: string;
+  message?: string;
+  body?: string;
+  data?: Record<string, any>;
   type: "info" | "success" | "warning" | "error";
-  read: boolean;
+  read?: boolean;
+  readAt?: string | null;
+  dismissedAt?: string | null;
   createdAt: string;
 }
 
@@ -218,6 +236,11 @@ export interface AuthResponse {
   accessToken?: string;
   refreshToken?: string;
   user?: User;
+  data?: {
+    accessToken?: string;
+    refreshToken?: string;
+    user?: User;
+  } & Record<string, any>;
   success?: boolean;
   message?: string;
 }
@@ -384,8 +407,8 @@ export interface NotificationActions {
   ) => Notification;
   markNotificationAsRead: (id: string) => Promise<void>;
   markAllNotificationsAsRead: (userId?: string) => Promise<void>;
-  deleteNotification: (id: string) => Promise<void>;
-  deleteAllNotifications: () => Promise<void>;
+  dismissNotification: (id: string) => Promise<void>;
+  undismissNotification: (id: string) => Promise<void>;
 }
 
 // Amenity types
@@ -898,6 +921,7 @@ export interface ServiceProviderBuildingAssignment {
   assignedBy: string; // admin/management user ID
   assignedByName?: string;
   assignedAt: string;
+  updatedAt?: string;
   status: "active" | "suspended" | "revoked";
   specialties: string[]; // What services they offer at this building
   notes?: string;
@@ -942,7 +966,7 @@ export interface RatingSummary {
   id: string;
   entityId: string;
   entityName: string;
-  role: "building_employee";
+  role: "building_employee" | "service_provider";
   averageRating: number;
   reviewsCount: number;
   lastReviewDate?: string;
@@ -954,7 +978,13 @@ export interface Job {
   title: string;
   description: string;
   type: RequestType;
-  status: "pending" | "assigned" | "in-progress" | "completed" | "cancelled";
+  status:
+    | "pending"
+    | "assigned"
+    | "in-progress"
+    | "completed"
+    | "cancelled"
+    | "follow-up";
   priority: RequestPriority;
   buildingId: string;
   buildingName?: string;
@@ -973,17 +1003,25 @@ export interface Job {
   declinedBy?: string;
   declineReason?: string;
   acceptanceNotes?: string;
+  requestedBy?: string;
+  requestedByName?: string;
   createdBy: string; // Admin or system
   attachments: string[];
   notes: JobNote[];
+  estimatedHours?: number;
   estimatedCost?: number;
   actualCost?: number;
   scheduledDate?: string;
   completedDate?: string;
+  completedAt?: string;
   costBreakdown?: JobCostBreakdownItem[];
   complianceChecklist?: JobComplianceChecklistItem[];
   assignmentHistory: JobAssignmentRecord[];
   assignmentQueue?: JobAssignmentRecord[];
+  cancelledReason?: string;
+  completionSummary?: string;
+  completionAttachments?: string[];
+  photos?: Array<{ id: string; uri: string; uploadedAt: string; uploadedBy: string }>;
   // Employee workflow fields
   completionPhotos?: JobCompletionPhoto[]; // Photos uploaded by employee when completing job
   additionalCosts?: JobAdditionalCost[]; // Additional costs added by employee (requires SP approval)
@@ -1253,6 +1291,11 @@ export interface CreateUserDTO {
   // Client-side only fields (not sent to backend, managed by mapper)
   apartment?: string;         // Kept for frontend logic (backend doesn't support yet)
   tower?: string;             // Kept for frontend logic (backend doesn't support yet)
+  name?: string;
+  phone?: string;
+  floor?: string;
+  emergencyContact?: string;
+  emergencyPhone?: string;
   profile?: {                 // Extended profile (backend doesn't support yet)
     apartment?: string;
     tower?: string;
@@ -1370,11 +1413,19 @@ export interface CreateJobDTO {
   assignmentTargetType?: Job["assignmentTargetType"];
   assignedBuildingEmployeeId?: string;
   assignedBuildingEmployeeName?: string;
+  assignedEmployeeId?: string;
+  assignedEmployeeName?: string;
   attachments?: string[];
+  status?: Job["status"];
   estimatedCost?: number;
+  estimatedHours?: number;
   scheduledDate?: string;
   costBreakdown?: CreateJobCostItemDTO[];
   complianceChecklist?: CreateJobChecklistItemDTO[];
+  requestedBy?: string;
+  requestedByName?: string;
+  completionNotes?: string;
+  assignmentQueue?: JobAssignmentRecord[];
 }
 
 export interface UpdateJobDTO {
