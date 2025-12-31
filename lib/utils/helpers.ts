@@ -142,8 +142,11 @@ export const normalizeNotification = (
   notification: Notification,
 ): Notification => {
   const body = getNotificationBody(notification);
+  const normalizedUserId =
+    notification.userId != null ? String(notification.userId) : undefined;
   return {
     ...notification,
+    userId: normalizedUserId,
     body: notification.body ?? body,
     message: notification.message || body,
     read: isNotificationRead(notification),
@@ -165,8 +168,7 @@ export const filterNotificationsByUser = (
   if (!notifications || !Array.isArray(notifications)) return [];
   return notifications.filter((notification) => {
     if (isNotificationDismissed(notification)) return false;
-    if (!userId) return true;
-    return !notification.userId || notification.userId === userId;
+    return true;
   });
 };
 
@@ -176,13 +178,7 @@ export const getUnreadNotificationsCount = (
   userId?: string,
 ): number => {
   if (!notifications || !Array.isArray(notifications)) return 0;
-  const scopedNotifications = userId
-    ? notifications.filter(
-        (notification) =>
-          !notification.userId || notification.userId === userId,
-      )
-    : notifications;
-  return scopedNotifications.filter(
+  return notifications.filter(
     (notification) =>
       !isNotificationDismissed(notification) &&
       isNotificationUnread(notification),

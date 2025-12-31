@@ -52,7 +52,7 @@ export default function BuildingEmployeeAmenitiesScreen() {
   }, [bookings, selectedFilter]);
 
   const hasUnreadNotifications =
-    getUnreadNotificationsCount(notifications || []) > 0;
+    getUnreadNotificationsCount(notifications || [], currentUser?.id) > 0;
 
   const onRefresh = async () => {
     setRefreshing(true);

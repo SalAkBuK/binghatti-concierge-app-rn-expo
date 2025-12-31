@@ -48,6 +48,11 @@ interface NotificationsActions {
     type?: Notification["type"],
     users?: Record<string, User>,
   ) => void;
+  refreshNotifications: (options?: {
+    unreadOnly?: boolean;
+    read?: boolean;
+    limit?: number;
+  }) => Promise<void>;
   markNotificationAsRead: (notificationId: string) => Promise<void>;
   markAllNotificationsAsRead: (userId?: string) => Promise<void>;
   dismissNotification: (notificationId: string) => Promise<void>;
@@ -113,7 +118,18 @@ const mergeNotifications = (
   );
 };
 
-const coerceNotificationPayload = (payload: any): Notification => {
+const coerceNotificationPayload = (
+  payload: any,
+  fallbackUserId?: string,
+): Notification => {
+  const resolvedUserId =
+    payload?.userId ??
+    payload?.user_id ??
+    payload?.recipientUserId ??
+    payload?.recipientId ??
+    payload?.recipient?.id;
+  const normalizedUserId =
+    resolvedUserId != null ? String(resolvedUserId) : fallbackUserId;
   const message =
     typeof payload?.message === "string"
       ? payload.message
@@ -123,7 +139,7 @@ const coerceNotificationPayload = (payload: any): Notification => {
 
   return normalizeNotification({
     id: String(payload?.id ?? ""),
-    userId: payload?.userId,
+    userId: normalizedUserId,
     title: payload?.title || "Notification",
     message,
     body: payload?.body ?? message,
@@ -283,7 +299,7 @@ interface NotificationsProviderProps {
 export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
   children,
 }) => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, currentUser } = useAuth();
   const appState = useRef(AppState.currentState);
   const fallbackAttemptedRef = useRef(false);
   const lastTokenRef = useRef<string | null>(null);
@@ -307,26 +323,55 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
     }
   }, [state.notifications, setNotifications]);
 
-  const refreshUnreadNotifications = useCallback(async () => {
+  const refreshNotifications = useCallback(async (options?: {
+    unreadOnly?: boolean;
+    read?: boolean;
+    limit?: number;
+  }) => {
+    const requestOptions = {
+      ...(options?.unreadOnly === true ? { unreadOnly: true } : {}),
+      read: options?.read,
+      limit: options?.limit ?? 50,
+    };
     dispatch({ type: NOTIFICATIONS_ACTIONS.SET_LOADING, payload: true });
     try {
+      if (__DEV__) {
+        console.log("[Notifications] Refreshing notifications", {
+          unreadOnly: requestOptions.unreadOnly ?? "all",
+          read: requestOptions.read,
+          limit: requestOptions.limit,
+        });
+      }
       const response = await apiService.notifications.getNotifications({
-        unreadOnly: true,
-        limit: 50,
+        unreadOnly: requestOptions.unreadOnly,
+        read: requestOptions.read,
+        limit: requestOptions.limit,
       });
       const payload = Array.isArray(response)
         ? response
         : Array.isArray(response?.data)
           ? response.data
-          : [];
+          : Array.isArray(response?.items)
+            ? response.items
+            : [];
+      if (__DEV__) {
+        console.log("[Notifications] Notifications response", {
+          count: payload.length,
+          sampleId: payload[0]?.id,
+          sampleType: payload[0]?.type,
+        });
+      }
       const normalizedPayload = payload
-        .map(coerceNotificationPayload)
+        .map((item) => coerceNotificationPayload(item, currentUser?.id))
         .filter((notification) => notification.id);
       dispatch({
         type: NOTIFICATIONS_ACTIONS.UPSERT_NOTIFICATIONS,
         payload: normalizedPayload,
       });
     } catch (error) {
+      if (__DEV__) {
+        console.log("[Notifications] Notifications refresh failed", error);
+      }
       dispatch({
         type: NOTIFICATIONS_ACTIONS.SET_ERROR,
         payload: "Failed to fetch notifications",
@@ -346,22 +391,35 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
 
     const attachHandlers = (socket: ReturnType<typeof connectNotifications>) => {
       socket.off("connect").on("connect", () => {
-        refreshUnreadNotifications();
+        if (__DEV__) {
+          console.log("[Notifications] socket connected");
+        }
+        refreshNotifications();
       });
 
       socket.off("notifications:hello").on("notifications:hello", () => {
-        refreshUnreadNotifications();
+        if (__DEV__) {
+          console.log("[Notifications] notifications:hello");
+        }
+        refreshNotifications();
       });
 
       socket.off("notifications:new").on("notifications:new", (payload: any) => {
         if (!payload?.id) return;
+        if (__DEV__) {
+          console.log("[Notifications] notifications:new payload:", payload);
+        }
+        const normalized = coerceNotificationPayload(payload, currentUser?.id);
         dispatch({
           type: NOTIFICATIONS_ACTIONS.UPSERT_NOTIFICATIONS,
-          payload: [coerceNotificationPayload(payload)],
+          payload: [normalized],
         });
       });
 
       socket.off("notifications:read").on("notifications:read", (payload: any) => {
+        if (__DEV__) {
+          console.log("[Notifications] notifications:read payload:", payload);
+        }
         dispatch({
           type: NOTIFICATIONS_ACTIONS.MARK_NOTIFICATION_READ,
           payload: { id: payload?.id, readAt: payload?.readAt },
@@ -371,6 +429,9 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
       socket
         .off("notifications:read_all")
         .on("notifications:read_all", (payload: any) => {
+          if (__DEV__) {
+            console.log("[Notifications] notifications:read_all payload:", payload);
+          }
           dispatch({
             type: NOTIFICATIONS_ACTIONS.MARK_ALL_NOTIFICATIONS_READ,
             payload: { readAt: payload?.readAt },
@@ -380,6 +441,9 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
       socket
         .off("notifications:dismiss")
         .on("notifications:dismiss", (payload: any) => {
+          if (__DEV__) {
+            console.log("[Notifications] notifications:dismiss payload:", payload);
+          }
           dispatch({
             type: NOTIFICATIONS_ACTIONS.DISMISS_NOTIFICATION,
             payload: { id: payload?.id, dismissedAt: payload?.dismissedAt },
@@ -389,6 +453,9 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
       socket
         .off("notifications:undismiss")
         .on("notifications:undismiss", (payload: any) => {
+          if (__DEV__) {
+            console.log("[Notifications] notifications:undismiss payload:", payload);
+          }
           dispatch({
             type: NOTIFICATIONS_ACTIONS.UNDISMISS_NOTIFICATION,
             payload: { id: payload?.id },
@@ -404,11 +471,30 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
         fallbackAttemptedRef.current = false;
       }
 
+      const orgId = currentUser?.orgId;
+      if (__DEV__) {
+        const tokenPreview = `${token.slice(0, 6)}...${token.slice(-4)}`;
+        console.log("[Notifications] Connecting socket", {
+          hasToken: Boolean(token),
+          hasOrgId: Boolean(orgId),
+          useQueryAuth,
+          tokenPreview,
+          orgId,
+        });
+      }
       lastTokenRef.current = token;
-      const socket = connectNotifications(token, { useQueryAuth });
+      const socket = connectNotifications(token, { useQueryAuth, orgId });
       attachHandlers(socket);
 
-      socket.off("connect_error").on("connect_error", () => {
+      socket.off("connect_error").on("connect_error", (error: any) => {
+        if (__DEV__) {
+          console.log("[Notifications] socket connect_error", {
+            message: error?.message,
+            data: error?.data,
+            description: error?.description,
+            type: error?.type,
+          });
+        }
         if (useQueryAuth) return;
         if (fallbackAttemptedRef.current) return;
         if (!lastTokenRef.current) return;
@@ -417,16 +503,19 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
         disconnectNotifications();
         const fallbackSocket = connectNotifications(lastTokenRef.current, {
           useQueryAuth: true,
+          orgId,
         });
         attachHandlers(fallbackSocket);
       });
     };
 
     connectSocket();
+    refreshNotifications();
 
     const subscription = AppState.addEventListener("change", (nextState) => {
       if (appState.current.match(/inactive|background/) && nextState === "active") {
         connectSocket();
+        refreshNotifications();
       } else if (nextState.match(/inactive|background/)) {
         disconnectNotifications();
       }
@@ -438,7 +527,7 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
       subscription.remove();
       disconnectNotifications();
     };
-  }, [appState, isAuthenticated, refreshUnreadNotifications]);
+  }, [appState, isAuthenticated, refreshNotifications]);
 
   // Action Creators
   const actions: NotificationsActions = {
@@ -473,6 +562,9 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
           actions.createNotification(user.id, title, message, type);
         }
       });
+    },
+    refreshNotifications: async (options) => {
+      await refreshNotifications(options);
     },
 
     markNotificationAsRead: async (notificationId: string) => {

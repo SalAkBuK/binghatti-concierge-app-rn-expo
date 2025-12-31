@@ -99,6 +99,8 @@ export default function NewRequestScreen() {
     {},
   );
   const [attachments, setAttachments] = useState<string[]>([]);
+  const [isUploadingAttachments, setIsUploadingAttachments] =
+    useState<boolean>(false);
   const [showSideMenu, setShowSideMenu] = useState(false);
 
   const userNotifications = filterNotificationsByUser(
@@ -373,12 +375,13 @@ export default function NewRequestScreen() {
             <TouchableOpacity
               style={[
                 styles.submitButton,
-                (isSubmitting || loading) && styles.submitButtonDisabled,
+                (isSubmitting || loading || isUploadingAttachments) &&
+                  styles.submitButtonDisabled,
               ]}
               onPress={handleSubmit}
-              disabled={isSubmitting || loading}
+              disabled={isSubmitting || loading || isUploadingAttachments}
             >
-              {isSubmitting || loading ? (
+              {isSubmitting || loading || isUploadingAttachments ? (
                 <ActivityIndicator color="white" />
               ) : (
                 <>

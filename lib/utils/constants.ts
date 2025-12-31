@@ -55,6 +55,7 @@ export const PRIORITY_COLORS: Record<RequestPriority, string> = {
 export const STORAGE_KEYS = {
   users: "binghatti_users",
   requests: "binghatti_requests",
+  resident_requests: "binghatti_resident_requests",
   notifications: "binghatti_notifications",
   notices: "binghatti_notices",
   auth_token: "binghatti_auth_token",
@@ -167,7 +168,7 @@ export const API_ENDPOINTS = {
 // App configuration
 export const APP_CONFIG = {
   api: {
-    baseUrl: "http://13.50.241.81/api",
+    baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://13.50.241.81/api",
     timeout: 10000,
     adminLoginUrl: "http://13.50.241.81/api/auth/login",
   },

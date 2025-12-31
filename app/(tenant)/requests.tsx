@@ -1,8 +1,7 @@
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
-import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Dimensions,
   Alert,
@@ -24,7 +23,7 @@ import { HeaderBar } from "../../components/ui/HeaderBar";
 import { RequestsScreenSkeleton } from "../../components/ui/RequestsScreenSkeleton";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
-import { residentRequestsApi } from "../../lib/services/api/resident-requests";
+import { useResidentRequests } from "../../lib/hooks/useResidentRequests";
 import type { Job, Request, RequestStatus } from "../../lib/types";
 import {
   filterNotificationsByUser,
@@ -36,84 +35,6 @@ const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 type FilterStatus = "all" | RequestStatus;
 
-// Map backend status codes to frontend statuses
-const mapStatusFromBackend = (status: any): RequestStatus => {
-  const numeric = Number(status);
-  if (!Number.isNaN(numeric)) {
-    switch (numeric) {
-      case 1:
-        return "pending";
-      case 2:
-      case 3:
-        return "in-progress";
-      case 4:
-        return "on-hold";
-      case 5:
-        return "completed";
-      case 6:
-        return "cancelled";
-      default:
-        return "pending";
-    }
-  }
-
-  const normalized = String(status || "")
-    .toUpperCase()
-    .replace(/[\s-]/g, "_");
-
-  if (normalized === "OPEN") return "pending";
-  if (normalized === "ASSIGNED" || normalized === "IN_PROGRESS") {
-    return "in-progress";
-  }
-  if (normalized === "COMPLETED") return "completed";
-  if (normalized === "CANCELED" || normalized === "CANCELLED") return "cancelled";
-  return "pending";
-};
-
-// Map backend priority to frontend priority string
-const mapPriorityFromBackend = (priority: any): Request["priority"] => {
-  const numeric = Number(priority);
-  if (!Number.isNaN(numeric)) {
-    switch (numeric) {
-      case 1:
-        return "low";
-      case 2:
-        return "medium";
-      case 3:
-        return "high";
-      case 4:
-        return "urgent";
-      default:
-        return "medium";
-    }
-  }
-
-  const normalized = String(priority || "").toUpperCase();
-  if (normalized === "LOW") return "low";
-  if (normalized === "MEDIUM") return "medium";
-  if (normalized === "HIGH") return "high";
-  if (normalized === "URGENT") return "urgent";
-  return "medium";
-};
-
-const mapTypeFromBackend = (type: any): Request["type"] => {
-  const normalized = String(type || "").toUpperCase();
-  switch (normalized) {
-    case "CLEANING":
-      return "cleaning";
-    case "ELECTRICAL":
-      return "electrical";
-    case "MAINTENANCE":
-      return "maintenance";
-    case "PLUMBING_AC_HEATING":
-      return "hvac";
-    case "OTHER":
-      return "other";
-    default:
-      return "maintenance";
-  }
-};
-
 const getRequestTimestamp = (request: Request): number => {
   const timestamp = request.createdAt || request.updatedAt || "";
   const parsed = Date.parse(timestamp);
@@ -124,112 +45,20 @@ export default function RequestsScreen() {
   const { currentUser, notifications, actions, jobs } = useApp();
   const params = useLocalSearchParams<{ requestId?: string }>();
   const handledRequestIdRef = useRef<string | null>(null);
-  const [refreshing, setRefreshing] = useState<boolean>(false);
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
-  const [isLoading, setIsLoading] = useState(true);
   const [showSideMenu, setShowSideMenu] = useState(false);
-  const [backendRequests, setBackendRequests] = useState<Request[]>([]);
   const tabBarHeight = useBottomTabBarHeight();
+  const {
+    requests: backendRequests,
+    isLoading,
+    isRefreshing,
+    refreshRequests,
+  } = useResidentRequests({ currentUser, notifications });
 
   // Pagination state
   const [page, setPage] = useState(1);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const REQUESTS_PER_PAGE = 10;
-
-  // Shared function to fetch and map requests
-  const fetchRequests = useCallback(async (showLoadingState = true) => {
-    if (!currentUser?.id) {
-      if (showLoadingState) setIsLoading(false);
-      return;
-    }
-
-    if (showLoadingState) setIsLoading(true);
-
-    try {
-      console.log("[Requests] Fetching resident requests for tenant:", currentUser.id);
-      const response = await residentRequestsApi.getRequests();
-      console.log("[Requests] Resident requests response:", response);
-      const items = Array.isArray(response)
-        ? response
-        : Array.isArray(response?.data)
-          ? response.data
-          : Array.isArray((response as any)?.items)
-            ? (response as any).items
-            : [];
-      console.log("[Requests] Resident requests items:", items.length);
-
-      if (items.length > 0) {
-        // Map backend data to frontend Request type
-        const mappedRequests: Request[] = items.map((item: any) => ({
-          id: String(item.id),
-          tenantId: currentUser.id,
-          title: item.title || "Untitled Request",
-          description: item.description || "",
-          type: mapTypeFromBackend(item.type),
-          status: mapStatusFromBackend(item.status),
-          priority: mapPriorityFromBackend(item.priority),
-          assignedTo:
-            item.assignedTo?.name ||
-            item.assignedTo?.fullName ||
-            item.assignedTo?.email ||
-            item.assignedTo ||
-            undefined,
-          buildingId: item.buildingId ? String(item.buildingId) : undefined,
-          apartment: item.unit?.label || currentUser?.profile?.apartment || "",
-          floor:
-            item.unit?.floor != null
-              ? String(item.unit.floor)
-              : currentUser?.profile?.floor || "",
-          contactPhone: currentUser?.profile?.phone || "",
-          preferredTime: "",
-          additionalNotes: "",
-          attachments: Array.isArray(item.attachments)
-            ? item.attachments
-                .map((att: any) => att?.url || att?.fileUrl || att?.uri || null)
-                .filter(Boolean)
-            : [],
-          comments: [],
-          messages: [],
-          notes: [],
-          timeline: [],
-          createdAt: item.createdAt || new Date().toISOString(),
-          updatedAt: item.updatedAt || item.createdAt || new Date().toISOString(),
-          _source: "backend" as const, // Mark as backend request to differentiate from mock data
-        }));
-
-        console.log('[Requests] Fetched and mapped requests:', mappedRequests.length);
-        setBackendRequests(mappedRequests);
-      } else {
-        setBackendRequests([]);
-      }
-    } catch (error) {
-      console.error('[Requests] Failed to fetch requests:', error);
-      // Continue with empty list on error
-      setBackendRequests([]);
-    } finally {
-      if (showLoadingState) setIsLoading(false);
-    }
-  }, [
-    currentUser?.id,
-    currentUser?.profile?.apartment,
-    currentUser?.profile?.floor,
-    currentUser?.profile?.phone,
-  ]);
-
-  // Initial fetch on mount with loading state
-  useEffect(() => {
-    fetchRequests(true);
-  }, [fetchRequests]);
-
-  // Fetch requests when screen comes into focus (after initial mount)
-  useFocusEffect(
-    useCallback(() => {
-      // Only refresh if not initial mount (isLoading would be false after first fetch)
-      if (!isLoading) {
-        fetchRequests(false); // Don't show loading spinner on focus refresh
-      }
-    }, [fetchRequests, isLoading])
-  );
 
   // Filter requests from backend
   const allUserRequests = useMemo(() => {
@@ -283,10 +112,8 @@ export default function RequestsScreen() {
   const onRefresh = async (): Promise<void> => {
     if (!currentUser?.id) return;
 
-    setRefreshing(true);
     setPage(1); // Reset pagination on refresh
-    await fetchRequests(false); // Use shared fetch function
-    setRefreshing(false);
+    await refreshRequests({ asRefresh: true, reason: "manual" });
   };
 
   const loadMoreRequests = () => {
@@ -694,7 +521,7 @@ export default function RequestsScreen() {
           { paddingBottom: tabBarHeight + 32 }
         ]}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
         }
         onEndReached={loadMoreRequests}
         onEndReachedThreshold={0.5}

@@ -24,6 +24,7 @@ export interface User {
   userRole?: string;
   type?: string;
   roles?: Array<{ roleName?: string; key?: string; name?: string }>;
+  orgId?: string;
   profile?: UserProfile;
   profileCompleted?: boolean; // Track if user has completed initial profile setup
   createdAt: string;

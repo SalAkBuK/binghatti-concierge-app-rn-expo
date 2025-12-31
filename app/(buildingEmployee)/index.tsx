@@ -206,7 +206,7 @@ export default function BuildingEmployeeDashboard() {
   const buildingName = assignedBuildings.length > 0 ? assignedBuildings[0].name : "Building";
 
   const hasUnreadNotifications =
-    getUnreadNotificationsCount(notifications || []) > 0;
+    getUnreadNotificationsCount(notifications || [], currentUser?.id) > 0;
 
   const onRefresh = async () => {
     console.log('[BuildingEmployee] Refresh triggered');

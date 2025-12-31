@@ -42,17 +42,15 @@ export function NotificationsList({
   loading = false,
 }: NotificationsListProps) {
   const [refreshing, setRefreshing] = useState(false);
-
   // Filter notifications for current user
   const userNotifications = useMemo(() => {
     return notifications
       .filter((notif) => !isNotificationDismissed(notif))
-      .filter((notif) => !notif.userId || notif.userId === userId)
       .sort(
         (a, b) =>
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       );
-  }, [notifications, userId]);
+  }, [notifications]);
 
   const unreadCount = useMemo(() => {
     return userNotifications.filter(isNotificationUnread).length;

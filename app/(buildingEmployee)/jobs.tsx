@@ -273,7 +273,7 @@ export default function BuildingEmployeeJobsScreen() {
   }, [assignedJobs, selectedStatus]);
 
   const hasUnreadNotifications =
-    getUnreadNotificationsCount(notifications || []) > 0;
+    getUnreadNotificationsCount(notifications || [], currentUser?.id) > 0;
 
   const stats = useMemo(
     () => ({

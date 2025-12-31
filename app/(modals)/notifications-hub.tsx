@@ -83,10 +83,7 @@ export default function NotificationsHubScreen() {
   };
 
   const handleRefresh = async () => {
-    // Simulate refresh - in real app you'd fetch from API
-    return new Promise<void>((resolve) => {
-      setTimeout(resolve, 1000);
-    });
+    await actions.refreshNotifications?.();
   };
 
   const handleNotificationPress = (notification: Notification) => {

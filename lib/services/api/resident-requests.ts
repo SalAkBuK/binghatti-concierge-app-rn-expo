@@ -43,7 +43,12 @@ export class ResidentRequestsApiService extends BaseApiService {
   async createRequest(
     payload: CreateResidentRequestDTO,
   ): Promise<ApiResponse<any>> {
-    return this.post<ApiResponse<any>>(API_ENDPOINTS.residentRequests.list, payload);
+    return this.request<ApiResponse<any>>({
+      method: "POST",
+      url: API_ENDPOINTS.residentRequests.list,
+      data: payload,
+      timeout: 30000,
+    });
   }
 
   async updateRequest(

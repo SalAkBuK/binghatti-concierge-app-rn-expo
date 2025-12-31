@@ -7,20 +7,30 @@ const WS_BASE_URL =
 
 let socket: Socket | null = null;
 
+const buildQueryParams = (token: string, orgId?: string | null) => {
+  const params = [`token=${encodeURIComponent(token)}`];
+  if (orgId) {
+    params.push(`orgId=${encodeURIComponent(orgId)}`);
+  }
+  return params.join("&");
+};
+
 export const connectNotifications = (
   token: string,
-  options?: { useQueryAuth?: boolean },
+  options?: { useQueryAuth?: boolean; orgId?: string | null },
 ) => {
   if (socket) return socket;
 
   const useQueryAuth = Boolean(options?.useQueryAuth);
+  const orgId = options?.orgId ?? null;
   const url = useQueryAuth
-    ? `${WS_BASE_URL}/notifications?token=${encodeURIComponent(token)}`
+    ? `${WS_BASE_URL}/notifications?${buildQueryParams(token, orgId)}`
     : `${WS_BASE_URL}/notifications`;
 
   socket = io(url, {
-    transports: ["websocket"],
-    ...(useQueryAuth ? {} : { auth: { token } }),
+    transports: ["polling"],
+    upgrade: false,
+    ...(useQueryAuth ? {} : { auth: { token, ...(orgId ? { orgId } : {}) } }),
   });
 
   return socket;

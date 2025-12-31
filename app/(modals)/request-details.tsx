@@ -57,6 +57,12 @@ export default function RequestDetailsScreen() {
   const [showImageViewer, setShowImageViewer] = useState(false);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const isTenantUser = currentUser?.role === "tenant";
+  const actionsRef = useRef(actions);
+  const lastDetailsFetchRef = useRef<{ id: string | null; fetched: boolean; inFlight: boolean }>({
+    id: null,
+    fetched: false,
+    inFlight: false,
+  });
 
   // Check if this is a backend request (don't show jobs for backend requests)
   const isBackendRequest = (selectedRequest as any)?._source === "backend";
@@ -111,10 +117,27 @@ export default function RequestDetailsScreen() {
     if (comment.user?.userId) return `User ${comment.user.userId}`;
     return "User";
   }, [currentUser, selectedRequest?.assignedTo]);
+  const resolveCommentAuthorRef = useRef(resolveCommentAuthor);
+
+  useEffect(() => {
+    resolveCommentAuthorRef.current = resolveCommentAuthor;
+  }, [resolveCommentAuthor]);
+
+  useEffect(() => {
+    actionsRef.current = actions;
+  }, [actions]);
 
   useEffect(() => {
     const fetchDetails = async () => {
       if (!selectedRequest?.id) return;
+      const requestId = String(selectedRequest.id);
+      const lastFetch = lastDetailsFetchRef.current;
+      if (lastFetch.id !== requestId) {
+        lastFetch.id = requestId;
+        lastFetch.fetched = false;
+      }
+      if (lastFetch.inFlight || lastFetch.fetched) return;
+      lastFetch.inFlight = true;
       setFetchingDetails(true);
       try {
         if (!isTenantUser) {
@@ -191,7 +214,7 @@ export default function RequestDetailsScreen() {
               updatedAt: apiRequest.updatedAt ?? selectedRequest.updatedAt,
             };
 
-            actions.setSelectedRequest?.(updatedRequest);
+            actionsRef.current.setSelectedRequest?.(updatedRequest);
             if (updatedRequest.buildingName) {
               setResolvedBuildingName(updatedRequest.buildingName);
             }
@@ -209,7 +232,7 @@ export default function RequestDetailsScreen() {
                 const id = String(comment.id ?? `${selectedRequest.id}-comment-${index}`);
                 const message = comment.commentText || comment.message || comment.text || "";
                 const createdAt = comment.createdAt || comment.created_at || new Date().toISOString();
-                const author = resolveCommentAuthor(comment);
+                const author = resolveCommentAuthorRef.current(comment);
                 const attachments =
                   Array.isArray(comment.attachments) && comment.attachments.length > 0
                     ? comment.attachments
@@ -261,14 +284,14 @@ export default function RequestDetailsScreen() {
               updatedAt: apiRequest.updatedAt ?? selectedRequest.updatedAt,
             };
 
-            actions.setSelectedRequest?.(updatedRequest);
+            actionsRef.current.setSelectedRequest?.(updatedRequest);
             if (Array.isArray(apiRequest.comments)) {
               const mappedComments = apiRequest.comments
                 .map((comment: any, index: number) => {
                   const id = String(comment.id ?? `${apiRequest.id}-comment-${index}`);
                   const message = comment.commentText || comment.message || comment.text || "";
                   const createdAt = comment.createdAt || new Date().toISOString();
-                  const author = resolveCommentAuthor(comment);
+                  const author = resolveCommentAuthorRef.current(comment);
                   const attachments =
                     Array.isArray(comment.attachments) && comment.attachments.length > 0
                       ? comment.attachments
@@ -296,16 +319,16 @@ export default function RequestDetailsScreen() {
         console.error("[RequestDetails] Failed to fetch request details:", error);
       } finally {
         setFetchingDetails(false);
+        const lastFetch = lastDetailsFetchRef.current;
+        lastFetch.inFlight = false;
+        lastFetch.fetched = true;
       }
     };
 
     fetchDetails();
   }, [
-    actions,
-    currentUser?.profile?.buildingId,
     isTenantUser,
-    resolveCommentAuthor,
-    selectedRequest,
+    selectedRequest?.id,
   ]);
 
   useEffect(() => {
@@ -346,7 +369,7 @@ export default function RequestDetailsScreen() {
       if (!buildingId) return;
 
       try {
-        const building = actions.getBuildingById?.(String(buildingId));
+        const building = actionsRef.current.getBuildingById?.(String(buildingId));
         if (building?.name) {
           setResolvedBuildingName(building.name);
         }
@@ -356,7 +379,7 @@ export default function RequestDetailsScreen() {
     };
 
     resolveBuilding();
-  }, [selectedRequest, actions, currentUser?.profile?.buildingId]);
+  }, [selectedRequest, currentUser?.profile?.buildingId]);
 
   // Helper functions
   const normalizeStatus = (status: any): Request["status"] => {

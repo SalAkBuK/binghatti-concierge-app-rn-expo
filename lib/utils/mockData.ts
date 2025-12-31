@@ -1809,66 +1809,7 @@ export const DEFAULT_REQUESTS: Request[] = [
 ];
 
 // Default notifications data
-export const DEFAULT_NOTIFICATIONS: Notification[] = [
-  {
-    id: "1",
-    userId: "1",
-    title: "Request Status Update",
-    message: "Your AC repair request has been assigned to a technician.",
-    type: "info",
-    read: false,
-    createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: "2",
-    userId: "1",
-    title: "Maintenance Notice",
-    message:
-      "Scheduled water maintenance in Tower A from 9 AM to 12 PM tomorrow.",
-    type: "warning",
-    read: false,
-    createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: "3",
-    userId: "1",
-    title: "Request Completed",
-    message: "Your kitchen sink drainage issue has been resolved.",
-    type: "success",
-    read: true,
-    createdAt: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: "4",
-    userId: "6",
-    title: "Welcome!",
-    message:
-      "Welcome to Binghatti Concierge Services. Your account has been set up successfully.",
-    type: "success",
-    read: true,
-    createdAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: "5",
-    userId: "3",
-    title: "SLA Breach Warning",
-    message:
-      "3 HVAC jobs are within 4 hours of breaching the 24h SLA. Reassign a technician to avoid penalties.",
-    type: "warning",
-    read: false,
-    createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    id: "6",
-    userId: "3",
-    title: "Revenue Snapshot Ready",
-    message:
-      "The weekly revenue report is final. Review the analytics dashboard to approve the executive summary.",
-    type: "info",
-    read: false,
-    createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-  },
-];
+export const DEFAULT_NOTIFICATIONS: Notification[] = [];
 
 // Default maintenance notices data (empty - will be populated from backend)
 export const DEFAULT_NOTICES: MaintenanceNotice[] = [];
