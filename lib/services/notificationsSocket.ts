@@ -6,6 +6,20 @@ const WS_BASE_URL =
   APP_CONFIG.api.baseUrl.replace(/\/api$/, "");
 
 let socket: Socket | null = null;
+type SocketListener = (socketInstance: Socket | null) => void;
+const socketListeners = new Set<SocketListener>();
+
+const notifySocketListeners = () => {
+  socketListeners.forEach((listener) => {
+    try {
+      listener(socket);
+    } catch (error) {
+      if (__DEV__) {
+        console.log("[notificationsSocket] listener error", error);
+      }
+    }
+  });
+};
 
 const buildQueryParams = (token: string, orgId?: string | null) => {
   const params = [`token=${encodeURIComponent(token)}`];
@@ -33,10 +47,20 @@ export const connectNotifications = (
     ...(useQueryAuth ? {} : { auth: { token, ...(orgId ? { orgId } : {}) } }),
   });
 
+  notifySocketListeners();
   return socket;
 };
 
 export const disconnectNotifications = () => {
   socket?.disconnect();
   socket = null;
+  notifySocketListeners();
+};
+
+export const subscribeNotificationsSocket = (listener: SocketListener) => {
+  socketListeners.add(listener);
+  listener(socket);
+  return () => {
+    socketListeners.delete(listener);
+  };
 };

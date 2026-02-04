@@ -9,7 +9,10 @@ import React, {
 } from "react";
 import { AppState } from "react-native";
 import { apiService } from "../services/api";
-import { connectNotifications } from "../services/notificationsSocket";
+import {
+  connectNotifications,
+  subscribeNotificationsSocket,
+} from "../services/notificationsSocket";
 import { useAuth } from "./auth-context";
 import type {
   Conversation,
@@ -417,26 +420,59 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
     }
   }, []);
 
+  const attachSocketHandlers = useCallback(
+    (socket: ReturnType<typeof connectNotifications>) => {
+      socket.off("conversation:new", handleConversationNew);
+      socket.off("message:new", handleMessageNew);
+      socket.off("conversation:read", handleConversationRead);
+
+      socket.on("conversation:new", handleConversationNew);
+      socket.on("message:new", handleMessageNew);
+      socket.on("conversation:read", handleConversationRead);
+    },
+    [handleConversationNew, handleMessageNew, handleConversationRead],
+  );
+
+  const detachSocketHandlers = useCallback(
+    (socket: ReturnType<typeof connectNotifications>) => {
+      socket.off("conversation:new", handleConversationNew);
+      socket.off("message:new", handleMessageNew);
+      socket.off("conversation:read", handleConversationRead);
+    },
+    [handleConversationNew, handleMessageNew, handleConversationRead],
+  );
+
   // Socket connection + event subscription
   useEffect(() => {
     if (!isAuthenticated) return;
 
     let isMounted = true;
+    let activeSocket: ReturnType<typeof connectNotifications> | null = null;
 
-    const attachSocketHandlers = async () => {
+    const ensureSocket = async () => {
       const token = await apiService.getAuthToken();
       if (!token || !isMounted) return;
 
-      const socket = connectNotifications(token, {
+      connectNotifications(token, {
         orgId: currentUser?.orgId,
       });
-
-      socket.on("conversation:new", handleConversationNew);
-      socket.on("message:new", handleMessageNew);
-      socket.on("conversation:read", handleConversationRead);
     };
 
-    attachSocketHandlers();
+    const unsubscribe = subscribeNotificationsSocket((socketInstance) => {
+      if (!isMounted) return;
+
+      if (activeSocket && activeSocket !== socketInstance) {
+        detachSocketHandlers(activeSocket);
+      }
+
+      if (socketInstance) {
+        attachSocketHandlers(socketInstance);
+      }
+
+      activeSocket = socketInstance;
+    });
+
+    ensureSocket();
     fetchConversations();
 
     const subscription = AppState.addEventListener("change", (nextState) => {
@@ -445,7 +481,7 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
         nextState === "active"
       ) {
         // Re-attach handlers on foreground (socket may have been recreated)
-        attachSocketHandlers();
+        ensureSocket();
         fetchConversations();
       }
       appState.current = nextState;
@@ -454,19 +490,10 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
     return () => {
       isMounted = false;
       subscription.remove();
-
-      // Detach our handlers (don't disconnect — NotificationsContext owns that)
-      const detach = async () => {
-        const token = await apiService.getAuthToken();
-        if (!token) return;
-        const socket = connectNotifications(token, {
-          orgId: currentUser?.orgId,
-        });
-        socket.off("conversation:new", handleConversationNew);
-        socket.off("message:new", handleMessageNew);
-        socket.off("conversation:read", handleConversationRead);
-      };
-      detach();
+      unsubscribe();
+      if (activeSocket) {
+        detachSocketHandlers(activeSocket);
+      }
     };
   }, [
     isAuthenticated,
@@ -475,6 +502,8 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
     handleMessageNew,
     handleConversationRead,
     currentUser?.orgId,
+    attachSocketHandlers,
+    detachSocketHandlers,
   ]);
 
   const setLoading = useCallback(
