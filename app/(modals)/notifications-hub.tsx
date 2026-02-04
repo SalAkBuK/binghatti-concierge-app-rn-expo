@@ -13,6 +13,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { NoticesList } from "../../components/notifications/NoticesList";
 import { NotificationsList } from "../../components/notifications/NotificationsList";
 import { NotificationsTabBar } from "../../components/notifications/NotificationsTabBar";
+import { ConversationsTab } from "../../components/notifications/ConversationsTab";
 import { useApp } from "../../lib/context/connected-app-provider";
 import type { Notification } from "../../lib/types";
 import { isNotificationUnread } from "../../lib/utils/helpers";
@@ -29,10 +30,11 @@ export default function NotificationsHubScreen() {
     requests,
     notices,
     activeNoticesCount,
+    messagingUnreadCount,
     actions,
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<"notifications" | "notices">(
+  const [activeTab, setActiveTab] = useState<"notifications" | "notices" | "messages">(
     "notifications",
   );
 
@@ -170,6 +172,7 @@ export default function NotificationsHubScreen() {
             onTabChange={setActiveTab}
             unreadCount={unreadCount}
             activeNoticesCount={activeNoticesCount}
+            messagesUnreadCount={messagingUnreadCount}
           />
         </View>
 
@@ -191,6 +194,11 @@ export default function NotificationsHubScreen() {
               onMarkAsRead={handleMarkAsRead}
               onMarkAllAsRead={handleMarkAllAsRead}
               onDismiss={handleDismissNotification}
+              onRefresh={handleRefresh}
+            />
+          ) : activeTab === "messages" ? (
+            <ConversationsTab
+              userId={currentUser.id}
               onRefresh={handleRefresh}
             />
           ) : (

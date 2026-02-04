@@ -634,7 +634,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           mustChangePassword: !!payloadUser?.mustChangePassword,
           orgId:
             payloadUser?.orgId ??
-            payloadUser?.org_id ??
+            (payloadUser as any)?.org_id ??
             existingUser?.orgId,
           phone:
             payloadUser?.phone ??

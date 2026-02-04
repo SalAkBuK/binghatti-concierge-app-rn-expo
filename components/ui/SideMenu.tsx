@@ -47,12 +47,13 @@ interface MenuItem {
   color?: string;
   subItems?: SubMenuItem[];
   expandable?: boolean;
+  badge?: number;
 }
 
 type RouterPushInput = Parameters<typeof router.push>[0];
 
 export function SideMenu({ isVisible, onClose }: SideMenuProps) {
-  const { currentUser, actions } = useApp();
+  const { currentUser, actions, messagingUnreadCount } = useApp();
   const insets = useSafeAreaInsets();
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
   const [isRendered, setIsRendered] = useState(isVisible);
@@ -105,6 +106,13 @@ const navigateAndClose = (href: RouterPushInput | string, useReplace = false) =>
       title: "New",
       icon: "add-circle-outline",
       action: () => navigateAndClose("/(tenant)/new-request"),
+    },
+    {
+      id: "tenant-messages",
+      title: "Messages",
+      icon: "chatbubbles-outline",
+      badge: messagingUnreadCount,
+      action: () => navigateAndClose("/(tenant)/messages"),
     },
     {
       id: "tenant-profile",
@@ -284,6 +292,13 @@ const managementMenu: MenuItem[] = [
       action: () => navigateAndClose("/(buildingEmployee)/jobs"),
     },
     {
+      id: "be-messages",
+      title: "Messages",
+      icon: "chatbubbles-outline",
+      badge: messagingUnreadCount,
+      action: () => navigateAndClose("/(buildingEmployee)/messages"),
+    },
+    {
       id: "divider-be",
       title: "",
       icon: "remove",
@@ -379,6 +394,7 @@ const managementMenu: MenuItem[] = [
       id: "emp-messages",
       title: "Messages",
       icon: "chatbubbles-outline",
+      badge: messagingUnreadCount,
       action: () => navigateAndClose("/(employee)/messages"),
     },
     {
@@ -569,6 +585,13 @@ const managementMenu: MenuItem[] = [
                   >
                     {item.title}
                   </Text>
+                  {item.badge != null && item.badge > 0 && (
+                    <View style={styles.menuBadge}>
+                      <Text style={styles.menuBadgeText}>
+                        {item.badge > 99 ? "99+" : item.badge}
+                      </Text>
+                    </View>
+                  )}
                   {item.expandable && (
                     <Ionicons
                       name={isExpanded ? "chevron-up" : "chevron-down"}
@@ -714,6 +737,21 @@ const styles = StyleSheet.create({
   },
   expandIcon: {
     marginLeft: "auto",
+  },
+  menuBadge: {
+    backgroundColor: "#336BE3",
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 6,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    marginLeft: 8,
+  },
+  menuBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "700" as const,
   },
   subItemsContainer: {
     backgroundColor: "#F9FAFB",

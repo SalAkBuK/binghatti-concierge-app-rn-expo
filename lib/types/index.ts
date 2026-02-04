@@ -229,6 +229,7 @@ export interface MaintenanceNotice {
 export interface ApiResponse<T = any> {
   success: boolean;
   data?: T;
+  items?: T;
   message?: string;
   error?: string;
 }
@@ -1840,6 +1841,61 @@ export interface UpdateAnnouncementDTO {
 
 // Maintenance Event (Portfolio-level view) - Alias for MaintenanceSchedule for consistency with Admin-Task.md naming
 export type MaintenanceEvent = MaintenanceSchedule;
+
+// Messaging / Conversations types
+export interface ConversationParticipant {
+  id: string;
+  name: string;
+  avatarUrl?: string | null;
+}
+
+export interface ConversationMessage {
+  id: string;
+  content: string;
+  sender: ConversationParticipant;
+  createdAt: string;
+}
+
+export interface Conversation {
+  id: string;
+  subject?: string | null;
+  buildingId?: string | null;
+  participants: ConversationParticipant[];
+  unreadCount: number;
+  lastMessage?: ConversationMessage | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ConversationDetail extends Conversation {
+  messages: ConversationMessage[];
+}
+
+export interface CreateConversationDTO {
+  subject?: string;
+  participantIds: string[];
+  buildingId?: string;
+  initialMessage?: string;
+}
+
+export interface SendMessageDTO {
+  content: string;
+}
+
+// Socket event payloads for messaging
+export interface ConversationNewPayload {
+  conversationId: string;
+  subject?: string;
+}
+
+export interface MessageNewPayload {
+  conversationId: string;
+  message: ConversationMessage;
+}
+
+export interface ConversationReadPayload {
+  conversationId: string;
+}
 
 // Utility types
 export type UserRole = User["role"];

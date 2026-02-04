@@ -14,6 +14,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { NoticesList } from "../../components/notifications/NoticesList";
 import { NotificationsList } from "../../components/notifications/NotificationsList";
 import { NotificationsTabBar } from "../../components/notifications/NotificationsTabBar";
+import { ConversationsTab } from "../../components/notifications/ConversationsTab";
 import { useApp } from "../../lib/context/connected-app-provider";
 import type { Notification, UserRole } from "../../lib/types";
 import { isNotificationUnread } from "../../lib/utils/helpers";
@@ -30,28 +31,44 @@ export default function AdminNotificationsModal() {
     unreadCount,
     notices,
     activeNoticesCount,
+    messagingUnreadCount,
     actions,
   } = useApp();
 
   const defaultTab =
-    params.initialTab === "notices" ? "notices" : "notifications";
+    params.initialTab === "notices"
+      ? "notices"
+      : params.initialTab === "messages"
+        ? "messages"
+        : "notifications";
 
-  const [activeTab, setActiveTab] = useState<"notifications" | "notices">(
+  const [activeTab, setActiveTab] = useState<
+    "notifications" | "notices" | "messages"
+  >(
     defaultTab,
   );
 
   const headerCopy = useMemo(() => {
-    return activeTab === "notifications"
-      ? {
-          title: "Operational Alerts",
-          subtitle:
-            "Stay ahead of escalations, SLA breaches, and system-wide events.",
-        }
-      : {
-          title: "Portfolio Notices",
-          subtitle:
-            "Review live maintenance notices and communication blasts to residents.",
-        };
+    if (activeTab === "notifications") {
+      return {
+        title: "Operational Alerts",
+        subtitle:
+          "Stay ahead of escalations, SLA breaches, and system-wide events.",
+      };
+    }
+
+    if (activeTab === "messages") {
+      return {
+        title: "Inbox Messages",
+        subtitle: "Review ongoing conversations with tenants and staff.",
+      };
+    }
+
+    return {
+      title: "Portfolio Notices",
+      subtitle:
+        "Review live maintenance notices and communication blasts to residents.",
+    };
   }, [activeTab]);
 
   if (!currentUser) {
@@ -78,8 +95,9 @@ export default function AdminNotificationsModal() {
     console.log("Admin add notice tapped");
   };
 
-  const handleRefresh = async () =>
-    new Promise<void>((resolve) => setTimeout(resolve, 1000));
+  const handleRefresh = async () => {
+    await actions.refreshNotifications?.();
+  };
 
   const handleNotificationPress = (notification: Notification) => {
     const data = notification.data as Record<string, any> | undefined;
@@ -149,6 +167,7 @@ export default function AdminNotificationsModal() {
             onTabChange={setActiveTab}
             unreadCount={unreadCount}
             activeNoticesCount={activeNoticesCount}
+            messagesUnreadCount={messagingUnreadCount}
           />
         </View>
 
@@ -164,6 +183,8 @@ export default function AdminNotificationsModal() {
               onDismiss={handleDismissNotification}
               onRefresh={handleRefresh}
             />
+          ) : activeTab === "messages" ? (
+            <ConversationsTab userId={currentUser.id} onRefresh={handleRefresh} />
           ) : (
             <NoticesList
               notices={notices}

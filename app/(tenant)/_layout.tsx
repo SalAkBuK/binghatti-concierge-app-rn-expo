@@ -132,6 +132,12 @@ export default function TabLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="messages"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }

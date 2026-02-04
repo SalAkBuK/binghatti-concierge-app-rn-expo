@@ -62,6 +62,7 @@ export const STORAGE_KEYS = {
   refresh_token: "binghatti_refresh_token",
   user_data: "binghatti_user_data",
   user_role: "binghatti_user_role",
+  conversations: "binghatti_conversations",
 } as const;
 
 // API endpoints
@@ -155,6 +156,13 @@ export const API_ENDPOINTS = {
     earnings: "/employee/earnings",
     profile: "/employee/profile",
     updateProfile: "/employee/profile",
+  },
+  conversations: {
+    list: "/org/conversations",
+    create: "/org/conversations",
+    detail: (id: string) => `/org/conversations/${id}`,
+    sendMessage: (id: string) => `/org/conversations/${id}/messages`,
+    markRead: (id: string) => `/org/conversations/${id}/read`,
   },
   admin: {
     createUser: "/api/Admin/create",

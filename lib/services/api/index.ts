@@ -15,6 +15,7 @@ import { BroadcastApiService } from "./broadcast";
 import { VisitorsApiService } from "./visitors";
 import { BuildingsApiService } from "./buildings";
 import { TenantsApiService } from "./tenants";
+import { ConversationsApiService } from "./conversations";
 import type { ApiService } from "./types";
 
 export class MainApiService implements ApiService {
@@ -32,6 +33,7 @@ export class MainApiService implements ApiService {
   public visitors: VisitorsApiService;
   public buildings: BuildingsApiService;
   public tenants: TenantsApiService;
+  public conversations: ConversationsApiService;
   private authService: AuthApiService;
 
   constructor() {
@@ -50,6 +52,7 @@ export class MainApiService implements ApiService {
     this.visitors = new VisitorsApiService();
     this.buildings = new BuildingsApiService();
     this.tenants = new TenantsApiService();
+    this.conversations = new ConversationsApiService();
   }
 
   // Auth methods (delegated to AuthApiService)
@@ -120,6 +123,7 @@ export class MainApiService implements ApiService {
     await this.visitors.setAuthToken(token);
     await this.buildings.setAuthToken(token);
     await this.tenants.setAuthToken(token);
+    await this.conversations.setAuthToken(token);
   }
 
   async setAuthTokens(tokens: { accessToken: string; refreshToken: string }): Promise<void> {
@@ -138,6 +142,7 @@ export class MainApiService implements ApiService {
     await this.visitors.setAuthTokens(tokens.accessToken, tokens.refreshToken);
     await this.buildings.setAuthTokens(tokens.accessToken, tokens.refreshToken);
     await this.tenants.setAuthTokens(tokens.accessToken, tokens.refreshToken);
+    await this.conversations.setAuthTokens(tokens.accessToken, tokens.refreshToken);
   }
 
   async clearAuthToken(): Promise<void> {
@@ -157,6 +162,7 @@ export class MainApiService implements ApiService {
     await this.visitors.clearAuthToken();
     await this.buildings.clearAuthToken();
     await this.tenants.clearAuthToken();
+    await this.conversations.clearAuthToken();
   }
 
   async getAuthToken(): Promise<string | null> {
@@ -198,6 +204,7 @@ export { BroadcastApiService } from "./broadcast";
 export { VisitorsApiService } from "./visitors";
 export { BuildingsApiService } from "./buildings";
 export { TenantsApiService } from "./tenants";
+export { ConversationsApiService } from "./conversations";
 export { BaseApiService } from "./base";
 
 // Default export

@@ -9,13 +9,15 @@ import Animated, {
 import { AnimatedButton } from "../ui/AnimatedButton";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const TAB_WIDTH = (SCREEN_WIDTH * 0.9) / 2;
+
+type TabKey = "notifications" | "notices" | "messages";
 
 interface NotificationsTabBarProps {
-  activeTab: "notifications" | "notices";
-  onTabChange: (tab: "notifications" | "notices") => void;
+  activeTab: TabKey;
+  onTabChange: (tab: TabKey) => void;
   unreadCount?: number;
   activeNoticesCount?: number;
+  messagesUnreadCount?: number;
 }
 
 export function NotificationsTabBar({
@@ -23,19 +25,24 @@ export function NotificationsTabBar({
   onTabChange,
   unreadCount = 0,
   activeNoticesCount = 0,
+  messagesUnreadCount = 0,
 }: NotificationsTabBarProps) {
+  const TAB_COUNT = 3;
+  const TAB_WIDTH = (SCREEN_WIDTH * 0.9) / TAB_COUNT;
   const translateX = useSharedValue(0);
 
   useEffect(() => {
-    translateX.value = withTiming(activeTab === "notices" ? TAB_WIDTH : 0, {
+    const index = activeTab === "notifications" ? 0 : activeTab === "messages" ? 1 : 2;
+    translateX.value = withTiming(index * TAB_WIDTH, {
       duration: 250,
       easing: Easing.bezier(0.4, 0, 0.2, 1),
     });
-  }, [activeTab, translateX]);
+  }, [activeTab, translateX, TAB_WIDTH]);
 
   const indicatorStyle = useAnimatedStyle(() => {
     return {
       transform: [{ translateX: translateX.value }],
+      width: TAB_WIDTH - 8,
     };
   });
 
@@ -55,13 +62,39 @@ export function NotificationsTabBar({
               styles.tabText,
               activeTab === "notifications" && styles.activeTabText,
             ]}
+            numberOfLines={1}
           >
-            Notifications
+            Alerts
           </Text>
           {unreadCount > 0 && (
             <View style={styles.badge}>
               <Text style={styles.badgeText}>
                 {unreadCount > 99 ? "99+" : unreadCount}
+              </Text>
+            </View>
+          )}
+        </View>
+      </AnimatedButton>
+
+      {/* Messages Tab */}
+      <AnimatedButton
+        style={styles.tab}
+        onPress={() => onTabChange("messages")}
+      >
+        <View style={styles.tabContent}>
+          <Text
+            style={[
+              styles.tabText,
+              activeTab === "messages" && styles.activeTabText,
+            ]}
+            numberOfLines={1}
+          >
+            Messages
+          </Text>
+          {messagesUnreadCount > 0 && (
+            <View style={[styles.badge, styles.messagesBadge]}>
+              <Text style={styles.badgeText}>
+                {messagesUnreadCount > 99 ? "99+" : messagesUnreadCount}
               </Text>
             </View>
           )}
@@ -76,6 +109,7 @@ export function NotificationsTabBar({
               styles.tabText,
               activeTab === "notices" && styles.activeTabText,
             ]}
+            numberOfLines={1}
           >
             Notices
           </Text>
@@ -105,7 +139,6 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 4,
     left: 4,
-    width: TAB_WIDTH - 8,
     height: "100%",
     backgroundColor: "#FFFFFF",
     borderRadius: 10,
@@ -121,7 +154,7 @@ const styles = StyleSheet.create({
   tab: {
     flex: 1,
     paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: 8,
     alignItems: "center",
     justifyContent: "center",
     zIndex: 1,
@@ -129,10 +162,10 @@ const styles = StyleSheet.create({
   tabContent: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 4,
   },
   tabText: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: "600",
     color: "#6B7280",
   },
@@ -147,6 +180,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     alignItems: "center",
     justifyContent: "center",
+  },
+  messagesBadge: {
+    backgroundColor: "#336BE3",
   },
   noticesBadge: {
     backgroundColor: "#F59E0B",

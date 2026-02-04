@@ -103,6 +103,12 @@ export default function BuildingEmployeeLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="messages"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }

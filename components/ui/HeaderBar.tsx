@@ -11,6 +11,7 @@ import {
 import Animated, { FadeIn } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AnimatedBellIcon } from "./AnimatedBellIcon";
+import { useMessaging } from "../../lib/context/messaging-context";
 
 type RouterPushInput = Parameters<typeof router.push>[0];
 
@@ -23,6 +24,7 @@ interface HeaderBarProps {
   showMenu?: boolean;
   showNotifications?: boolean;
   hasUnreadNotifications?: boolean;
+  messagingUnreadCount?: number;
   onMenuPress?: () => void;
   onNotificationPress?: () => void;
   backgroundColor?: string;
@@ -45,6 +47,7 @@ export function HeaderBar({
   showMenu = true,
   showNotifications = true,
   hasUnreadNotifications = false,
+  messagingUnreadCount = 0,
   onMenuPress,
   onNotificationPress,
   backgroundColor = "transparent",
@@ -62,6 +65,8 @@ export function HeaderBar({
   notificationParams,
 }: HeaderBarProps) {
   const insets = useSafeAreaInsets();
+  const messaging = useMessaging();
+  const resolvedMessagingUnread = messagingUnreadCount > 0 ? messagingUnreadCount : messaging.totalUnreadCount;
 
   // Calculate responsive spacing based on screen width
   const getResponsiveSpacing = () => {
@@ -153,6 +158,13 @@ export function HeaderBar({
       ) : showMenu ? (
         <TouchableOpacity style={[styles.menuButton, { marginLeft: spacing.menuMargin }]} onPress={handleMenuPress}>
           <Ionicons name="menu" size={24} color={textColor} />
+          {resolvedMessagingUnread > 0 && (
+            <View style={styles.menuBadge}>
+              <Text style={styles.menuBadgeText}>
+                {resolvedMessagingUnread > 9 ? "9+" : resolvedMessagingUnread}
+              </Text>
+            </View>
+          )}
         </TouchableOpacity>
       ) : (
         <View style={[styles.menuButton, { marginLeft: spacing.menuMargin }]} />
@@ -186,7 +198,7 @@ export function HeaderBar({
           <AnimatedBellIcon
             size={24}
             color={textColor}
-            hasUnreadNotifications={hasUnreadNotifications}
+            hasUnreadNotifications={hasUnreadNotifications || resolvedMessagingUnread > 0}
           />
         </TouchableOpacity>
       ) : (
@@ -209,6 +221,25 @@ const styles = StyleSheet.create({
     height: 40,
     justifyContent: "center",
     alignItems: "center",
+  },
+  menuBadge: {
+    position: "absolute",
+    top: 4,
+    right: 2,
+    backgroundColor: "#EF4444",
+    borderRadius: 9,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+  },
+  menuBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "700" as const,
   },
   titleContainer: {
     flex: 1,

@@ -6,6 +6,7 @@ import {
   useNotifications,
 } from "./notifications-context";
 import { NoticesProvider, useNotices } from "./notices-context";
+import { MessagingProvider, useMessaging } from "./messaging-context";
 import { useAmenityModule } from "./modules/amenities";
 import { useVisitorModule } from "./modules/visitors";
 import { useRatingsModule } from "./modules/ratings";
@@ -107,9 +108,11 @@ export const ConnectedAppProvider: React.FC<ConnectedAppProviderProps> = ({
   return (
     <AuthProvider>
       <NotificationsProvider>
-        <NoticesProvider>
-          <ConnectedRequestsProvider>{children}</ConnectedRequestsProvider>
-        </NoticesProvider>
+        <MessagingProvider>
+          <NoticesProvider>
+            <ConnectedRequestsProvider>{children}</ConnectedRequestsProvider>
+          </NoticesProvider>
+        </MessagingProvider>
       </NotificationsProvider>
     </AuthProvider>
   );
@@ -121,6 +124,7 @@ export const useApp = () => {
   const requests = useRequests();
   const notifications = useNotifications();
   const notices = useNotices();
+  const messaging = useMessaging();
 
   const {
     state: { amenities, amenityConfigs, bookings },
@@ -976,6 +980,11 @@ export const useApp = () => {
       activeNoticesCount: notices.activeNoticesCount,
       maintenanceNotices: notices.notices, // Legacy compatibility
 
+      // Messaging state
+      conversations: messaging.conversations,
+      activeConversation: messaging.activeConversation,
+      messagingUnreadCount: messaging.totalUnreadCount,
+
       // New state - Amenities, Bookings, Visitors, Ratings
       amenities,
       amenityConfigs,
@@ -1053,6 +1062,7 @@ export const useApp = () => {
           type,
           auth.users,
         ),
+      refreshNotifications: notifications.actions.refreshNotifications,
       markNotificationAsRead: notifications.actions.markNotificationAsRead,
       markAllNotificationsAsRead:
         notifications.actions.markAllNotificationsAsRead,
@@ -1064,6 +1074,13 @@ export const useApp = () => {
       updateNotice: notices.actions.updateNotice,
       deleteNotice: notices.actions.deleteNotice,
       setSelectedNotice: notices.actions.setSelectedNotice,
+
+      // Messaging actions
+      fetchConversations: messaging.actions.fetchConversations,
+      openConversation: messaging.actions.openConversation,
+      closeConversation: messaging.actions.closeConversation,
+      sendConversationMessage: messaging.actions.sendMessage,
+      createConversation: messaging.actions.createConversation,
 
       // Amenity actions
       getAmenities,
@@ -1268,6 +1285,11 @@ export const useApp = () => {
     notices.loading,
     notices.error,
     notices.actions,
+    // Messaging dependencies
+    messaging.conversations,
+    messaging.activeConversation,
+    messaging.totalUnreadCount,
+    messaging.actions,
     // Module state dependencies
     amenities,
     amenityConfigs,
@@ -1391,4 +1413,4 @@ export const useApp = () => {
 };
 
 // Re-export individual hooks
-export { useAuth, useRequests, useNotifications, useNotices };
+export { useAuth, useRequests, useNotifications, useNotices, useMessaging };
