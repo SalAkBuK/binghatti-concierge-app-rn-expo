@@ -686,20 +686,33 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         actions.setLoading(false);
       } catch (error: any) {
-        console.error("[Auth] Login error:", error);
-
         let errorMessage = "Login failed. Please try again.";
 
-        if (error?.status === 401 || error?.status === 403) {
+        if (
+          error?.status === 401 ||
+          error?.status === 403 ||
+          error?.code === "Unauthorized" ||
+          error?.message?.code === "Unauthorized"
+        ) {
+          console.warn("[Auth] Login rejected:", {
+            status: error?.status,
+            code: error?.code ?? error?.message?.code,
+          });
           errorMessage = "Invalid email or password";
         } else if (error?.status === 404) {
+          console.warn("[Auth] Login failed: user not found");
           errorMessage = "User not found";
         } else if (error?.status === 500) {
+          console.warn("[Auth] Login failed: server error");
           errorMessage = "Server error. Please try again later";
-        } else if (error.message) {
-          errorMessage = error.message;
         } else if (error.code === "NETWORK_ERROR" || error.message?.includes("Network")) {
+          console.warn("[Auth] Login failed: network error");
           errorMessage = "Network error. Please check your connection.";
+        } else if (typeof error?.message === "string" && error.message.trim().length > 0) {
+          errorMessage = error.message;
+          console.error("[Auth] Login error:", error);
+        } else {
+          console.error("[Auth] Login error:", error);
         }
 
         actions.setError(errorMessage);

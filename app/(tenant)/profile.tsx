@@ -398,6 +398,18 @@ export default function ProfileScreen() {
             {/* Logout Button */}
             {!isEditing && (
               <TouchableOpacity
+                style={styles.leaseDetailsButton}
+                onPress={() => router.push("/(tenant)/lease-details" as any)}
+              >
+                <Ionicons name="document-text-outline" size={20} color="#1f2937" />
+                <Text style={styles.leaseDetailsButtonText}>
+                  Lease & Parking Details
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {!isEditing && (
+              <TouchableOpacity
                 style={styles.changePasswordButton}
                 onPress={handleOpenPasswordModal}
               >
@@ -768,6 +780,23 @@ const styles = StyleSheet.create({
     marginTop: 16,
     borderWidth: 1,
     borderColor: "#bfdbfe",
+  },
+  leaseDetailsButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F5F3FF",
+    borderRadius: 8,
+    padding: 16,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: "#DDD6FE",
+  },
+  leaseDetailsButtonText: {
+    color: "#5B21B6",
+    fontSize: 16,
+    fontWeight: "600",
+    marginLeft: 8,
   },
   changePasswordButtonText: {
     color: "#1e3a8a",

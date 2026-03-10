@@ -138,6 +138,12 @@ export default function TabLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="lease-details"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }

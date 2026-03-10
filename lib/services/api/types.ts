@@ -6,6 +6,8 @@ import type {
   Notification,
   LoginDTO,
   ChangePasswordDTO,
+  ForgotPasswordDTO,
+  ResetPasswordWithTokenDTO,
   UpdateProfileDTO,
   CreateRequestDTO,
   UpdateRequestDTO,
@@ -21,6 +23,9 @@ import type {
   EmployeeMessage,
   SendEmployeeMessageDTO,
   EmployeeEarnings,
+  ResidentActiveLease,
+  ResidentLeaseDocument,
+  ResidentActiveParkingAllocation,
 } from "../../types";
 
 // Base API configuration
@@ -60,6 +65,8 @@ export interface AuthApi {
   logout(): Promise<ApiResponse>;
   refreshToken(): Promise<AuthResponse>;
   changePassword(data: ChangePasswordDTO): Promise<ApiResponse>;
+  forgotPassword(data: ForgotPasswordDTO): Promise<ApiResponse>;
+  resetPassword(data: ResetPasswordWithTokenDTO): Promise<ApiResponse>;
   getProfile(): Promise<ApiResponse<User>>;
   updateProfile(userData: UpdateProfileDTO): Promise<ApiResponse<User>>;
 }
@@ -112,6 +119,13 @@ export interface EmployeeApi {
   getEarnings(params?: EmployeeEarningsParams): Promise<ApiResponse<EmployeeEarnings>>;
   getProfile(): Promise<ApiResponse<User>>;
   updateProfile(data: Partial<User>): Promise<ApiResponse<User>>;
+}
+
+export interface ResidentSelfServiceApi {
+  getResidentActiveLease(): Promise<ResidentActiveLease | null>;
+  getResidentActiveLeaseDocuments(): Promise<ResidentLeaseDocument[]>;
+  getResidentActiveParkingAllocation():
+    Promise<ResidentActiveParkingAllocation | null>;
 }
 
 // List parameters

@@ -16,6 +16,7 @@ import { VisitorsApiService } from "./visitors";
 import { BuildingsApiService } from "./buildings";
 import { TenantsApiService } from "./tenants";
 import { ConversationsApiService } from "./conversations";
+import { ResidentSelfServiceApiService } from "./resident-self-service";
 import type { ApiService } from "./types";
 
 export class MainApiService implements ApiService {
@@ -34,6 +35,7 @@ export class MainApiService implements ApiService {
   public buildings: BuildingsApiService;
   public tenants: TenantsApiService;
   public conversations: ConversationsApiService;
+  public residentSelfService: ResidentSelfServiceApiService;
   private authService: AuthApiService;
 
   constructor() {
@@ -53,6 +55,7 @@ export class MainApiService implements ApiService {
     this.buildings = new BuildingsApiService();
     this.tenants = new TenantsApiService();
     this.conversations = new ConversationsApiService();
+    this.residentSelfService = new ResidentSelfServiceApiService();
   }
 
   // Auth methods (delegated to AuthApiService)
@@ -70,6 +73,14 @@ export class MainApiService implements ApiService {
 
   async changePassword(data: any) {
     return this.authService.changePassword(data);
+  }
+
+  async forgotPassword(data: any) {
+    return this.authService.forgotPassword(data);
+  }
+
+  async resetPassword(data: any) {
+    return this.authService.resetPassword(data);
   }
 
   async getProfile() {
@@ -124,6 +135,7 @@ export class MainApiService implements ApiService {
     await this.buildings.setAuthToken(token);
     await this.tenants.setAuthToken(token);
     await this.conversations.setAuthToken(token);
+    await this.residentSelfService.setAuthToken(token);
   }
 
   async setAuthTokens(tokens: { accessToken: string; refreshToken: string }): Promise<void> {
@@ -143,6 +155,7 @@ export class MainApiService implements ApiService {
     await this.buildings.setAuthTokens(tokens.accessToken, tokens.refreshToken);
     await this.tenants.setAuthTokens(tokens.accessToken, tokens.refreshToken);
     await this.conversations.setAuthTokens(tokens.accessToken, tokens.refreshToken);
+    await this.residentSelfService.setAuthTokens(tokens.accessToken, tokens.refreshToken);
   }
 
   async clearAuthToken(): Promise<void> {
@@ -163,6 +176,7 @@ export class MainApiService implements ApiService {
     await this.buildings.clearAuthToken();
     await this.tenants.clearAuthToken();
     await this.conversations.clearAuthToken();
+    await this.residentSelfService.clearAuthToken();
   }
 
   async getAuthToken(): Promise<string | null> {
@@ -205,6 +219,7 @@ export { VisitorsApiService } from "./visitors";
 export { BuildingsApiService } from "./buildings";
 export { TenantsApiService } from "./tenants";
 export { ConversationsApiService } from "./conversations";
+export { ResidentSelfServiceApiService, residentSelfServiceApi } from "./resident-self-service";
 export { BaseApiService } from "./base";
 
 // Default export

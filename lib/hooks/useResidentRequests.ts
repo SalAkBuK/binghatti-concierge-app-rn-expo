@@ -110,9 +110,11 @@ const getLatestNotification = (notifications: Notification[]) => {
 export const useResidentRequests = ({
   currentUser,
   notifications,
+  onUnauthorized,
 }: {
   currentUser: User | null;
   notifications?: Notification[];
+  onUnauthorized?: () => void | Promise<void>;
 }) => {
   const storageKey = currentUser?.id
     ? `${STORAGE_KEYS.resident_requests}_${currentUser.id}`
@@ -207,6 +209,15 @@ export const useResidentRequests = ({
           fetchedAt: new Date().toISOString(),
         });
       } catch (error) {
+        if (
+          error &&
+          typeof error === "object" &&
+          "status" in error &&
+          (error as { status?: number }).status === 401
+        ) {
+          await onUnauthorized?.();
+          return;
+        }
         console.error("[Requests] Failed to fetch requests:", error);
         setRequests([]);
         await setCache({ items: [], fetchedAt: cache.fetchedAt ?? null });
@@ -221,7 +232,7 @@ export const useResidentRequests = ({
         }
       }
     },
-    [cache.fetchedAt, currentUser?.id, mapBackendRequests, setCache],
+    [cache.fetchedAt, currentUser?.id, mapBackendRequests, onUnauthorized, setCache],
   );
 
   useEffect(() => {

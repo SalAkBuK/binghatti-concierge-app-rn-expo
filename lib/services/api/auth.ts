@@ -6,6 +6,8 @@ import type { AuthApi } from "./types";
 import type {
   LoginDTO,
   ChangePasswordDTO,
+  ForgotPasswordDTO,
+  ResetPasswordWithTokenDTO,
   UpdateProfileDTO,
   AuthResponse,
   ApiResponse,
@@ -102,6 +104,38 @@ export class AuthApiService extends BaseApiService implements AuthApi {
         API_ENDPOINTS.auth.changePassword,
         data,
       );
+
+      return response;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async forgotPassword(data: ForgotPasswordDTO): Promise<ApiResponse> {
+    try {
+      const response = await this.request<ApiResponse>({
+        method: "POST",
+        url: API_ENDPOINTS.auth.forgotPassword,
+        data,
+        skipAuth: true,
+        skipAuthRefresh: true,
+      });
+
+      return response;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async resetPassword(data: ResetPasswordWithTokenDTO): Promise<ApiResponse> {
+    try {
+      const response = await this.request<ApiResponse>({
+        method: "POST",
+        url: API_ENDPOINTS.auth.resetPassword,
+        data,
+        skipAuth: true,
+        skipAuthRefresh: true,
+      });
 
       return response;
     } catch (error) {

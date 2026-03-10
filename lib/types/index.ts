@@ -316,6 +316,15 @@ export interface ChangePasswordDTO {
   newPassword: string;
 }
 
+export interface ForgotPasswordDTO {
+  email: string;
+}
+
+export interface ResetPasswordWithTokenDTO {
+  token: string;
+  newPassword: string;
+}
+
 export interface UpdateProfileDTO {
   name?: string;
   phone?: string;
@@ -622,6 +631,31 @@ export interface Lease {
   notes?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ResidentActiveLease {
+  id: string | null;
+  unitLabel: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  rentAmount: number | null;
+  paymentFrequency: string | null;
+}
+
+export interface ResidentLeaseDocument {
+  id: string;
+  filename: string;
+  type: string | null;
+  date: string | null;
+  url: string | null;
+}
+
+export interface ResidentActiveParkingAllocation {
+  id: string | null;
+  slotCode: string | null;
+  level: string | null;
+  type: string | null;
+  startDate: string | null;
 }
 
 export type VisitorPassType = "visitor" | "delivery" | "contractor";

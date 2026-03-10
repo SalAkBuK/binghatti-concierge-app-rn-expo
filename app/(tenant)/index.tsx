@@ -1,9 +1,10 @@
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Dimensions,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -23,71 +24,13 @@ import { HeaderBar } from "../../components/ui/HeaderBar";
 import { HomeScreenSkeleton } from "../../components/ui/HomeScreenSkeleton";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
-import { residentRequestsApi } from "../../lib/services/api/resident-requests";
-import type { Request, RequestStatus } from "../../lib/types";
+import { useResidentRequests } from "../../lib/hooks/useResidentRequests";
 import {
   filterNotificationsByUser,
   getUnreadNotificationsCount,
 } from "../../lib/utils/helpers";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
-
-const mapStatusFromBackend = (status: any): RequestStatus => {
-  const numeric = Number(status);
-  if (!Number.isNaN(numeric)) {
-    switch (numeric) {
-      case 1:
-        return "pending";
-      case 2:
-      case 3:
-        return "in-progress";
-      case 4:
-        return "on-hold";
-      case 5:
-        return "completed";
-      case 6:
-        return "cancelled";
-      default:
-        return "pending";
-    }
-  }
-
-  const normalized = String(status || "")
-    .toUpperCase()
-    .replace(/[\s-]/g, "_");
-
-  if (normalized === "OPEN") return "pending";
-  if (normalized === "ASSIGNED" || normalized === "IN_PROGRESS") {
-    return "in-progress";
-  }
-  if (normalized === "COMPLETED") return "completed";
-  if (normalized === "CANCELED" || normalized === "CANCELLED") return "cancelled";
-  return "pending";
-};
-
-const mapPriorityFromBackend = (priority: any): Request["priority"] => {
-  const numeric = Number(priority);
-  if (!Number.isNaN(numeric)) {
-    switch (numeric) {
-      case 1:
-        return "low";
-      case 2:
-        return "medium";
-      case 3:
-        return "high";
-      case 4:
-        return "urgent";
-      default:
-        return "medium";
-    }
-  }
-
-  const normalized = String(priority || "").toLowerCase();
-  if (normalized === "low") return "low";
-  if (normalized === "high") return "high";
-  if (normalized === "urgent") return "urgent";
-  return "medium";
-};
 
 export default function TenantHomeScreen() {
   const {
@@ -109,7 +52,33 @@ export default function TenantHomeScreen() {
           .filter(Boolean)
           .join(" - ")
       : "-";
-  const [residentRequests, setResidentRequests] = useState<Request[]>([]);
+  const isHandlingUnauthorizedRef = useRef(false);
+
+  const handleUnauthorized = useCallback(async () => {
+    if (isHandlingUnauthorizedRef.current) {
+      return;
+    }
+
+    isHandlingUnauthorizedRef.current = true;
+    try {
+      await actions.logout();
+    } catch (error) {
+      console.warn("[TenantHome] Failed to clear session after 401:", error);
+    } finally {
+      router.replace("/auth" as any);
+      isHandlingUnauthorizedRef.current = false;
+    }
+  }, [actions]);
+
+  const {
+    requests: residentRequests,
+    refreshRequests,
+    isRefreshing: isRequestsRefreshing,
+  } = useResidentRequests({
+    currentUser,
+    notifications,
+    onUnauthorized: handleUnauthorized,
+  });
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -128,67 +97,11 @@ export default function TenantHomeScreen() {
     return () => clearTimeout(timer);
   }, [currentUser]);
 
-  useEffect(() => {
-    const fetchResidentRequests = async () => {
-      if (!currentUser?.id) return;
+  const onRefreshHome = useCallback(async () => {
+    await refreshRequests({ asRefresh: true, reason: "manual" });
+  }, [refreshRequests]);
 
-      try {
-        const response = await residentRequestsApi.getRequests();
-        const items = Array.isArray(response)
-          ? response
-          : Array.isArray(response?.data)
-            ? response.data
-            : Array.isArray((response as any)?.items)
-              ? (response as any).items
-              : [];
-
-        const mappedRequests: Request[] = items.map((item: any) => ({
-          id: String(item.id),
-          tenantId: currentUser.id,
-          title: item.title || "Untitled Request",
-          description: item.description || "",
-          type: "maintenance",
-          status: mapStatusFromBackend(item.status),
-          priority: mapPriorityFromBackend(item.priority),
-          assignedTo: item.assignedTo?.fullName || item.assignedTo?.email || undefined,
-          buildingId: item.buildingId ? String(item.buildingId) : undefined,
-          buildingName: item.buildingName || currentUser?.profile?.buildingName,
-          apartment: currentUser?.profile?.apartment || "",
-          floor: currentUser?.profile?.floor || "",
-          tower: currentUser?.profile?.tower || "",
-          contactPhone: currentUser?.profile?.phone || "",
-          preferredTime: "",
-          additionalNotes: "",
-          attachments: Array.isArray(item.attachments)
-            ? item.attachments
-                .map((att: any) => att?.url || att?.fileUrl || att?.uri || null)
-                .filter(Boolean)
-            : [],
-          comments: [],
-          messages: [],
-          notes: [],
-          timeline: [],
-          createdAt: item.createdAt || new Date().toISOString(),
-          updatedAt: item.updatedAt || item.createdAt || new Date().toISOString(),
-          _source: "backend" as const,
-        }));
-
-        setResidentRequests(mappedRequests);
-      } catch (error) {
-        console.error("[TenantHome] Failed to fetch resident requests:", error);
-        setResidentRequests([]);
-      }
-    };
-
-    fetchResidentRequests();
-  }, [
-    currentUser?.id,
-    currentUser?.profile?.apartment,
-    currentUser?.profile?.floor,
-    currentUser?.profile?.buildingName,
-    currentUser?.profile?.phone,
-    currentUser?.profile?.tower,
-  ]);
+  const isHomeRefreshing = isRequestsRefreshing;
 
   const recentRequests = useMemo(() => {
     return [...residentRequests]
@@ -312,6 +225,9 @@ export default function TenantHomeScreen() {
       <ScrollView
         style={styles.scrollableContent}
         contentContainerStyle={{ paddingBottom: tabBarHeight + 32 }}
+        refreshControl={
+          <RefreshControl refreshing={isHomeRefreshing} onRefresh={onRefreshHome} />
+        }
         showsVerticalScrollIndicator={false}
       >
         {/* Building Notices Section */}
@@ -388,10 +304,20 @@ export default function TenantHomeScreen() {
                   text: "#EA5846",
                   label: "Pending",
                 },
+                assigned: {
+                  bg: "#DBEAFE",
+                  text: "#1E40AF",
+                  label: "Assigned",
+                },
                 "in-progress": {
                   bg: "#DBEAFE",
                   text: "#1E40AF",
                   label: "Progress",
+                },
+                "on-hold": {
+                  bg: "#FEE2E2",
+                  text: "#BE123C",
+                  label: "On Hold",
                 },
                 completed: {
                   bg: "#D1FAE5",
@@ -405,7 +331,8 @@ export default function TenantHomeScreen() {
                 },
               };
 
-              const status = statusConfig[request.status];
+              const status =
+                statusConfig[request.status] ?? statusConfig.pending;
 
               return (
                 <TouchableOpacity

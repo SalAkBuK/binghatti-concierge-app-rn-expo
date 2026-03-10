@@ -71,6 +71,8 @@ export const API_ENDPOINTS = {
     login: "/auth/login",
     refresh: "/auth/refresh",
     changePassword: "/auth/change-password",
+    forgotPassword: "/auth/forgot-password",
+    resetPassword: "/auth/reset-password",
   },
   requests: {
     list: "/requests",
@@ -87,6 +89,9 @@ export const API_ENDPOINTS = {
   },
   resident: {
     me: "/resident/me",
+    leaseActive: "/resident/lease/active",
+    leaseActiveDocuments: "/resident/lease/active/documents",
+    parkingActiveAllocation: "/resident/parking/active-allocation",
   },
   orgBuildings: {
     assigned: "/org/buildings/assigned",
@@ -191,4 +196,3 @@ export const APP_CONFIG = {
     allowedDocumentTypes: ["application/pdf", "text/plain"],
   },
 } as const;
-

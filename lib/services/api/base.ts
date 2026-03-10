@@ -208,6 +208,38 @@ export class BaseApiService {
     return url === refreshPath || url.endsWith(refreshPath);
   }
 
+  private normalizeErrorText(value: unknown): string | null {
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }
+
+    if (typeof value === "number") {
+      return String(value);
+    }
+
+    if (!value || typeof value !== "object") {
+      return null;
+    }
+
+    const payload = value as Record<string, unknown>;
+    const nestedMessage =
+      this.normalizeErrorText(payload.message) ??
+      this.normalizeErrorText(payload.error) ??
+      this.normalizeErrorText(payload.detail) ??
+      this.normalizeErrorText(payload.title);
+    if (nestedMessage) {
+      return nestedMessage;
+    }
+
+    try {
+      const serialized = JSON.stringify(value);
+      return serialized.length > 0 ? serialized : null;
+    } catch {
+      return null;
+    }
+  }
+
   private async refreshAccessToken(): Promise<string | null> {
     if (BaseApiService.refreshPromise) {
       return BaseApiService.refreshPromise;
@@ -353,11 +385,12 @@ export class BaseApiService {
         try {
           parsedError = JSON.parse(errorData);
 
-          const problemMessage =
+          const problemMessage = this.normalizeErrorText(
             parsedError.message ||
-            parsedError.error ||
-            parsedError.title ||
-            parsedError.detail;
+              parsedError.error ||
+              parsedError.title ||
+              parsedError.detail,
+          );
 
           // ASP.NET-style validation errors live under "errors"
           if (parsedError.errors && typeof parsedError.errors === "object") {
@@ -372,7 +405,7 @@ export class BaseApiService {
             } else {
               errorMessage = `${firstKey}: ${firstValueText}`;
             }
-          } else if (problemMessage) {
+          } else if (problemMessage && typeof problemMessage === "string") {
             errorMessage = problemMessage;
           }
 

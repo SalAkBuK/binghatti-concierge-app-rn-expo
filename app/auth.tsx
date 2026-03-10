@@ -111,6 +111,10 @@ export default function AuthScreen() {
     }
   };
 
+  const handleForgotPassword = () => {
+    router.push("/forgot-password" as any);
+  };
+
   const handleClearCache = async () => {
     Alert.alert(
       "Clear Cache",
@@ -227,6 +231,13 @@ export default function AuthScreen() {
               )}
             </View>
 
+            <TouchableOpacity
+              style={styles.forgotPasswordButton}
+              onPress={handleForgotPassword}
+            >
+              <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+            </TouchableOpacity>
+
             <AnimatedButton style={styles.submitButton} onPress={handleSubmit}>
               <Text style={styles.submitButtonText}>Sign In</Text>
             </AnimatedButton>
@@ -339,6 +350,17 @@ const styles = StyleSheet.create({
   submitButtonText: {
     color: "white",
     fontSize: 16,
+    fontWeight: "600",
+  },
+  forgotPasswordButton: {
+    alignSelf: "flex-end",
+    marginTop: -2,
+    marginBottom: 8,
+    paddingVertical: 4,
+  },
+  forgotPasswordText: {
+    color: "#2563eb",
+    fontSize: 13,
     fontWeight: "600",
   },
   clearCacheButton: {
