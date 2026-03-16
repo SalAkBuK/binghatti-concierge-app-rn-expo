@@ -13,6 +13,7 @@ import {
   connectNotifications,
   subscribeNotificationsSocket,
 } from "../services/notificationsSocket";
+import { playIncomingNotificationSound } from "../services/local-notifications";
 import { useAuth } from "./auth-context";
 import type {
   Conversation,
@@ -243,11 +244,22 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
   const [state, dispatch] = useReducer(messagingReducer, initialState);
   const appState = useRef(AppState.currentState);
   const activeConversationIdRef = useRef<string | null>(null);
+  const conversationsRef = useRef<Conversation[]>([]);
+  const currentUserIdRef = useRef<string | null>(null);
+  const notifiedMessageIdsRef = useRef<Set<string>>(new Set());
 
   // Keep ref in sync with state for socket handlers
   useEffect(() => {
     activeConversationIdRef.current = state.activeConversation?.id ?? null;
   }, [state.activeConversation?.id]);
+
+  useEffect(() => {
+    conversationsRef.current = state.conversations;
+  }, [state.conversations]);
+
+  useEffect(() => {
+    currentUserIdRef.current = currentUser?.id ?? null;
+  }, [currentUser?.id]);
 
   const fetchConversations = useCallback(async () => {
     dispatch({ type: ACTIONS.SET_LOADING, payload: true });
@@ -385,8 +397,14 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
         console.log("[Messaging] message:new", payload);
       }
       if (!payload?.conversationId || !payload?.message) return;
+      if (payload.message.id && notifiedMessageIdsRef.current.has(payload.message.id)) {
+        return;
+      }
 
       const isViewing = activeConversationIdRef.current === payload.conversationId;
+      const currentUserId = currentUserIdRef.current;
+      const senderId = payload.message.sender?.id ? String(payload.message.sender.id) : null;
+      const isOwnMessage = Boolean(currentUserId && senderId && senderId === String(currentUserId));
 
       if (isViewing) {
         dispatch({
@@ -406,6 +424,42 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
             message: payload.message,
           },
         });
+
+        if (!isOwnMessage && appState.current === "active") {
+          const conversation = conversationsRef.current.find(
+            (item) => item.id === payload.conversationId,
+          );
+          const senderName = payload.message.sender?.name?.trim();
+          const subject = conversation?.subject?.trim();
+
+          const title = subject
+            ? subject
+            : senderName
+              ? `Message from ${senderName}`
+              : "New message";
+
+          const body = payload.message.content?.trim() || "You received a new message";
+
+          void playIncomingNotificationSound({
+            title,
+            body,
+            data: {
+              type: "message",
+              conversationId: payload.conversationId,
+              messageId: payload.message.id,
+            },
+          });
+        }
+      }
+
+      if (payload.message.id) {
+        notifiedMessageIdsRef.current.add(payload.message.id);
+        if (notifiedMessageIdsRef.current.size > 200) {
+          const oldest = notifiedMessageIdsRef.current.values().next().value;
+          if (oldest) {
+            notifiedMessageIdsRef.current.delete(oldest);
+          }
+        }
       }
     },
     [],

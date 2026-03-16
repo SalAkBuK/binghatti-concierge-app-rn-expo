@@ -103,6 +103,8 @@ export interface NotificationsApi {
   markAllAsRead(): Promise<ApiResponse>;
   dismissNotification(id: string): Promise<ApiResponse>;
   undismissNotification(id: string): Promise<ApiResponse>;
+  registerPushDevice(payload: PushDevicePayload): Promise<ApiResponse>;
+  unregisterPushDevice(payload: PushDevicePayload): Promise<ApiResponse>;
 }
 
 // Users API endpoints
@@ -185,6 +187,16 @@ export interface NotificationListParams {
   unreadOnly?: boolean;
   read?: boolean;
   type?: Notification["type"];
+}
+
+export type PushDeviceProvider = "EXPO" | "FCM" | "APNS";
+export type PushDevicePlatform = "ANDROID" | "IOS" | "WEB";
+
+export interface PushDevicePayload {
+  token: string;
+  provider?: PushDeviceProvider;
+  platform?: PushDevicePlatform;
+  deviceId?: string;
 }
 
 export interface UserListParams {

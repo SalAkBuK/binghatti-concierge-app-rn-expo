@@ -63,6 +63,7 @@ export const STORAGE_KEYS = {
   user_data: "binghatti_user_data",
   user_role: "binghatti_user_role",
   conversations: "binghatti_conversations",
+  push_device_token: "binghatti_push_device_token",
 } as const;
 
 // API endpoints
@@ -156,6 +157,8 @@ export const API_ENDPOINTS = {
     markAllRead: "/notifications/read-all",
     dismiss: (id: string) => `/notifications/${id}/dismiss`,
     undismiss: (id: string) => `/notifications/${id}/undismiss`,
+    registerPushDevice: "/notifications/push-devices/register",
+    unregisterPushDevice: "/notifications/push-devices/unregister",
   },
   employee: {
     jobs: "/employee/jobs",

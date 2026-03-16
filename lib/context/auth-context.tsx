@@ -736,10 +736,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         // Clear persisted session data from SecureStore
         try {
+          const pushDeviceToken = await SecureStore.getItemAsync(
+            STORAGE_KEYS.push_device_token,
+          );
+          if (pushDeviceToken) {
+            try {
+              await apiService.notifications.unregisterPushDevice({
+                token: pushDeviceToken,
+              });
+            } catch (pushError) {
+              console.warn("[Auth] Failed to unregister push device:", pushError);
+            }
+          }
+
           await apiService.logout();
           await SecureStore.deleteItemAsync(STORAGE_KEYS.user_data);
           await SecureStore.deleteItemAsync(STORAGE_KEYS.auth_token);
           await SecureStore.deleteItemAsync(STORAGE_KEYS.refresh_token);
+          await SecureStore.deleteItemAsync(STORAGE_KEYS.push_device_token);
           console.log('[Auth] Session data cleared from SecureStore');
         } catch (storageError) {
           console.warn('[Auth] Failed to clear SecureStore:', storageError);

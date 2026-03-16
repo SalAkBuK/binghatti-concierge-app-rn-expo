@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
     Alert,
     KeyboardAvoidingView,
@@ -33,7 +33,7 @@ interface FormErrors {
 const MIN_PASSWORD_LENGTH = 8;
 
 export default function AuthScreen() {
-  const { actions } = useApp();
+  const { actions, isAuthenticated, currentUser } = useApp();
   const [formData, setFormData] = useState<FormData>({
     email: "",
     password: "",
@@ -42,6 +42,12 @@ export default function AuthScreen() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const placeholderColor = "#94A3B8";
+
+  useEffect(() => {
+    if (isAuthenticated && currentUser) {
+      router.replace("/");
+    }
+  }, [currentUser, isAuthenticated]);
 
   // Validation functions
   const validateEmail = (email: string): string | undefined => {

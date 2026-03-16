@@ -8,6 +8,7 @@ import React, {
   useRef,
 } from "react";
 import { AppState } from "react-native";
+import * as SecureStore from "expo-secure-store";
 import { useAsyncStorage } from "../hooks/useAsyncStorage";
 import { apiService } from "../services/api";
 import {
@@ -26,6 +27,7 @@ import type { Notification, User } from "../types";
 import { useAuth } from "./auth-context";
 import {
   ensureNotificationPermissions,
+  getPushDeviceRegistration,
   playIncomingNotificationSound,
 } from "../services/local-notifications";
 
@@ -308,6 +310,8 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
   const canPlaySoundRef = useRef(false);
   const fallbackAttemptedRef = useRef(false);
   const lastTokenRef = useRef<string | null>(null);
+  const registeredPushTokenRef = useRef<string | null>(null);
+  const registeredPushUserIdRef = useRef<string | null>(null);
   const [storedNotifications, setNotifications] = useAsyncStorage(
     STORAGE_KEYS.notifications,
     DEFAULT_NOTIFICATIONS,
@@ -413,6 +417,72 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
       cancelled = true;
     };
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!isAuthenticated || !currentUser?.id) {
+      registeredPushTokenRef.current = null;
+      registeredPushUserIdRef.current = null;
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    void (async () => {
+      try {
+        const registration = await getPushDeviceRegistration();
+        if (!registration || cancelled) {
+          if (__DEV__) {
+            console.log(
+              "[Notifications] Push registration skipped (no token, permission denied, or Expo Go)",
+            );
+          }
+          return;
+        }
+
+        const alreadyRegisteredForUser =
+          registeredPushTokenRef.current === registration.token &&
+          registeredPushUserIdRef.current === currentUser.id;
+        if (alreadyRegisteredForUser) {
+          if (__DEV__) {
+            console.log("[Notifications] Push token already registered for current user");
+          }
+          return;
+        }
+
+        await apiService.notifications.registerPushDevice({
+          token: registration.token,
+          provider: registration.provider,
+          platform: registration.platform,
+        });
+
+        registeredPushTokenRef.current = registration.token;
+        registeredPushUserIdRef.current = currentUser.id;
+        await SecureStore.setItemAsync(
+          STORAGE_KEYS.push_device_token,
+          registration.token,
+        );
+        if (__DEV__) {
+          const tokenPreview = `${registration.token.slice(0, 10)}...${registration.token.slice(-6)}`;
+          console.log("[Notifications] Push device registered", {
+            userId: currentUser.id,
+            provider: registration.provider,
+            platform: registration.platform,
+            tokenPreview,
+          });
+        }
+      } catch (error) {
+        if (__DEV__) {
+          console.log("[Notifications] Failed to register push device", error);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, currentUser?.id]);
 
   useEffect(() => {
     if (!isAuthenticated) {
