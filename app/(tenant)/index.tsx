@@ -24,6 +24,7 @@ import { HeaderBar } from "../../components/ui/HeaderBar";
 import { HomeScreenSkeleton } from "../../components/ui/HomeScreenSkeleton";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
+import { useResidentContract } from "../../lib/hooks/useResidentSelfService";
 import { useResidentRequests } from "../../lib/hooks/useResidentRequests";
 import {
   filterNotificationsByUser,
@@ -43,15 +44,6 @@ export default function TenantHomeScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [showSideMenu, setShowSideMenu] = useState(false);
   const tabBarHeight = useBottomTabBarHeight();
-  const buildingName = currentUser?.profile?.buildingName || "-";
-  const unitLabel = currentUser?.profile?.apartment;
-  const floorLabel = currentUser?.profile?.floor;
-  const unitInfo =
-    unitLabel || floorLabel
-      ? [unitLabel, floorLabel ? `Floor ${floorLabel}` : null]
-          .filter(Boolean)
-          .join(" - ")
-      : "-";
   const isHandlingUnauthorizedRef = useRef(false);
 
   const handleUnauthorized = useCallback(async () => {
@@ -69,6 +61,15 @@ export default function TenantHomeScreen() {
       isHandlingUnauthorizedRef.current = false;
     }
   }, [actions]);
+
+  const {
+    data: contractData,
+    refetch: refetchContract,
+    isRefreshing: isContractRefreshing,
+  } = useResidentContract({
+    enabled: Boolean(currentUser?.id && isAuthenticated),
+    onUnauthorized: handleUnauthorized,
+  });
 
   const {
     requests: residentRequests,
@@ -98,10 +99,25 @@ export default function TenantHomeScreen() {
   }, [currentUser]);
 
   const onRefreshHome = useCallback(async () => {
-    await refreshRequests({ asRefresh: true, reason: "manual" });
-  }, [refreshRequests]);
+    await Promise.all([
+      refreshRequests({ asRefresh: true, reason: "manual" }),
+      refetchContract({ asRefresh: true, showLoading: false }),
+    ]);
+  }, [refetchContract, refreshRequests]);
 
-  const isHomeRefreshing = isRequestsRefreshing;
+  const isHomeRefreshing = isRequestsRefreshing || isContractRefreshing;
+
+  const profileBuildingName = currentUser?.profile?.buildingName;
+  const unitLabel = currentUser?.profile?.apartment;
+  const floorLabel = currentUser?.profile?.floor;
+  const profileUnitInfo =
+    unitLabel || floorLabel
+      ? [unitLabel, floorLabel ? `Floor ${floorLabel}` : null]
+          .filter(Boolean)
+          .join(" - ")
+      : "-";
+  const buildingName = contractData.contract?.buildingName || profileBuildingName || "-";
+  const unitInfo = contractData.contract?.unitLabel || profileUnitInfo;
 
   const recentRequests = useMemo(() => {
     return [...residentRequests]

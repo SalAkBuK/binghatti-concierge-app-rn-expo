@@ -29,7 +29,8 @@
       "permissions": [
         "WAKE_LOCK",
         "INTERNET",
-        "ACCESS_NETWORK_STATE"
+        "ACCESS_NETWORK_STATE",
+        "POST_NOTIFICATIONS"
       ]
     },
     "web": {
@@ -50,6 +51,7 @@
           }
         }
       ],
+      "expo-notifications",
       "expo-secure-store",
       "expo-web-browser"
     ],

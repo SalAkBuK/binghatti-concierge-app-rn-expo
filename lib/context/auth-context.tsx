@@ -766,6 +766,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const role = state.currentUser.role;
         const profileData = userData.profile || {};
         let response;
+        let residentProfileResponse: any;
         let apiCallSuccess = false;
         const resolvedName = (
           userData.name ??
@@ -787,6 +788,42 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           ...(resolvedPhone ? { phone: resolvedPhone } : {}),
           ...(resolvedAvatarUrl ? { avatarUrl: resolvedAvatarUrl } : {}),
         };
+        const tenantResidentProfilePayload: Record<string, string> = {};
+        const setTenantProfileField = (
+          key: string,
+          value: unknown,
+          fallback?: unknown,
+        ) => {
+          const selectedValue = value ?? fallback;
+          if (typeof selectedValue !== "string") return;
+          tenantResidentProfilePayload[key] = selectedValue.trim();
+        };
+        setTenantProfileField(
+          "emergencyContactName",
+          (profileData as any).emergencyContactName,
+          profileData.emergencyContact,
+        );
+        setTenantProfileField(
+          "emergencyContactPhone",
+          (profileData as any).emergencyContactPhone,
+          profileData.emergencyPhone,
+        );
+        setTenantProfileField("currentAddress", (profileData as any).currentAddress);
+        setTenantProfileField(
+          "passportNumber",
+          (profileData as any).passportNumber,
+        );
+        setTenantProfileField("nationality", (profileData as any).nationality);
+        setTenantProfileField(
+          "emiratesIdNumber",
+          (profileData as any).emiratesIdNumber,
+          (profileData as any).emiratesId,
+        );
+        setTenantProfileField("dateOfBirth", (profileData as any).dateOfBirth);
+        setTenantProfileField(
+          "preferredBuildingId",
+          (profileData as any).preferredBuildingId,
+        );
         console.log("[Auth] Updating profile with payload:", updatePayload);
 
         // Try to call backend API, but gracefully handle if endpoints don't exist yet
@@ -805,12 +842,42 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               break;
 
             case "management":
-            case "tenant":
             case "building_employee":
               if (Object.keys(updatePayload).length > 0) {
                 response = await apiService.updateProfile(updatePayload);
               } else {
                 response = { success: true };
+              }
+              break;
+
+            case "tenant":
+              if (Object.keys(updatePayload).length > 0) {
+                response = await apiService.updateProfile(updatePayload);
+              } else {
+                response = { success: true };
+              }
+              if (Object.keys(tenantResidentProfilePayload).length > 0) {
+                try {
+                  residentProfileResponse =
+                    await apiService.residentSelfService.updateResidentProfile(
+                      tenantResidentProfilePayload,
+                    );
+                } catch (residentProfileError: any) {
+                  const is404Resident =
+                    residentProfileError?.status === 404 ||
+                    residentProfileError?.message?.includes("404") ||
+                    residentProfileError?.message?.includes("Not Found");
+                  const isNetworkResident =
+                    residentProfileError?.message?.includes("Network") ||
+                    residentProfileError?.message?.includes("fetch");
+                  if (is404Resident || isNetworkResident) {
+                    console.warn(
+                      `[Auth] Resident profile API not available (${is404Resident ? "404" : "Network error"}), continuing with local merge only`,
+                    );
+                  } else {
+                    throw residentProfileError;
+                  }
+                }
               }
               break;
 
@@ -856,16 +923,55 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         const responseProfile =
           response?.data?.profile ?? response?.data;
+        const residentProfile = residentProfileResponse ?? null;
+
+        const mergedResponseProfile = {
+          ...mergedProfile,
+          ...(responseProfile && typeof responseProfile === "object"
+            ? responseProfile
+            : {}),
+        } as any;
+
+        if (residentProfile && typeof residentProfile === "object") {
+          mergedResponseProfile.currentAddress =
+            residentProfile.currentAddress ?? mergedResponseProfile.currentAddress;
+          mergedResponseProfile.emergencyContactName =
+            residentProfile.emergencyContactName ??
+            mergedResponseProfile.emergencyContactName;
+          mergedResponseProfile.emergencyContactPhone =
+            residentProfile.emergencyContactPhone ??
+            mergedResponseProfile.emergencyContactPhone;
+          mergedResponseProfile.emergencyContact =
+            residentProfile.emergencyContactName ??
+            mergedResponseProfile.emergencyContact;
+          mergedResponseProfile.emergencyPhone =
+            residentProfile.emergencyContactPhone ??
+            mergedResponseProfile.emergencyPhone;
+          mergedResponseProfile.passportNumber =
+            residentProfile.passportNumber ?? mergedResponseProfile.passportNumber;
+          mergedResponseProfile.nationality =
+            residentProfile.nationality ?? mergedResponseProfile.nationality;
+          mergedResponseProfile.emiratesId =
+            residentProfile.emiratesIdNumber ?? mergedResponseProfile.emiratesId;
+          mergedResponseProfile.dateOfBirth =
+            residentProfile.dateOfBirth ?? mergedResponseProfile.dateOfBirth;
+          mergedResponseProfile.preferredBuildingId =
+            residentProfile.preferredBuildingId ??
+            mergedResponseProfile.preferredBuildingId;
+        }
 
         // Update local state (either from server response or with local data)
         const updatedUser = {
           ...state.currentUser,
-          name: resolvedName || state.currentUser.name,
-          phone: resolvedPhone || state.currentUser.phone,
-          profile:
-            apiCallSuccess && responseProfile
-              ? responseProfile
-              : mergedProfile,
+          name:
+            resolvedName ||
+            residentProfile?.user?.name ||
+            state.currentUser.name,
+          phone:
+            resolvedPhone ||
+            residentProfile?.user?.phone ||
+            state.currentUser.phone,
+          profile: mergedResponseProfile,
           profileCompleted: true,
         };
 

@@ -40,8 +40,13 @@ export interface UserProfile {
   buildingName?: string;
   department?: string;
   bio?: string;
+  currentAddress?: string;
   emergencyContact?: string;
   emergencyPhone?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  preferredBuildingId?: string;
+  dateOfBirth?: string;
   avatar?: string;
   buildingId?: string;
   managedBuildingIds?: string[];
@@ -633,29 +638,198 @@ export interface Lease {
   updatedAt: string;
 }
 
-export interface ResidentActiveLease {
+export type ResidentContractStatus =
+  | "DRAFT"
+  | "ACTIVE"
+  | "ENDED"
+  | "CANCELLED";
+
+export type ResidentMoveRequestStatus =
+  | "PENDING"
+  | "APPROVED"
+  | "REJECTED"
+  | "CANCELLED"
+  | "COMPLETED"
+  | null;
+
+export type ResidentContractListStatusFilter = ResidentContractStatus | "ALL";
+export type ResidentContractOrder = "asc" | "desc";
+export type ResidentMoveRequestListStatusFilter =
+  | Exclude<ResidentMoveRequestStatus, null>
+  | "ALL";
+
+export type ResidentContractDocumentType =
+  | "SIGNED_TENANCY_CONTRACT"
+  | (string & {});
+
+export interface ResidentContractResident {
   id: string | null;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+}
+
+export interface ResidentContractUnit {
+  id: string | null;
+  label: string | null;
+  floor: number | null;
+  bedrooms: number | null;
+  bathrooms: number | null;
+  unitSize: string | null;
+  unitSizeUnit: string | null;
+  furnishedStatus: string | null;
+}
+
+export interface ResidentContract {
+  id: string | null;
+  status: ResidentContractStatus | null;
+  contractNumber: string | null;
   unitLabel: string | null;
+  buildingName: string | null;
   startDate: string | null;
   endDate: string | null;
-  rentAmount: number | null;
-  paymentFrequency: string | null;
+  buildingId?: string | null;
+  orgId?: string | null;
+  occupancyId?: string | null;
+  residentUserId?: string | null;
+  unitId?: string | null;
+  contractDate?: string | null;
+  annualRent?: string | null;
+  contractValue?: string | null;
+  securityDepositAmount?: string | null;
+  paymentFrequency?: string | null;
+  paymentModeText?: string | null;
+  numberOfCheques?: number | null;
+  locationCommunity?: string | null;
+  plotNo?: string | null;
+  premisesNoDewa?: string | null;
+  propertyNumber?: string | null;
+  propertySizeSqm?: string | null;
+  propertyTypeLabel?: string | null;
+  propertyUsage?: string | null;
+  additionalTerms?: string[];
+  landlordNameSnapshot?: string | null;
+  landlordEmailSnapshot?: string | null;
+  landlordPhoneSnapshot?: string | null;
+  ownerNameSnapshot?: string | null;
+  tenantNameSnapshot?: string | null;
+  tenantEmailSnapshot?: string | null;
+  tenantPhoneSnapshot?: string | null;
+  resident?: ResidentContractResident | null;
+  unit?: ResidentContractUnit | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
 }
 
-export interface ResidentLeaseDocument {
-  id: string;
-  filename: string;
-  type: string | null;
-  date: string | null;
-  url: string | null;
+export interface ResidentLatestContract {
+  contract: ResidentContract | null;
+  canRequestMoveIn: boolean;
+  canRequestMoveOut: boolean;
+  latestMoveInRequestStatus: ResidentMoveRequestStatus;
+  latestMoveOutRequestStatus: ResidentMoveRequestStatus;
 }
 
-export interface ResidentActiveParkingAllocation {
+export interface CreateResidentMoveRequestDTO {
+  requestedMoveAt: string;
+  notes?: string;
+}
+
+export interface ListResidentContractsParams {
+  status?: ResidentContractListStatusFilter;
+  order?: ResidentContractOrder;
+  cursor?: string;
+  limit?: number;
+}
+
+export interface ResidentContractsListResponse {
+  items: ResidentContract[];
+  nextCursor: string | null;
+}
+
+export interface ListResidentMoveRequestsParams {
+  status?: ResidentMoveRequestListStatusFilter;
+}
+
+export interface ResidentMoveRequest {
   id: string | null;
-  slotCode: string | null;
-  level: string | null;
-  type: string | null;
-  startDate: string | null;
+  contractId: string | null;
+  leaseId: string | null;
+  status: ResidentMoveRequestStatus;
+  requestedMoveAt: string | null;
+  notes: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  reviewedAt: string | null;
+  rejectionReason: string | null;
+}
+
+export interface CreateResidentContractDocumentUploadUrlDTO {
+  type?: ResidentContractDocumentType;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
+export interface ResidentContractDocumentUploadUrlResponse {
+  uploadUrl: string | null;
+  storageUrl: string | null;
+  objectKey: string | null;
+  type: ResidentContractDocumentType | null;
+  expiresInSeconds: number | null;
+}
+
+export interface CreateResidentContractDocumentDTO {
+  type: ResidentContractDocumentType;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  url: string;
+}
+
+export interface ResidentContractDocument {
+  id: string | null;
+  contractId: string | null;
+  leaseId: string | null;
+  type: ResidentContractDocumentType | null;
+  fileName: string | null;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  url: string | null;
+  createdAt: string | null;
+}
+
+export interface UpdateResidentExtendedProfileDTO {
+  emiratesIdNumber?: string;
+  passportNumber?: string;
+  nationality?: string;
+  dateOfBirth?: string;
+  currentAddress?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  preferredBuildingId?: string;
+}
+
+export interface ResidentExtendedProfile {
+  id: string;
+  orgId: string;
+  userId: string;
+  user: {
+    id: string;
+    email: string;
+    name: string | null;
+    phone: string | null;
+    avatarUrl: string | null;
+  };
+  emiratesIdNumber: string | null;
+  passportNumber: string | null;
+  nationality: string | null;
+  dateOfBirth: string | null;
+  currentAddress: string | null;
+  emergencyContactName: string | null;
+  emergencyContactPhone: string | null;
+  preferredBuildingId: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 export type VisitorPassType = "visitor" | "delivery" | "contractor";

@@ -33,12 +33,18 @@ interface ProfileFormData {
   name: string;
   email: string;
   phone: string;
+  previousAddress: string;
+  emergencyContactName: string;
+  emergencyContactPhone: string;
 }
 
 interface ValidationErrors {
   name?: string;
   email?: string;
   phone?: string;
+  previousAddress?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
 }
 
 export default function ProfileScreen() {
@@ -49,6 +55,15 @@ export default function ProfileScreen() {
     name: currentUser?.profile?.name || currentUser?.name || "",
     email: currentUser?.email || "",
     phone: currentUser?.profile?.phone || "",
+    previousAddress: currentUser?.profile?.currentAddress || "",
+    emergencyContactName:
+      currentUser?.profile?.emergencyContactName ||
+      currentUser?.profile?.emergencyContact ||
+      "",
+    emergencyContactPhone:
+      currentUser?.profile?.emergencyContactPhone ||
+      currentUser?.profile?.emergencyPhone ||
+      "",
   });
   const buildingName = currentUser?.profile?.buildingName || "Not provided";
 
@@ -94,6 +109,13 @@ export default function ProfileScreen() {
       errors.phone = "Please enter a valid phone number";
     }
 
+    if (
+      profileData.emergencyContactPhone &&
+      !/^\+?[\d\s\-\(\)]{10,}$/.test(profileData.emergencyContactPhone)
+    ) {
+      errors.emergencyContactPhone = "Please enter a valid emergency contact phone";
+    }
+
     return errors;
   };
 
@@ -130,6 +152,11 @@ export default function ProfileScreen() {
         profile: {
           phone: profileData.phone,
           name: profileData.name,
+          currentAddress: profileData.previousAddress,
+          emergencyContactName: profileData.emergencyContactName,
+          emergencyContactPhone: profileData.emergencyContactPhone,
+          emergencyContact: profileData.emergencyContactName,
+          emergencyPhone: profileData.emergencyContactPhone,
         },
       } as any);
 
@@ -137,6 +164,15 @@ export default function ProfileScreen() {
         name: updatedUser.profile?.name || updatedUser.name || "",
         email: updatedUser.email || "",
         phone: updatedUser.profile?.phone || updatedUser.phone || "",
+        previousAddress: (updatedUser.profile as any)?.currentAddress || "",
+        emergencyContactName:
+          (updatedUser.profile as any)?.emergencyContactName ||
+          updatedUser.profile?.emergencyContact ||
+          "",
+        emergencyContactPhone:
+          (updatedUser.profile as any)?.emergencyContactPhone ||
+          updatedUser.profile?.emergencyPhone ||
+          "",
       });
 
       showSuccessAlert("Profile updated successfully!");
@@ -332,6 +368,30 @@ export default function ProfileScreen() {
               "phone-pad",
             )}
 
+            {renderProfileField(
+              "Previous Address",
+              profileData.previousAddress,
+              "previousAddress",
+              "Enter previous address",
+              "default",
+              true,
+            )}
+
+            {renderProfileField(
+              "Emergency Contact Name",
+              profileData.emergencyContactName,
+              "emergencyContactName",
+              "Enter emergency contact name",
+            )}
+
+            {renderProfileField(
+              "Emergency Contact Phone",
+              profileData.emergencyContactPhone,
+              "emergencyContactPhone",
+              "Enter emergency contact phone",
+              "phone-pad",
+            )}
+
             <Text style={styles.sectionTitle}>Property Information</Text>
 
             <View style={styles.fieldContainer}>
@@ -369,6 +429,16 @@ export default function ProfileScreen() {
                         currentUser?.profile?.name || currentUser?.name || "",
                       email: currentUser?.email || "",
                       phone: currentUser?.profile?.phone || "",
+                      previousAddress:
+                        (currentUser?.profile as any)?.currentAddress || "",
+                      emergencyContactName:
+                        (currentUser?.profile as any)?.emergencyContactName ||
+                        currentUser?.profile?.emergencyContact ||
+                        "",
+                      emergencyContactPhone:
+                        (currentUser?.profile as any)?.emergencyContactPhone ||
+                        currentUser?.profile?.emergencyPhone ||
+                        "",
                     });
                   }}
                 >
@@ -403,7 +473,7 @@ export default function ProfileScreen() {
               >
                 <Ionicons name="document-text-outline" size={20} color="#1f2937" />
                 <Text style={styles.leaseDetailsButtonText}>
-                  Lease & Parking Details
+                  Contract Details
                 </Text>
               </TouchableOpacity>
             )}

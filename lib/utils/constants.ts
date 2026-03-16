@@ -89,9 +89,19 @@ export const API_ENDPOINTS = {
   },
   resident: {
     me: "/resident/me",
-    leaseActive: "/resident/lease/active",
-    leaseActiveDocuments: "/resident/lease/active/documents",
-    parkingActiveAllocation: "/resident/parking/active-allocation",
+    meProfile: "/resident/me/profile",
+    activeLeaseDocuments: "/resident/lease/active/documents",
+    contracts: "/resident/contracts",
+    contractLatest: "/resident/contracts/latest",
+    contractDetail: (contractId: string) => `/resident/contracts/${contractId}`,
+    contractMoveInRequests: (contractId: string) =>
+      `/resident/contracts/${contractId}/move-in-requests`,
+    contractMoveOutRequests: (contractId: string) =>
+      `/resident/contracts/${contractId}/move-out-requests`,
+    contractDocumentsUploadUrl: (contractId: string) =>
+      `/resident/contracts/${contractId}/documents/upload-url`,
+    contractDocuments: (contractId: string) =>
+      `/resident/contracts/${contractId}/documents`,
   },
   orgBuildings: {
     assigned: "/org/buildings/assigned",

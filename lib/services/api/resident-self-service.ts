@@ -2,17 +2,29 @@ import { BaseApiService } from "./base";
 import { API_ENDPOINTS } from "../../utils/constants";
 import type {
   ApiResponse,
-  ResidentActiveLease,
-  ResidentLeaseDocument,
-  ResidentActiveParkingAllocation,
+  CreateResidentContractDocumentDTO,
+  CreateResidentContractDocumentUploadUrlDTO,
+  CreateResidentMoveRequestDTO,
+  ListResidentContractsParams,
+  ListResidentMoveRequestsParams,
+  ResidentContract,
+  ResidentContractDocument,
+  ResidentContractDocumentUploadUrlResponse,
+  ResidentContractsListResponse,
+  ResidentContractStatus,
+  ResidentExtendedProfile,
+  ResidentLatestContract,
+  ResidentMoveRequest,
+  ResidentMoveRequestStatus,
+  UpdateResidentExtendedProfileDTO,
 } from "../../types";
 import type { ResidentSelfServiceApi } from "./types";
 
 type UnknownRecord = Record<string, unknown>;
 
-const logResidentSelfService = (label: string, payload: unknown): void => {
+const logResidentContract = (label: string, payload: unknown): void => {
   if (!__DEV__) return;
-  console.log(`[ResidentSelfService] ${label}`, payload);
+  console.log(`[ResidentContract] ${label}`, payload);
 };
 
 const isRecord = (value: unknown): value is UnknownRecord =>
@@ -21,14 +33,19 @@ const isRecord = (value: unknown): value is UnknownRecord =>
 const readProp = (value: unknown, key: string): unknown =>
   isRecord(value) ? value[key] : undefined;
 
+const firstDefined = (...values: unknown[]): unknown =>
+  values.find((item) => item !== undefined && item !== null);
+
 const toStringOrNull = (value: unknown): string | null => {
   if (typeof value === "string") {
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
   }
-  if (typeof value === "number") {
+
+  if (typeof value === "number" && Number.isFinite(value)) {
     return String(value);
   }
+
   return null;
 };
 
@@ -38,26 +55,29 @@ const toNumberOrNull = (value: unknown): number | null => {
   }
 
   if (typeof value === "string") {
-    const normalized = value.replace(/[^0-9.-]/g, "");
-    const parsed = Number(normalized);
+    const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : null;
   }
 
   return null;
 };
 
-const firstDefined = (...values: unknown[]): unknown =>
-  values.find((item) => item !== undefined && item !== null);
+const toBoolean = (value: unknown): boolean => {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value === 1;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    return normalized === "true" || normalized === "1" || normalized === "yes";
+  }
+  return false;
+};
 
 const unwrapResponseData = <T>(response: ApiResponse<T> | T): T => {
   if (isRecord(response)) {
-    if ("data" in response) {
+    if ("data" in response && response.data !== undefined) {
       return response.data as T;
     }
-    if ("items" in response) {
-      return response.items as T;
-    }
-    if ("result" in response) {
+    if ("result" in response && response.result !== undefined) {
       return response.result as T;
     }
   }
@@ -65,15 +85,123 @@ const unwrapResponseData = <T>(response: ApiResponse<T> | T): T => {
   return response as T;
 };
 
-const mapLease = (payload: UnknownRecord): ResidentActiveLease => {
+const normalizeContractStatus = (value: unknown): ResidentContractStatus | null => {
+  const normalized = toStringOrNull(value)?.toUpperCase();
+  switch (normalized) {
+    case "DRAFT":
+      return "DRAFT";
+    case "ACTIVE":
+      return "ACTIVE";
+    case "ENDED":
+      return "ENDED";
+    case "CANCELLED":
+      return "CANCELLED";
+    default:
+      return null;
+  }
+};
+
+const normalizeMoveRequestStatus = (
+  value: unknown,
+): ResidentMoveRequestStatus => {
+  const normalized = toStringOrNull(value)?.toUpperCase();
+  switch (normalized) {
+    case "PENDING":
+      return "PENDING";
+    case "APPROVED":
+      return "APPROVED";
+    case "REJECTED":
+      return "REJECTED";
+    case "CANCELLED":
+      return "CANCELLED";
+    case "COMPLETED":
+      return "COMPLETED";
+    default:
+      return null;
+  }
+};
+
+const extractContractReference = (
+  payload: UnknownRecord,
+  fallbackId?: string | null,
+): string | null => {
+  const nestedContract = readProp(payload, "contract");
+  return toStringOrNull(
+    firstDefined(
+      payload.contractId,
+      payload.contract_id,
+      payload.contractUuid,
+      payload.contractUUID,
+      payload.id,
+      payload.uuid,
+      payload.leaseId,
+      payload.lease_id,
+      isRecord(nestedContract) ? nestedContract.contractId : undefined,
+      isRecord(nestedContract) ? nestedContract.id : undefined,
+      isRecord(nestedContract) ? nestedContract.uuid : undefined,
+      fallbackId,
+    ),
+  );
+};
+
+const looksLikeContractRecord = (payload: UnknownRecord): boolean => {
+  const nestedContract = readProp(payload, "contract");
+  const target = isRecord(nestedContract) ? nestedContract : payload;
+  return Boolean(
+    extractContractReference(target) ||
+      toStringOrNull(
+        firstDefined(
+          target.contractNumber,
+          target.ijariId,
+          target.number,
+          target.code,
+          target.status,
+        ),
+      ),
+  );
+};
+
+const mapContract = (payload: UnknownRecord): ResidentContract => {
+  const nestedContract = readProp(payload, "contract");
+  const source = isRecord(nestedContract) ? nestedContract : payload;
   const unit = readProp(payload, "unit");
+  const sourceUnit = readProp(source, "unit");
+  const sourceResident = readProp(source, "resident");
   const occupancy = readProp(payload, "occupancy");
-  const buildingUnit = readProp(payload, "buildingUnit");
+  const building = readProp(payload, "building");
+  const property = readProp(payload, "property");
+  const additionalTermsValue = firstDefined(
+    readProp(source, "additionalTerms"),
+    readProp(payload, "additionalTerms"),
+  );
+  const additionalTerms = Array.isArray(additionalTermsValue)
+    ? additionalTermsValue
+        .map((item) => toStringOrNull(item))
+        .filter((item): item is string => Boolean(item))
+    : [];
 
   return {
-    id: toStringOrNull(firstDefined(payload.id, payload.leaseId)),
+    id: extractContractReference(source, extractContractReference(payload)),
+    status: normalizeContractStatus(firstDefined(source.status, payload.status)),
+    contractNumber: toStringOrNull(
+      firstDefined(
+        source.contractNumber,
+        source.number,
+        source.code,
+        source.ijariId,
+        source.propertyNumber,
+        payload.contractNumber,
+        payload.number,
+        payload.code,
+        payload.ijariId,
+        payload.propertyNumber,
+      ),
+    ),
     unitLabel: toStringOrNull(
       firstDefined(
+        source.unitLabel,
+        source.unitNumber,
+        source.apartment,
         payload.unitLabel,
         payload.unitNumber,
         payload.apartment,
@@ -81,121 +209,432 @@ const mapLease = (payload: UnknownRecord): ResidentActiveLease => {
         readProp(unit, "unitNumber"),
         readProp(unit, "number"),
         readProp(occupancy, "unitNumber"),
-        readProp(buildingUnit, "label"),
+      ),
+    ),
+    buildingName: toStringOrNull(
+      firstDefined(
+        source.buildingName,
+        source.buildingNameSnapshot,
+        payload.buildingName,
+        payload.buildingNameSnapshot,
+        readProp(building, "name"),
+        readProp(property, "name"),
       ),
     ),
     startDate: toStringOrNull(
-      firstDefined(payload.startDate, payload.leaseStartDate, payload.commenceDate),
+      firstDefined(
+        source.startDate,
+        source.contractStartDate,
+        source.commenceDate,
+        source.contractPeriodFrom,
+        source.leaseStartDate,
+        payload.startDate,
+        payload.contractStartDate,
+        payload.commenceDate,
+        payload.contractPeriodFrom,
+        payload.leaseStartDate,
+      ),
     ),
     endDate: toStringOrNull(
-      firstDefined(payload.endDate, payload.leaseEndDate, payload.expiryDate),
+      firstDefined(
+        source.endDate,
+        source.contractEndDate,
+        source.expiryDate,
+        source.contractPeriodTo,
+        source.leaseEndDate,
+        payload.endDate,
+        payload.contractEndDate,
+        payload.expiryDate,
+        payload.contractPeriodTo,
+        payload.leaseEndDate,
+      ),
     ),
-    rentAmount: toNumberOrNull(
-      firstDefined(payload.rentAmount, payload.rent, payload.monthlyRent),
+    buildingId: toStringOrNull(firstDefined(source.buildingId, payload.buildingId)),
+    orgId: toStringOrNull(firstDefined(source.orgId, payload.orgId)),
+    occupancyId: toStringOrNull(
+      firstDefined(source.occupancyId, payload.occupancyId),
+    ),
+    residentUserId: toStringOrNull(
+      firstDefined(source.residentUserId, payload.residentUserId),
+    ),
+    unitId: toStringOrNull(firstDefined(source.unitId, payload.unitId)),
+    contractDate: toStringOrNull(
+      firstDefined(source.contractDate, payload.contractDate),
+    ),
+    annualRent: toStringOrNull(firstDefined(source.annualRent, payload.annualRent)),
+    contractValue: toStringOrNull(
+      firstDefined(source.contractValue, payload.contractValue),
+    ),
+    securityDepositAmount: toStringOrNull(
+      firstDefined(source.securityDepositAmount, payload.securityDepositAmount),
     ),
     paymentFrequency: toStringOrNull(
-      firstDefined(
-        payload.paymentFrequency,
-        payload.paymentTerm,
-        payload.paymentCycle,
-        payload.frequency,
+      firstDefined(source.paymentFrequency, payload.paymentFrequency),
+    ),
+    paymentModeText: toStringOrNull(
+      firstDefined(source.paymentModeText, payload.paymentModeText),
+    ),
+    numberOfCheques: toNumberOrNull(
+      firstDefined(source.numberOfCheques, payload.numberOfCheques),
+    ),
+    locationCommunity: toStringOrNull(
+      firstDefined(source.locationCommunity, payload.locationCommunity),
+    ),
+    plotNo: toStringOrNull(firstDefined(source.plotNo, payload.plotNo)),
+    premisesNoDewa: toStringOrNull(
+      firstDefined(source.premisesNoDewa, payload.premisesNoDewa),
+    ),
+    propertyNumber: toStringOrNull(
+      firstDefined(source.propertyNumber, payload.propertyNumber),
+    ),
+    propertySizeSqm: toStringOrNull(
+      firstDefined(source.propertySizeSqm, payload.propertySizeSqm),
+    ),
+    propertyTypeLabel: toStringOrNull(
+      firstDefined(source.propertyTypeLabel, payload.propertyTypeLabel),
+    ),
+    propertyUsage: toStringOrNull(
+      firstDefined(source.propertyUsage, payload.propertyUsage),
+    ),
+    additionalTerms,
+    landlordNameSnapshot: toStringOrNull(
+      firstDefined(source.landlordNameSnapshot, payload.landlordNameSnapshot),
+    ),
+    landlordEmailSnapshot: toStringOrNull(
+      firstDefined(source.landlordEmailSnapshot, payload.landlordEmailSnapshot),
+    ),
+    landlordPhoneSnapshot: toStringOrNull(
+      firstDefined(source.landlordPhoneSnapshot, payload.landlordPhoneSnapshot),
+    ),
+    ownerNameSnapshot: toStringOrNull(
+      firstDefined(source.ownerNameSnapshot, payload.ownerNameSnapshot),
+    ),
+    tenantNameSnapshot: toStringOrNull(
+      firstDefined(source.tenantNameSnapshot, payload.tenantNameSnapshot),
+    ),
+    tenantEmailSnapshot: toStringOrNull(
+      firstDefined(source.tenantEmailSnapshot, payload.tenantEmailSnapshot),
+    ),
+    tenantPhoneSnapshot: toStringOrNull(
+      firstDefined(source.tenantPhoneSnapshot, payload.tenantPhoneSnapshot),
+    ),
+    resident: {
+      id: toStringOrNull(
+        firstDefined(
+          isRecord(sourceResident) ? sourceResident.id : undefined,
+          readProp(payload, "residentUserId"),
+        ),
       ),
+      name: toStringOrNull(
+        firstDefined(
+          isRecord(sourceResident) ? sourceResident.name : undefined,
+          readProp(payload, "tenantNameSnapshot"),
+        ),
+      ),
+      email: toStringOrNull(
+        firstDefined(
+          isRecord(sourceResident) ? sourceResident.email : undefined,
+          readProp(payload, "tenantEmailSnapshot"),
+        ),
+      ),
+      phone: toStringOrNull(
+        firstDefined(
+          isRecord(sourceResident) ? sourceResident.phone : undefined,
+          readProp(payload, "tenantPhoneSnapshot"),
+        ),
+      ),
+    },
+    unit: {
+      id: toStringOrNull(
+        firstDefined(
+          isRecord(sourceUnit) ? sourceUnit.id : undefined,
+          readProp(unit, "id"),
+          payload.unitId,
+        ),
+      ),
+      label: toStringOrNull(
+        firstDefined(
+          isRecord(sourceUnit) ? sourceUnit.label : undefined,
+          readProp(unit, "label"),
+          payload.unitLabel,
+          payload.unitNumber,
+        ),
+      ),
+      floor: toNumberOrNull(
+        firstDefined(
+          isRecord(sourceUnit) ? sourceUnit.floor : undefined,
+          readProp(unit, "floor"),
+        ),
+      ),
+      bedrooms: toNumberOrNull(
+        firstDefined(
+          isRecord(sourceUnit) ? sourceUnit.bedrooms : undefined,
+          readProp(unit, "bedrooms"),
+        ),
+      ),
+      bathrooms: toNumberOrNull(
+        firstDefined(
+          isRecord(sourceUnit) ? sourceUnit.bathrooms : undefined,
+          readProp(unit, "bathrooms"),
+        ),
+      ),
+      unitSize: toStringOrNull(
+        firstDefined(
+          isRecord(sourceUnit) ? sourceUnit.unitSize : undefined,
+          readProp(unit, "unitSize"),
+        ),
+      ),
+      unitSizeUnit: toStringOrNull(
+        firstDefined(
+          isRecord(sourceUnit) ? sourceUnit.unitSizeUnit : undefined,
+          readProp(unit, "unitSizeUnit"),
+        ),
+      ),
+      furnishedStatus: toStringOrNull(
+        firstDefined(
+          isRecord(sourceUnit) ? sourceUnit.furnishedStatus : undefined,
+          readProp(unit, "furnishedStatus"),
+        ),
+      ),
+    },
+    createdAt: toStringOrNull(firstDefined(source.createdAt, payload.createdAt)),
+    updatedAt: toStringOrNull(firstDefined(source.updatedAt, payload.updatedAt)),
+  };
+};
+
+const EMPTY_CONTRACT_STATE: ResidentLatestContract = {
+  contract: null,
+  canRequestMoveIn: false,
+  canRequestMoveOut: false,
+  latestMoveInRequestStatus: null,
+  latestMoveOutRequestStatus: null,
+};
+
+const mapLatestContract = (payload: unknown): ResidentLatestContract => {
+  if (!isRecord(payload)) {
+    return EMPTY_CONTRACT_STATE;
+  }
+
+  const contractPayload = firstDefined(
+    readProp(payload, "contract"),
+    readProp(payload, "latestContract"),
+    readProp(payload, "latest"),
+  );
+  const fallbackContractPayload = isRecord(contractPayload)
+    ? contractPayload
+    : looksLikeContractRecord(payload)
+      ? payload
+      : null;
+
+  return {
+    contract:
+      fallbackContractPayload && isRecord(fallbackContractPayload)
+        ? mapContract(fallbackContractPayload)
+        : null,
+    canRequestMoveIn: toBoolean(readProp(payload, "canRequestMoveIn")),
+    canRequestMoveOut: toBoolean(readProp(payload, "canRequestMoveOut")),
+    latestMoveInRequestStatus: normalizeMoveRequestStatus(
+      readProp(payload, "latestMoveInRequestStatus"),
+    ),
+    latestMoveOutRequestStatus: normalizeMoveRequestStatus(
+      readProp(payload, "latestMoveOutRequestStatus"),
     ),
   };
 };
 
-const getFilenameFromUrl = (url: string): string | null => {
-  const sanitized = url.split("?")[0].split("#")[0];
-  const lastSegment = sanitized.split("/").pop();
-  if (!lastSegment) return null;
-
-  try {
-    return decodeURIComponent(lastSegment);
-  } catch {
-    return lastSegment;
-  }
-};
-
-const inferTypeFromFilename = (filename: string | null): string | null => {
-  if (!filename || !filename.includes(".")) return null;
-  const extension = filename.split(".").pop()?.trim().toLowerCase();
-  return extension ? extension.toUpperCase() : null;
-};
-
-const mapDocument = (
-  item: unknown,
-  index: number,
-): ResidentLeaseDocument | null => {
-  if (typeof item === "string") {
-    const url = toStringOrNull(item);
-    if (!url) return null;
-    const filename = getFilenameFromUrl(url) ?? `Document ${index + 1}`;
-
+const mapContractsList = (payload: unknown): ResidentContractsListResponse => {
+  if (Array.isArray(payload)) {
     return {
-      id: `lease-document-${index + 1}`,
-      filename,
-      type: inferTypeFromFilename(filename),
-      date: null,
-      url,
+      items: payload.filter(isRecord).map(mapContract),
+      nextCursor: null,
     };
   }
 
-  if (!isRecord(item)) {
-    return null;
+  if (!isRecord(payload)) {
+    return { items: [], nextCursor: null };
   }
 
-  const url = toStringOrNull(
-    firstDefined(item.url, item.fileUrl, item.documentUrl, item.downloadUrl, item.path),
+  const itemsPayload = firstDefined(
+    payload.items,
+    payload.contracts,
+    payload.rows,
+    payload.results,
+    payload.data,
   );
-  const filename =
-    toStringOrNull(
-      firstDefined(
-        item.filename,
-        item.fileName,
-        item.name,
-        item.documentName,
-        item.title,
-      ),
-    ) ??
-    getFilenameFromUrl(url ?? "") ??
-    `Document ${index + 1}`;
+  const items = Array.isArray(itemsPayload)
+    ? itemsPayload.filter(isRecord).map(mapContract)
+    : looksLikeContractRecord(payload)
+      ? [mapContract(payload)]
+      : [];
 
   return {
-    id:
-      toStringOrNull(firstDefined(item.id, item.documentId, item.fileId)) ??
-      `lease-document-${index + 1}`,
-    filename,
-    type: toStringOrNull(
-      firstDefined(
-        item.type,
-        item.documentType,
-        item.mimeType,
-        item.contentType,
-        inferTypeFromFilename(filename),
-      ),
+    items,
+    nextCursor: toStringOrNull(
+      firstDefined(payload.nextCursor, payload.next_cursor),
     ),
-    date: toStringOrNull(
-      firstDefined(item.createdAt, item.uploadedAt, item.date, item.issuedAt),
-    ),
-    url,
   };
 };
 
-const mapParking = (payload: UnknownRecord): ResidentActiveParkingAllocation => {
+const mapMoveRequest = (
+  payload: unknown,
+  contractIdFallback?: string,
+): ResidentMoveRequest => {
+  const record = isRecord(payload) ? payload : {};
+  const normalizedFallback = toStringOrNull(contractIdFallback);
+  const leaseId = toStringOrNull(firstDefined(record.leaseId, record.lease_id));
+
   return {
-    id: toStringOrNull(firstDefined(payload.id, payload.allocationId)),
-    slotCode: toStringOrNull(
-      firstDefined(payload.slotCode, payload.slotNumber, payload.bayCode, payload.code),
+    id: toStringOrNull(firstDefined(record.id, record.requestId, record.request_id)),
+    contractId: toStringOrNull(
+      firstDefined(
+        record.contractId,
+        record.contract_id,
+        record.leaseId,
+        record.lease_id,
+        normalizedFallback,
+      ),
     ),
-    level: toStringOrNull(
-      firstDefined(payload.level, payload.floor, payload.parkingLevel),
+    leaseId,
+    status: normalizeMoveRequestStatus(record.status),
+    requestedMoveAt: toStringOrNull(
+      firstDefined(record.requestedMoveAt, record.requested_move_at),
     ),
-    type: toStringOrNull(
-      firstDefined(payload.type, payload.parkingType, payload.vehicleType),
+    notes: toStringOrNull(record.notes),
+    createdAt: toStringOrNull(firstDefined(record.createdAt, record.created_at)),
+    updatedAt: toStringOrNull(firstDefined(record.updatedAt, record.updated_at)),
+    reviewedAt: toStringOrNull(firstDefined(record.reviewedAt, record.reviewed_at)),
+    rejectionReason: toStringOrNull(
+      firstDefined(record.rejectionReason, record.rejection_reason),
     ),
-    startDate: toStringOrNull(
-      firstDefined(payload.startDate, payload.allocatedFrom, payload.allocationStartDate),
+  };
+};
+
+const mapMoveRequestList = (
+  payload: unknown,
+  contractIdFallback?: string,
+): ResidentMoveRequest[] => {
+  if (Array.isArray(payload)) {
+    return payload.map((item) => mapMoveRequest(item, contractIdFallback));
+  }
+
+  if (!isRecord(payload)) {
+    return [];
+  }
+
+  const itemsPayload = firstDefined(payload.items, payload.requests, payload.data);
+  if (!Array.isArray(itemsPayload)) {
+    return [];
+  }
+
+  return itemsPayload.map((item) => mapMoveRequest(item, contractIdFallback));
+};
+
+const mapUploadUrlResponse = (
+  payload: unknown,
+): ResidentContractDocumentUploadUrlResponse => {
+  if (!isRecord(payload)) {
+    return {
+      uploadUrl: null,
+      storageUrl: null,
+      objectKey: null,
+      type: null,
+      expiresInSeconds: null,
+    };
+  }
+
+  return {
+    uploadUrl: toStringOrNull(payload.uploadUrl),
+    storageUrl: toStringOrNull(payload.storageUrl),
+    objectKey: toStringOrNull(payload.objectKey),
+    type: toStringOrNull(payload.type),
+    expiresInSeconds: toNumberOrNull(payload.expiresInSeconds),
+  };
+};
+
+const mapContractDocument = (
+  payload: unknown,
+  contractIdFallback?: string,
+): ResidentContractDocument => {
+  const record = isRecord(payload) ? payload : {};
+  const contractId = extractContractReference(record, contractIdFallback ?? null);
+
+  return {
+    id: toStringOrNull(record.id),
+    contractId,
+    leaseId: toStringOrNull(firstDefined(record.leaseId, record.lease_id)),
+    type: toStringOrNull(record.type),
+    fileName: toStringOrNull(record.fileName),
+    mimeType: toStringOrNull(record.mimeType),
+    sizeBytes: toNumberOrNull(record.sizeBytes),
+    url: toStringOrNull(record.url),
+    createdAt: toStringOrNull(record.createdAt),
+  };
+};
+
+const looksLikeContractDocumentRecord = (payload: UnknownRecord): boolean =>
+  Boolean(
+    toStringOrNull(
+      firstDefined(
+        payload.id,
+        payload.url,
+        payload.fileName,
+        payload.mimeType,
+        payload.type,
+      ),
     ),
+  );
+
+const mapContractDocumentList = (
+  payload: unknown,
+  contractIdFallback?: string,
+): ResidentContractDocument[] => {
+  if (Array.isArray(payload)) {
+    return payload.map((item) => mapContractDocument(item, contractIdFallback));
+  }
+
+  if (!isRecord(payload)) {
+    return [];
+  }
+
+  const itemsPayload = firstDefined(payload.items, payload.documents, payload.data);
+  if (Array.isArray(itemsPayload)) {
+    return itemsPayload.map((item) => mapContractDocument(item, contractIdFallback));
+  }
+
+  if (looksLikeContractDocumentRecord(payload)) {
+    return [mapContractDocument(payload, contractIdFallback)];
+  }
+
+  return [];
+};
+
+const mapResidentExtendedProfile = (payload: unknown): ResidentExtendedProfile => {
+  const record = isRecord(payload) ? payload : {};
+  const userRecord = isRecord(readProp(record, "user"))
+    ? (readProp(record, "user") as UnknownRecord)
+    : {};
+
+  return {
+    id: toStringOrNull(record.id) ?? "",
+    orgId: toStringOrNull(record.orgId) ?? "",
+    userId: toStringOrNull(record.userId) ?? "",
+    user: {
+      id: toStringOrNull(userRecord.id) ?? "",
+      email: toStringOrNull(userRecord.email) ?? "",
+      name: toStringOrNull(userRecord.name),
+      phone: toStringOrNull(userRecord.phone),
+      avatarUrl: toStringOrNull(firstDefined(userRecord.avatarUrl, userRecord.avatar)),
+    },
+    emiratesIdNumber: toStringOrNull(record.emiratesIdNumber),
+    passportNumber: toStringOrNull(record.passportNumber),
+    nationality: toStringOrNull(record.nationality),
+    dateOfBirth: toStringOrNull(record.dateOfBirth),
+    currentAddress: toStringOrNull(record.currentAddress),
+    emergencyContactName: toStringOrNull(record.emergencyContactName),
+    emergencyContactPhone: toStringOrNull(record.emergencyContactPhone),
+    preferredBuildingId: toStringOrNull(record.preferredBuildingId),
+    createdAt: toStringOrNull(record.createdAt),
+    updatedAt: toStringOrNull(record.updatedAt),
   };
 };
 
@@ -203,119 +642,250 @@ export class ResidentSelfServiceApiService
   extends BaseApiService
   implements ResidentSelfServiceApi
 {
-  async getResidentActiveLease(): Promise<ResidentActiveLease | null> {
+  async getResidentLatestContract(): Promise<ResidentLatestContract> {
     try {
       const response = await this.get<ApiResponse<unknown> | unknown>(
-        API_ENDPOINTS.resident.leaseActive,
+        API_ENDPOINTS.resident.contractLatest,
       );
-      logResidentSelfService("GET /resident/lease/active raw response", response);
+      logResidentContract("GET /resident/contracts/latest raw response", response);
 
       const payload = unwrapResponseData(response);
-      logResidentSelfService("GET /resident/lease/active unwrapped payload", payload);
-
-      if (!payload || !isRecord(payload)) {
-        logResidentSelfService(
-          "GET /resident/lease/active normalized",
-          null,
-        );
-        return null;
-      }
-
-      const normalized = mapLease(payload);
-      logResidentSelfService(
-        "GET /resident/lease/active normalized",
-        normalized,
-      );
+      const normalized = mapLatestContract(payload);
+      logResidentContract("GET /resident/contracts/latest normalized", normalized);
       return normalized;
     } catch (error) {
-      logResidentSelfService("GET /resident/lease/active error", error);
+      logResidentContract("GET /resident/contracts/latest error", error);
       throw error;
     }
   }
 
-  async getResidentActiveLeaseDocuments(): Promise<ResidentLeaseDocument[]> {
+  async getResidentContractDetail(contractId: string): Promise<ResidentContract> {
     try {
       const response = await this.get<ApiResponse<unknown> | unknown>(
-        API_ENDPOINTS.resident.leaseActiveDocuments,
+        API_ENDPOINTS.resident.contractDetail(contractId),
       );
-      logResidentSelfService(
-        "GET /resident/lease/active/documents raw response",
-        response,
-      );
+      logResidentContract("GET /resident/contracts/:id raw response", response);
 
       const payload = unwrapResponseData(response);
-      logResidentSelfService(
-        "GET /resident/lease/active/documents unwrapped payload",
+      const contractPayload = firstDefined(
+        readProp(payload, "contract"),
+        readProp(payload, "data"),
         payload,
       );
 
-      if (!payload) {
-        logResidentSelfService(
-          "GET /resident/lease/active/documents normalized",
-          [],
-        );
-        return [];
-      }
+      const normalized = isRecord(contractPayload)
+        ? mapContract(contractPayload)
+        : {
+            id: contractId,
+            status: null,
+            contractNumber: null,
+            unitLabel: null,
+            buildingName: null,
+            startDate: null,
+            endDate: null,
+            createdAt: null,
+            updatedAt: null,
+          };
 
-      const documentsSource = Array.isArray(payload)
-        ? payload
-        : Array.isArray(readProp(payload, "documents"))
-          ? (readProp(payload, "documents") as unknown[])
-          : [];
+      const resolved = normalized.id
+        ? normalized
+        : { ...normalized, id: contractId };
 
-      const normalized = documentsSource
-        .map((item, index) => mapDocument(item, index))
-        .filter((document): document is ResidentLeaseDocument => document !== null);
-      logResidentSelfService(
+      logResidentContract("GET /resident/contracts/:id normalized", resolved);
+      return resolved;
+    } catch (error) {
+      logResidentContract("GET /resident/contracts/:id error", error);
+      throw error;
+    }
+  }
+
+  async listResidentContracts(
+    params?: ListResidentContractsParams,
+  ): Promise<ResidentContractsListResponse> {
+    try {
+      const response = await this.get<ApiResponse<unknown> | unknown>(
+        API_ENDPOINTS.resident.contracts,
+        params,
+      );
+      logResidentContract("GET /resident/contracts raw response", response);
+
+      const payload = unwrapResponseData(response);
+      const normalized = mapContractsList(payload);
+      logResidentContract("GET /resident/contracts normalized", normalized);
+      return normalized;
+    } catch (error) {
+      logResidentContract("GET /resident/contracts error", error);
+      throw error;
+    }
+  }
+
+  async listResidentActiveLeaseDocuments(): Promise<ResidentContractDocument[]> {
+    try {
+      const response = await this.get<ApiResponse<unknown> | unknown>(
+        API_ENDPOINTS.resident.activeLeaseDocuments,
+      );
+      logResidentContract("GET /resident/lease/active/documents raw response", response);
+
+      const payload = unwrapResponseData(response);
+      const normalized = mapContractDocumentList(payload);
+      logResidentContract(
         "GET /resident/lease/active/documents normalized",
         normalized,
       );
       return normalized;
     } catch (error) {
-      logResidentSelfService(
-        "GET /resident/lease/active/documents error",
-        error,
-      );
+      logResidentContract("GET /resident/lease/active/documents error", error);
       throw error;
     }
   }
 
-  async getResidentActiveParkingAllocation():
-    Promise<ResidentActiveParkingAllocation | null> {
+  async createResidentMoveInRequest(
+    contractId: string,
+    payload: CreateResidentMoveRequestDTO,
+  ): Promise<ResidentMoveRequest> {
     try {
-      const response = await this.get<ApiResponse<unknown> | unknown>(
-        API_ENDPOINTS.resident.parkingActiveAllocation,
-      );
-      logResidentSelfService(
-        "GET /resident/parking/active-allocation raw response",
-        response,
-      );
-
-      const payload = unwrapResponseData(response);
-      logResidentSelfService(
-        "GET /resident/parking/active-allocation unwrapped payload",
+      const response = await this.post<ApiResponse<unknown> | unknown>(
+        API_ENDPOINTS.resident.contractMoveInRequests(contractId),
         payload,
       );
+      logResidentContract("POST move-in raw response", response);
 
-      if (!payload || !isRecord(payload)) {
-        logResidentSelfService(
-          "GET /resident/parking/active-allocation normalized",
-          null,
-        );
-        return null;
-      }
+      const unwrappedPayload = unwrapResponseData(response);
+      const normalized = mapMoveRequest(unwrappedPayload, contractId);
+      logResidentContract("POST move-in normalized", normalized);
 
-      const normalized = mapParking(payload);
-      logResidentSelfService(
-        "GET /resident/parking/active-allocation normalized",
+      return normalized;
+    } catch (error) {
+      logResidentContract("POST move-in error", error);
+      throw error;
+    }
+  }
+
+  async createResidentMoveOutRequest(
+    contractId: string,
+    payload: CreateResidentMoveRequestDTO,
+  ): Promise<ResidentMoveRequest> {
+    try {
+      const response = await this.post<ApiResponse<unknown> | unknown>(
+        API_ENDPOINTS.resident.contractMoveOutRequests(contractId),
+        payload,
+      );
+      logResidentContract("POST move-out raw response", response);
+
+      const unwrappedPayload = unwrapResponseData(response);
+      const normalized = mapMoveRequest(unwrappedPayload, contractId);
+      logResidentContract("POST move-out normalized", normalized);
+
+      return normalized;
+    } catch (error) {
+      logResidentContract("POST move-out error", error);
+      throw error;
+    }
+  }
+
+  async listResidentMoveInRequests(
+    contractId: string,
+    params?: ListResidentMoveRequestsParams,
+  ): Promise<ResidentMoveRequest[]> {
+    try {
+      const response = await this.get<ApiResponse<unknown> | unknown>(
+        API_ENDPOINTS.resident.contractMoveInRequests(contractId),
+        params,
+      );
+      logResidentContract("GET move-in history raw response", response);
+
+      const payload = unwrapResponseData(response);
+      const normalized = mapMoveRequestList(payload, contractId);
+      logResidentContract("GET move-in history normalized", normalized);
+      return normalized;
+    } catch (error) {
+      logResidentContract("GET move-in history error", error);
+      throw error;
+    }
+  }
+
+  async listResidentMoveOutRequests(
+    contractId: string,
+    params?: ListResidentMoveRequestsParams,
+  ): Promise<ResidentMoveRequest[]> {
+    try {
+      const response = await this.get<ApiResponse<unknown> | unknown>(
+        API_ENDPOINTS.resident.contractMoveOutRequests(contractId),
+        params,
+      );
+      logResidentContract("GET move-out history raw response", response);
+
+      const payload = unwrapResponseData(response);
+      const normalized = mapMoveRequestList(payload, contractId);
+      logResidentContract("GET move-out history normalized", normalized);
+      return normalized;
+    } catch (error) {
+      logResidentContract("GET move-out history error", error);
+      throw error;
+    }
+  }
+
+  async createResidentContractDocumentUploadUrl(
+    contractId: string,
+    payload: CreateResidentContractDocumentUploadUrlDTO,
+  ): Promise<ResidentContractDocumentUploadUrlResponse> {
+    try {
+      const response = await this.post<ApiResponse<unknown> | unknown>(
+        API_ENDPOINTS.resident.contractDocumentsUploadUrl(contractId),
+        payload,
+      );
+      logResidentContract("POST contract document upload-url raw response", response);
+
+      const unwrappedPayload = unwrapResponseData(response);
+      const normalized = mapUploadUrlResponse(unwrappedPayload);
+      logResidentContract(
+        "POST contract document upload-url normalized",
         normalized,
       );
       return normalized;
     } catch (error) {
-      logResidentSelfService(
-        "GET /resident/parking/active-allocation error",
-        error,
+      logResidentContract("POST contract document upload-url error", error);
+      throw error;
+    }
+  }
+
+  async createResidentContractDocument(
+    contractId: string,
+    payload: CreateResidentContractDocumentDTO,
+  ): Promise<ResidentContractDocument> {
+    try {
+      const response = await this.post<ApiResponse<unknown> | unknown>(
+        API_ENDPOINTS.resident.contractDocuments(contractId),
+        payload,
       );
+      logResidentContract("POST contract document raw response", response);
+
+      const unwrappedPayload = unwrapResponseData(response);
+      const normalized = mapContractDocument(unwrappedPayload, contractId);
+      logResidentContract("POST contract document normalized", normalized);
+      return normalized;
+    } catch (error) {
+      logResidentContract("POST contract document error", error);
+      throw error;
+    }
+  }
+
+  async updateResidentProfile(
+    payload: UpdateResidentExtendedProfileDTO,
+  ): Promise<ResidentExtendedProfile> {
+    try {
+      const response = await this.put<ApiResponse<unknown> | unknown>(
+        API_ENDPOINTS.resident.meProfile,
+        payload,
+      );
+      logResidentContract("PUT /resident/me/profile raw response", response);
+
+      const unwrappedPayload = unwrapResponseData(response);
+      const normalized = mapResidentExtendedProfile(unwrappedPayload);
+      logResidentContract("PUT /resident/me/profile normalized", normalized);
+      return normalized;
+    } catch (error) {
+      logResidentContract("PUT /resident/me/profile error", error);
       throw error;
     }
   }

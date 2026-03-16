@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AppState, type AppStateStatus } from "react-native";
 
 import { residentSelfServiceApi } from "../services/api/resident-self-service";
 import type {
-  ResidentActiveLease,
-  ResidentLeaseDocument,
-  ResidentActiveParkingAllocation,
+  CreateResidentMoveRequestDTO,
+  ListResidentContractsParams,
+  ListResidentMoveRequestsParams,
+  ResidentContract,
+  ResidentContractDocument,
+  ResidentLatestContract,
+  ResidentMoveRequest,
 } from "../types";
 
 type RefetchOptions = {
@@ -17,17 +22,64 @@ type InternalLoadOptions = {
   asRefresh: boolean;
 };
 
+type UploadSignedContractInput = {
+  contractId: string;
+  fileUri: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+};
+
 type HookOptions = {
   enabled?: boolean;
+  contractListParams?: ListResidentContractsParams;
   onUnauthorized?: () => void | Promise<void>;
 };
 
-type HookResult<T> = {
-  data: T;
+type UseResidentContractResult = {
+  data: ResidentLatestContract;
+  contracts: ResidentContract[];
+  contractDetailsById: Record<string, ResidentContract>;
+  activeLeaseDocuments: ResidentContractDocument[];
+  contractsNextCursor: string | null;
+  moveInHistory: ResidentMoveRequest[];
+  moveOutHistory: ResidentMoveRequest[];
+  activeHistoryContractId: string | null;
   isLoading: boolean;
   isRefreshing: boolean;
+  isLoadingContractDetail: boolean;
+  isLoadingLeaseDocuments: boolean;
+  isLoadingHistory: boolean;
   errorMessage: string | null;
+  isRequestingMoveIn: boolean;
+  isRequestingMoveOut: boolean;
+  isUploadingSignedContract: boolean;
   refetch: (options?: RefetchOptions) => Promise<void>;
+  refetchContractDetail: (contractId: string) => Promise<ResidentContract | null>;
+  refetchActiveLeaseDocuments: () => Promise<void>;
+  refetchHistory: (
+    contractId: string,
+    params?: ListResidentMoveRequestsParams,
+  ) => Promise<void>;
+  requestMoveIn: (
+    contractId: string,
+    payload: CreateResidentMoveRequestDTO,
+  ) => Promise<ResidentMoveRequest>;
+  requestMoveOut: (
+    contractId: string,
+    payload: CreateResidentMoveRequestDTO,
+  ) => Promise<ResidentMoveRequest>;
+  uploadSignedContract: (
+    input: UploadSignedContractInput,
+  ) => Promise<ResidentContractDocument>;
+};
+
+const EMPTY_CONTRACT_STATE: ResidentLatestContract = {
+  contract: null,
+  canRequestMoveIn: false,
+  canRequestMoveOut: false,
+  latestMoveInRequestStatus: null,
+  latestMoveOutRequestStatus: null,
 };
 
 const getStatusCode = (error: unknown): number | undefined => {
@@ -47,38 +99,114 @@ const getErrorMessage = (
   return fallbackMessage;
 };
 
-const useResidentResource = <T>(
-  initialData: T,
-  fetcher: () => Promise<T>,
-  fallbackErrorMessage: string,
+const mergeContracts = (
+  latest: ResidentLatestContract,
+  listContracts: ResidentContract[],
+): ResidentContract[] => {
+  const contractMap = new Map<string, ResidentContract>();
+  for (const contract of listContracts) {
+    if (contract.id) {
+      contractMap.set(contract.id, contract);
+    }
+  }
+
+  if (latest.contract?.id && !contractMap.has(latest.contract.id)) {
+    contractMap.set(latest.contract.id, latest.contract);
+  }
+
+  return Array.from(contractMap.values());
+};
+
+export const useResidentContract = (
   options?: HookOptions,
-): HookResult<T> => {
+): UseResidentContractResult => {
   const enabled = options?.enabled ?? true;
   const onUnauthorized = options?.onUnauthorized;
-  const initialDataRef = useRef(initialData);
-  const fetcherRef = useRef(fetcher);
-  const onUnauthorizedRef = useRef(onUnauthorized);
-  const [data, setData] = useState<T>(initialData);
+  const contractListParams = options?.contractListParams;
+
+  const [data, setData] = useState<ResidentLatestContract>(EMPTY_CONTRACT_STATE);
+  const [contracts, setContracts] = useState<ResidentContract[]>([]);
+  const [contractDetailsById, setContractDetailsById] = useState<
+    Record<string, ResidentContract>
+  >({});
+  const [activeLeaseDocuments, setActiveLeaseDocuments] = useState<
+    ResidentContractDocument[]
+  >([]);
+  const [contractsNextCursor, setContractsNextCursor] = useState<string | null>(
+    null,
+  );
+  const [moveInHistory, setMoveInHistory] = useState<ResidentMoveRequest[]>([]);
+  const [moveOutHistory, setMoveOutHistory] = useState<ResidentMoveRequest[]>([]);
+  const [activeHistoryContractId, setActiveHistoryContractId] = useState<
+    string | null
+  >(null);
   const [isLoading, setIsLoading] = useState<boolean>(enabled);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [isLoadingContractDetail, setIsLoadingContractDetail] =
+    useState<boolean>(false);
+  const [isLoadingLeaseDocuments, setIsLoadingLeaseDocuments] =
+    useState<boolean>(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const inFlightRef = useRef(false);
+  const [isRequestingMoveIn, setIsRequestingMoveIn] = useState<boolean>(false);
+  const [isRequestingMoveOut, setIsRequestingMoveOut] = useState<boolean>(false);
+  const [isUploadingSignedContract, setIsUploadingSignedContract] =
+    useState<boolean>(false);
 
-  useEffect(() => {
-    fetcherRef.current = fetcher;
-  }, [fetcher]);
+  const inFlightRef = useRef(false);
+  const detailInFlightRef = useRef<Record<string, boolean>>({});
+  const historyInFlightRef = useRef(false);
+  const onUnauthorizedRef = useRef(onUnauthorized);
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const contractsRef = useRef<ResidentContract[]>([]);
+  const contractDetailsByIdRef = useRef<Record<string, ResidentContract>>({});
+  const latestContractStateRef = useRef<ResidentLatestContract>(
+    EMPTY_CONTRACT_STATE,
+  );
 
   useEffect(() => {
     onUnauthorizedRef.current = onUnauthorized;
   }, [onUnauthorized]);
 
+  useEffect(() => {
+    contractsRef.current = contracts;
+  }, [contracts]);
+
+  useEffect(() => {
+    contractDetailsByIdRef.current = contractDetailsById;
+  }, [contractDetailsById]);
+
+  useEffect(() => {
+    latestContractStateRef.current = data;
+  }, [data]);
+
+  const handleUnauthorizedIfNeeded = useCallback(async (error: unknown) => {
+    if (getStatusCode(error) === 401) {
+      await onUnauthorizedRef.current?.();
+      return true;
+    }
+    return false;
+  }, []);
+
   const load = useCallback(
     async ({ showLoading, asRefresh }: InternalLoadOptions): Promise<void> => {
       if (!enabled) {
-        setData(initialDataRef.current);
+        setData(EMPTY_CONTRACT_STATE);
+        setContracts([]);
+        setContractDetailsById({});
+        setActiveLeaseDocuments([]);
+        contractsRef.current = [];
+        contractDetailsByIdRef.current = {};
+        latestContractStateRef.current = EMPTY_CONTRACT_STATE;
+        setContractsNextCursor(null);
+        setMoveInHistory([]);
+        setMoveOutHistory([]);
+        setActiveHistoryContractId(null);
         setErrorMessage(null);
         setIsLoading(false);
         setIsRefreshing(false);
+        setIsLoadingContractDetail(false);
+        setIsLoadingLeaseDocuments(false);
         return;
       }
 
@@ -87,45 +215,46 @@ const useResidentResource = <T>(
       }
 
       inFlightRef.current = true;
-      if (showLoading) {
-        setIsLoading(true);
-      }
-      if (asRefresh) {
-        setIsRefreshing(true);
-      }
+      if (showLoading) setIsLoading(true);
+      if (asRefresh) setIsRefreshing(true);
 
       try {
-        const nextData = await fetcherRef.current();
-        setData(nextData);
+        const [latestContract, contractList] = await Promise.all([
+          residentSelfServiceApi.getResidentLatestContract(),
+          residentSelfServiceApi.listResidentContracts(contractListParams),
+        ]);
+
+        const mergedContracts = mergeContracts(latestContract, contractList.items);
+        setData(latestContract);
+        setContracts(mergedContracts);
+        latestContractStateRef.current = latestContract;
+        contractsRef.current = mergedContracts;
+        setContractsNextCursor(contractList.nextCursor);
         setErrorMessage(null);
       } catch (error) {
-        const statusCode = getStatusCode(error);
-
-        if (statusCode === 401) {
-          await onUnauthorizedRef.current?.();
+        const handledUnauthorized = await handleUnauthorizedIfNeeded(error);
+        if (handledUnauthorized) {
           return;
         }
 
-        setErrorMessage(getErrorMessage(statusCode, fallbackErrorMessage));
+        const statusCode = getStatusCode(error);
+        setErrorMessage(
+          getErrorMessage(
+            statusCode,
+            "Unable to load your contract details right now. Please try again.",
+          ),
+        );
       } finally {
-        if (showLoading) {
-          setIsLoading(false);
-        }
-        if (asRefresh) {
-          setIsRefreshing(false);
-        }
+        if (showLoading) setIsLoading(false);
+        if (asRefresh) setIsRefreshing(false);
         inFlightRef.current = false;
       }
     },
-    [enabled, fallbackErrorMessage],
+    [contractListParams, enabled, handleUnauthorizedIfNeeded],
   );
 
-  useEffect(() => {
-    void load({ showLoading: true, asRefresh: false });
-  }, [load]);
-
   const refetch = useCallback(
-    async (refetchOptions?: RefetchOptions) => {
+    async (refetchOptions?: RefetchOptions): Promise<void> => {
       const asRefresh = refetchOptions?.asRefresh ?? false;
       const showLoading = refetchOptions?.showLoading ?? !asRefresh;
       await load({ showLoading, asRefresh });
@@ -133,59 +262,326 @@ const useResidentResource = <T>(
     [load],
   );
 
+  const refetchContractDetail = useCallback(
+    async (contractId: string): Promise<ResidentContract | null> => {
+      if (!enabled || !contractId) {
+        return null;
+      }
+
+      if (detailInFlightRef.current[contractId]) {
+        return contractDetailsByIdRef.current[contractId] ?? null;
+      }
+
+      detailInFlightRef.current[contractId] = true;
+      setIsLoadingContractDetail(true);
+
+      try {
+        const contract =
+          await residentSelfServiceApi.getResidentContractDetail(contractId);
+        const resolvedContractId = contract.id || contractId;
+        const normalizedContract =
+          contract.id === resolvedContractId
+            ? contract
+            : { ...contract, id: resolvedContractId };
+
+        setContractDetailsById((prev) => {
+          const next = {
+            ...prev,
+            [contractId]: normalizedContract,
+            [resolvedContractId]: normalizedContract,
+          };
+          contractDetailsByIdRef.current = next;
+          return next;
+        });
+
+        setContracts((prev) => {
+          const next = [...prev];
+          const index = next.findIndex(
+            (item) => item.id === resolvedContractId || item.id === contractId,
+          );
+          if (index >= 0) {
+            next[index] = normalizedContract;
+            contractsRef.current = next;
+            return next;
+          }
+          const appended = [...next, normalizedContract];
+          contractsRef.current = appended;
+          return appended;
+        });
+
+        setData((prev) => {
+          if (prev.contract?.id !== resolvedContractId) {
+            return prev;
+          }
+          const next = { ...prev, contract: normalizedContract };
+          latestContractStateRef.current = next;
+          return next;
+        });
+
+        return normalizedContract;
+      } catch (error) {
+        const handledUnauthorized = await handleUnauthorizedIfNeeded(error);
+        if (handledUnauthorized) {
+          return null;
+        }
+
+        if (getStatusCode(error) === 404) {
+          const fallbackContract =
+            contractDetailsByIdRef.current[contractId] ||
+            contractsRef.current.find((item) => item.id === contractId) ||
+            (latestContractStateRef.current.contract?.id === contractId
+              ? latestContractStateRef.current.contract
+              : null);
+          if (fallbackContract?.id) {
+            setContractDetailsById((prev) => {
+              const next = {
+                ...prev,
+                [contractId]: fallbackContract,
+                [fallbackContract.id as string]: fallbackContract,
+              };
+              contractDetailsByIdRef.current = next;
+              return next;
+            });
+          }
+          return fallbackContract ?? null;
+        }
+
+        throw error;
+      } finally {
+        detailInFlightRef.current[contractId] = false;
+        setIsLoadingContractDetail(false);
+      }
+    },
+    [enabled, handleUnauthorizedIfNeeded],
+  );
+
+  const refetchActiveLeaseDocuments = useCallback(async (): Promise<void> => {
+    if (!enabled) {
+      setActiveLeaseDocuments([]);
+      setIsLoadingLeaseDocuments(false);
+      return;
+    }
+
+    setIsLoadingLeaseDocuments(true);
+    try {
+      const documents = await residentSelfServiceApi.listResidentActiveLeaseDocuments();
+      setActiveLeaseDocuments(documents);
+    } catch (error) {
+      const handledUnauthorized = await handleUnauthorizedIfNeeded(error);
+      if (!handledUnauthorized) {
+        throw error;
+      }
+    } finally {
+      setIsLoadingLeaseDocuments(false);
+    }
+  }, [enabled, handleUnauthorizedIfNeeded]);
+
+  const refetchHistory = useCallback(
+    async (
+      contractId: string,
+      params?: ListResidentMoveRequestsParams,
+    ): Promise<void> => {
+      if (!enabled || !contractId) {
+        setMoveInHistory([]);
+        setMoveOutHistory([]);
+        setActiveHistoryContractId(null);
+        return;
+      }
+
+      if (historyInFlightRef.current) {
+        return;
+      }
+
+      historyInFlightRef.current = true;
+      setIsLoadingHistory(true);
+      setActiveHistoryContractId(contractId);
+
+      try {
+        const [moveIn, moveOut] = await Promise.all([
+          residentSelfServiceApi.listResidentMoveInRequests(contractId, params),
+          residentSelfServiceApi.listResidentMoveOutRequests(contractId, params),
+        ]);
+        setMoveInHistory(moveIn);
+        setMoveOutHistory(moveOut);
+      } catch (error) {
+        const handledUnauthorized = await handleUnauthorizedIfNeeded(error);
+        if (!handledUnauthorized) {
+          throw error;
+        }
+      } finally {
+        setIsLoadingHistory(false);
+        historyInFlightRef.current = false;
+      }
+    },
+    [enabled, handleUnauthorizedIfNeeded],
+  );
+
+  useEffect(() => {
+    void load({ showLoading: true, asRefresh: false });
+  }, [load]);
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      if (
+        appStateRef.current.match(/inactive|background/) &&
+        nextAppState === "active"
+      ) {
+        void refetch({ asRefresh: true, showLoading: false });
+      }
+      appStateRef.current = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [enabled, refetch]);
+
+  useEffect(() => {
+    void refetchActiveLeaseDocuments().catch(() => {
+      // The lease/details screen handles doc failures via explicit alerts on manual actions.
+    });
+  }, [refetchActiveLeaseDocuments]);
+
+  const requestMoveIn = useCallback(
+    async (
+      contractId: string,
+      payload: CreateResidentMoveRequestDTO,
+    ): Promise<ResidentMoveRequest> => {
+      setIsRequestingMoveIn(true);
+      try {
+        const response = await residentSelfServiceApi.createResidentMoveInRequest(
+          contractId,
+          payload,
+        );
+        await refetch({ asRefresh: true, showLoading: false });
+        if (activeHistoryContractId === contractId) {
+          await refetchHistory(contractId);
+        }
+        return response;
+      } catch (error) {
+        await handleUnauthorizedIfNeeded(error);
+        throw error;
+      } finally {
+        setIsRequestingMoveIn(false);
+      }
+    },
+    [activeHistoryContractId, handleUnauthorizedIfNeeded, refetch, refetchHistory],
+  );
+
+  const requestMoveOut = useCallback(
+    async (
+      contractId: string,
+      payload: CreateResidentMoveRequestDTO,
+    ): Promise<ResidentMoveRequest> => {
+      setIsRequestingMoveOut(true);
+      try {
+        const response = await residentSelfServiceApi.createResidentMoveOutRequest(
+          contractId,
+          payload,
+        );
+        await refetch({ asRefresh: true, showLoading: false });
+        if (activeHistoryContractId === contractId) {
+          await refetchHistory(contractId);
+        }
+        return response;
+      } catch (error) {
+        await handleUnauthorizedIfNeeded(error);
+        throw error;
+      } finally {
+        setIsRequestingMoveOut(false);
+      }
+    },
+    [activeHistoryContractId, handleUnauthorizedIfNeeded, refetch, refetchHistory],
+  );
+
+  const uploadSignedContract = useCallback(
+    async (input: UploadSignedContractInput): Promise<ResidentContractDocument> => {
+      setIsUploadingSignedContract(true);
+      try {
+        const uploadUrlPayload =
+          await residentSelfServiceApi.createResidentContractDocumentUploadUrl(
+            input.contractId,
+            {
+              type: "SIGNED_TENANCY_CONTRACT",
+              fileName: input.fileName,
+              mimeType: input.mimeType,
+              sizeBytes: input.sizeBytes,
+            },
+          );
+
+        if (!uploadUrlPayload.uploadUrl || !uploadUrlPayload.storageUrl) {
+          throw new Error("Upload URL response is incomplete");
+        }
+
+        const localFileResponse = await fetch(input.fileUri);
+        if (!localFileResponse.ok) {
+          throw new Error("Unable to read selected file");
+        }
+        const fileBlob = await localFileResponse.blob();
+
+        const putResponse = await fetch(uploadUrlPayload.uploadUrl, {
+          method: "PUT",
+          headers: {
+            "Content-Type": input.mimeType,
+          },
+          body: fileBlob,
+        });
+        if (!putResponse.ok) {
+          throw new Error(`Upload failed with status ${putResponse.status}`);
+        }
+
+        const document = await residentSelfServiceApi.createResidentContractDocument(
+          input.contractId,
+          {
+            type: "SIGNED_TENANCY_CONTRACT",
+            fileName: input.fileName,
+            mimeType: input.mimeType,
+            sizeBytes: input.sizeBytes,
+            url: uploadUrlPayload.storageUrl,
+          },
+        );
+
+        await Promise.all([
+          refetch({ asRefresh: true, showLoading: false }),
+          refetchActiveLeaseDocuments(),
+        ]);
+        return document;
+      } catch (error) {
+        await handleUnauthorizedIfNeeded(error);
+        throw error;
+      } finally {
+        setIsUploadingSignedContract(false);
+      }
+    },
+    [handleUnauthorizedIfNeeded, refetch, refetchActiveLeaseDocuments],
+  );
+
   return {
     data,
+    contracts,
+    contractDetailsById,
+    activeLeaseDocuments,
+    contractsNextCursor,
+    moveInHistory,
+    moveOutHistory,
+    activeHistoryContractId,
     isLoading,
     isRefreshing,
+    isLoadingContractDetail,
+    isLoadingLeaseDocuments,
+    isLoadingHistory,
     errorMessage,
+    isRequestingMoveIn,
+    isRequestingMoveOut,
+    isUploadingSignedContract,
     refetch,
+    refetchContractDetail,
+    refetchActiveLeaseDocuments,
+    refetchHistory,
+    requestMoveIn,
+    requestMoveOut,
+    uploadSignedContract,
   };
-};
-
-export const useResidentActiveLease = (
-  options?: HookOptions,
-): HookResult<ResidentActiveLease | null> => {
-  const fetchLease = useCallback(
-    () => residentSelfServiceApi.getResidentActiveLease(),
-    [],
-  );
-
-  return useResidentResource<ResidentActiveLease | null>(
-    null,
-    fetchLease,
-    "Unable to load your lease details right now. Please try again.",
-    options,
-  );
-};
-
-export const useResidentLeaseDocuments = (
-  options?: HookOptions,
-): HookResult<ResidentLeaseDocument[]> => {
-  const fetchDocuments = useCallback(
-    () => residentSelfServiceApi.getResidentActiveLeaseDocuments(),
-    [],
-  );
-
-  return useResidentResource<ResidentLeaseDocument[]>(
-    [],
-    fetchDocuments,
-    "Unable to load lease documents right now. Please try again.",
-    options,
-  );
-};
-
-export const useResidentActiveParking = (
-  options?: HookOptions,
-): HookResult<ResidentActiveParkingAllocation | null> => {
-  const fetchParking = useCallback(
-    () => residentSelfServiceApi.getResidentActiveParkingAllocation(),
-    [],
-  );
-
-  return useResidentResource<ResidentActiveParkingAllocation | null>(
-    null,
-    fetchParking,
-    "Unable to load parking details right now. Please try again.",
-    options,
-  );
 };

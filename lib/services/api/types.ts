@@ -23,9 +23,19 @@ import type {
   EmployeeMessage,
   SendEmployeeMessageDTO,
   EmployeeEarnings,
-  ResidentActiveLease,
-  ResidentLeaseDocument,
-  ResidentActiveParkingAllocation,
+  ResidentLatestContract,
+  ResidentContract,
+  ResidentContractsListResponse,
+  ListResidentContractsParams,
+  CreateResidentMoveRequestDTO,
+  ListResidentMoveRequestsParams,
+  ResidentMoveRequest,
+  CreateResidentContractDocumentUploadUrlDTO,
+  ResidentContractDocumentUploadUrlResponse,
+  CreateResidentContractDocumentDTO,
+  ResidentContractDocument,
+  UpdateResidentExtendedProfileDTO,
+  ResidentExtendedProfile,
 } from "../../types";
 
 // Base API configuration
@@ -122,10 +132,39 @@ export interface EmployeeApi {
 }
 
 export interface ResidentSelfServiceApi {
-  getResidentActiveLease(): Promise<ResidentActiveLease | null>;
-  getResidentActiveLeaseDocuments(): Promise<ResidentLeaseDocument[]>;
-  getResidentActiveParkingAllocation():
-    Promise<ResidentActiveParkingAllocation | null>;
+  getResidentLatestContract(): Promise<ResidentLatestContract>;
+  getResidentContractDetail(contractId: string): Promise<ResidentContract>;
+  listResidentActiveLeaseDocuments(): Promise<ResidentContractDocument[]>;
+  listResidentContracts(
+    params?: ListResidentContractsParams,
+  ): Promise<ResidentContractsListResponse>;
+  createResidentMoveInRequest(
+    contractId: string,
+    payload: CreateResidentMoveRequestDTO,
+  ): Promise<ResidentMoveRequest>;
+  createResidentMoveOutRequest(
+    contractId: string,
+    payload: CreateResidentMoveRequestDTO,
+  ): Promise<ResidentMoveRequest>;
+  listResidentMoveInRequests(
+    contractId: string,
+    params?: ListResidentMoveRequestsParams,
+  ): Promise<ResidentMoveRequest[]>;
+  listResidentMoveOutRequests(
+    contractId: string,
+    params?: ListResidentMoveRequestsParams,
+  ): Promise<ResidentMoveRequest[]>;
+  createResidentContractDocumentUploadUrl(
+    contractId: string,
+    payload: CreateResidentContractDocumentUploadUrlDTO,
+  ): Promise<ResidentContractDocumentUploadUrlResponse>;
+  createResidentContractDocument(
+    contractId: string,
+    payload: CreateResidentContractDocumentDTO,
+  ): Promise<ResidentContractDocument>;
+  updateResidentProfile(
+    payload: UpdateResidentExtendedProfileDTO,
+  ): Promise<ResidentExtendedProfile>;
 }
 
 // List parameters

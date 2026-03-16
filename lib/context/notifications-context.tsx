@@ -24,6 +24,10 @@ import {
 } from "../utils";
 import type { Notification, User } from "../types";
 import { useAuth } from "./auth-context";
+import {
+  ensureNotificationPermissions,
+  playIncomingNotificationSound,
+} from "../services/local-notifications";
 
 // Notifications State Interface
 interface NotificationsState {
@@ -301,6 +305,7 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
 }) => {
   const { isAuthenticated, currentUser } = useAuth();
   const appState = useRef(AppState.currentState);
+  const canPlaySoundRef = useRef(false);
   const fallbackAttemptedRef = useRef(false);
   const lastTokenRef = useRef<string | null>(null);
   const [storedNotifications, setNotifications] = useAsyncStorage(
@@ -382,6 +387,34 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
+    if (!isAuthenticated) {
+      canPlaySoundRef.current = false;
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    void (async () => {
+      try {
+        const granted = await ensureNotificationPermissions();
+        if (!cancelled) {
+          canPlaySoundRef.current = granted;
+        }
+      } catch {
+        if (!cancelled) {
+          canPlaySoundRef.current = false;
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated]);
+
+  useEffect(() => {
     if (!isAuthenticated) {
       disconnectNotifications();
       return;
@@ -414,6 +447,16 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
           type: NOTIFICATIONS_ACTIONS.UPSERT_NOTIFICATIONS,
           payload: [normalized],
         });
+        if (appState.current === "active" && canPlaySoundRef.current) {
+          void playIncomingNotificationSound({
+            title: normalized.title,
+            body: normalized.body || normalized.message,
+            data:
+              normalized.data && typeof normalized.data === "object"
+                ? (normalized.data as Record<string, unknown>)
+                : undefined,
+          });
+        }
       });
 
       socket.off("notifications:read").on("notifications:read", (payload: any) => {
