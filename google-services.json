@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "623254750331",
+    "project_id": "towerdesk-73b63",
+    "storage_bucket": "towerdesk-73b63.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:623254750331:android:27a3f41351a3077f384ede",
+        "android_client_info": {
+          "package_name": "com.codefier.towerdesk"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAK2V2vxE4xKxb7L8T4bOlSe2Z4IQpTm-s"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
