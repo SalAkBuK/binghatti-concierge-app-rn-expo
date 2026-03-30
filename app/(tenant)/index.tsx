@@ -3,6 +3,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Alert,
   Dimensions,
   RefreshControl,
   ScrollView,
@@ -24,12 +25,15 @@ import { HeaderBar } from "../../components/ui/HeaderBar";
 import { HomeScreenSkeleton } from "../../components/ui/HomeScreenSkeleton";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
+import { useBroadcastNotifications } from "../../lib/hooks/useBroadcastNotifications";
 import { useResidentContract } from "../../lib/hooks/useResidentSelfService";
 import { useResidentRequests } from "../../lib/hooks/useResidentRequests";
 import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
 import {
   filterNotificationsByUser,
+  getNotificationBody,
   getUnreadNotificationsCount,
+  isNotificationUnread,
 } from "../../lib/utils/helpers";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -38,7 +42,6 @@ export default function TenantHomeScreen() {
   const {
     currentUser,
     notifications,
-    notices,
     actions,
     isAuthenticated,
   } = useApp();
@@ -97,6 +100,18 @@ export default function TenantHomeScreen() {
     onUnauthorized: handleUnauthorized,
   });
 
+  const {
+    notifications: broadcastNotifications,
+    isLoading: isBroadcastNoticesLoading,
+    isRefreshing: isBroadcastNoticesRefreshing,
+    errorMessage: broadcastNoticesError,
+    refetch: refetchBroadcastNotices,
+  } = useBroadcastNotifications({
+    enabled: Boolean(currentUser?.id && isAuthenticated),
+    realtimeNotifications: notifications,
+    onUnauthorized: handleUnauthorized,
+  });
+
   useEffect(() => {
     if (!isAuthenticated) {
       router.replace("/auth");
@@ -119,10 +134,17 @@ export default function TenantHomeScreen() {
       refreshRequests({ asRefresh: true, reason: "manual" }),
       refetchContract({ asRefresh: true, showLoading: false }),
       refetchTenancy({ asRefresh: true, showLoading: false }),
+      refetchBroadcastNotices({ asRefresh: true, showLoading: false }),
     ]);
-  }, [refetchContract, refetchTenancy, refreshRequests]);
+  }, [
+    refetchBroadcastNotices,
+    refetchContract,
+    refetchTenancy,
+    refreshRequests,
+  ]);
 
-  const isHomeRefreshing = isRequestsRefreshing || isContractRefreshing;
+  const isHomeRefreshing =
+    isRequestsRefreshing || isContractRefreshing || isBroadcastNoticesRefreshing;
 
   const profileBuildingName = currentUser?.profile?.buildingName;
   const unitLabel = currentUser?.profile?.apartment;
@@ -142,9 +164,26 @@ export default function TenantHomeScreen() {
       .slice(0, 3);
   }, [residentRequests]);
 
-  const handleNoticePress = (notice: any) => {
-    actions.setSelectedNotice(notice);
-    router.push("/(modals)/notice-details");
+  const handleNoticePress = (notification: any) => {
+    const body = getNotificationBody(notification).trim();
+
+    if (isNotificationUnread(notification)) {
+      actions.markNotificationAsRead?.(notification.id).catch((error: unknown) => {
+        console.warn("[TenantHome] Failed to mark notice as read:", error);
+      });
+    }
+
+    Alert.alert(
+      notification.title || "Building notice",
+      body || "No additional details were provided for this building notice.",
+      [
+        { text: "Close", style: "cancel" },
+        {
+          text: "Open Inbox",
+          onPress: () => router.push("/(modals)/notifications-hub" as any),
+        },
+      ],
+    );
   };
 
   if (isLoading || !currentUser) {
@@ -304,11 +343,14 @@ export default function TenantHomeScreen() {
             <Text style={styles.buildingNoticesTitle}>Building Notices</Text>
           </View>
 
-          {notices && notices.length > 0 ? (
-            notices
-              .filter(notice => notice.status === "scheduled" || notice.status === "in-progress")
+          {broadcastNotifications.length > 0 ? (
+            broadcastNotifications
               .slice(0, 2)
-              .map((notice) => (
+              .map((notice) => {
+                const isUnread = isNotificationUnread(notice);
+                const noticeBody = getNotificationBody(notice).trim();
+
+                return (
                 <TouchableOpacity
                   key={notice.id}
                   style={styles.noticeCard}
@@ -317,33 +359,44 @@ export default function TenantHomeScreen() {
                 >
                   <View style={styles.noticeCardHeader}>
                     <Text style={styles.noticeCardTitle}>{notice.title}</Text>
-                    <View style={[
-                      styles.noticeStatusBadge,
-                      notice.status === "in-progress"
-                        ? styles.inProgressBadge
-                        : styles.scheduledBadge
-                    ]}>
-                      <Text style={[
-                        styles.noticeStatusText,
-                        notice.status === "in-progress"
-                          ? styles.inProgressText
-                          : styles.scheduledText
-                      ]}>
-                        {notice.status === "in-progress" ? "In Progress" : "Scheduled"}
+                    <View
+                      style={[
+                        styles.noticeStatusBadge,
+                        isUnread ? styles.inProgressBadge : styles.scheduledBadge,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.noticeStatusText,
+                          isUnread ? styles.inProgressText : styles.scheduledText,
+                        ]}
+                      >
+                        {isUnread ? "New" : "Notice"}
                       </Text>
                     </View>
                   </View>
                   <Text style={styles.noticeCardDescription} numberOfLines={2}>
-                    {notice.description}
+                    {noticeBody || "New building notice available."}
                   </Text>
-                  {notice.affectedAreas && notice.affectedAreas.length > 0 && (
-                    <Text style={styles.noticeAreas}>
-                      Affects: {notice.affectedAreas.slice(0, 2).join(", ")}
-                      {notice.affectedAreas.length > 2 && ` +${notice.affectedAreas.length - 2} more`}
-                    </Text>
-                  )}
+                  <Text style={styles.noticeAreas}>
+                    Posted{" "}
+                    {new Date(notice.createdAt).toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </Text>
                 </TouchableOpacity>
-              ))
+              );
+            })
+          ) : isBroadcastNoticesLoading ? (
+            <View style={styles.noNoticesCard}>
+              <Text style={styles.noNoticesText}>Loading building notices...</Text>
+            </View>
+          ) : broadcastNoticesError ? (
+            <View style={styles.noNoticesCard}>
+              <Text style={styles.noNoticesText}>{broadcastNoticesError}</Text>
+            </View>
           ) : (
             <View style={styles.noNoticesCard}>
               <Text style={styles.noNoticesText}>No active notices at this time</Text>
