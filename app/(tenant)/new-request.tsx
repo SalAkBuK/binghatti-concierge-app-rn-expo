@@ -21,6 +21,7 @@ import { AttachmentPicker } from "../../components/ui/AttachmentPicker";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
+import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
 import {
   residentRequestsApi,
   type ResidentRequestPriority,
@@ -84,6 +85,14 @@ const getContentTypeFromName = (fileName: string): string => {
 
 export default function NewRequestScreen() {
   const { currentUser, notifications, loading } = useApp();
+  const {
+    canCreateMaintenanceRequest,
+    isLoading: isTenancyLoading,
+    statusMessage,
+    statusTitle,
+  } = useResidentTenancy({
+    enabled: Boolean(currentUser?.role === "tenant" && currentUser?.id),
+  });
   const tabBarHeight = useBottomTabBarHeight();
   const maxAttachments = IMAGE_CONFIG.MAX_ATTACHMENTS;
 
@@ -109,6 +118,55 @@ export default function NewRequestScreen() {
   );
   const hasUnreadNotifications =
     getUnreadNotificationsCount(userNotifications) > 0;
+
+  if (!isTenancyLoading && !canCreateMaintenanceRequest) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={{ paddingBottom: tabBarHeight + 32 }}
+        >
+          <HeaderBar
+            title="New Request"
+            hasUnreadNotifications={hasUnreadNotifications}
+            showSideMenu={showSideMenu}
+            onSideMenuToggle={setShowSideMenu}
+          />
+
+          <View style={styles.header}>
+            <Text style={styles.headerTitle}>{statusTitle}</Text>
+            <Text style={styles.headerSubtitle}>{statusMessage}</Text>
+          </View>
+
+          <View style={styles.formContainer}>
+            <Text style={styles.unavailableTitle}>New requests are unavailable</Text>
+            <Text style={styles.unavailableText}>
+              Maintenance requests can only be created while your account has an active unit.
+            </Text>
+
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={() => router.push("/(tenant)/requests" as any)}
+            >
+              <Text style={styles.secondaryButtonText}>Open Request History</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={() => router.push("/(tenant)/lease-details" as any)}
+            >
+              <Text style={styles.secondaryButtonText}>Open Contract Details</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+
+        <SideMenu
+          isVisible={showSideMenu}
+          onClose={() => setShowSideMenu(false)}
+        />
+      </SafeAreaView>
+    );
+  }
 
   const validateForm = (): ValidationErrors => {
     const errors: ValidationErrors = {};
@@ -512,5 +570,31 @@ const styles = StyleSheet.create({
   },
   buttonIcon: {
     marginRight: 8,
+  },
+  unavailableTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: 8,
+  },
+  unavailableText: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: "#4b5563",
+    marginBottom: 8,
+  },
+  secondaryButton: {
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+    backgroundColor: "#eff6ff",
+    borderRadius: 8,
+    padding: 14,
+    marginTop: 12,
+    alignItems: "center",
+  },
+  secondaryButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1d4ed8",
   },
 });

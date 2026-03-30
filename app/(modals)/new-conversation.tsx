@@ -14,17 +14,31 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAuth } from "../../lib/context/auth-context";
+import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
 import { useMessaging } from "../../lib/context/messaging-context";
 
 export default function NewConversationModal() {
   const insets = useSafeAreaInsets();
+  const { currentUser } = useAuth();
   const { actions } = useMessaging();
+  const { canCreateManagementConversation, isLoading: isTenancyLoading, statusMessage } =
+    useResidentTenancy({
+      enabled: Boolean(currentUser?.role === "tenant" && currentUser?.id),
+    });
+  const canComposeConversation =
+    currentUser?.role === "tenant" ? canCreateManagementConversation : true;
   const [subject, setSubject] = useState("");
   const [participantIds, setParticipantIds] = useState("");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async () => {
+    if (!canComposeConversation) {
+      Alert.alert("Messaging Unavailable", statusMessage);
+      return;
+    }
+
     const ids = participantIds
       .split(",")
       .map((s) => s.trim())
@@ -82,6 +96,13 @@ export default function NewConversationModal() {
         contentContainerStyle={styles.formContent}
         keyboardShouldPersistTaps="handled"
       >
+        {!isTenancyLoading && !canComposeConversation ? (
+          <View style={styles.lockedBanner}>
+            <Ionicons name="information-circle-outline" size={18} color="#9A3412" />
+            <Text style={styles.lockedBannerText}>{statusMessage}</Text>
+          </View>
+        ) : null}
+
         {/* Subject */}
         <View style={styles.field}>
           <Text style={styles.label}>Subject (optional)</Text>
@@ -92,6 +113,7 @@ export default function NewConversationModal() {
             value={subject}
             onChangeText={setSubject}
             maxLength={200}
+            editable={canComposeConversation}
           />
         </View>
 
@@ -105,6 +127,7 @@ export default function NewConversationModal() {
             value={participantIds}
             onChangeText={setParticipantIds}
             autoCapitalize="none"
+            editable={canComposeConversation}
           />
           <Text style={styles.hint}>
             Enter the user ID(s) of the people you want to message.
@@ -123,14 +146,19 @@ export default function NewConversationModal() {
             multiline
             maxLength={2000}
             textAlignVertical="top"
+            editable={canComposeConversation}
           />
         </View>
 
         {/* Submit */}
         <TouchableOpacity
-          style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
+          style={[
+            styles.submitButton,
+            (submitting || !canComposeConversation) &&
+              styles.submitButtonDisabled,
+          ]}
           onPress={handleSubmit}
-          disabled={submitting}
+          disabled={submitting || !canComposeConversation}
           activeOpacity={0.7}
         >
           {submitting ? (
@@ -175,6 +203,23 @@ const styles = StyleSheet.create({
   },
   formContent: {
     padding: 16,
+  },
+  lockedBanner: {
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "flex-start",
+    backgroundColor: "#FFF7ED",
+    borderColor: "#FDBA74",
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 20,
+  },
+  lockedBannerText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 19,
+    color: "#9A3412",
   },
   field: {
     marginBottom: 20,

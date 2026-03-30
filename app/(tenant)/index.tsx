@@ -26,6 +26,7 @@ import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
 import { useResidentContract } from "../../lib/hooks/useResidentSelfService";
 import { useResidentRequests } from "../../lib/hooks/useResidentRequests";
+import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
 import {
   filterNotificationsByUser,
   getUnreadNotificationsCount,
@@ -72,6 +73,21 @@ export default function TenantHomeScreen() {
   });
 
   const {
+    canCreateMaintenanceRequest,
+    displayBuildingName,
+    displayUnitLabel,
+    isFormerResident,
+    isLoading: isTenancyLoading,
+    refetch: refetchTenancy,
+    statusMessage,
+    statusTitle,
+  } = useResidentTenancy({
+    enabled: Boolean(currentUser?.id && isAuthenticated),
+    latestContractData: contractData,
+    onUnauthorized: handleUnauthorized,
+  });
+
+  const {
     requests: residentRequests,
     refreshRequests,
     isRefreshing: isRequestsRefreshing,
@@ -90,20 +106,21 @@ export default function TenantHomeScreen() {
   useEffect(() => {
     // Simulate minimum loading time for smooth animation
     const timer = setTimeout(() => {
-      if (currentUser) {
+      if (currentUser && !isTenancyLoading) {
         setIsLoading(false);
       }
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [currentUser]);
+  }, [currentUser, isTenancyLoading]);
 
   const onRefreshHome = useCallback(async () => {
     await Promise.all([
       refreshRequests({ asRefresh: true, reason: "manual" }),
       refetchContract({ asRefresh: true, showLoading: false }),
+      refetchTenancy({ asRefresh: true, showLoading: false }),
     ]);
-  }, [refetchContract, refreshRequests]);
+  }, [refetchContract, refetchTenancy, refreshRequests]);
 
   const isHomeRefreshing = isRequestsRefreshing || isContractRefreshing;
 
@@ -116,8 +133,8 @@ export default function TenantHomeScreen() {
           .filter(Boolean)
           .join(" - ")
       : "-";
-  const buildingName = contractData.contract?.buildingName || profileBuildingName || "-";
-  const unitInfo = contractData.contract?.unitLabel || profileUnitInfo;
+  const buildingName = displayBuildingName || profileBuildingName || "-";
+  const unitInfo = displayUnitLabel || profileUnitInfo;
 
   const recentRequests = useMemo(() => {
     return [...residentRequests]
@@ -193,28 +210,57 @@ export default function TenantHomeScreen() {
           </LinearGradient>
         </Animated.View>
 
-        {/* Action Buttons */}
+        {isFormerResident ? (
+          <Animated.View
+            entering={FadeInDown.delay(100).duration(400)}
+            style={styles.formerResidentBanner}
+          >
+            <Text style={styles.formerResidentTitle}>{statusTitle}</Text>
+            <Text style={styles.formerResidentText}>{statusMessage}</Text>
+          </Animated.View>
+        ) : null}
+
         <Animated.View
           entering={FadeInDown.delay(100).duration(400)}
           style={styles.actionButtonsContainer}
         >
-          <AnimatedButton
-            style={[styles.actionButton, styles.newRequestButton]}
-            onPress={() => router.push("/(tenant)/new-request")}
-          >
-            <View style={styles.actionButtonContent}>
-              <View style={[styles.actionButtonIcon, styles.newRequestIcon]}>
-                <NewIcon size={18} color="#fff" />
+          {canCreateMaintenanceRequest ? (
+            <AnimatedButton
+              style={[styles.actionButton, styles.newRequestButton]}
+              onPress={() => router.push("/(tenant)/new-request")}
+            >
+              <View style={styles.actionButtonContent}>
+                <View style={[styles.actionButtonIcon, styles.newRequestIcon]}>
+                  <NewIcon size={18} color="#fff" />
+                </View>
+                <Text
+                  style={styles.actionButtonText}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                >
+                  New Request
+                </Text>
               </View>
-              <Text
-                style={styles.actionButtonText}
-                numberOfLines={1}
-                adjustsFontSizeToFit
-              >
-                New Request
-              </Text>
-            </View>
-          </AnimatedButton>
+            </AnimatedButton>
+          ) : (
+            <AnimatedButton
+              style={[styles.actionButton, styles.contractButton]}
+              onPress={() => router.push("/(tenant)/lease-details" as any)}
+            >
+              <View style={styles.actionButtonContent}>
+                <View style={[styles.actionButtonIcon, styles.contractIcon]}>
+                  <NewIcon size={18} color="#fff" />
+                </View>
+                <Text
+                  style={styles.actionButtonText}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                >
+                  Contract Details
+                </Text>
+              </View>
+            </AnimatedButton>
+          )}
 
           <AnimatedButton
             style={[styles.actionButton, styles.myRequestsButton]}
@@ -229,7 +275,7 @@ export default function TenantHomeScreen() {
                 numberOfLines={1}
                 adjustsFontSizeToFit
               >
-                My Requests
+                {isFormerResident ? "Request History" : "My Requests"}
               </Text>
             </View>
           </AnimatedButton>
@@ -505,6 +551,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#DCFCE7",
     borderColor: "#8EEEAF",
   },
+  contractButton: {
+    backgroundColor: "#EDE9FE",
+    borderColor: "#DDD6FE",
+  },
   actionButtonContent: {
     flexDirection: "row",
     alignItems: "center",
@@ -529,11 +579,36 @@ const styles = StyleSheet.create({
     borderRadius: 7,
     backgroundColor: "#16A34A",
   },
+  contractIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 7,
+    backgroundColor: "#6D28D9",
+  },
   actionButtonText: {
     fontSize: 15,
     fontWeight: "600",
     color: "#1F2937",
     flex: 1,
+  },
+  formerResidentBanner: {
+    backgroundColor: "#FFF7ED",
+    borderRadius: 10,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#FDBA74",
+    marginBottom: 20,
+  },
+  formerResidentTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#9A3412",
+    marginBottom: 6,
+  },
+  formerResidentText: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: "#9A3412",
   },
   buildingNoticesSection: {
     marginTop: 20,

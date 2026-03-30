@@ -1,8 +1,10 @@
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Dimensions,
   RefreshControl,
@@ -20,7 +22,8 @@ import { AnimatedButton } from "../../components/ui/AnimatedButton";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
-import type { Visitor, VisitorStatus } from "../../lib/types";
+import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
+import type { ResidentVisitor, ResidentVisitorStatus } from "../../lib/types";
 import {
   filterNotificationsByUser,
   getUnreadNotificationsCount,
@@ -28,93 +31,159 @@ import {
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
-type FilterStatus = "all" | VisitorStatus;
+type FilterStatus = "all" | ResidentVisitorStatus;
+
+const formatResidentVisitorType = (value: string) =>
+  value
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+
+const formatDateTime = (value: string | null) => {
+  if (!value) return "Flexible";
+  return new Date(value).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
+const getStatusColor = (status: ResidentVisitorStatus) => {
+  switch (status) {
+    case "EXPECTED":
+      return { bg: "#FEF3C7", text: "#92400E" };
+    case "ARRIVED":
+      return { bg: "#DBEAFE", text: "#1D4ED8" };
+    case "COMPLETED":
+      return { bg: "#DCFCE7", text: "#166534" };
+    case "CANCELLED":
+      return { bg: "#FEE2E2", text: "#B91C1C" };
+    default:
+      return { bg: "#E5E7EB", text: "#4B5563" };
+  }
+};
 
 export default function VisitorsScreen() {
-  const { currentUser, notifications, actions } = useApp();
-  const [refreshing, setRefreshing] = useState<boolean>(false);
+  const {
+    currentUser,
+    notifications,
+    residentVisitors,
+    residentVisitorsLoading,
+    actions,
+  } = useApp();
+  const {
+    canManageVisitors,
+    isLoading: isTenancyLoading,
+    statusMessage,
+    statusTitle,
+  } = useResidentTenancy({
+    enabled: Boolean(currentUser?.role === "tenant" && currentUser?.id),
+  });
+  const [refreshing, setRefreshing] = useState(false);
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [showSideMenu, setShowSideMenu] = useState(false);
   const tabBarHeight = useBottomTabBarHeight();
 
-  // Get visitors from context
-  const visitors = actions.getVisitors();
+  const loadVisitors = useCallback(
+    async (showError = true) => {
+      try {
+        await actions.fetchResidentVisitors();
+      } catch (error) {
+        if (showError) {
+          Alert.alert(
+            "Visitor Access",
+            error instanceof Error
+              ? error.message
+              : "Failed to load visitors.",
+          );
+        }
+      }
+    },
+    [actions],
+  );
 
-  // Filter visitors for current user
+  useFocusEffect(
+    useCallback(() => {
+      if (!currentUser?.id || !canManageVisitors) return;
+      void loadVisitors(false);
+    }, [canManageVisitors, currentUser?.id, loadVisitors]),
+  );
+
   const filteredVisitors = useMemo(() => {
-    let filtered = visitors.filter((v) => v.tenantId === currentUser?.id);
+    let filtered = residentVisitors;
 
-    // Apply status filter
     if (filterStatus !== "all") {
-      filtered = filtered.filter((v) => v.status === filterStatus);
+      filtered = filtered.filter((visitor) => visitor.status === filterStatus);
     }
 
-    // Apply search filter
     if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(
-        (v) =>
-          v.visitorName.toLowerCase().includes(query) ||
-          v.visitorPhone.toLowerCase().includes(query),
-      );
+      const query = searchQuery.trim().toLowerCase();
+      filtered = filtered.filter((visitor) => {
+        const haystack = [
+          visitor.visitorName,
+          visitor.phoneNumber,
+          visitor.unit.label,
+          visitor.tenantName || "",
+          formatResidentVisitorType(visitor.type),
+        ]
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(query);
+      });
     }
 
-    return filtered.sort(
+    return [...filtered].sort(
       (a, b) =>
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     );
-  }, [visitors, currentUser, filterStatus, searchQuery]);
+  }, [filterStatus, residentVisitors, searchQuery]);
 
-  // Calculate stats
-  const stats = useMemo(() => {
-    const userVisitors = visitors.filter((v) => v.tenantId === currentUser?.id);
-    return {
-      all: userVisitors.length,
-      expected: userVisitors.filter((v) => v.status === "expected").length,
-      arrived: userVisitors.filter((v) => v.status === "arrived").length,
-      departed: userVisitors.filter((v) => v.status === "departed").length,
-      cancelled: userVisitors.filter((v) => v.status === "cancelled").length,
-    };
-  }, [visitors, currentUser]);
+  const stats = useMemo(
+    () => ({
+      all: residentVisitors.length,
+      EXPECTED: residentVisitors.filter((visitor) => visitor.status === "EXPECTED")
+        .length,
+      ARRIVED: residentVisitors.filter((visitor) => visitor.status === "ARRIVED")
+        .length,
+      COMPLETED: residentVisitors.filter(
+        (visitor) => visitor.status === "COMPLETED",
+      ).length,
+      CANCELLED: residentVisitors.filter(
+        (visitor) => visitor.status === "CANCELLED",
+      ).length,
+    }),
+    [residentVisitors],
+  );
 
-  const onRefresh = async (): Promise<void> => {
+  const onRefresh = async () => {
     setRefreshing(true);
-    // In real app, fetch latest visitor data from API
-    setTimeout(() => setRefreshing(false), 1000);
+    await loadVisitors();
+    setRefreshing(false);
   };
 
-  const getStatusColor = (status: VisitorStatus) => {
-    switch (status) {
-      case "expected":
-        return { bg: "#FEF3C7", text: "#92400e" };
-      case "arrived":
-        return { bg: "#DBEAFE", text: "#1d4ed8" };
-      case "departed":
-        return { bg: "#D1FAE5", text: "#065f46" };
-      case "cancelled":
-        return { bg: "#FEE2E2", text: "#dc2626" };
-      default:
-        return { bg: "#f3f4f6", text: "#6b7280" };
-    }
-  };
-
-  const handleCancelVisitor = async (visitor: Visitor) => {
+  const handleCancelVisitor = async (visitor: ResidentVisitor) => {
     Alert.alert(
       "Cancel Visitor",
-      `Are you sure you want to cancel the registration for ${visitor.visitorName}?`,
+      `Cancel ${visitor.visitorName}'s visitor registration?`,
       [
-        { text: "No", style: "cancel" },
+        { text: "Keep", style: "cancel" },
         {
-          text: "Yes",
+          text: "Cancel Visitor",
           style: "destructive",
           onPress: async () => {
             try {
-              await actions.cancelVisitor(visitor.id);
-              Alert.alert("Success", "Visitor registration cancelled");
+              await actions.cancelResidentVisitor(visitor.id);
+              Alert.alert("Visitor Cancelled", "The visitor has been cancelled.");
             } catch (error) {
-              console.error("Failed to cancel visitor registration:", error);
-              Alert.alert("Error", "Failed to cancel visitor registration");
+              Alert.alert(
+                "Unable to Cancel",
+                error instanceof Error
+                  ? error.message
+                  : "Failed to cancel the visitor.",
+              );
             }
           },
         },
@@ -122,40 +191,82 @@ export default function VisitorsScreen() {
     );
   };
 
-  const handleVisitorPress = (visitor: Visitor) => {
-    // Show detail modal with all visitor information
-    Alert.alert(
-      visitor.visitorName,
-      `Code: ${visitor.visitorCode}\n\nPhone: ${visitor.visitorPhone}\nID Type: ${visitor.visitorIdType.replace("_", " ").toUpperCase()}\nID Number: ${visitor.visitorIdNumber}\n\nPurpose: ${visitor.visitPurpose}\n\nExpected Arrival:\n${new Date(visitor.expectedArrivalTime).toLocaleString()}\n\n${visitor.expectedDepartureTime ? `Expected Departure:\n${new Date(visitor.expectedDepartureTime).toLocaleString()}\n\n` : ""}${visitor.actualArrivalTime ? `Actual Arrival:\n${new Date(visitor.actualArrivalTime).toLocaleString()}\n\n` : ""}${visitor.actualDepartureTime ? `Actual Departure:\n${new Date(visitor.actualDepartureTime).toLocaleString()}` : ""}`,
-      visitor.status === "expected"
+  const handleVisitorPress = (visitor: ResidentVisitor) => {
+    const details = [
+      `Type: ${formatResidentVisitorType(visitor.type)}`,
+      `Status: ${visitor.status}`,
+      `Phone: ${visitor.phoneNumber}`,
+      `Unit: ${visitor.unit.label || "Assigned by backend"}`,
+      `Expected arrival: ${formatDateTime(visitor.expectedArrivalAt)}`,
+      `Emirates ID: ${visitor.emiratesId || "Not provided"}`,
+      `Vehicle: ${visitor.vehicleNumber || "Not provided"}`,
+      `Notes: ${visitor.notes || "No notes"}`,
+    ].join("\n\n");
+
+    const actionsList =
+      visitor.status === "EXPECTED"
         ? [
-            { text: "Close", style: "cancel" },
+            { text: "Close", style: "cancel" as const },
+            {
+              text: "Edit",
+              onPress: () =>
+                router.push({
+                  pathname: "/(modals)/register-visitor",
+                  params: { visitorId: visitor.id },
+                } as any),
+            },
             {
               text: "Cancel Registration",
-              style: "destructive",
+              style: "destructive" as const,
               onPress: () => handleCancelVisitor(visitor),
             },
           ]
-        : [{ text: "Close" }],
-    );
+        : [{ text: "Close", style: "cancel" as const }];
+
+    Alert.alert(visitor.visitorName, details, actionsList);
   };
 
-  const formatDateTime = (isoString: string): string => {
-    return new Date(isoString).toLocaleString("en-US", {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
-  // Calculate unread notifications
   const userNotifications = filterNotificationsByUser(
     notifications || [],
     currentUser?.id,
   );
   const hasUnreadNotifications =
     getUnreadNotificationsCount(userNotifications) > 0;
+
+  if (!isTenancyLoading && !canManageVisitors) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={{ paddingBottom: tabBarHeight + 32 }}
+        >
+          <HeaderBar
+            title="My Visitors"
+            hasUnreadNotifications={hasUnreadNotifications}
+            showSideMenu={showSideMenu}
+            onSideMenuToggle={setShowSideMenu}
+          />
+
+          <Animated.View
+            entering={FadeInDown.delay(40).duration(320)}
+            style={styles.disabledState}
+          >
+            <Ionicons name="lock-closed-outline" size={28} color="#9A3412" />
+            <Text style={styles.disabledTitle}>{statusTitle}</Text>
+            <Text style={styles.disabledText}>{statusMessage}</Text>
+            <Text style={styles.disabledText}>
+              Visitor management is only available while your account has an active unit.
+            </Text>
+          </Animated.View>
+        </ScrollView>
+
+        <SideMenu
+          isVisible={showSideMenu}
+          onClose={() => setShowSideMenu(false)}
+        />
+      </SafeAreaView>
+    );
+  }
 
   const FilterTab = ({
     label,
@@ -188,7 +299,6 @@ export default function VisitorsScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        {/* Header */}
         <HeaderBar
           title="My Visitors"
           hasUnreadNotifications={hasUnreadNotifications}
@@ -196,23 +306,32 @@ export default function VisitorsScreen() {
           onSideMenuToggle={setShowSideMenu}
         />
 
-        {/* Register New Visitor Button */}
         <Animated.View
-          entering={FadeInDown.delay(50).duration(400)}
+          entering={FadeInDown.delay(40).duration(320)}
+          style={styles.infoBanner}
+        >
+          <Ionicons name="information-circle-outline" size={18} color="#1D4ED8" />
+          <Text style={styles.infoBannerText}>
+            Your active unit is determined by the backend. Visitor records are shared
+            across residents on that unit.
+          </Text>
+        </Animated.View>
+
+        <Animated.View
+          entering={FadeInDown.delay(70).duration(320)}
           style={styles.registerButtonContainer}
         >
           <TouchableOpacity
             style={styles.registerButton}
             onPress={() => router.push("/(modals)/register-visitor")}
           >
-            <Ionicons name="person-add" size={20} color="white" />
-            <Text style={styles.registerButtonText}>Register New Visitor</Text>
+            <Ionicons name="person-add" size={20} color="#FFFFFF" />
+            <Text style={styles.registerButtonText}>Add Visitor</Text>
           </TouchableOpacity>
         </Animated.View>
 
-        {/* Filter Tabs */}
         <Animated.View
-          entering={FadeInDown.delay(100).duration(400)}
+          entering={FadeInDown.delay(100).duration(320)}
           style={styles.filterContainer}
         >
           <ScrollView
@@ -221,163 +340,161 @@ export default function VisitorsScreen() {
             contentContainerStyle={styles.filterScrollContent}
           >
             <FilterTab label="All" count={stats.all} status="all" />
-            <FilterTab label="Expected" count={stats.expected} status="expected" />
-            <FilterTab label="Arrived" count={stats.arrived} status="arrived" />
-            <FilterTab label="Departed" count={stats.departed} status="departed" />
-            <FilterTab label="Cancelled" count={stats.cancelled} status="cancelled" />
+            <FilterTab label="Expected" count={stats.EXPECTED} status="EXPECTED" />
+            <FilterTab label="Arrived" count={stats.ARRIVED} status="ARRIVED" />
+            <FilterTab label="Completed" count={stats.COMPLETED} status="COMPLETED" />
+            <FilterTab label="Cancelled" count={stats.CANCELLED} status="CANCELLED" />
           </ScrollView>
         </Animated.View>
 
-        {/* Search Bar */}
         <Animated.View
-          entering={FadeInDown.delay(150).duration(400)}
+          entering={FadeInDown.delay(130).duration(320)}
           style={styles.searchContainer}
         >
-          <Ionicons
-            name="search"
-            size={20}
-            color="#6b7280"
-            style={styles.searchIcon}
-          />
+          <Ionicons name="search" size={20} color="#6B7280" style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search by name or phone..."
+            placeholder="Search by name, phone, unit, or type..."
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
-          {searchQuery.length > 0 && (
+          {searchQuery.length > 0 ? (
             <TouchableOpacity onPress={() => setSearchQuery("")}>
-              <Ionicons name="close-circle" size={20} color="#6b7280" />
+              <Ionicons name="close-circle" size={20} color="#6B7280" />
             </TouchableOpacity>
-          )}
+          ) : null}
         </Animated.View>
 
-        {/* Visitors List */}
         <Animated.View
-          entering={FadeInDown.delay(200).duration(400)}
+          entering={FadeInDown.delay(160).duration(320)}
           style={styles.visitorsContainer}
         >
-          <Text style={styles.visitorsTitle}>
-            {filterStatus === "all" ? "All Visitors" : `${filterStatus.charAt(0).toUpperCase() + filterStatus.slice(1)} Visitors`}
-          </Text>
+          <Text style={styles.visitorsTitle}>Visitor History</Text>
 
-          <View style={styles.visitorsList}>
-            {filteredVisitors.length > 0 ? (
-              filteredVisitors.map((visitor, index) => {
+          {residentVisitorsLoading && residentVisitors.length === 0 ? (
+            <View style={styles.loadingState}>
+              <ActivityIndicator size="large" color="#336BE3" />
+              <Text style={styles.loadingText}>Loading visitors...</Text>
+            </View>
+          ) : filteredVisitors.length > 0 ? (
+            <View style={styles.visitorsList}>
+              {filteredVisitors.map((visitor) => {
                 const statusColors = getStatusColor(visitor.status);
-
                 return (
                   <AnimatedButton
                     key={visitor.id}
                     style={styles.visitorCard}
                     onPress={() => handleVisitorPress(visitor)}
                   >
-                    <View style={styles.visitorCardContent}>
-                      {/* Header Row */}
-                      <View style={styles.visitorCardHeader}>
-                        <View style={styles.visitorInfoRow}>
-                          <Ionicons
-                            name="person"
-                            size={18}
-                            color="#336BE3"
-                            style={styles.visitorIcon}
-                          />
-                          <View style={styles.visitorNameContainer}>
-                            <Text style={styles.visitorName} numberOfLines={1}>
-                              {visitor.visitorName}
-                            </Text>
-                            <Text style={styles.visitorPhone}>
-                              {visitor.visitorPhone}
-                            </Text>
-                          </View>
+                    <View style={styles.visitorCardHeader}>
+                      <View style={styles.visitorIdentity}>
+                        <View style={styles.iconBadge}>
+                          <Ionicons name="person-outline" size={18} color="#336BE3" />
                         </View>
-                        <View
-                          style={[
-                            styles.statusBadge,
-                            { backgroundColor: statusColors.bg },
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.statusBadgeText,
-                              { color: statusColors.text },
-                            ]}
-                          >
-                            {visitor.status.toUpperCase()}
+                        <View style={styles.visitorNameBlock}>
+                          <Text style={styles.visitorName} numberOfLines={1}>
+                            {visitor.visitorName}
                           </Text>
+                          <Text style={styles.visitorPhone}>{visitor.phoneNumber}</Text>
                         </View>
                       </View>
 
-                      {/* Visitor Code */}
-                      <View style={styles.visitorCodeRow}>
-                        <Ionicons name="qr-code" size={16} color="#6b7280" />
-                        <Text style={styles.visitorCode}>
-                          {visitor.visitorCode}
+                      <View
+                        style={[
+                          styles.statusBadge,
+                          { backgroundColor: statusColors.bg },
+                        ]}
+                      >
+                        <Text
+                          style={[styles.statusBadgeText, { color: statusColors.text }]}
+                        >
+                          {visitor.status}
                         </Text>
                       </View>
+                    </View>
 
-                      {/* Expected Arrival */}
-                      <View style={styles.visitorDetailRow}>
-                        <Ionicons
-                          name="time-outline"
-                          size={16}
-                          color="#6b7280"
-                        />
-                        <Text style={styles.visitorDetailText}>
-                          Expected: {formatDateTime(visitor.expectedArrivalTime)}
-                        </Text>
-                      </View>
+                    <View style={styles.metaRow}>
+                      <Ionicons name="pricetag-outline" size={15} color="#6B7280" />
+                      <Text style={styles.metaText}>
+                        {formatResidentVisitorType(visitor.type)}
+                      </Text>
+                    </View>
 
-                      {/* Purpose */}
-                      <View style={styles.visitorDetailRow}>
+                    <View style={styles.metaRow}>
+                      <Ionicons name="business-outline" size={15} color="#6B7280" />
+                      <Text style={styles.metaText}>
+                        Unit {visitor.unit.label || "Assigned automatically"}
+                      </Text>
+                    </View>
+
+                    <View style={styles.metaRow}>
+                      <Ionicons name="time-outline" size={15} color="#6B7280" />
+                      <Text style={styles.metaText}>
+                        Arrival: {formatDateTime(visitor.expectedArrivalAt)}
+                      </Text>
+                    </View>
+
+                    {visitor.notes ? (
+                      <View style={styles.metaRow}>
                         <Ionicons
                           name="document-text-outline"
-                          size={16}
-                          color="#6b7280"
+                          size={15}
+                          color="#6B7280"
                         />
-                        <Text
-                          style={styles.visitorDetailText}
-                          numberOfLines={1}
-                        >
-                          {visitor.visitPurpose}
+                        <Text style={styles.metaText} numberOfLines={2}>
+                          {visitor.notes}
                         </Text>
                       </View>
+                    ) : null}
 
-                      {/* Cancel Button */}
-                      {visitor.status === "expected" && (
+                    {visitor.status === "EXPECTED" ? (
+                      <View style={styles.cardActions}>
                         <TouchableOpacity
-                          style={styles.cancelButton}
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            handleCancelVisitor(visitor);
+                          style={styles.secondaryAction}
+                          onPress={(event) => {
+                            event.stopPropagation();
+                            router.push({
+                              pathname: "/(modals)/register-visitor",
+                              params: { visitorId: visitor.id },
+                            } as any);
                           }}
                         >
-                          <Ionicons name="close-circle" size={18} color="#dc2626" />
-                          <Text style={styles.cancelButtonText}>Cancel</Text>
+                          <Ionicons name="create-outline" size={16} color="#1D4ED8" />
+                          <Text style={styles.secondaryActionText}>Edit</Text>
                         </TouchableOpacity>
-                      )}
-                    </View>
+
+                        <TouchableOpacity
+                          style={styles.destructiveAction}
+                          onPress={(event) => {
+                            event.stopPropagation();
+                            void handleCancelVisitor(visitor);
+                          }}
+                        >
+                          <Ionicons name="close-circle-outline" size={16} color="#B91C1C" />
+                          <Text style={styles.destructiveActionText}>Cancel</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : null}
                   </AnimatedButton>
                 );
-              })
-            ) : (
-              <View style={styles.emptyState}>
-                <Ionicons name="people-outline" size={64} color="#d1d5db" />
-                <Text style={styles.emptyStateTitle}>No visitors found</Text>
-                <Text style={styles.emptyStateText}>
-                  {searchQuery
-                    ? "No visitors match your search"
-                    : filterStatus === "all"
-                      ? "You haven't registered any visitors yet"
-                      : `No ${filterStatus} visitors found`}
-                </Text>
-              </View>
-            )}
-          </View>
+              })}
+            </View>
+          ) : (
+            <View style={styles.emptyState}>
+              <Ionicons name="people-outline" size={64} color="#D1D5DB" />
+              <Text style={styles.emptyStateTitle}>No visitors found</Text>
+              <Text style={styles.emptyStateText}>
+                {searchQuery
+                  ? "No visitors match the current search."
+                  : filterStatus === "all"
+                    ? "You haven't created any visitors yet."
+                    : `No ${filterStatus.toLowerCase()} visitors found.`}
+              </Text>
+            </View>
+          )}
         </Animated.View>
       </ScrollView>
 
-      {/* Side Menu */}
       <SideMenu
         isVisible={showSideMenu}
         onClose={() => setShowSideMenu(false)}
@@ -395,191 +512,250 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: SCREEN_WIDTH * 0.05,
   },
+  infoBanner: {
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "flex-start",
+    backgroundColor: "#EFF6FF",
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+  },
+  infoBannerText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 19,
+    color: "#1E3A8A",
+  },
   registerButtonContainer: {
-    marginBottom: 20,
+    marginBottom: 18,
   },
   registerButton: {
     backgroundColor: "#336BE3",
-    borderRadius: 10,
-    padding: 16,
+    borderRadius: 12,
+    paddingVertical: 15,
+    paddingHorizontal: 18,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
   },
   registerButtonText: {
-    color: "white",
+    color: "#FFFFFF",
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: "700",
     marginLeft: 8,
   },
   filterContainer: {
     marginBottom: 16,
   },
   filterScrollContent: {
-    paddingRight: 16,
+    paddingRight: 8,
   },
   filterTab: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: "#f3f4f6",
-    marginRight: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
   },
   filterTabActive: {
-    backgroundColor: "#336BE3",
+    backgroundColor: "#DBEAFE",
+    borderColor: "#93C5FD",
   },
   filterTabText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "600",
-    color: "#6b7280",
+    color: "#4B5563",
   },
   filterTabTextActive: {
-    color: "white",
+    color: "#1D4ED8",
   },
   searchContainer: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "white",
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
+    marginBottom: 18,
   },
   searchIcon: {
     marginRight: 8,
   },
   searchInput: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 15,
     color: "#111827",
   },
   visitorsContainer: {
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#F3F4F6",
-    borderRadius: 10,
-    padding: 20,
-    marginBottom: 20,
-    width: SCREEN_WIDTH * 0.9,
-    alignSelf: "center",
+    marginBottom: 16,
   },
   visitorsTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#1F2937",
-    marginBottom: 20,
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: 14,
   },
   visitorsList: {
-    // Container for visitor cards
+    gap: 12,
   },
   visitorCard: {
-    backgroundColor: "#FBFBFC",
-    borderRadius: 8,
-    padding: 16,
-    marginBottom: 12,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#D5DEE8",
-  },
-  visitorCardContent: {
-    flex: 1,
+    borderColor: "#E5E7EB",
+    padding: 16,
   },
   visitorCardHeader: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 10,
     marginBottom: 12,
   },
-  visitorInfoRow: {
+  visitorIdentity: {
     flexDirection: "row",
-    alignItems: "center",
     flex: 1,
+    gap: 10,
   },
-  visitorIcon: {
-    marginRight: 8,
+  iconBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#EFF6FF",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  visitorNameContainer: {
+  visitorNameBlock: {
     flex: 1,
   },
   visitorName: {
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: "700",
     color: "#111827",
     marginBottom: 2,
   },
   visitorPhone: {
     fontSize: 13,
-    color: "#6b7280",
+    color: "#6B7280",
   },
   statusBadge: {
+    borderRadius: 999,
     paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginLeft: 8,
+    paddingVertical: 6,
   },
   statusBadgeText: {
-    fontSize: 10,
-    fontWeight: "600",
+    fontSize: 11,
+    fontWeight: "700",
   },
-  visitorCodeRow: {
+  metaRow: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 8,
     marginBottom: 8,
   },
-  visitorCode: {
+  metaText: {
+    flex: 1,
     fontSize: 13,
-    color: "#336BE3",
-    fontWeight: "600",
-    marginLeft: 6,
+    color: "#4B5563",
+    lineHeight: 18,
   },
-  visitorDetailRow: {
+  cardActions: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 8,
+  },
+  secondaryAction: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 6,
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: "#EFF6FF",
   },
-  visitorDetailText: {
+  secondaryActionText: {
     fontSize: 13,
-    color: "#4b5563",
-    marginLeft: 6,
-    flex: 1,
+    fontWeight: "700",
+    color: "#1D4ED8",
   },
-  cancelButton: {
+  destructiveAction: {
     flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: "#FEF2F2",
+  },
+  destructiveActionText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#B91C1C",
+  },
+  loadingState: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    paddingVertical: 32,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: "#dc2626",
-    backgroundColor: "#FEE2E2",
   },
-  cancelButtonText: {
+  loadingText: {
+    marginTop: 12,
     fontSize: 14,
-    fontWeight: "600",
-    color: "#dc2626",
-    marginLeft: 6,
+    color: "#6B7280",
   },
   emptyState: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
     alignItems: "center",
-    padding: 40,
+    justifyContent: "center",
+    paddingVertical: 40,
+    paddingHorizontal: 24,
   },
   emptyStateTitle: {
     fontSize: 18,
-    fontWeight: "600",
-    color: "#6b7280",
-    marginTop: 16,
-    marginBottom: 8,
+    fontWeight: "700",
+    color: "#111827",
+    marginTop: 14,
+    marginBottom: 6,
   },
   emptyStateText: {
     fontSize: 14,
-    color: "#9ca3af",
+    color: "#6B7280",
     textAlign: "center",
+    lineHeight: 20,
+  },
+  disabledState: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#FDBA74",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 40,
+    paddingHorizontal: 24,
+  },
+  disabledTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#9A3412",
+    marginTop: 14,
+    marginBottom: 8,
+  },
+  disabledText: {
+    fontSize: 14,
+    color: "#9A3412",
+    textAlign: "center",
+    lineHeight: 21,
+    marginBottom: 8,
   },
 });

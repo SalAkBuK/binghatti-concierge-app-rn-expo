@@ -68,13 +68,20 @@ export default function ActivityFeedScreen() {
   };
 
   const notificationIcon = (type: Notification["type"]) => {
-    const iconMap = {
-      success: { name: "checkmark-circle", color: "#10B981" },
-      info: { name: "information-circle", color: "#2563EB" },
-      warning: { name: "alert-circle", color: "#F59E0B" },
-      error: { name: "close-circle", color: "#DC2626" },
-    } as const;
-    return iconMap[type] || iconMap.info;
+    switch (type) {
+      case "CONVERSATION_CREATED":
+      case "MESSAGE_CREATED":
+        return { name: "chatbubble-ellipses", color: "#2563EB" };
+      case "success":
+        return { name: "checkmark-circle", color: "#10B981" };
+      case "warning":
+        return { name: "alert-circle", color: "#F59E0B" };
+      case "error":
+        return { name: "close-circle", color: "#DC2626" };
+      case "info":
+      default:
+        return { name: "information-circle", color: "#2563EB" };
+    }
   };
 
   const timelineIcon = (type: (typeof timeline)[number]["type"]) => {

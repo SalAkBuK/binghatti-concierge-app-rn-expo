@@ -23,7 +23,7 @@ import {
   normalizeNotification,
   normalizeNotifications,
 } from "../utils";
-import type { Notification, User } from "../types";
+import type { Notification, NotificationType, User } from "../types";
 import { useAuth } from "./auth-context";
 import {
   ensureNotificationPermissions,
@@ -45,13 +45,13 @@ interface NotificationsActions {
     userId: string,
     title: string,
     message: string,
-    type?: Notification["type"],
+    type?: NotificationType,
   ) => Notification;
   broadcastNotificationToRole: (
     role: User["role"],
     title: string,
     message: string,
-    type?: Notification["type"],
+    type?: NotificationType,
     users?: Record<string, User>,
   ) => void;
   refreshNotifications: (options?: {
@@ -648,7 +648,7 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
       userId: string,
       title: string,
       message: string,
-      type: Notification["type"] = "info",
+      type: NotificationType = "info",
     ): Notification => {
       const newNotification = createSystemNotification(
         userId,
@@ -667,7 +667,7 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
       role: User["role"],
       title: string,
       message: string,
-      type: Notification["type"] = "info",
+      type: NotificationType = "info",
       users: Record<string, User> = {},
     ) => {
       Object.values(users).forEach((user) => {

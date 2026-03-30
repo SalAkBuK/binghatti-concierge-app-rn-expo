@@ -1,7 +1,8 @@
-import { Ionicons } from "@expo/vector-icons";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { Picker } from "@react-native-picker/picker";
-import { router } from "expo-router";
-import React, { useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
+import { router, useLocalSearchParams } from "expo-router";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -15,50 +16,138 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import DateTimePicker from "@react-native-community/datetimepicker";
 
-import { AttachmentPicker } from "../../components/ui/AttachmentPicker";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { useApp } from "../../lib/context/connected-app-provider";
-import type { VisitorIdType } from "../../lib/types";
+import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
+import type {
+  CreateResidentVisitorDTO,
+  ResidentVisitor,
+  ResidentVisitorType,
+} from "../../lib/types";
 
-interface RegisterVisitorForm {
+type RegisterVisitorForm = {
+  type: ResidentVisitorType;
   visitorName: string;
-  visitorPhone: string;
-  visitorIdType: VisitorIdType;
-  visitorIdNumber: string;
-  visitPurpose: string;
-  expectedArrivalTime: Date;
-  expectedDepartureTime: Date | null;
-}
+  phoneNumber: string;
+  emiratesId: string;
+  vehicleNumber: string;
+  expectedArrivalAt: Date | null;
+  notes: string;
+};
 
-interface ValidationErrors {
-  visitorName?: string;
-  visitorPhone?: string;
-  visitorIdNumber?: string;
-  visitPurpose?: string;
-  expectedArrivalTime?: string;
-  expectedDepartureTime?: string;
-}
+type ValidationErrors = Partial<Record<keyof RegisterVisitorForm, string>>;
+
+const VISITOR_TYPE_OPTIONS: {
+  value: ResidentVisitorType;
+  label: string;
+}[] = [
+  { value: "GUEST_VISITOR", label: "Guest Visitor" },
+  { value: "DELIVERY_RIDER", label: "Delivery Rider" },
+  { value: "COURIER_PARCEL", label: "Courier / Parcel" },
+  { value: "SERVICE_PROVIDER", label: "Service Provider" },
+  { value: "MAINTENANCE_TECHNICIAN", label: "Maintenance Technician" },
+  { value: "HOUSEKEEPING_CLEANER", label: "Housekeeping / Cleaner" },
+  { value: "CONTRACTOR_WORKER", label: "Contractor / Worker" },
+  { value: "DRIVER_PICKUP", label: "Driver / Pickup" },
+  { value: "SECURITY_STAFF_EXTERNAL", label: "External Security Staff" },
+  { value: "OTHER", label: "Other" },
+];
+
+const EMPTY_FORM: RegisterVisitorForm = {
+  type: "GUEST_VISITOR",
+  visitorName: "",
+  phoneNumber: "+971",
+  emiratesId: "",
+  vehicleNumber: "",
+  expectedArrivalAt: null,
+  notes: "",
+};
+
+const formatDateTime = (date: Date | null): string => {
+  if (!date) return "Flexible / not specified";
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
+const visitorToForm = (visitor: ResidentVisitor): RegisterVisitorForm => ({
+  type: visitor.type,
+  visitorName: visitor.visitorName,
+  phoneNumber: visitor.phoneNumber || "+971",
+  emiratesId: visitor.emiratesId || "",
+  vehicleNumber: visitor.vehicleNumber || "",
+  expectedArrivalAt: visitor.expectedArrivalAt
+    ? new Date(visitor.expectedArrivalAt)
+    : null,
+  notes: visitor.notes || "",
+});
 
 export default function RegisterVisitorScreen() {
-  const { currentUser, actions, loading } = useApp();
+  const params = useLocalSearchParams<{ visitorId?: string }>();
+  const visitorId = Array.isArray(params.visitorId)
+    ? params.visitorId[0]
+    : params.visitorId;
+  const isEditMode = Boolean(visitorId);
+  const { actions, currentUser } = useApp();
+  const { canManageVisitors, isLoading: isTenancyLoading, statusMessage } =
+    useResidentTenancy({
+      enabled: Boolean(currentUser?.role === "tenant" && currentUser?.id),
+    });
 
-  const [formData, setFormData] = useState<RegisterVisitorForm>({
-    visitorName: "",
-    visitorPhone: "+971",
-    visitorIdType: "passport",
-    visitorIdNumber: "",
-    visitPurpose: "",
-    expectedArrivalTime: new Date(),
-    expectedDepartureTime: null,
-  });
-
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [formData, setFormData] = useState<RegisterVisitorForm>(EMPTY_FORM);
+  const [existingVisitor, setExistingVisitor] = useState<ResidentVisitor | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoadingVisitor, setIsLoadingVisitor] = useState(false);
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>({});
-  const [idPhoto, setIdPhoto] = useState<string[]>([]);
-  const [showArrivalPicker, setShowArrivalPicker] = useState(false);
-  const [showDeparturePicker, setShowDeparturePicker] = useState(false);
+  const [showArrivalDatePicker, setShowArrivalDatePicker] = useState(false);
+  const [showArrivalTimePicker, setShowArrivalTimePicker] = useState(false);
+
+  useEffect(() => {
+    if (!visitorId || !canManageVisitors) return;
+
+    let isMounted = true;
+    setIsLoadingVisitor(true);
+
+    actions
+      .getResidentVisitor(visitorId)
+      .then((visitor: ResidentVisitor) => {
+        if (!isMounted) return;
+        setExistingVisitor(visitor);
+        setFormData(visitorToForm(visitor));
+      })
+      .catch((error: unknown) => {
+        if (!isMounted) return;
+        Alert.alert(
+          "Visitor Access",
+          error instanceof Error ? error.message : "Failed to load visitor.",
+          [
+            {
+              text: "OK",
+              onPress: () => router.back(),
+            },
+          ],
+        );
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsLoadingVisitor(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [actions, canManageVisitors, visitorId]);
+
+  const isEditable = useMemo(
+    () => !isEditMode || existingVisitor?.status === "EXPECTED",
+    [existingVisitor?.status, isEditMode],
+  );
 
   const validateForm = (): ValidationErrors => {
     const errors: ValidationErrors = {};
@@ -69,49 +158,18 @@ export default function RegisterVisitorScreen() {
       errors.visitorName = "Visitor name must be at least 2 characters";
     }
 
-    const phoneWithoutPrefix = formData.visitorPhone.replace("+971", "").trim();
-    if (!phoneWithoutPrefix) {
-      errors.visitorPhone = "Phone number is required";
-    } else if (!/^\d{9}$/.test(phoneWithoutPrefix)) {
-      errors.visitorPhone = "Phone number must be 9 digits after +971";
-    }
-
-    if (!formData.visitorIdNumber.trim()) {
-      const fieldName = formData.visitorIdType === "passport"
-        ? "Passport number"
-        : formData.visitorIdType === "national_id"
-        ? "National ID number"
-        : formData.visitorIdType === "driving_license"
-        ? "Driving license number"
-        : "ID number";
-      errors.visitorIdNumber = `${fieldName} is required`;
-    } else if (formData.visitorIdNumber.trim().length < 3) {
-      const fieldName = formData.visitorIdType === "passport"
-        ? "Passport number"
-        : formData.visitorIdType === "national_id"
-        ? "National ID number"
-        : formData.visitorIdType === "driving_license"
-        ? "Driving license number"
-        : "ID number";
-      errors.visitorIdNumber = `${fieldName} must be at least 3 characters`;
-    }
-
-    if (!formData.visitPurpose.trim()) {
-      errors.visitPurpose = "Visit purpose is required";
-    } else if (formData.visitPurpose.trim().length < 5) {
-      errors.visitPurpose = "Visit purpose must be at least 5 characters";
-    }
-
-    const now = new Date();
-    if (formData.expectedArrivalTime < now) {
-      errors.expectedArrivalTime = "Arrival time must be in the future";
+    const phoneDigits = formData.phoneNumber.replace(/\D/g, "");
+    if (!formData.phoneNumber.trim()) {
+      errors.phoneNumber = "Phone number is required";
+    } else if (phoneDigits.length < 7) {
+      errors.phoneNumber = "Phone number looks too short";
     }
 
     if (
-      formData.expectedDepartureTime &&
-      formData.expectedDepartureTime <= formData.expectedArrivalTime
+      formData.expectedArrivalAt &&
+      formData.expectedArrivalAt.getTime() < Date.now() - 60 * 1000
     ) {
-      errors.expectedDepartureTime = "Departure must be after arrival time";
+      errors.expectedArrivalAt = "Expected arrival must be in the future";
     }
 
     return errors;
@@ -121,118 +179,120 @@ export default function RegisterVisitorScreen() {
     field: keyof RegisterVisitorForm,
     value: string | Date | null,
   ) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+    setFormData((prev) => ({ ...prev, [field]: value as never }));
 
-    // Clear validation error for this field
-    if (validationErrors[field as keyof ValidationErrors]) {
+    if (validationErrors[field]) {
       setValidationErrors((prev) => {
-        const newErrors = { ...prev };
-        delete newErrors[field as keyof ValidationErrors];
-        return newErrors;
+        const next = { ...prev };
+        delete next[field];
+        return next;
       });
     }
   };
 
   const handlePhoneChange = (text: string) => {
-    // Ensure +971 prefix is always present
-    if (!text.startsWith("+971")) {
-      text = "+971" + text.replace(/^\+971/, "");
+    if (text.startsWith("+")) {
+      const normalized = "+" + text.slice(1).replace(/[^\d]/g, "");
+      handleInputChange("phoneNumber", normalized);
+      return;
     }
-    // Only allow digits after the prefix
-    const prefix = "+971";
-    const numbers = text.slice(prefix.length).replace(/\D/g, "");
-    handleInputChange("visitorPhone", prefix + numbers);
+
+    handleInputChange("phoneNumber", text.replace(/[^\d]/g, ""));
   };
 
-  const handleSubmit = async (): Promise<void> => {
-    const errors = validateForm();
+  const buildPayload = (): CreateResidentVisitorDTO => ({
+    type: formData.type,
+    visitorName: formData.visitorName.trim(),
+    phoneNumber: formData.phoneNumber.trim(),
+    ...(formData.emiratesId.trim()
+      ? { emiratesId: formData.emiratesId.trim() }
+      : {}),
+    ...(formData.vehicleNumber.trim()
+      ? { vehicleNumber: formData.vehicleNumber.trim() }
+      : {}),
+    ...(formData.expectedArrivalAt
+      ? { expectedArrivalAt: formData.expectedArrivalAt.toISOString() }
+      : {}),
+    ...(formData.notes.trim() ? { notes: formData.notes.trim() } : {}),
+  });
 
+  const openArrivalPicker = () => {
+    if (Platform.OS === "ios") {
+      setShowArrivalDatePicker((prev) => !prev);
+      return;
+    }
+
+    setShowArrivalDatePicker(true);
+  };
+
+  const handleSubmit = async () => {
+    if (!isEditable) {
+      Alert.alert(
+        "Visitor Locked",
+        "Only visitors in EXPECTED status can be edited.",
+      );
+      return;
+    }
+
+    if (!canManageVisitors) {
+      Alert.alert("Visitor Access", statusMessage);
+      return;
+    }
+
+    const errors = validateForm();
     if (Object.keys(errors).length > 0) {
       setValidationErrors(errors);
       return;
     }
 
     setIsSubmitting(true);
-
     try {
-      const visitorData = {
-        visitorName: formData.visitorName,
-        visitorPhone: formData.visitorPhone,
-        visitorIdType: formData.visitorIdType,
-        visitorIdNumber: formData.visitorIdNumber,
-        visitPurpose: formData.visitPurpose,
-        expectedArrivalTime: formData.expectedArrivalTime.toISOString(),
-        expectedDepartureTime: formData.expectedDepartureTime
-          ? formData.expectedDepartureTime.toISOString()
-          : new Date(
-              formData.expectedArrivalTime.getTime() + 2 * 60 * 60 * 1000,
-            ).toISOString(),
-        idPhotoUrl: idPhoto[0] || undefined,
-        unitNumber: currentUser?.profile?.apartment || "",
-      };
-
-      const newVisitor = await actions.registerVisitor(visitorData);
-
-      Alert.alert(
-        "Success",
-        `Visitor registered successfully!\n\nVisitor Code: ${newVisitor.visitorCode}\n\nA QR code has been generated and sent to ${formData.visitorName}.`,
-        [
+      const payload = buildPayload();
+      if (visitorId) {
+        await actions.updateResidentVisitor(visitorId, payload);
+        Alert.alert("Visitor Updated", "The visitor details were updated.", [
           {
             text: "OK",
-            onPress: () => {
-              router.back();
-            },
+            onPress: () => router.back(),
           },
-        ],
-      );
+        ]);
+      } else {
+        await actions.createResidentVisitor(payload);
+        Alert.alert("Visitor Registered", "The visitor has been added.", [
+          {
+            text: "OK",
+            onPress: () => router.back(),
+          },
+        ]);
+      }
     } catch (error) {
-      console.error("Error registering visitor:", error);
       Alert.alert(
-        "Error",
-        `Failed to register visitor. ${error instanceof Error ? error.message : "Please try again."}`,
+        isEditMode ? "Unable to Update" : "Unable to Register",
+        error instanceof Error ? error.message : "Please try again.",
       );
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const formatDateTime = (date: Date): string => {
-    return date.toLocaleString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
-  const getIdNumberLabel = (): string => {
-    switch (formData.visitorIdType) {
-      case "passport":
-        return "Passport Number *";
-      case "national_id":
-        return "National ID Number *";
-      case "driving_license":
-        return "Driving License Number *";
-      case "other":
-      default:
-        return "ID Number *";
-    }
-  };
-
-  const getIdNumberPlaceholder = (): string => {
-    switch (formData.visitorIdType) {
-      case "passport":
-        return "Enter passport number";
-      case "national_id":
-        return "Enter national ID number";
-      case "driving_license":
-        return "Enter driving license number";
-      case "other":
-      default:
-        return "Enter ID number";
-    }
-  };
+  if (isLoadingVisitor) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <HeaderBar
+          title="Visitor"
+          hasUnreadNotifications={false}
+          showSideMenu={false}
+          onSideMenuToggle={() => {}}
+          showBackButton
+          onBackPress={() => router.back()}
+        />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#336BE3" />
+          <Text style={styles.loadingText}>Loading visitor details...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -244,240 +304,258 @@ export default function RegisterVisitorScreen() {
           style={styles.scrollView}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Header */}
           <HeaderBar
-            title="Register Visitor"
+            title={isEditMode ? "Edit Visitor" : "Add Visitor"}
             hasUnreadNotifications={false}
             showSideMenu={false}
             onSideMenuToggle={() => {}}
-            showBackButton={true}
+            showBackButton
             onBackPress={() => router.back()}
           />
 
-          {/* Form Header */}
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>Register New Visitor</Text>
+            <Text style={styles.headerTitle}>
+              {isEditMode ? "Update Visitor Details" : "Register New Visitor"}
+            </Text>
             <Text style={styles.headerSubtitle}>
-              Fill out the form below to register a visitor
+              Your active unit is inferred on the backend. Do not enter building or
+              unit information here.
             </Text>
           </View>
 
+          {!isEditable ? (
+            <View style={styles.lockedBanner}>
+              <Ionicons name="lock-closed-outline" size={18} color="#92400E" />
+              <Text style={styles.lockedBannerText}>
+                This visitor is no longer editable because it is not in EXPECTED
+                status.
+              </Text>
+            </View>
+          ) : null}
+
+          {!isTenancyLoading && !canManageVisitors ? (
+            <View style={styles.lockedBanner}>
+              <Ionicons name="information-circle-outline" size={18} color="#92400E" />
+              <Text style={styles.lockedBannerText}>{statusMessage}</Text>
+            </View>
+          ) : null}
+
           <View style={styles.formContainer}>
-            {/* Visitor Name */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Visitor Type *</Text>
+              <View style={styles.pickerContainer}>
+                <Picker
+                  selectedValue={formData.type}
+                  onValueChange={(value) =>
+                    handleInputChange("type", value as ResidentVisitorType)
+                  }
+                  enabled={canManageVisitors && isEditable && !isSubmitting}
+                  style={styles.picker}
+                  dropdownIconColor="#111827"
+                >
+                  {VISITOR_TYPE_OPTIONS.map((option) => (
+                    <Picker.Item
+                      key={option.value}
+                      label={option.label}
+                      value={option.value}
+                      color="#111827"
+                    />
+                  ))}
+                </Picker>
+              </View>
+            </View>
+
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Visitor Name *</Text>
               <TextInput
                 style={[
                   styles.textInput,
                   validationErrors.visitorName && styles.errorInput,
+                  !isEditable && styles.disabledInput,
                 ]}
                 placeholder="Enter visitor's full name"
                 value={formData.visitorName}
                 onChangeText={(text) => handleInputChange("visitorName", text)}
-                maxLength={100}
+                editable={canManageVisitors && isEditable && !isSubmitting}
+                maxLength={120}
               />
-              {validationErrors.visitorName && (
-                <Text style={styles.errorText}>
-                  {validationErrors.visitorName}
-                </Text>
-              )}
+              {validationErrors.visitorName ? (
+                <Text style={styles.errorText}>{validationErrors.visitorName}</Text>
+              ) : null}
             </View>
 
-            {/* Visitor Phone */}
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Visitor Phone *</Text>
+              <Text style={styles.label}>Phone Number *</Text>
               <TextInput
                 style={[
                   styles.textInput,
-                  validationErrors.visitorPhone && styles.errorInput,
+                  validationErrors.phoneNumber && styles.errorInput,
+                  !isEditable && styles.disabledInput,
                 ]}
-                placeholder="+971XXXXXXXXX"
-                value={formData.visitorPhone}
+                placeholder="+971501234567"
+                value={formData.phoneNumber}
                 onChangeText={handlePhoneChange}
+                editable={canManageVisitors && isEditable && !isSubmitting}
                 keyboardType="phone-pad"
-                maxLength={13}
+                maxLength={18}
               />
-              {validationErrors.visitorPhone && (
-                <Text style={styles.errorText}>
-                  {validationErrors.visitorPhone}
-                </Text>
-              )}
+              {validationErrors.phoneNumber ? (
+                <Text style={styles.errorText}>{validationErrors.phoneNumber}</Text>
+              ) : null}
             </View>
 
-            {/* ID Type */}
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>ID Type *</Text>
-              <View style={styles.pickerContainer}>
-                <Picker
-                  selectedValue={formData.visitorIdType}
-                  onValueChange={(value) =>
-                    handleInputChange("visitorIdType", value)
-                  }
-                  style={styles.picker}
-                  dropdownIconColor="#111827"
-                  itemStyle={{ color: "#111827" }}
-                >
-                  <Picker.Item label="Passport" value="passport" color="#111827" />
-                  <Picker.Item label="National ID" value="national_id" color="#111827" />
-                  <Picker.Item
-                    label="Driving License"
-                    value="driving_license"
-                    color="#111827"
-                  />
-                  <Picker.Item label="Other" value="other" color="#111827" />
-                </Picker>
-              </View>
-            </View>
-
-            {/* ID Number */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>{getIdNumberLabel()}</Text>
+              <Text style={styles.label}>Emirates ID</Text>
               <TextInput
-                style={[
-                  styles.textInput,
-                  validationErrors.visitorIdNumber && styles.errorInput,
-                ]}
-                placeholder={getIdNumberPlaceholder()}
-                value={formData.visitorIdNumber}
-                onChangeText={(text) =>
-                  handleInputChange("visitorIdNumber", text)
-                }
+                style={[styles.textInput, !isEditable && styles.disabledInput]}
+                placeholder="Optional"
+                value={formData.emiratesId}
+                onChangeText={(text) => handleInputChange("emiratesId", text)}
+                editable={canManageVisitors && isEditable && !isSubmitting}
                 maxLength={50}
               />
-              {validationErrors.visitorIdNumber && (
-                <Text style={styles.errorText}>
-                  {validationErrors.visitorIdNumber}
-                </Text>
-              )}
             </View>
 
-            {/* Visit Purpose */}
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Visit Purpose *</Text>
+              <Text style={styles.label}>Vehicle Number</Text>
               <TextInput
-                style={[
-                  styles.textArea,
-                  validationErrors.visitPurpose && styles.errorInput,
-                ]}
-                placeholder="Describe the purpose of the visit"
-                value={formData.visitPurpose}
-                onChangeText={(text) => handleInputChange("visitPurpose", text)}
-                multiline
-                numberOfLines={3}
-                textAlignVertical="top"
-                maxLength={300}
+                style={[styles.textInput, !isEditable && styles.disabledInput]}
+                placeholder="Optional"
+                value={formData.vehicleNumber}
+                onChangeText={(text) => handleInputChange("vehicleNumber", text)}
+                editable={canManageVisitors && isEditable && !isSubmitting}
+                maxLength={50}
               />
-              {validationErrors.visitPurpose && (
-                <Text style={styles.errorText}>
-                  {validationErrors.visitPurpose}
-                </Text>
-              )}
             </View>
 
-            {/* Expected Arrival */}
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Expected Arrival *</Text>
+              <Text style={styles.label}>Expected Arrival</Text>
               <TouchableOpacity
                 style={[
                   styles.datePickerButton,
-                  validationErrors.expectedArrivalTime && styles.errorInput,
+                  validationErrors.expectedArrivalAt && styles.errorInput,
+                  !isEditable && styles.disabledInput,
                 ]}
-                onPress={() => setShowArrivalPicker(true)}
+                onPress={() => {
+                  if (canManageVisitors && isEditable && !isSubmitting) {
+                    openArrivalPicker();
+                  }
+                }}
+                disabled={!canManageVisitors || !isEditable || isSubmitting}
               >
-                <Ionicons name="calendar-outline" size={20} color="#6b7280" />
+                <Ionicons name="calendar-outline" size={20} color="#6B7280" />
                 <Text style={styles.datePickerText}>
-                  {formatDateTime(formData.expectedArrivalTime)}
+                  {formatDateTime(formData.expectedArrivalAt)}
                 </Text>
               </TouchableOpacity>
-              {validationErrors.expectedArrivalTime && (
+              {validationErrors.expectedArrivalAt ? (
                 <Text style={styles.errorText}>
-                  {validationErrors.expectedArrivalTime}
+                  {validationErrors.expectedArrivalAt}
                 </Text>
-              )}
-              {showArrivalPicker && (
+              ) : null}
+              {showArrivalDatePicker ? (
                 <DateTimePicker
-                  value={formData.expectedArrivalTime}
+                  value={formData.expectedArrivalAt || new Date(Date.now() + 3600000)}
                   mode={Platform.OS === "ios" ? "datetime" : "date"}
                   display={Platform.OS === "ios" ? "spinner" : "default"}
-                  onChange={(event, selectedDate) => {
-                    setShowArrivalPicker(Platform.OS === "ios");
-                    if (selectedDate) {
-                      handleInputChange("expectedArrivalTime", selectedDate);
+                  onChange={(_, selectedDate) => {
+                    if (Platform.OS === "ios") {
+                      if (selectedDate) {
+                        handleInputChange("expectedArrivalAt", selectedDate);
+                      }
+                      return;
                     }
+
+                    setShowArrivalDatePicker(false);
+                    if (!selectedDate) {
+                      return;
+                    }
+
+                    const nextValue = formData.expectedArrivalAt
+                      ? new Date(formData.expectedArrivalAt)
+                      : new Date();
+                    nextValue.setFullYear(
+                      selectedDate.getFullYear(),
+                      selectedDate.getMonth(),
+                      selectedDate.getDate(),
+                    );
+                    handleInputChange("expectedArrivalAt", nextValue);
+                    setShowArrivalTimePicker(true);
                   }}
                   minimumDate={new Date()}
                 />
-              )}
-            </View>
-
-            {/* Expected Departure */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Expected Departure (Optional)</Text>
-              <TouchableOpacity
-                style={[
-                  styles.datePickerButton,
-                  validationErrors.expectedDepartureTime && styles.errorInput,
-                ]}
-                onPress={() => setShowDeparturePicker(true)}
-              >
-                <Ionicons name="calendar-outline" size={20} color="#6b7280" />
-                <Text style={styles.datePickerText}>
-                  {formData.expectedDepartureTime
-                    ? formatDateTime(formData.expectedDepartureTime)
-                    : "Select departure time"}
-                </Text>
-              </TouchableOpacity>
-              {validationErrors.expectedDepartureTime && (
-                <Text style={styles.errorText}>
-                  {validationErrors.expectedDepartureTime}
-                </Text>
-              )}
-              {showDeparturePicker && (
+              ) : null}
+              {Platform.OS === "android" && showArrivalTimePicker ? (
                 <DateTimePicker
-                  value={
-                    formData.expectedDepartureTime || formData.expectedArrivalTime
-                  }
-                  mode={Platform.OS === "ios" ? "datetime" : "date"}
-                  display={Platform.OS === "ios" ? "spinner" : "default"}
-                  onChange={(event, selectedDate) => {
-                    setShowDeparturePicker(Platform.OS === "ios");
-                    if (selectedDate) {
-                      handleInputChange("expectedDepartureTime", selectedDate);
+                  value={formData.expectedArrivalAt || new Date(Date.now() + 3600000)}
+                  mode="time"
+                  display="default"
+                  onChange={(_, selectedDate) => {
+                    setShowArrivalTimePicker(false);
+                    if (!selectedDate) {
+                      return;
                     }
+
+                    const nextValue = formData.expectedArrivalAt
+                      ? new Date(formData.expectedArrivalAt)
+                      : new Date();
+                    nextValue.setHours(
+                      selectedDate.getHours(),
+                      selectedDate.getMinutes(),
+                      0,
+                      0,
+                    );
+                    handleInputChange("expectedArrivalAt", nextValue);
                   }}
-                  minimumDate={formData.expectedArrivalTime}
                 />
-              )}
+              ) : null}
+              {formData.expectedArrivalAt && isEditable ? (
+                <TouchableOpacity
+                  style={styles.clearDateButton}
+                  onPress={() => handleInputChange("expectedArrivalAt", null)}
+                  disabled={!canManageVisitors}
+                >
+                  <Text style={styles.clearDateText}>Clear expected arrival</Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
 
-            {/* ID Photo (Optional) */}
-            <AttachmentPicker
-              attachments={idPhoto}
-              onAttachmentsChange={setIdPhoto}
-              maxAttachments={1}
-              disabled={isSubmitting || loading}
-            />
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Notes</Text>
+              <TextInput
+                style={[styles.textArea, !isEditable && styles.disabledInput]}
+                placeholder="Optional notes for security or reception"
+                value={formData.notes}
+                onChangeText={(text) => handleInputChange("notes", text)}
+                editable={canManageVisitors && isEditable && !isSubmitting}
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
+                maxLength={400}
+              />
+            </View>
 
-            {/* Submit Button */}
             <TouchableOpacity
               style={[
                 styles.submitButton,
-                (isSubmitting || loading) && styles.submitButtonDisabled,
+                (!canManageVisitors || !isEditable || isSubmitting) &&
+                  styles.submitButtonDisabled,
               ]}
               onPress={handleSubmit}
-              disabled={isSubmitting || loading}
+              disabled={!canManageVisitors || !isEditable || isSubmitting}
             >
-              {isSubmitting || loading ? (
-                <ActivityIndicator color="white" />
+              {isSubmitting ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
                 <>
                   <Ionicons
-                    name="person-add"
-                    size={20}
-                    color="white"
-                    style={styles.buttonIcon}
+                    name={isEditMode ? "save-outline" : "person-add-outline"}
+                    size={18}
+                    color="#FFFFFF"
                   />
-                  <Text style={styles.submitButtonText}>Register Visitor</Text>
+                  <Text style={styles.submitButtonText}>
+                    {isEditMode ? "Save Changes" : "Register Visitor"}
+                  </Text>
                 </>
               )}
             </TouchableOpacity>
@@ -491,7 +569,7 @@ export default function RegisterVisitorScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f9fafb",
+    backgroundColor: "#F8F9FA",
   },
   keyboardAvoidingView: {
     flex: 1,
@@ -501,111 +579,144 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   header: {
-    paddingTop: 40,
-    paddingBottom: 20,
+    marginBottom: 20,
   },
   headerTitle: {
     fontSize: 24,
-    fontWeight: "bold",
+    fontWeight: "700",
     color: "#111827",
-    marginBottom: 8,
+    marginBottom: 6,
   },
   headerSubtitle: {
-    fontSize: 16,
-    color: "#6b7280",
+    fontSize: 14,
+    color: "#6B7280",
+    lineHeight: 20,
+  },
+  lockedBanner: {
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "flex-start",
+    backgroundColor: "#FEF3C7",
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 18,
+  },
+  lockedBannerText: {
+    flex: 1,
+    fontSize: 13,
+    color: "#92400E",
+    lineHeight: 18,
   },
   formContainer: {
-    backgroundColor: "white",
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    padding: 18,
+    marginBottom: 32,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
   },
   inputGroup: {
-    marginBottom: 20,
+    marginBottom: 16,
   },
   label: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "600",
     color: "#111827",
     marginBottom: 8,
   },
   textInput: {
+    backgroundColor: "#F9FAFB",
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#d1d5db",
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    backgroundColor: "white",
-    minHeight: 48,
+    borderColor: "#D1D5DB",
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    fontSize: 15,
+    color: "#111827",
   },
   textArea: {
+    backgroundColor: "#F9FAFB",
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#d1d5db",
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    backgroundColor: "white",
-    minHeight: 80,
+    borderColor: "#D1D5DB",
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    fontSize: 15,
+    color: "#111827",
+    minHeight: 110,
   },
   pickerContainer: {
+    backgroundColor: "#F9FAFB",
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#d1d5db",
-    borderRadius: 8,
-    backgroundColor: "white",
+    borderColor: "#D1D5DB",
     overflow: "hidden",
   },
   picker: {
-    height: 50,
-    color: "#111827", // Text color for selected item
-    backgroundColor: "white",
+    color: "#111827",
   },
   datePickerButton: {
+    backgroundColor: "#F9FAFB",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    paddingHorizontal: 14,
+    paddingVertical: 14,
     flexDirection: "row",
     alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#d1d5db",
-    borderRadius: 8,
-    padding: 12,
-    backgroundColor: "white",
-    minHeight: 48,
   },
   datePickerText: {
-    fontSize: 16,
+    marginLeft: 10,
+    fontSize: 15,
     color: "#111827",
-    marginLeft: 8,
   },
-  errorInput: {
-    borderColor: "#ef4444",
+  clearDateButton: {
+    marginTop: 8,
+    alignSelf: "flex-start",
   },
-  errorText: {
-    color: "#ef4444",
-    fontSize: 14,
-    marginTop: 4,
+  clearDateText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#1D4ED8",
   },
   submitButton: {
+    marginTop: 8,
     backgroundColor: "#336BE3",
-    borderRadius: 8,
-    padding: 16,
-    flexDirection: "row",
+    borderRadius: 14,
+    paddingVertical: 16,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 10,
+    flexDirection: "row",
+    gap: 8,
   },
   submitButtonDisabled: {
-    backgroundColor: "#9ca3af",
+    opacity: 0.6,
   },
   submitButtonText: {
-    color: "white",
+    color: "#FFFFFF",
     fontSize: 16,
-    fontWeight: "600",
-    marginLeft: 8,
+    fontWeight: "700",
   },
-  buttonIcon: {
-    marginRight: 8,
+  errorInput: {
+    borderColor: "#DC2626",
+  },
+  errorText: {
+    marginTop: 6,
+    fontSize: 12,
+    color: "#DC2626",
+  },
+  disabledInput: {
+    opacity: 0.65,
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: "#6B7280",
   },
 });

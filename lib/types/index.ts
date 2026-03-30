@@ -203,6 +203,15 @@ export interface OrgBuildingRequestComment {
   visibility?: RequestMessageChannel | "internal";
 }
 
+export type NotificationSeverity = "info" | "success" | "warning" | "error";
+export type ChatNotificationType =
+  | "CONVERSATION_CREATED"
+  | "MESSAGE_CREATED";
+export type NotificationEventType =
+  | NotificationSeverity
+  | ChatNotificationType
+  | (string & {});
+
 export interface Notification {
   id: string;
   userId?: string;
@@ -210,7 +219,7 @@ export interface Notification {
   message?: string;
   body?: string;
   data?: Record<string, any>;
-  type: "info" | "success" | "warning" | "error";
+  type: NotificationEventType;
   read?: boolean;
   readAt?: string | null;
   dismissedAt?: string | null;
@@ -638,6 +647,58 @@ export interface Lease {
   updatedAt: string;
 }
 
+export type ResidentVisitorType =
+  | "GUEST_VISITOR"
+  | "DELIVERY_RIDER"
+  | "COURIER_PARCEL"
+  | "SERVICE_PROVIDER"
+  | "MAINTENANCE_TECHNICIAN"
+  | "HOUSEKEEPING_CLEANER"
+  | "CONTRACTOR_WORKER"
+  | "DRIVER_PICKUP"
+  | "SECURITY_STAFF_EXTERNAL"
+  | "OTHER";
+
+export type ResidentVisitorStatus =
+  | "EXPECTED"
+  | "ARRIVED"
+  | "COMPLETED"
+  | "CANCELLED";
+
+export interface ResidentVisitorUnit {
+  id: string;
+  label: string;
+}
+
+export interface ResidentVisitor {
+  id: string;
+  buildingId: string;
+  type: ResidentVisitorType;
+  status: ResidentVisitorStatus;
+  visitorName: string;
+  phoneNumber: string;
+  emiratesId: string | null;
+  vehicleNumber: string | null;
+  expectedArrivalAt: string | null;
+  notes: string | null;
+  unit: ResidentVisitorUnit;
+  tenantName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateResidentVisitorDTO {
+  type: ResidentVisitorType;
+  visitorName: string;
+  phoneNumber: string;
+  emiratesId?: string;
+  vehicleNumber?: string;
+  expectedArrivalAt?: string;
+  notes?: string;
+}
+
+export type UpdateResidentVisitorDTO = Partial<CreateResidentVisitorDTO>;
+
 export type ResidentContractStatus =
   | "DRAFT"
   | "ACTIVE"
@@ -728,6 +789,32 @@ export interface ResidentLatestContract {
   latestMoveInRequestStatus: ResidentMoveRequestStatus;
   latestMoveOutRequestStatus: ResidentMoveRequestStatus;
 }
+
+export interface ResidentIdentityUser {
+  id: string | null;
+  email: string | null;
+  name: string | null;
+  phone: string | null;
+}
+
+export interface ResidentOccupancy {
+  id: string | null;
+  buildingId: string | null;
+  buildingName: string | null;
+  unitId: string | null;
+  unitLabel: string | null;
+  floorNumber: string | null;
+}
+
+export interface ResidentIdentity {
+  user: ResidentIdentityUser | null;
+  occupancy: ResidentOccupancy | null;
+}
+
+export type ResidentTenancyMode =
+  | "active"
+  | "former_resident"
+  | "no_tenancy";
 
 export interface CreateResidentMoveRequestDTO {
   requestedMoveAt: string;
@@ -2110,6 +2197,6 @@ export type UserRole = User["role"];
 export type RequestStatus = Request["status"];
 export type RequestPriority = Request["priority"];
 export type RequestType = Request["type"];
-export type NotificationType = Notification["type"];
+export type NotificationType = NotificationSeverity;
 export type JobStatus = Job["status"];
 export type BuildingStatus = Building["status"];

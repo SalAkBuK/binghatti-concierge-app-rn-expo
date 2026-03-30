@@ -21,6 +21,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useApp } from "../../lib/context/connected-app-provider";
+import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
 import type { User } from "../../lib/types";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -54,6 +55,9 @@ type RouterPushInput = Parameters<typeof router.push>[0];
 
 export function SideMenu({ isVisible, onClose }: SideMenuProps) {
   const { currentUser, actions, messagingUnreadCount } = useApp();
+  const { canCreateMaintenanceRequest, canManageVisitors } = useResidentTenancy({
+    enabled: Boolean(currentUser?.role === "tenant" && currentUser?.id),
+  });
   const insets = useSafeAreaInsets();
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
   const [isRendered, setIsRendered] = useState(isVisible);
@@ -101,12 +105,26 @@ const navigateAndClose = (href: RouterPushInput | string, useReplace = false) =>
       icon: "list-outline",
       action: () => navigateAndClose("/(tenant)/requests"),
     },
-    {
-      id: "tenant-new-request",
-      title: "New",
-      icon: "add-circle-outline",
-      action: () => navigateAndClose("/(tenant)/new-request"),
-    },
+    ...(canCreateMaintenanceRequest
+      ? [
+          {
+            id: "tenant-new-request",
+            title: "New",
+            icon: "add-circle-outline" as const,
+            action: () => navigateAndClose("/(tenant)/new-request"),
+          },
+        ]
+      : []),
+    ...(canManageVisitors
+      ? [
+          {
+            id: "tenant-visitors",
+            title: "Visitors",
+            icon: "people-outline" as const,
+            action: () => navigateAndClose("/(tenant)/visitors"),
+          },
+        ]
+      : []),
     {
       id: "tenant-messages",
       title: "Messages",

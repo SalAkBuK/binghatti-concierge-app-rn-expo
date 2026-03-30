@@ -11,6 +11,7 @@ import type {
   ResidentContractDocument,
   ResidentContractDocumentUploadUrlResponse,
   ResidentContractsListResponse,
+  ResidentIdentity,
   ResidentContractStatus,
   ResidentExtendedProfile,
   ResidentLatestContract,
@@ -402,6 +403,83 @@ const mapContract = (payload: UnknownRecord): ResidentContract => {
   };
 };
 
+const mapResidentIdentity = (payload: unknown): ResidentIdentity => {
+  const record = isRecord(payload) ? payload : {};
+  const userRecord = isRecord(readProp(record, "user"))
+    ? (readProp(record, "user") as UnknownRecord)
+    : {};
+  const occupancyRecord = isRecord(readProp(record, "occupancy"))
+    ? (readProp(record, "occupancy") as UnknownRecord)
+    : null;
+  const occupancyBuilding = occupancyRecord
+    ? readProp(occupancyRecord, "building")
+    : null;
+  const occupancyUnit = occupancyRecord ? readProp(occupancyRecord, "unit") : null;
+
+  return {
+    user:
+      Object.keys(userRecord).length > 0
+        ? {
+            id: toStringOrNull(userRecord.id),
+            email: toStringOrNull(userRecord.email),
+            name: toStringOrNull(firstDefined(userRecord.name, userRecord.fullName)),
+            phone: toStringOrNull(
+              firstDefined(userRecord.phone, userRecord.phoneNumber),
+            ),
+          }
+        : null,
+    occupancy: occupancyRecord
+      ? {
+          id: toStringOrNull(firstDefined(occupancyRecord.id, occupancyRecord.occupancyId)),
+          buildingId: toStringOrNull(
+            firstDefined(
+              occupancyRecord.buildingId,
+              occupancyRecord.building_id,
+              isRecord(occupancyBuilding) ? occupancyBuilding.id : undefined,
+              isRecord(occupancyBuilding) ? occupancyBuilding.buildingId : undefined,
+            ),
+          ),
+          buildingName: toStringOrNull(
+            firstDefined(
+              occupancyRecord.buildingName,
+              occupancyRecord.building_name,
+              isRecord(occupancyBuilding) ? occupancyBuilding.name : undefined,
+              isRecord(occupancyBuilding)
+                ? occupancyBuilding.buildingName
+                : undefined,
+            ),
+          ),
+          unitId: toStringOrNull(
+            firstDefined(
+              occupancyRecord.unitId,
+              occupancyRecord.unit_id,
+              isRecord(occupancyUnit) ? occupancyUnit.id : undefined,
+            ),
+          ),
+          unitLabel: toStringOrNull(
+            firstDefined(
+              occupancyRecord.unitLabel,
+              occupancyRecord.unitNumber,
+              occupancyRecord.apartment,
+              isRecord(occupancyUnit) ? occupancyUnit.label : undefined,
+              isRecord(occupancyUnit) ? occupancyUnit.unitNumber : undefined,
+              isRecord(occupancyUnit) ? occupancyUnit.number : undefined,
+              isRecord(occupancyUnit) ? occupancyUnit.name : undefined,
+            ),
+          ),
+          floorNumber: toStringOrNull(
+            firstDefined(
+              occupancyRecord.floorNumber,
+              occupancyRecord.floor,
+              isRecord(occupancyUnit) ? occupancyUnit.floor : undefined,
+              isRecord(occupancyUnit) ? occupancyUnit.floorNumber : undefined,
+            ),
+          ),
+        }
+      : null,
+  };
+};
+
 const EMPTY_CONTRACT_STATE: ResidentLatestContract = {
   contract: null,
   canRequestMoveIn: false,
@@ -642,6 +720,23 @@ export class ResidentSelfServiceApiService
   extends BaseApiService
   implements ResidentSelfServiceApi
 {
+  async getResidentIdentity(): Promise<ResidentIdentity> {
+    try {
+      const response = await this.get<ApiResponse<unknown> | unknown>(
+        API_ENDPOINTS.resident.me,
+      );
+      logResidentContract("GET /resident/me raw response", response);
+
+      const payload = unwrapResponseData(response);
+      const normalized = mapResidentIdentity(payload);
+      logResidentContract("GET /resident/me normalized", normalized);
+      return normalized;
+    } catch (error) {
+      logResidentContract("GET /resident/me error", error);
+      throw error;
+    }
+  }
+
   async getResidentLatestContract(): Promise<ResidentLatestContract> {
     try {
       const response = await this.get<ApiResponse<unknown> | unknown>(

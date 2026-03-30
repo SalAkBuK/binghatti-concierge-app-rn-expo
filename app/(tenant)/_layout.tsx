@@ -7,9 +7,15 @@ import ProfileIcon from "../../components/icons/ProfileIcon";
 import RequestsTabIcon from "../../components/icons/RequestsTabIcon";
 
 import { useApp } from "../../lib/context/connected-app-provider";
+import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
 
 export default function TabLayout() {
   const { isAuthenticated, currentUser } = useApp();
+  const { canCreateMaintenanceRequest } = useResidentTenancy({
+    enabled: Boolean(
+      isAuthenticated && currentUser?.role === "tenant" && currentUser?.id,
+    ),
+  });
   const insets = useSafeAreaInsets();
   const hasRedirectedToRole = useRef(false);
 
@@ -92,6 +98,7 @@ export default function TabLayout() {
         name="new-request"
         options={{
           title: "New",
+          href: canCreateMaintenanceRequest ? undefined : null,
           tabBarIcon: ({ color, focused }) => (
             <NewTabIcon color={color} focused={focused} />
           ),

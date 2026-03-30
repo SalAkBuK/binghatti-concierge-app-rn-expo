@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { useMessaging } from "../../lib/context/messaging-context";
 import { useAuth } from "../../lib/context/auth-context";
+import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
 import type { Conversation } from "../../lib/types";
 
 function formatTime(dateStr: string): string {
@@ -103,6 +104,10 @@ function ConversationRow({
 export default function MessagesScreen() {
   const { conversations, loading, actions } = useMessaging();
   const { currentUser } = useAuth();
+  const { canCreateManagementConversation, isFormerResident, statusMessage } =
+    useResidentTenancy({
+      enabled: Boolean(currentUser?.role === "tenant" && currentUser?.id),
+    });
   const tabBarHeight = useBottomTabBarHeight();
   const insets = useSafeAreaInsets();
   const [refreshing, setRefreshing] = useState(false);
@@ -130,13 +135,23 @@ export default function MessagesScreen() {
           <Ionicons name="arrow-back" size={24} color="#111827" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Messages</Text>
-        <TouchableOpacity
-          style={styles.composeButton}
-          onPress={() => router.push("/(modals)/new-conversation" as any)}
-        >
-          <Ionicons name="create-outline" size={24} color="#336BE3" />
-        </TouchableOpacity>
+        {canCreateManagementConversation ? (
+          <TouchableOpacity
+            style={styles.composeButton}
+            onPress={() => router.push("/(modals)/new-conversation" as any)}
+          >
+            <Ionicons name="create-outline" size={24} color="#336BE3" />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.composeButtonPlaceholder} />
+        )}
       </View>
+
+      {isFormerResident ? (
+        <View style={styles.infoBanner}>
+          <Text style={styles.infoBannerText}>{statusMessage}</Text>
+        </View>
+      ) : null}
 
       {/* List */}
       {loading && conversations.length === 0 ? (
@@ -160,14 +175,18 @@ export default function MessagesScreen() {
               <Ionicons name="chatbubbles-outline" size={64} color="#CBD5E1" />
               <Text style={styles.emptyTitle}>No conversations yet</Text>
               <Text style={styles.emptySubtitle}>
-                Start a new conversation to get in touch with staff or management.
+                {canCreateManagementConversation
+                  ? "Start a new conversation to get in touch with staff or management."
+                  : "Existing conversations remain available here for follow-up and history."}
               </Text>
-              <TouchableOpacity
-                style={styles.emptyButton}
-                onPress={() => router.push("/(modals)/new-conversation" as any)}
-              >
-                <Text style={styles.emptyButtonText}>New Message</Text>
-              </TouchableOpacity>
+              {canCreateManagementConversation ? (
+                <TouchableOpacity
+                  style={styles.emptyButton}
+                  onPress={() => router.push("/(modals)/new-conversation" as any)}
+                >
+                  <Text style={styles.emptyButtonText}>New Message</Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
           }
         />
@@ -201,6 +220,23 @@ const styles = StyleSheet.create({
   },
   composeButton: {
     padding: 4,
+  },
+  composeButtonPlaceholder: {
+    width: 32,
+  },
+  infoBanner: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    padding: 14,
+    backgroundColor: "#FFF7ED",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#FDBA74",
+  },
+  infoBannerText: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: "#9A3412",
   },
   list: {
     paddingTop: 8,

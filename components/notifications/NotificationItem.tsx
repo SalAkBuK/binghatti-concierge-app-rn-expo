@@ -17,6 +17,14 @@ interface NotificationItemProps {
 
 const getTypeConfig = (type: Notification["type"]) => {
   switch (type) {
+    case "CONVERSATION_CREATED":
+    case "MESSAGE_CREATED":
+      return {
+        icon: "chatbubble-ellipses" as const,
+        iconColor: "#2563EB",
+        bgColor: "#EFF6FF",
+        borderColor: "#DBEAFE",
+      };
     case "success":
       return {
         icon: "checkmark-circle" as const,

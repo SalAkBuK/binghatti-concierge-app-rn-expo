@@ -138,6 +138,20 @@ export const isNotificationUnread = (notification: Notification): boolean => {
   return !isNotificationRead(notification);
 };
 
+export const isChatNotificationType = (type: Notification["type"]): boolean => {
+  const normalizedType = String(type || "").toUpperCase();
+  return (
+    normalizedType === "CONVERSATION_CREATED" ||
+    normalizedType === "MESSAGE_CREATED"
+  );
+};
+
+export const shouldShowNotificationInInbox = (
+  notification: Notification,
+): boolean => {
+  return !isChatNotificationType(notification.type);
+};
+
 export const normalizeNotification = (
   notification: Notification,
 ): Notification => {
@@ -168,6 +182,7 @@ export const filterNotificationsByUser = (
   if (!notifications || !Array.isArray(notifications)) return [];
   return notifications.filter((notification) => {
     if (isNotificationDismissed(notification)) return false;
+    if (!shouldShowNotificationInInbox(notification)) return false;
     return true;
   });
 };
@@ -180,6 +195,7 @@ export const getUnreadNotificationsCount = (
   if (!notifications || !Array.isArray(notifications)) return 0;
   return notifications.filter(
     (notification) =>
+      shouldShowNotificationInInbox(notification) &&
       !isNotificationDismissed(notification) &&
       isNotificationUnread(notification),
   ).length;

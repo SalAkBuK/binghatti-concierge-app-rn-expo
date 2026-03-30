@@ -10,7 +10,9 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import Animated, { FadeInDown } from "react-native-reanimated";
+import { useAuth } from "../../lib/context/auth-context";
 import { useMessaging } from "../../lib/context/messaging-context";
+import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
 import type { Conversation } from "../../lib/types";
 
 function formatTime(dateStr: string): string {
@@ -108,7 +110,13 @@ function ConversationRow({
 }
 
 export function ConversationsTab({ userId, onRefresh }: ConversationsTabProps) {
+  const { currentUser } = useAuth();
   const { conversations, loading, actions } = useMessaging();
+  const { canCreateManagementConversation } = useResidentTenancy({
+    enabled: Boolean(currentUser?.role === "tenant" && userId),
+  });
+  const canStartConversation =
+    currentUser?.role === "tenant" ? canCreateManagementConversation : true;
   const [refreshing, setRefreshing] = useState(false);
 
   const handleRefresh = useCallback(async () => {
@@ -154,7 +162,7 @@ export function ConversationsTab({ userId, onRefresh }: ConversationsTabProps) {
       refreshing={refreshing}
       onRefresh={handleRefresh}
       ListHeaderComponent={
-        conversations.length > 0 ? (
+        conversations.length > 0 && canStartConversation ? (
           <TouchableOpacity
             style={styles.newConversationButton}
             onPress={handleNewConversation}
@@ -170,15 +178,19 @@ export function ConversationsTab({ userId, onRefresh }: ConversationsTabProps) {
           <Ionicons name="chatbubbles-outline" size={56} color="#CBD5E1" />
           <Text style={styles.emptyTitle}>No conversations yet</Text>
           <Text style={styles.emptySubtitle}>
-            Start a new conversation to get in touch with staff or management.
+            {canStartConversation
+              ? "Start a new conversation to get in touch with staff or management."
+              : "Existing conversations remain available here for follow-up and history."}
           </Text>
-          <TouchableOpacity
-            style={styles.emptyButton}
-            onPress={handleNewConversation}
-          >
-            <Ionicons name="create-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-            <Text style={styles.emptyButtonText}>New Message</Text>
-          </TouchableOpacity>
+          {canStartConversation ? (
+            <TouchableOpacity
+              style={styles.emptyButton}
+              onPress={handleNewConversation}
+            >
+              <Ionicons name="create-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Text style={styles.emptyButtonText}>New Message</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       }
     />

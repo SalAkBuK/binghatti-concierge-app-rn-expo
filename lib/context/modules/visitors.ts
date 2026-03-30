@@ -1,6 +1,10 @@
 import { useCallback, useState } from "react";
 
 import type {
+  CreateResidentVisitorDTO,
+  ResidentVisitor,
+  ResidentVisitorStatus,
+  UpdateResidentVisitorDTO,
   Visitor,
   VisitorLog,
   VisitorPass,
@@ -12,6 +16,7 @@ import {
   DEFAULT_VISITOR_PASSES,
 } from "../../utils/mockData";
 import { generateId } from "../../utils";
+import { residentVisitorsApi } from "../../services/api/resident-visitors";
 import type { AuthContextType } from "../auth-context";
 import type { NotificationsContextType } from "../notifications-context";
 
@@ -20,6 +25,9 @@ type NotificationsDependency = Pick<NotificationsContextType, "actions">;
 
 export type VisitorModuleState = {
   visitors: Visitor[];
+  residentVisitors: ResidentVisitor[];
+  residentVisitorsLoading: boolean;
+  residentVisitorsError: string | null;
   visitorPasses: VisitorPass[];
   visitorLogs: VisitorLog[];
 };
@@ -28,6 +36,22 @@ export type VisitorModuleActions = {
   registerVisitor: (data: Partial<Visitor>) => Promise<Visitor>;
   getVisitors: (filter?: { status?: VisitorStatus }) => Visitor[];
   cancelVisitor: (visitorId: string) => Promise<void>;
+  fetchResidentVisitors: (
+    filter?: { status?: ResidentVisitorStatus },
+  ) => Promise<ResidentVisitor[]>;
+  getResidentVisitors: (
+    filter?: { status?: ResidentVisitorStatus },
+  ) => ResidentVisitor[];
+  getResidentVisitor: (visitorId: string) => Promise<ResidentVisitor>;
+  createResidentVisitor: (
+    payload: CreateResidentVisitorDTO,
+  ) => Promise<ResidentVisitor>;
+  updateResidentVisitor: (
+    visitorId: string,
+    payload: UpdateResidentVisitorDTO,
+  ) => Promise<ResidentVisitor>;
+  cancelResidentVisitor: (visitorId: string) => Promise<ResidentVisitor>;
+  clearResidentVisitorsError: () => void;
   appendVisitorPass: (pass: VisitorPass) => void;
   getVisitorPasses: () => VisitorPass[];
   getVisitorPassesByBuilding: (buildingId: string) => VisitorPass[];
@@ -58,10 +82,55 @@ export const useVisitorModule = ({
   actions: VisitorModuleActions;
 } => {
   const [visitors, setVisitors] = useState<Visitor[]>(DEFAULT_VISITORS);
+  const [residentVisitors, setResidentVisitors] = useState<ResidentVisitor[]>([]);
+  const [residentVisitorsLoading, setResidentVisitorsLoading] = useState(false);
+  const [residentVisitorsError, setResidentVisitorsError] =
+    useState<string | null>(null);
   const [visitorPasses, setVisitorPasses] =
     useState<VisitorPass[]>(DEFAULT_VISITOR_PASSES);
   const [visitorLogs, setVisitorLogs] =
     useState<VisitorLog[]>(DEFAULT_VISITOR_LOGS);
+
+  const UNIT_SCOPE_ERROR =
+    "Visitor management is only available when your account has one active unit.";
+
+  const normalizeResidentVisitorError = useCallback((error: unknown): Error => {
+    if (
+      error &&
+      typeof error === "object" &&
+      "status" in error &&
+      (error as { status?: number }).status === 409
+    ) {
+      return new Error(UNIT_SCOPE_ERROR);
+    }
+
+    if (
+      error &&
+      typeof error === "object" &&
+      "message" in error &&
+      typeof (error as { message?: unknown }).message === "string"
+    ) {
+      return new Error((error as { message: string }).message);
+    }
+
+    return new Error("Failed to manage visitors");
+  }, []);
+
+  const upsertResidentVisitor = useCallback((incoming: ResidentVisitor) => {
+    setResidentVisitors((prev) => {
+      const exists = prev.some((visitor) => visitor.id === incoming.id);
+      const next = exists
+        ? prev.map((visitor) =>
+            visitor.id === incoming.id ? incoming : visitor,
+          )
+        : [incoming, ...prev];
+
+      return next.sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
+    });
+  }, []);
 
   const registerVisitor = useCallback(
     async (visitorData: Partial<Visitor>): Promise<Visitor> => {
@@ -165,6 +234,167 @@ export const useVisitorModule = ({
         }, 500);
       }),
     [visitors, auth.currentUser, notifications.actions],
+  );
+
+  const fetchResidentVisitors = useCallback(
+    async (
+      filter?: { status?: ResidentVisitorStatus },
+    ): Promise<ResidentVisitor[]> => {
+      if (!auth.currentUser) {
+        setResidentVisitors([]);
+        return [];
+      }
+
+      setResidentVisitorsLoading(true);
+      setResidentVisitorsError(null);
+
+      try {
+        const data = await residentVisitorsApi.listVisitors(filter?.status);
+        const sorted = [...data].sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        );
+        setResidentVisitors(sorted);
+        return sorted;
+      } catch (error) {
+        const normalizedError = normalizeResidentVisitorError(error);
+        setResidentVisitorsError(normalizedError.message);
+        throw normalizedError;
+      } finally {
+        setResidentVisitorsLoading(false);
+      }
+    },
+    [auth.currentUser, normalizeResidentVisitorError],
+  );
+
+  const getResidentVisitors = useCallback(
+    (filter?: { status?: ResidentVisitorStatus }) => {
+      let filtered = residentVisitors;
+
+      if (filter?.status) {
+        filtered = filtered.filter((visitor) => visitor.status === filter.status);
+      }
+
+      return filtered;
+    },
+    [residentVisitors],
+  );
+
+  const getResidentVisitor = useCallback(
+    async (visitorId: string): Promise<ResidentVisitor> => {
+      const existing = residentVisitors.find((visitor) => visitor.id === visitorId);
+      if (existing) {
+        return existing;
+      }
+
+      try {
+        setResidentVisitorsError(null);
+        const visitor = await residentVisitorsApi.getVisitor(visitorId);
+        upsertResidentVisitor(visitor);
+        return visitor;
+      } catch (error) {
+        const normalizedError = normalizeResidentVisitorError(error);
+        setResidentVisitorsError(normalizedError.message);
+        throw normalizedError;
+      }
+    },
+    [normalizeResidentVisitorError, residentVisitors, upsertResidentVisitor],
+  );
+
+  const createResidentVisitor = useCallback(
+    async (payload: CreateResidentVisitorDTO): Promise<ResidentVisitor> => {
+      if (!auth.currentUser) {
+        throw new Error("User must be authenticated to manage visitors");
+      }
+
+      try {
+        setResidentVisitorsError(null);
+        const visitor = await residentVisitorsApi.createVisitor(payload);
+        upsertResidentVisitor(visitor);
+        notifications.actions.createNotification(
+          auth.currentUser.id,
+          "Visitor Registered",
+          `${visitor.visitorName} has been added to your visitor list.`,
+          "success",
+        );
+        return visitor;
+      } catch (error) {
+        const normalizedError = normalizeResidentVisitorError(error);
+        setResidentVisitorsError(normalizedError.message);
+        throw normalizedError;
+      }
+    },
+    [
+      auth.currentUser,
+      normalizeResidentVisitorError,
+      notifications.actions,
+      upsertResidentVisitor,
+    ],
+  );
+
+  const updateResidentVisitor = useCallback(
+    async (
+      visitorId: string,
+      payload: UpdateResidentVisitorDTO,
+    ): Promise<ResidentVisitor> => {
+      if (!auth.currentUser) {
+        throw new Error("User must be authenticated to manage visitors");
+      }
+
+      try {
+        setResidentVisitorsError(null);
+        const visitor = await residentVisitorsApi.updateVisitor(visitorId, payload);
+        upsertResidentVisitor(visitor);
+        notifications.actions.createNotification(
+          auth.currentUser.id,
+          "Visitor Updated",
+          `${visitor.visitorName}'s details have been updated.`,
+          "info",
+        );
+        return visitor;
+      } catch (error) {
+        const normalizedError = normalizeResidentVisitorError(error);
+        setResidentVisitorsError(normalizedError.message);
+        throw normalizedError;
+      }
+    },
+    [
+      auth.currentUser,
+      normalizeResidentVisitorError,
+      notifications.actions,
+      upsertResidentVisitor,
+    ],
+  );
+
+  const cancelResidentVisitor = useCallback(
+    async (visitorId: string): Promise<ResidentVisitor> => {
+      if (!auth.currentUser) {
+        throw new Error("User must be authenticated to manage visitors");
+      }
+
+      try {
+        setResidentVisitorsError(null);
+        const visitor = await residentVisitorsApi.cancelVisitor(visitorId);
+        upsertResidentVisitor(visitor);
+        notifications.actions.createNotification(
+          auth.currentUser.id,
+          "Visitor Cancelled",
+          `Registration for ${visitor.visitorName} has been cancelled.`,
+          "info",
+        );
+        return visitor;
+      } catch (error) {
+        const normalizedError = normalizeResidentVisitorError(error);
+        setResidentVisitorsError(normalizedError.message);
+        throw normalizedError;
+      }
+    },
+    [
+      auth.currentUser,
+      normalizeResidentVisitorError,
+      notifications.actions,
+      upsertResidentVisitor,
+    ],
   );
 
   const getVisitorPasses = useCallback(() => visitorPasses, [visitorPasses]);
@@ -343,6 +573,9 @@ export const useVisitorModule = ({
   return {
     state: {
       visitors,
+      residentVisitors,
+      residentVisitorsLoading,
+      residentVisitorsError,
       visitorPasses,
       visitorLogs,
     },
@@ -350,6 +583,13 @@ export const useVisitorModule = ({
       registerVisitor,
       getVisitors,
       cancelVisitor,
+      fetchResidentVisitors,
+      getResidentVisitors,
+      getResidentVisitor,
+      createResidentVisitor,
+      updateResidentVisitor,
+      cancelResidentVisitor,
+      clearResidentVisitorsError: () => setResidentVisitorsError(null),
       appendVisitorPass,
       getVisitorPasses,
       getVisitorPassesByBuilding,

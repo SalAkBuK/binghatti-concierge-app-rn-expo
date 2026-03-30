@@ -91,6 +91,10 @@ export const API_ENDPOINTS = {
   resident: {
     me: "/resident/me",
     meProfile: "/resident/me/profile",
+    visitors: "/resident/visitors",
+    visitorDetail: (visitorId: string) => `/resident/visitors/${visitorId}`,
+    visitorCancel: (visitorId: string) =>
+      `/resident/visitors/${visitorId}/cancel`,
     activeLeaseDocuments: "/resident/lease/active/documents",
     contracts: "/resident/contracts",
     contractLatest: "/resident/contracts/latest",

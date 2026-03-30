@@ -24,6 +24,7 @@ import type {
   SendEmployeeMessageDTO,
   EmployeeEarnings,
   ResidentLatestContract,
+  ResidentIdentity,
   ResidentContract,
   ResidentContractsListResponse,
   ListResidentContractsParams,
@@ -134,6 +135,7 @@ export interface EmployeeApi {
 }
 
 export interface ResidentSelfServiceApi {
+  getResidentIdentity(): Promise<ResidentIdentity>;
   getResidentLatestContract(): Promise<ResidentLatestContract>;
   getResidentContractDetail(contractId: string): Promise<ResidentContract>;
   listResidentActiveLeaseDocuments(): Promise<ResidentContractDocument[]>;
