@@ -108,7 +108,10 @@ export default function NotificationsHubScreen() {
         actions.setSelectedRequest(request);
         router.back();
         setTimeout(() => {
-          router.push("/(modals)/request-details" as any);
+          router.push({
+            pathname: "/(modals)/request-details" as any,
+            params: { initialTab: "comments" },
+          });
         }, 120);
         return;
       }

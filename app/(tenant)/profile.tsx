@@ -21,6 +21,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useApp } from "../../lib/context/connected-app-provider";
+import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
 import { apiService } from "../../lib/services/api";
 import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
 import {
@@ -49,7 +50,7 @@ interface ValidationErrors {
 
 export default function ProfileScreen() {
   const tabBarHeight = useBottomTabBarHeight();
-  const { currentUser, notifications, actions } = useApp();
+  const { currentUser, notifications, actions, isAuthenticated } = useApp();
 
   const [profileData, setProfileData] = useState<ProfileFormData>({
     name: currentUser?.profile?.name || currentUser?.name || "",
@@ -65,7 +66,10 @@ export default function ProfileScreen() {
       currentUser?.profile?.emergencyPhone ||
       "",
   });
-  const buildingName = currentUser?.profile?.buildingName || "Not provided";
+  const { displayBuildingName } = useResidentTenancy({
+    enabled: Boolean(currentUser?.role === "tenant" && currentUser?.id && isAuthenticated),
+  });
+  const buildingName = displayBuildingName || currentUser?.profile?.buildingName || "Not provided";
 
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);

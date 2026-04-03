@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
+import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -28,6 +29,7 @@ import type { Job, Request } from "../../lib/types";
 
 
 export default function RequestDetailsScreen() {
+  const params = useLocalSearchParams<{ initialTab?: string | string[] }>();
   const { selectedRequest, actions, jobs, currentUser } = useApp();
   const [fetchingDetails, setFetchingDetails] = useState(false);
   const [detailTab, setDetailTab] = useState<"overview" | "comments">("overview");
@@ -58,14 +60,16 @@ export default function RequestDetailsScreen() {
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const isTenantUser = currentUser?.role === "tenant";
   const actionsRef = useRef(actions);
-  const lastDetailsFetchRef = useRef<{ id: string | null; fetched: boolean; inFlight: boolean }>({
+  const lastDetailsFetchRef = useRef<{ id: string | null; inFlight: boolean }>({
     id: null,
-    fetched: false,
     inFlight: false,
   });
 
   // Check if this is a backend request (don't show jobs for backend requests)
   const isBackendRequest = (selectedRequest as any)?._source === "backend";
+  const requestedInitialTab = Array.isArray(params.initialTab)
+    ? params.initialTab[0]
+    : params.initialTab;
 
   const job = useMemo(() => {
     if (!selectedRequest || isBackendRequest) {
@@ -127,19 +131,17 @@ export default function RequestDetailsScreen() {
     actionsRef.current = actions;
   }, [actions]);
 
-  useEffect(() => {
-    const fetchDetails = async () => {
-      if (!selectedRequest?.id) return;
-      const requestId = String(selectedRequest.id);
-      const lastFetch = lastDetailsFetchRef.current;
-      if (lastFetch.id !== requestId) {
-        lastFetch.id = requestId;
-        lastFetch.fetched = false;
-      }
-      if (lastFetch.inFlight || lastFetch.fetched) return;
-      lastFetch.inFlight = true;
-      setFetchingDetails(true);
-      try {
+  const fetchDetails = useCallback(async () => {
+    if (!selectedRequest?.id) return;
+    const requestId = String(selectedRequest.id);
+    const lastFetch = lastDetailsFetchRef.current;
+    if (lastFetch.id !== requestId) {
+      lastFetch.id = requestId;
+    }
+    if (lastFetch.inFlight) return;
+    lastFetch.inFlight = true;
+    setFetchingDetails(true);
+    try {
         if (!isTenantUser) {
           const buildingIdForManagers =
             selectedRequest.buildingId ||
@@ -315,19 +317,36 @@ export default function RequestDetailsScreen() {
             }
           }
         }
-      } catch (error) {
-        console.error("[RequestDetails] Failed to fetch request details:", error);
-      } finally {
-        setFetchingDetails(false);
-        const lastFetch = lastDetailsFetchRef.current;
-        lastFetch.inFlight = false;
-        lastFetch.fetched = true;
-      }
-    };
-
-    fetchDetails();
+    } catch (error) {
+      console.error("[RequestDetails] Failed to fetch request details:", error);
+    } finally {
+      setFetchingDetails(false);
+      lastDetailsFetchRef.current.inFlight = false;
+    }
   }, [
     isTenantUser,
+    currentUser,
+    selectedRequest,
+  ]);
+
+  useEffect(() => {
+    void fetchDetails();
+  }, [fetchDetails]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void fetchDetails();
+    }, [fetchDetails]),
+  );
+
+  useEffect(() => {
+    setComments([]);
+    setResolvedBuildingName(null);
+    lastDetailsFetchRef.current = {
+      id: selectedRequest?.id ? String(selectedRequest.id) : null,
+      inFlight: false,
+    };
+  }, [
     selectedRequest?.id,
   ]);
 
@@ -349,6 +368,15 @@ export default function RequestDetailsScreen() {
     selectedRequest?.description,
     selectedRequest?.priority,
   ]);
+
+  useEffect(() => {
+    if (requestedInitialTab === "comments") {
+      setDetailTab("comments");
+      return;
+    }
+
+    setDetailTab("overview");
+  }, [requestedInitialTab, selectedRequest?.id]);
 
   // Resolve building name to mirror the welcome card display
   useEffect(() => {

@@ -18,7 +18,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
@@ -166,6 +166,7 @@ const StatusChip = ({
 export default function TenantContractScreen() {
   const { currentUser, notifications, actions, isAuthenticated } = useApp();
   const tabBarHeight = useBottomTabBarHeight();
+  const insets = useSafeAreaInsets();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [selectedContractId, setSelectedContractId] = useState<string | null>(null);
   const [showMoveModal, setShowMoveModal] = useState(false);
@@ -429,7 +430,6 @@ export default function TenantContractScreen() {
             <Text style={styles.meta}>No contract selected.</Text>
           ) : (
             <>
-              <Text style={styles.meta}>Contract ID: {fmtValue(selectedContract.id)}</Text>
               <Text style={styles.meta}>Ejari / Contract No: {fmtValue(selectedContract.contractNumber)}</Text>
               <Text style={styles.meta}>Contract Date: {fmtDate(selectedContract.contractDate)}</Text>
               <Text style={styles.meta}>Annual Rent: {fmtMoney(selectedContract.annualRent)}</Text>
@@ -449,7 +449,6 @@ export default function TenantContractScreen() {
               <Text style={styles.meta}>Size (sqm): {fmtValue(selectedContract.propertySizeSqm)}</Text>
 
               <Text style={styles.blockTitle}>Unit</Text>
-              <Text style={styles.meta}>Unit ID: {fmtValue(selectedContract.unit?.id || selectedContract.unitId)}</Text>
               <Text style={styles.meta}>Label: {fmtValue(selectedContract.unit?.label || selectedContract.unitLabel)}</Text>
               <Text style={styles.meta}>Floor: {fmtValue(selectedContract.unit?.floor)}</Text>
               <Text style={styles.meta}>Bedrooms: {fmtValue(selectedContract.unit?.bedrooms)}</Text>
@@ -559,7 +558,7 @@ export default function TenantContractScreen() {
       </ScrollView>
 
       <Modal transparent visible={showMoveModal} onRequestClose={() => setShowMoveModal(false)} animationType="slide">
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, { paddingBottom: insets.bottom }]}>
           <View style={styles.modalCard}>
             <Text style={styles.title}>{moveType === "move-in" ? "Request Move In" : "Request Move Out"}</Text>
             <TouchableOpacity

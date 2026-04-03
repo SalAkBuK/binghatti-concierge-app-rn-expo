@@ -73,6 +73,8 @@ export default function VisitorsScreen() {
     residentVisitorsLoading,
     actions,
   } = useApp();
+  const fetchResidentVisitors = actions.fetchResidentVisitors;
+  const cancelResidentVisitor = actions.cancelResidentVisitor;
   const {
     canManageVisitors,
     isLoading: isTenancyLoading,
@@ -90,7 +92,7 @@ export default function VisitorsScreen() {
   const loadVisitors = useCallback(
     async (showError = true) => {
       try {
-        await actions.fetchResidentVisitors();
+        await fetchResidentVisitors();
       } catch (error) {
         if (showError) {
           Alert.alert(
@@ -102,7 +104,7 @@ export default function VisitorsScreen() {
         }
       }
     },
-    [actions],
+    [fetchResidentVisitors],
   );
 
   useFocusEffect(
@@ -175,7 +177,7 @@ export default function VisitorsScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              await actions.cancelResidentVisitor(visitor.id);
+              await cancelResidentVisitor(visitor.id);
               Alert.alert("Visitor Cancelled", "The visitor has been cancelled.");
             } catch (error) {
               Alert.alert(

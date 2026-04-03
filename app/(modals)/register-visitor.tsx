@@ -94,6 +94,9 @@ export default function RegisterVisitorScreen() {
     : params.visitorId;
   const isEditMode = Boolean(visitorId);
   const { actions, currentUser } = useApp();
+  const getResidentVisitor = actions.getResidentVisitor;
+  const createResidentVisitor = actions.createResidentVisitor;
+  const updateResidentVisitor = actions.updateResidentVisitor;
   const { canManageVisitors, isLoading: isTenancyLoading, statusMessage } =
     useResidentTenancy({
       enabled: Boolean(currentUser?.role === "tenant" && currentUser?.id),
@@ -113,8 +116,7 @@ export default function RegisterVisitorScreen() {
     let isMounted = true;
     setIsLoadingVisitor(true);
 
-    actions
-      .getResidentVisitor(visitorId)
+    getResidentVisitor(visitorId)
       .then((visitor: ResidentVisitor) => {
         if (!isMounted) return;
         setExistingVisitor(visitor);
@@ -142,7 +144,7 @@ export default function RegisterVisitorScreen() {
     return () => {
       isMounted = false;
     };
-  }, [actions, canManageVisitors, visitorId]);
+  }, [canManageVisitors, getResidentVisitor, visitorId]);
 
   const isEditable = useMemo(
     () => !isEditMode || existingVisitor?.status === "EXPECTED",
@@ -249,7 +251,7 @@ export default function RegisterVisitorScreen() {
     try {
       const payload = buildPayload();
       if (visitorId) {
-        await actions.updateResidentVisitor(visitorId, payload);
+        await updateResidentVisitor(visitorId, payload);
         Alert.alert("Visitor Updated", "The visitor details were updated.", [
           {
             text: "OK",
@@ -257,7 +259,7 @@ export default function RegisterVisitorScreen() {
           },
         ]);
       } else {
-        await actions.createResidentVisitor(payload);
+        await createResidentVisitor(payload);
         Alert.alert("Visitor Registered", "The visitor has been added.", [
           {
             text: "OK",

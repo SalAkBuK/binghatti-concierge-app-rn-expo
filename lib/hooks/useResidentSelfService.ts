@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, type AppStateStatus } from "react-native";
 
+import { invalidateResidentTenancy } from "./useResidentTenancy";
 import { residentSelfServiceApi } from "../services/api/resident-self-service";
 import type {
   CreateResidentMoveRequestDTO,
@@ -231,6 +232,7 @@ export const useResidentContract = (
         contractsRef.current = mergedContracts;
         setContractsNextCursor(contractList.nextCursor);
         setErrorMessage(null);
+        invalidateResidentTenancy();
       } catch (error) {
         const handledUnauthorized = await handleUnauthorizedIfNeeded(error);
         if (handledUnauthorized) {

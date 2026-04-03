@@ -63,6 +63,19 @@ const EMPTY_LATEST_CONTRACT: ResidentLatestContract = {
 const CACHE_TTL_MS = 30_000;
 let cachedSnapshot: ResidentTenancySnapshot | null = null;
 let sharedRequestPromise: Promise<ResidentTenancySnapshot> | null = null;
+const tenancyListeners = new Set<() => void>();
+
+export const invalidateResidentTenancy = (): void => {
+  cachedSnapshot = null;
+  sharedRequestPromise = null;
+  tenancyListeners.forEach((listener) => {
+    try {
+      listener();
+    } catch (error) {
+      console.warn("[ResidentTenancy] Failed to notify listener", error);
+    }
+  });
+};
 
 const getStatusCode = (error: unknown): number | undefined => {
   if (!error || typeof error !== "object") return undefined;
@@ -231,6 +244,22 @@ export const useResidentTenancy = (
     },
     [enabled, getFreshSnapshot, providedLatestContract],
   );
+
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
+    const handleInvalidation = () => {
+      void load({ asRefresh: true, showLoading: false });
+    };
+
+    tenancyListeners.add(handleInvalidation);
+
+    return () => {
+      tenancyListeners.delete(handleInvalidation);
+    };
+  }, [enabled, load]);
 
   useEffect(() => {
     void load({ showLoading: true, asRefresh: false });
