@@ -7,6 +7,7 @@ interface SkeletonTextProps {
   height?: number;
   borderRadius?: number;
   style?: StyleProp<ViewStyle>;
+  animated?: boolean;
 }
 
 export function SkeletonText({
@@ -14,6 +15,7 @@ export function SkeletonText({
   height = 16,
   borderRadius = 8,
   style,
+  animated = true,
 }: SkeletonTextProps) {
   return (
     <SkeletonBlock
@@ -21,6 +23,7 @@ export function SkeletonText({
       height={height}
       borderRadius={borderRadius}
       style={style}
+      animated={animated}
     />
   );
 }

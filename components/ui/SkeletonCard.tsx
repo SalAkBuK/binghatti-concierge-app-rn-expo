@@ -9,6 +9,7 @@ interface SkeletonCardProps {
   height?: number;
   borderRadius?: number;
   style?: StyleProp<ViewStyle>;
+  animated?: boolean;
 }
 
 export function SkeletonCard({
@@ -16,6 +17,7 @@ export function SkeletonCard({
   height = 200,
   borderRadius = 16,
   style,
+  animated = true,
 }: SkeletonCardProps) {
   return (
     <SkeletonBlock
@@ -23,6 +25,7 @@ export function SkeletonCard({
       height={height}
       borderRadius={borderRadius}
       style={style}
+      animated={animated}
     />
   );
 }

@@ -1,6 +1,8 @@
-import DateTimePicker from "@react-native-community/datetimepicker";
+import DateTimePicker, {
+  DateTimePickerAndroid,
+} from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   Alert,
   Modal,
@@ -66,26 +68,35 @@ export default function ManagementAmenitiesScreen() {
   const [datePickerMode, setDatePickerMode] = useState<"date" | "time">("date");
   const [editingDateField, setEditingDateField] = useState<"start" | "end">("start");
 
-  const openDatePicker = (field: "start" | "end", mode: "date" | "time" = "date") => {
-    setEditingDateField(field);
-    setDatePickerMode(mode);
-    setShowDatePicker(true);
-  };
+  const dismissAndroidPickers = useCallback(() => {
+    if (Platform.OS !== "android") return;
+    void DateTimePickerAndroid.dismiss("date").catch(() => undefined);
+    void DateTimePickerAndroid.dismiss("time").catch(() => undefined);
+  }, []);
 
-  const handleDateChange = (event: any, selectedDate?: Date) => {
-    if (Platform.OS === "android") {
-      setShowDatePicker(false);
-    }
+  const getPickerValue = useCallback(
+    (field: "start" | "end") =>
+      new Date(
+        field === "start" ? maintenanceForm.startDate : maintenanceForm.endDate,
+      ),
+    [maintenanceForm.endDate, maintenanceForm.startDate],
+  );
 
+  const handleDateChange = useCallback((
+    event: any,
+    selectedDate?: Date,
+    field: "start" | "end" = editingDateField,
+    mode: "date" | "time" = datePickerMode,
+  ) => {
     if (event.type === "dismissed") {
       return;
     }
 
     if (selectedDate) {
-      const fieldKey = editingDateField === "start" ? "startDate" : "endDate";
+      const fieldKey = field === "start" ? "startDate" : "endDate";
       const currentDate = new Date(maintenanceForm[fieldKey] || new Date());
 
-      if (datePickerMode === "date") {
+      if (mode === "date") {
         currentDate.setFullYear(selectedDate.getFullYear());
         currentDate.setMonth(selectedDate.getMonth());
         currentDate.setDate(selectedDate.getDate());
@@ -94,20 +105,55 @@ export default function ManagementAmenitiesScreen() {
         currentDate.setMinutes(selectedDate.getMinutes());
       }
 
-      setMaintenanceForm({
-        ...maintenanceForm,
+      setMaintenanceForm((currentForm) => ({
+        ...currentForm,
         [fieldKey]: currentDate.toISOString(),
-      });
+      }));
 
-      // On Android, after selecting date, show time picker
-      if (Platform.OS === "android" && datePickerMode === "date") {
-        setTimeout(() => {
-          setDatePickerMode("time");
-          setShowDatePicker(true);
-        }, 100);
+      if (Platform.OS === "android" && mode === "date") {
+        setEditingDateField(field);
+        setDatePickerMode("time");
+        DateTimePickerAndroid.open({
+          value: currentDate,
+          mode: "time",
+          is24Hour: false,
+          display: "default",
+          onChange: (nextEvent, nextDate) =>
+            handleDateChange(nextEvent, nextDate, field, "time"),
+          minimumDate: field === "end" ? new Date(maintenanceForm.startDate) : new Date(),
+        });
       }
     }
-  };
+  }, [datePickerMode, editingDateField, maintenanceForm]);
+
+  const openDatePicker = useCallback((
+    field: "start" | "end",
+    mode: "date" | "time" = "date",
+  ) => {
+    setEditingDateField(field);
+    setDatePickerMode(mode);
+
+    if (Platform.OS === "android") {
+      DateTimePickerAndroid.open({
+        value: getPickerValue(field),
+        mode,
+        is24Hour: false,
+        display: "default",
+        onChange: (event, selectedDate) =>
+          handleDateChange(event, selectedDate, field, mode),
+        minimumDate: field === "end" ? new Date(maintenanceForm.startDate) : new Date(),
+      });
+      return;
+    }
+
+    setShowDatePicker(true);
+  }, [getPickerValue, handleDateChange, maintenanceForm.startDate]);
+
+  const closeMaintenanceModal = useCallback(() => {
+    setShowDatePicker(false);
+    dismissAndroidPickers();
+    setShowMaintenanceModal(false);
+  }, [dismissAndroidPickers]);
 
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
   const managedBuildings = useMemo(
@@ -196,7 +242,7 @@ export default function ManagementAmenitiesScreen() {
     setShowMaintenanceModal(true);
   };
 
-  const handleScheduleMaintenance = async () => {
+  const handleScheduleMaintenance = useCallback(async () => {
     if (!selectedConfig) return;
 
     try {
@@ -208,12 +254,12 @@ export default function ManagementAmenitiesScreen() {
           notes: `${maintenanceForm.reason}: ${maintenanceForm.notes}`,
         },
       });
-      setShowMaintenanceModal(false);
+      closeMaintenanceModal();
       setSelectedConfig(null);
     } catch (error) {
       console.warn("Failed to schedule maintenance:", getUserErrorMessage(error));
     }
-  };
+  }, [closeMaintenanceModal, maintenanceForm.endDate, maintenanceForm.notes, maintenanceForm.reason, maintenanceForm.startDate, selectedConfig, updateAmenityConfig]);
 
   const handleAddAmenity = async () => {
     if (!newAmenityForm.amenityName.trim() || !newAmenityForm.buildingId) {
@@ -722,11 +768,11 @@ export default function ManagementAmenitiesScreen() {
       <Modal
         visible={showMaintenanceModal}
         animationType="slide"
-        onRequestClose={() => setShowMaintenanceModal(false)}
+        onRequestClose={closeMaintenanceModal}
       >
         <SafeAreaView style={styles.maintenanceModalContainer}>
           <View style={styles.maintenanceModalHeader}>
-            <TouchableOpacity onPress={() => setShowMaintenanceModal(false)}>
+            <TouchableOpacity onPress={closeMaintenanceModal}>
               <Ionicons name="close" size={28} color="#111827" />
             </TouchableOpacity>
             <Text style={styles.maintenanceModalTitle}>
@@ -867,7 +913,7 @@ export default function ManagementAmenitiesScreen() {
           <View style={styles.maintenanceModalFooter}>
             <TouchableOpacity
               style={styles.cancelMaintenanceButton}
-              onPress={() => setShowMaintenanceModal(false)}
+              onPress={closeMaintenanceModal}
             >
               <Text style={styles.cancelMaintenanceText}>Cancel</Text>
             </TouchableOpacity>
@@ -880,16 +926,12 @@ export default function ManagementAmenitiesScreen() {
             </TouchableOpacity>
           </View>
 
-          {showDatePicker && (
+          {Platform.OS === "ios" && showDatePicker && (
             <DateTimePicker
-              value={new Date(
-                editingDateField === "start"
-                  ? maintenanceForm.startDate
-                  : maintenanceForm.endDate
-              )}
+              value={getPickerValue(editingDateField)}
               mode={datePickerMode}
               is24Hour={false}
-              display={Platform.OS === "ios" ? "spinner" : "default"}
+              display="spinner"
               onChange={handleDateChange}
               minimumDate={editingDateField === "end" ? new Date(maintenanceForm.startDate) : new Date()}
             />

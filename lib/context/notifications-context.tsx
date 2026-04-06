@@ -310,6 +310,7 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
   const canPlaySoundRef = useRef(false);
   const fallbackAttemptedRef = useRef(false);
   const lastTokenRef = useRef<string | null>(null);
+  const lastAutoRefreshAtRef = useRef(0);
   const registeredPushTokenRef = useRef<string | null>(null);
   const registeredPushUserIdRef = useRef<string | null>(null);
   const [storedNotifications, setNotifications] = useAsyncStorage(
@@ -389,6 +390,27 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
       dispatch({ type: NOTIFICATIONS_ACTIONS.SET_LOADING, payload: false });
     }
   }, []);
+
+  const refreshNotificationsAutomatically = useCallback(
+    (reason: "initial" | "foreground" | "socket-connect" | "socket-hello") => {
+      const now = Date.now();
+      const AUTO_REFRESH_COOLDOWN_MS = 5000;
+
+      if (now - lastAutoRefreshAtRef.current < AUTO_REFRESH_COOLDOWN_MS) {
+        if (__DEV__) {
+          console.log("[Notifications] Skipping duplicate auto refresh", {
+            reason,
+            elapsedMs: now - lastAutoRefreshAtRef.current,
+          });
+        }
+        return;
+      }
+
+      lastAutoRefreshAtRef.current = now;
+      void refreshNotifications();
+    },
+    [refreshNotifications],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -497,14 +519,14 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
         if (__DEV__) {
           console.log("[Notifications] socket connected");
         }
-        refreshNotifications();
+        refreshNotificationsAutomatically("socket-connect");
       });
 
       socket.off("notifications:hello").on("notifications:hello", () => {
         if (__DEV__) {
           console.log("[Notifications] notifications:hello");
         }
-        refreshNotifications();
+        refreshNotificationsAutomatically("socket-hello");
       });
 
       socket.off("notifications:new").on("notifications:new", (payload: any) => {
@@ -623,12 +645,12 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
     };
 
     connectSocket();
-    refreshNotifications();
+    refreshNotificationsAutomatically("initial");
 
     const subscription = AppState.addEventListener("change", (nextState) => {
       if (appState.current.match(/inactive|background/) && nextState === "active") {
         connectSocket();
-        refreshNotifications();
+        refreshNotificationsAutomatically("foreground");
       } else if (nextState.match(/inactive|background/)) {
         disconnectNotifications();
       }
@@ -640,7 +662,7 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
       subscription.remove();
       disconnectNotifications();
     };
-  }, [appState, isAuthenticated, refreshNotifications]);
+  }, [appState, isAuthenticated, refreshNotificationsAutomatically]);
 
   // Action Creators
   const actions: NotificationsActions = {

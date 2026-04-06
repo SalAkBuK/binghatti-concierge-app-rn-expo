@@ -1,6 +1,6 @@
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import React from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SkeletonCard } from './SkeletonCard';
 import { SkeletonText } from './SkeletonText';
@@ -11,73 +11,73 @@ const P = {
   border: '#D9E0E4',
 };
 
+const STATIC_SKELETON = {
+  animated: false as const,
+};
+
 export function RequestsScreenSkeleton() {
   const tabBarHeight = useBottomTabBarHeight();
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={[styles.content, { paddingBottom: tabBarHeight + 32 }]}
-        showsVerticalScrollIndicator={false}
-      >
+      <View style={[styles.content, { paddingBottom: tabBarHeight + 32 }]}>
         <View style={styles.header}>
-          <SkeletonText width={40} height={40} borderRadius={20} />
-          <SkeletonText width={120} height={24} borderRadius={8} />
-          <SkeletonText width={40} height={40} borderRadius={20} />
+          <SkeletonText width={40} height={40} borderRadius={20} {...STATIC_SKELETON} />
+          <SkeletonText width={120} height={24} borderRadius={8} {...STATIC_SKELETON} />
+          <SkeletonText width={40} height={40} borderRadius={20} {...STATIC_SKELETON} />
         </View>
 
-        <SkeletonCard width="100%" height={178} borderRadius={28} style={styles.heroCard} />
+        <SkeletonCard
+          width="100%"
+          height={176}
+          borderRadius={28}
+          style={styles.heroCard}
+          {...STATIC_SKELETON}
+        />
 
         <View style={styles.summaryRow}>
           <View style={styles.summaryCard}>
-            <SkeletonText width={42} height={32} borderRadius={12} />
-            <SkeletonText width={78} height={12} borderRadius={8} />
+            <SkeletonText width={42} height={32} borderRadius={12} {...STATIC_SKELETON} />
+            <SkeletonText width={78} height={12} borderRadius={8} {...STATIC_SKELETON} />
           </View>
           <View style={styles.summaryCard}>
-            <SkeletonText width={42} height={32} borderRadius={12} />
-            <SkeletonText width={78} height={12} borderRadius={8} />
+            <SkeletonText width={42} height={32} borderRadius={12} {...STATIC_SKELETON} />
+            <SkeletonText width={78} height={12} borderRadius={8} {...STATIC_SKELETON} />
           </View>
           <View style={styles.summaryCard}>
-            <SkeletonText width={42} height={32} borderRadius={12} />
-            <SkeletonText width={78} height={12} borderRadius={8} />
+            <SkeletonText width={42} height={32} borderRadius={12} {...STATIC_SKELETON} />
+            <SkeletonText width={78} height={12} borderRadius={8} {...STATIC_SKELETON} />
           </View>
         </View>
 
         <View style={styles.spotlightCard}>
           <View style={styles.spotlightTop}>
             <View style={styles.spotlightCopy}>
-              <SkeletonText width={88} height={12} borderRadius={8} />
-              <SkeletonText width="68%" height={22} borderRadius={10} />
+              <SkeletonText width={88} height={12} borderRadius={8} {...STATIC_SKELETON} />
+              <SkeletonText width="68%" height={22} borderRadius={10} {...STATIC_SKELETON} />
             </View>
-            <SkeletonText width={42} height={42} borderRadius={21} />
+            <SkeletonText width={42} height={42} borderRadius={21} {...STATIC_SKELETON} />
           </View>
-          <SkeletonText width="84%" height={14} borderRadius={8} />
+          <SkeletonText width="84%" height={14} borderRadius={8} {...STATIC_SKELETON} />
         </View>
 
         <View style={styles.filterSection}>
           <View style={styles.sectionCopy}>
-            <SkeletonText width={132} height={22} borderRadius={10} />
-            <SkeletonText width={148} height={12} borderRadius={8} />
+            <SkeletonText width={132} height={22} borderRadius={10} {...STATIC_SKELETON} />
+            <SkeletonText width={148} height={12} borderRadius={8} {...STATIC_SKELETON} />
           </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filterRow}
-          >
-            <SkeletonText width={88} height={42} borderRadius={999} />
-            <SkeletonText width={104} height={42} borderRadius={999} />
-            <SkeletonText width={118} height={42} borderRadius={999} />
-            <SkeletonText width={110} height={42} borderRadius={999} />
-          </ScrollView>
+          <View style={styles.filterRow}>
+            <SkeletonText width={88} height={42} borderRadius={999} {...STATIC_SKELETON} />
+            <SkeletonText width={104} height={42} borderRadius={999} {...STATIC_SKELETON} />
+            <SkeletonText width={118} height={42} borderRadius={999} {...STATIC_SKELETON} />
+          </View>
         </View>
 
         <View style={styles.requestsList}>
-          <SkeletonCard width="100%" height={188} borderRadius={24} />
-          <SkeletonCard width="100%" height={188} borderRadius={24} />
-          <SkeletonCard width="100%" height={188} borderRadius={24} />
+          <SkeletonCard width="100%" height={176} borderRadius={24} {...STATIC_SKELETON} />
+          <SkeletonCard width="100%" height={176} borderRadius={24} {...STATIC_SKELETON} />
         </View>
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -87,11 +87,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: P.bg,
   },
-  scrollView: {
-    flex: 1,
-  },
   content: {
+    flex: 1,
     paddingHorizontal: 20,
+    paddingTop: 8,
   },
   header: {
     flexDirection: 'row',
@@ -144,7 +143,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   filterRow: {
-    paddingRight: 20,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
   },
   requestsList: {

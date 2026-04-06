@@ -24,6 +24,7 @@ interface SkeletonBlockProps {
   height?: number;
   borderRadius?: number;
   style?: StyleProp<ViewStyle>;
+  animated?: boolean;
 }
 
 export function SkeletonBlock({
@@ -31,10 +32,16 @@ export function SkeletonBlock({
   height = 16,
   borderRadius = 8,
   style,
+  animated = true,
 }: SkeletonBlockProps) {
   const progress = useSharedValue(0);
 
   useEffect(() => {
+    if (!animated) {
+      progress.value = 0;
+      return;
+    }
+
     progress.value = withRepeat(
       withTiming(1, {
         duration: 1350,
@@ -43,7 +50,7 @@ export function SkeletonBlock({
       -1,
       false,
     );
-  }, [progress]);
+  }, [animated, progress]);
 
   const shimmerStyle = useAnimatedStyle(() => ({
     opacity: interpolate(progress.value, [0, 0.5, 1], [0.35, 0.72, 0.35]),
@@ -61,15 +68,17 @@ export function SkeletonBlock({
   return (
     <View style={[styles.container, { width, height, borderRadius }, style]}>
       <View style={styles.baseTone} />
-      <Animated.View pointerEvents="none" style={[styles.shimmerWrap, shimmerStyle]}>
-        <LinearGradient
-          colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.88)', 'rgba(255,255,255,0)']}
-          locations={[0, 0.52, 1]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.shimmer}
-        />
-      </Animated.View>
+      {animated ? (
+        <Animated.View pointerEvents="none" style={[styles.shimmerWrap, shimmerStyle]}>
+          <LinearGradient
+            colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.88)', 'rgba(255,255,255,0)']}
+            locations={[0, 0.52, 1]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.shimmer}
+          />
+        </Animated.View>
+      ) : null}
     </View>
   );
 }

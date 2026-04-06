@@ -14,7 +14,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AnimatedButton } from "../../components/ui/AnimatedButton";
@@ -485,7 +484,7 @@ export default function RequestsScreen() {
 
   const renderListHeader = () => (
     <>
-      <Animated.View entering={FadeIn.duration(400)}>
+      <View>
         <HeaderBar
           title="My Requests"
           hasUnreadNotifications={hasUnreadNotifications}
@@ -493,9 +492,9 @@ export default function RequestsScreen() {
           onSideMenuToggle={setShowSideMenu}
           textColor={P.text}
         />
-      </Animated.View>
+      </View>
 
-      <Animated.View entering={FadeInDown.delay(40).duration(400)} style={styles.heroCard}>
+      <View style={styles.heroCard}>
         <LinearGradient
           colors={[P.primary, P.primaryDark]}
           start={{ x: 0, y: 0 }}
@@ -521,9 +520,9 @@ export default function RequestsScreen() {
             <Text style={styles.heroActionText}>New Request</Text>
           </TouchableOpacity>
         </LinearGradient>
-      </Animated.View>
+      </View>
 
-      <Animated.View entering={FadeInDown.delay(70).duration(400)} style={styles.summaryRow}>
+      <View style={styles.summaryRow}>
         {summaryCards.map((card) => (
           <View
             key={card.key}
@@ -551,9 +550,9 @@ export default function RequestsScreen() {
             </Text>
           </View>
         ))}
-      </Animated.View>
+      </View>
 
-      <Animated.View entering={FadeInDown.delay(95).duration(400)} style={styles.spotlightCard}>
+      <View style={styles.spotlightCard}>
         <View style={styles.spotlightHeader}>
           <View>
             <Text style={styles.sectionEyebrow}>Latest Update</Text>
@@ -570,9 +569,9 @@ export default function RequestsScreen() {
             ? `${getStatusMeta(latestRequest.status).label} • Updated ${formatDate(latestRequest.updatedAt)}`
             : "Once you create a request, its latest status will appear here."}
         </Text>
-      </Animated.View>
+      </View>
 
-      <Animated.View entering={FadeInDown.delay(120).duration(400)} style={styles.filterSection}>
+      <View style={styles.filterSection}>
         <View style={styles.sectionHeader}>
           <View>
             <Text style={styles.sectionTitle}>Browse Requests</Text>
@@ -614,7 +613,7 @@ export default function RequestsScreen() {
             );
           })}
         </ScrollView>
-      </Animated.View>
+      </View>
     </>
   );
 
