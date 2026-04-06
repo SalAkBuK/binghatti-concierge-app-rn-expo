@@ -28,7 +28,7 @@ import {
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
-// Amenities are now loaded from context via useApp hook
+// Amenities are loaded from the amenityVisitor domain slice.
 
 type FilterType = "all" | AmenityType;
 

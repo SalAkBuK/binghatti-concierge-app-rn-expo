@@ -188,7 +188,7 @@ These are the main sources of confusion today:
 - Docs describe a `src/` structure that the repo does not use.
 - Some docs describe portals that are not mounted.
 - Navigation code points to route groups that do not exist.
-- `useApp()` still exists as a broad compatibility hook even though runtime code has largely moved to narrower hooks.
+- `useApp()` has been removed and new attempts to import or call it should be treated as regressions.
 - Large helper/reference material can still drift toward the repo root if it is not intentionally archived.
 
 ## 8. Cleanup Priorities
@@ -198,7 +198,7 @@ Recommended order:
 1. Keep docs aligned with the mounted app.
 2. Introduce a single role-to-portal registry for redirects and menus.
 3. Continue reducing root clutter by moving confirmed-inactive artifacts into `docs/` or `docs/archive/`.
-4. Keep `useApp()` compatibility-only, shrink it where possible, and tighten ownership between app-state hooks and domain modules.
+4. Keep ownership tight around narrow hooks and `useAppDomain()`, and prevent `useApp()` from being reintroduced.
 5. Mark mock-backed modules explicitly and phase them out.
 
 ## 9. Root-Level Triage

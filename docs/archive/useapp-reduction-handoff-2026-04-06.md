@@ -140,59 +140,30 @@ At the time of handoff, `rg -n "useApp\\(" app` shows only these route-level con
 
 There are also doc references in `lib/context/README.md`, but those are not runtime.
 
+## Completion Update
+
+Follow-up work after this handoff finished the route and modal migrations listed above.
+
+Current state:
+
+- `rg -n "useApp\\(" app --glob "*.ts" --glob "*.tsx"` returns no runtime `app/` consumers
+- `app/(management)/shifts.tsx` is already on `useAuth()` and `useNotifications()`
+- the modal screens listed above have also been moved off `useApp()`
+- the remaining non-doc repo hits are example comments in `utils/adminProfiler.tsx`
+- `useApp()` has been shrunk to a small grouped legacy shape and removed from the public `lib/context/app-provider.tsx` re-export surface
+- `useApp()` has now been removed entirely from `lib/context/connected-app-provider.tsx`
+
+This means the route-level `useApp()` reduction pass is complete.
+
 ## Recommended Next Steps
 
-### P1. Finish `app/(management)/shifts.tsx`
+### P1. Keep `useApp()` removed
 
-This should be a straightforward conversion.
+The remaining work is preventative rather than migratory:
 
-Expected split:
-
-- `useAuth()` for `currentUser`
-- `useNotifications()` for unread state
-- likely `useAppDomain().property` for employee/building access, depending on exact usage
-
-This is the last route screen still on `useApp()`.
-
-### P2. Convert modal screens by domain, not one-off guessing
-
-Recommended order:
-
-1. `app/(modals)/admin-notifications.tsx`
-2. `app/(modals)/notifications-hub.tsx`
-3. `app/(modals)/notice-details.tsx`
-4. `app/(modals)/submit-rating.tsx`
-5. `app/(modals)/approve-job-completion.tsx`
-6. `app/(modals)/amenity-booking-form.tsx`
-7. `app/(modals)/register-visitor.tsx`
-8. `app/(modals)/request-provider-access.tsx`
-9. `app/(modals)/request-details.tsx`
-
-Suggested split:
-
-- notifications modals:
-  - `useAuth()`
-  - `useNotifications()`
-- ratings/job modals:
-  - `useAuth()`
-  - `useAppDomain().operations`
-- amenity/visitor/provider-access modals:
-  - `useAuth()`
-  - `useAppDomain().amenityVisitor` and/or `useAppDomain().property`
-- request details:
-  - likely `useRequests()`
-  - `useAuth()`
-  - `useAppDomain().operations` for jobs
-  - `useAppDomain().property` where building/provider lookups are needed
-
-### P3. After route/modals are clean, reassess whether `useApp()` should remain public
-
-Once modal usage is mostly gone, decide whether to:
-
-- keep `useApp()` as a compatibility facade only
-- or start shrinking the actual composed value inside `connected-app-provider.tsx`
-
-Do not do this before the remaining runtime consumers are migrated, or the diff will get noisy fast.
+- do not reintroduce `useApp()`
+- keep lint/doc guidance aligned with narrow-hook usage
+- continue keeping domain ownership out of `connected-app-provider.tsx`
 
 ## Notes On The Heavier Screens Already Converted
 

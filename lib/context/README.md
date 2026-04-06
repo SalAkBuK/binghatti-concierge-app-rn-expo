@@ -29,14 +29,21 @@ export default function RootLayout() {
 }
 ```
 
-### In Components - Use Combined Hook
+### In Components - Use Domain And Specific Hooks
 
 ```tsx
-import { useApp } from "../lib/context/connected-app-provider";
+import {
+  useAppDomain,
+  useAuth,
+  useRequests,
+} from "../lib/context/connected-app-provider";
 
 function MyComponent() {
-  const { currentUser, requests, actions } = useApp();
-  // Same API as before, but now with better performance
+  const { currentUser } = useAuth();
+  const { requests } = useRequests();
+  const {
+    amenityVisitor: { amenities },
+  } = useAppDomain();
 }
 ```
 
@@ -74,11 +81,11 @@ function MyComponent() {
 
 - **Type Safety**: Full TypeScript support with proper interfaces
 - **Clear Boundaries**: Easy to understand what each context manages
-- **Backwards Compatibility**: `useApp()` hook maintains the same API
+- **Narrow Access**: Components pull only the state they actually need
 
 ## Migration
 
-The migration maintains 100% backwards compatibility. All existing components continue to work without changes while gaining the performance benefits of the new architecture.
+The migration path is now complete for runtime code. New code should use the narrow hooks and `useAppDomain()` directly.
 
 ## Legacy
 

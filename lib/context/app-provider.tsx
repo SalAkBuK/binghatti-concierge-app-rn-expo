@@ -11,7 +11,6 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
 };
 
 export {
-  useApp,
   useAppDomain,
   useAuth,
   useMessaging,

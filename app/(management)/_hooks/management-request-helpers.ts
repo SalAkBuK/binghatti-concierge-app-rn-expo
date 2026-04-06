@@ -1,4 +1,9 @@
-import type { Request, RequestPriority, RequestStatus } from '../../../lib/types';
+import type {
+  Building,
+  Request,
+  RequestPriority,
+  RequestStatus,
+} from '../../../lib/types';
 
 export const mapStatusFromApi = (status: any): RequestStatus => {
   if (typeof status === 'number') {
@@ -82,6 +87,40 @@ export const getResponseItems = <T>(
 
   return [];
 };
+
+export const mapOrgAssignedBuilding = (building: any): Building => ({
+  id: String(building?.id ?? building?.buildingId ?? ''),
+  name:
+    building?.name ||
+    building?.buildingName ||
+    building?.title ||
+    'Building',
+  address: building?.address || '',
+  city: building?.city || '',
+  country: building?.country || '',
+  emirate: building?.emirate,
+  community: building?.community,
+  street: building?.street,
+  plotNumber: building?.plotNumber,
+  buildingNumber: building?.buildingNumber,
+  makaniNumber: building?.makaniNumber,
+  buildingType: building?.buildingType,
+  developer: building?.developer,
+  yearBuilt: building?.yearBuilt,
+  totalFloors: building?.totalFloors,
+  utilityPremisesNumber: building?.utilityPremisesNumber,
+  managerId: building?.managerId,
+  managerName: building?.managerName,
+  totalUnits: building?.totalUnits ?? 0,
+  occupiedUnits: building?.occupiedUnits ?? 0,
+  unitBreakdown: building?.unitBreakdown,
+  amenities: building?.amenities ?? [],
+  status: building?.status ?? 'active',
+  createdAt: building?.createdAt ?? new Date().toISOString(),
+  updatedAt: building?.updatedAt ?? new Date().toISOString(),
+  location: building?.location,
+  units: building?.units,
+});
 
 export const mapOrgBuildingRequestSummary = (
   item: any,

@@ -208,13 +208,13 @@ export default function RequestDetailsScreen() {
       ? "complete"
       : "pending";
 
-  const timelineSteps: Array<{
+  const timelineSteps: {
     key: string;
     title: string;
     time: string;
     note?: string | null;
     state: "complete" | "active" | "pending";
-  }> = [
+  }[] = [
     {
       key: "submitted",
       title: "Submitted",

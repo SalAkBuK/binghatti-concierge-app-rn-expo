@@ -239,6 +239,210 @@ export default function VisitorsScreen() {
   const hasUnreadNotifications =
     getUnreadNotificationsCount(userNotifications) > 0;
 
+  const FilterTab = ({
+    label,
+    count,
+    status,
+  }: {
+    label: string;
+    count: number;
+    status: FilterStatus;
+  }) => {
+    const isActive = filterStatus === status;
+    return (
+      <TouchableOpacity
+        style={[styles.filterTab, isActive && styles.filterTabActive]}
+        onPress={() => setFilterStatus(status)}
+      >
+        <Text style={[styles.filterTabText, isActive && styles.filterTabTextActive]}>
+          {label} ({count})
+        </Text>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderVisitorItem = ({ item: visitor }: { item: ResidentVisitor }) => {
+    const statusColors = getStatusColor(visitor.status);
+
+    return (
+      <AnimatedButton
+        style={styles.visitorCard}
+        onPress={() => handleVisitorPress(visitor)}
+      >
+        <View style={styles.visitorCardHeader}>
+          <View style={styles.visitorIdentity}>
+            <View style={styles.iconBadge}>
+              <Ionicons name="person-outline" size={18} color="#336BE3" />
+            </View>
+            <View style={styles.visitorNameBlock}>
+              <Text style={styles.visitorName} numberOfLines={1}>
+                {visitor.visitorName}
+              </Text>
+              <Text style={styles.visitorPhone}>{visitor.phoneNumber}</Text>
+            </View>
+          </View>
+
+          <View
+            style={[
+              styles.statusBadge,
+              { backgroundColor: statusColors.bg },
+            ]}
+          >
+            <Text
+              style={[styles.statusBadgeText, { color: statusColors.text }]}
+            >
+              {visitor.status}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.metaRow}>
+          <Ionicons name="pricetag-outline" size={15} color="#6B7280" />
+          <Text style={styles.metaText}>
+            {formatResidentVisitorType(visitor.type)}
+          </Text>
+        </View>
+
+        <View style={styles.metaRow}>
+          <Ionicons name="business-outline" size={15} color="#6B7280" />
+          <Text style={styles.metaText}>
+            Unit {visitor.unit.label || "Assigned automatically"}
+          </Text>
+        </View>
+
+        <View style={styles.metaRow}>
+          <Ionicons name="time-outline" size={15} color="#6B7280" />
+          <Text style={styles.metaText}>
+            Arrival: {formatDateTime(visitor.expectedArrivalAt)}
+          </Text>
+        </View>
+
+        {visitor.notes ? (
+          <View style={styles.metaRow}>
+            <Ionicons
+              name="document-text-outline"
+              size={15}
+              color="#6B7280"
+            />
+            <Text style={styles.metaText} numberOfLines={2}>
+              {visitor.notes}
+            </Text>
+          </View>
+        ) : null}
+
+        {visitor.status === "EXPECTED" ? (
+          <View style={styles.cardActions}>
+            <TouchableOpacity
+              style={styles.secondaryAction}
+              onPress={(event) => {
+                event.stopPropagation();
+                router.push({
+                  pathname: "/(modals)/register-visitor",
+                  params: { visitorId: visitor.id },
+                } as any);
+              }}
+            >
+              <Ionicons name="create-outline" size={16} color="#1D4ED8" />
+              <Text style={styles.secondaryActionText}>Edit</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.destructiveAction}
+              onPress={(event) => {
+                event.stopPropagation();
+                void handleCancelVisitor(visitor);
+              }}
+            >
+              <Ionicons
+                name="close-circle-outline"
+                size={16}
+                color="#B91C1C"
+              />
+              <Text style={styles.destructiveActionText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+      </AnimatedButton>
+    );
+  };
+
+  const renderListHeader = () => (
+    <>
+      <HeaderBar
+        title="My Visitors"
+        hasUnreadNotifications={hasUnreadNotifications}
+        showSideMenu={showSideMenu}
+        onSideMenuToggle={setShowSideMenu}
+      />
+
+      <Animated.View
+        entering={FadeInDown.delay(40).duration(320)}
+        style={styles.infoBanner}
+      >
+        <Ionicons name="information-circle-outline" size={18} color="#1D4ED8" />
+        <Text style={styles.infoBannerText}>
+          Your active unit is determined by the backend. Visitor records are shared
+          across residents on that unit.
+        </Text>
+      </Animated.View>
+
+      <Animated.View
+        entering={FadeInDown.delay(70).duration(320)}
+        style={styles.registerButtonContainer}
+      >
+        <TouchableOpacity
+          style={styles.registerButton}
+          onPress={() => router.push("/(modals)/register-visitor")}
+        >
+          <Ionicons name="person-add" size={20} color="#FFFFFF" />
+          <Text style={styles.registerButtonText}>Add Visitor</Text>
+        </TouchableOpacity>
+      </Animated.View>
+
+      <Animated.View
+        entering={FadeInDown.delay(100).duration(320)}
+        style={styles.filterContainer}
+      >
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterScrollContent}
+        >
+          <FilterTab label="All" count={stats.all} status="all" />
+          <FilterTab label="Expected" count={stats.EXPECTED} status="EXPECTED" />
+          <FilterTab label="Arrived" count={stats.ARRIVED} status="ARRIVED" />
+          <FilterTab label="Completed" count={stats.COMPLETED} status="COMPLETED" />
+          <FilterTab label="Cancelled" count={stats.CANCELLED} status="CANCELLED" />
+        </ScrollView>
+      </Animated.View>
+
+      <Animated.View
+        entering={FadeInDown.delay(130).duration(320)}
+        style={styles.searchContainer}
+      >
+        <Ionicons name="search" size={20} color="#6B7280" style={styles.searchIcon} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search by name, phone, unit, or type..."
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+        {searchQuery.length > 0 ? (
+          <TouchableOpacity onPress={() => setSearchQuery("")}>
+            <Ionicons name="close-circle" size={20} color="#6B7280" />
+          </TouchableOpacity>
+        ) : null}
+      </Animated.View>
+
+      <Animated.View
+        entering={FadeInDown.delay(160).duration(320)}
+        style={styles.sectionHeader}
+      >
+        <Text style={styles.visitorsTitle}>Visitor History</Text>
+      </Animated.View>
+    </>
+  );
+
   if (!isTenancyLoading && !canManageVisitors) {
     return (
       <SafeAreaView style={styles.container}>
@@ -273,225 +477,6 @@ export default function VisitorsScreen() {
       </SafeAreaView>
     );
   }
-
-  const FilterTab = ({
-    label,
-    count,
-    status,
-  }: {
-    label: string;
-    count: number;
-    status: FilterStatus;
-  }) => {
-    const isActive = filterStatus === status;
-    return (
-      <TouchableOpacity
-        style={[styles.filterTab, isActive && styles.filterTabActive]}
-        onPress={() => setFilterStatus(status)}
-      >
-        <Text style={[styles.filterTabText, isActive && styles.filterTabTextActive]}>
-          {label} ({count})
-        </Text>
-      </TouchableOpacity>
-    );
-  };
-
-  const renderVisitorItem = useCallback(
-    ({ item: visitor }: { item: ResidentVisitor }) => {
-      const statusColors = getStatusColor(visitor.status);
-
-      return (
-        <AnimatedButton
-          style={styles.visitorCard}
-          onPress={() => handleVisitorPress(visitor)}
-        >
-          <View style={styles.visitorCardHeader}>
-            <View style={styles.visitorIdentity}>
-              <View style={styles.iconBadge}>
-                <Ionicons name="person-outline" size={18} color="#336BE3" />
-              </View>
-              <View style={styles.visitorNameBlock}>
-                <Text style={styles.visitorName} numberOfLines={1}>
-                  {visitor.visitorName}
-                </Text>
-                <Text style={styles.visitorPhone}>{visitor.phoneNumber}</Text>
-              </View>
-            </View>
-
-            <View
-              style={[
-                styles.statusBadge,
-                { backgroundColor: statusColors.bg },
-              ]}
-            >
-              <Text
-                style={[styles.statusBadgeText, { color: statusColors.text }]}
-              >
-                {visitor.status}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.metaRow}>
-            <Ionicons name="pricetag-outline" size={15} color="#6B7280" />
-            <Text style={styles.metaText}>
-              {formatResidentVisitorType(visitor.type)}
-            </Text>
-          </View>
-
-          <View style={styles.metaRow}>
-            <Ionicons name="business-outline" size={15} color="#6B7280" />
-            <Text style={styles.metaText}>
-              Unit {visitor.unit.label || "Assigned automatically"}
-            </Text>
-          </View>
-
-          <View style={styles.metaRow}>
-            <Ionicons name="time-outline" size={15} color="#6B7280" />
-            <Text style={styles.metaText}>
-              Arrival: {formatDateTime(visitor.expectedArrivalAt)}
-            </Text>
-          </View>
-
-          {visitor.notes ? (
-            <View style={styles.metaRow}>
-              <Ionicons
-                name="document-text-outline"
-                size={15}
-                color="#6B7280"
-              />
-              <Text style={styles.metaText} numberOfLines={2}>
-                {visitor.notes}
-              </Text>
-            </View>
-          ) : null}
-
-          {visitor.status === "EXPECTED" ? (
-            <View style={styles.cardActions}>
-              <TouchableOpacity
-                style={styles.secondaryAction}
-                onPress={(event) => {
-                  event.stopPropagation();
-                  router.push({
-                    pathname: "/(modals)/register-visitor",
-                    params: { visitorId: visitor.id },
-                  } as any);
-                }}
-              >
-                <Ionicons name="create-outline" size={16} color="#1D4ED8" />
-                <Text style={styles.secondaryActionText}>Edit</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.destructiveAction}
-                onPress={(event) => {
-                  event.stopPropagation();
-                  void handleCancelVisitor(visitor);
-                }}
-              >
-                <Ionicons
-                  name="close-circle-outline"
-                  size={16}
-                  color="#B91C1C"
-                />
-                <Text style={styles.destructiveActionText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          ) : null}
-        </AnimatedButton>
-      );
-    },
-    [handleCancelVisitor],
-  );
-
-  const renderListHeader = useCallback(
-    () => (
-      <>
-        <HeaderBar
-          title="My Visitors"
-          hasUnreadNotifications={hasUnreadNotifications}
-          showSideMenu={showSideMenu}
-          onSideMenuToggle={setShowSideMenu}
-        />
-
-        <Animated.View
-          entering={FadeInDown.delay(40).duration(320)}
-          style={styles.infoBanner}
-        >
-          <Ionicons name="information-circle-outline" size={18} color="#1D4ED8" />
-          <Text style={styles.infoBannerText}>
-            Your active unit is determined by the backend. Visitor records are shared
-            across residents on that unit.
-          </Text>
-        </Animated.View>
-
-        <Animated.View
-          entering={FadeInDown.delay(70).duration(320)}
-          style={styles.registerButtonContainer}
-        >
-          <TouchableOpacity
-            style={styles.registerButton}
-            onPress={() => router.push("/(modals)/register-visitor")}
-          >
-            <Ionicons name="person-add" size={20} color="#FFFFFF" />
-            <Text style={styles.registerButtonText}>Add Visitor</Text>
-          </TouchableOpacity>
-        </Animated.View>
-
-        <Animated.View
-          entering={FadeInDown.delay(100).duration(320)}
-          style={styles.filterContainer}
-        >
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filterScrollContent}
-          >
-            <FilterTab label="All" count={stats.all} status="all" />
-            <FilterTab label="Expected" count={stats.EXPECTED} status="EXPECTED" />
-            <FilterTab label="Arrived" count={stats.ARRIVED} status="ARRIVED" />
-            <FilterTab label="Completed" count={stats.COMPLETED} status="COMPLETED" />
-            <FilterTab label="Cancelled" count={stats.CANCELLED} status="CANCELLED" />
-          </ScrollView>
-        </Animated.View>
-
-        <Animated.View
-          entering={FadeInDown.delay(130).duration(320)}
-          style={styles.searchContainer}
-        >
-          <Ionicons name="search" size={20} color="#6B7280" style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search by name, phone, unit, or type..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-          {searchQuery.length > 0 ? (
-            <TouchableOpacity onPress={() => setSearchQuery("")}>
-              <Ionicons name="close-circle" size={20} color="#6B7280" />
-            </TouchableOpacity>
-          ) : null}
-        </Animated.View>
-
-        <Animated.View
-          entering={FadeInDown.delay(160).duration(320)}
-          style={styles.sectionHeader}
-        >
-          <Text style={styles.visitorsTitle}>Visitor History</Text>
-        </Animated.View>
-      </>
-    ),
-    [
-      hasUnreadNotifications,
-      searchQuery,
-      showSideMenu,
-      stats.ARRIVED,
-      stats.CANCELLED,
-      stats.COMPLETED,
-      stats.EXPECTED,
-      stats.all,
-    ],
-  );
 
   return (
     <SafeAreaView style={styles.container}>

@@ -19,8 +19,8 @@ jest.mock('react-native-safe-area-context', () => ({
 }));
 
 jest.mock('expo-router', () => {
-  const React = require('react');
-  const { Text } = require('react-native');
+  const React = jest.requireActual('react');
+  const { Text } = jest.requireActual('react-native');
 
   const Tabs = Object.assign(
     ({ children }: { children?: React.ReactNode }) => <>{children}</>,

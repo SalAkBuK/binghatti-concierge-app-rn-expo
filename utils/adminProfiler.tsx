@@ -300,12 +300,13 @@ export async function measureAsync<T>(label: string, fn: () => Promise<T>): Prom
  *
  * Example usage:
  * @example
- * const { currentUser, notifications } = useApp();
- * useContextRenderLog('Admin/Tenants useApp()', { currentUser, notifications });
+ * const { currentUser } = useAuth();
+ * const { notifications } = useNotifications();
+ * useContextRenderLog('Admin/Tenants narrow hooks', { currentUser, notifications });
  *
  * Example output:
- * [CONTEXT] Admin/Tenants useApp() (#1) changed: currentUser
- * [CONTEXT] Admin/Tenants useApp() (#2) changed: notifications
+ * [CONTEXT] Admin/Tenants narrow hooks (#1) changed: currentUser
+ * [CONTEXT] Admin/Tenants narrow hooks (#2) changed: notifications
  */
 export function useContextRenderLog(name: string, values: Record<string, any>): void {
   const renderCount = useRef(0);

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -86,7 +86,10 @@ export default function ConversationDetailModal() {
     }
   }, [text, conversationId, sending, actions]);
 
-  const messages = activeConversation?.messages || [];
+  const messages = useMemo(
+    () => activeConversation?.messages ?? [],
+    [activeConversation?.messages],
+  );
 
   const others = activeConversation
     ? activeConversation.participants.filter((p) => p.id !== currentUser?.id)

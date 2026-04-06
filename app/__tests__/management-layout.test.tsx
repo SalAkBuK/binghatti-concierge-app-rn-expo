@@ -17,14 +17,14 @@ jest.mock('../../lib/context/auth-context', () => ({
 
 jest.mock('../../components/ui/ManagementTabBar', () => ({
   ManagementTabBar: () => {
-    const { Text } = require('react-native');
+    const { Text } = jest.requireActual('react-native');
     return <Text>Management Tab Bar</Text>;
   },
 }));
 
 jest.mock('expo-router', () => {
-  const React = require('react');
-  const { Text } = require('react-native');
+  const React = jest.requireActual('react');
+  const { Text } = jest.requireActual('react-native');
 
   const Stack = Object.assign(
     ({ children }: { children?: React.ReactNode }) => <>{children}</>,

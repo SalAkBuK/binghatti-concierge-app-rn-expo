@@ -6,7 +6,7 @@ This file documents the current `lib/context/` structure after the provider stab
 
 The live app state is composed from narrow hooks in `lib/context/connected-app-provider.tsx`.
 
-`useApp()` still exists there, but only as a legacy compatibility hook that composes the narrower hooks for old callers. New runtime code should prefer:
+`useApp()` has been removed. New runtime code should prefer:
 
 - `useAuth()`
 - `useRequests()`
@@ -23,9 +23,8 @@ That file should be treated as composition glue, not as the primary place where 
 
 Owns:
 - provider composition order
-- the narrow hook composition used by `useAppDomain()` and the legacy `useApp()` wrapper
+- the narrow hook composition used by `useAppDomain()`
 - cross-context glue such as combined loading/error state
-- legacy compatibility wrappers that still need to stay on the public app surface
 
 Should not grow with new domain logic unless the change is genuinely cross-domain or public-surface glue.
 
@@ -40,7 +39,7 @@ Owns the app-level flattening for:
 - visitor passes
 - visitor logs
 
-Its job is to expose amenity and visitor module behavior through the `useApp()` contract.
+Its job is to expose amenity and visitor module behavior through `useAppDomain()`.
 
 ### `lib/context/use-property-app-state.ts`
 
@@ -101,7 +100,7 @@ Example:
 ### Add logic to an app-state hook when
 
 - a domain module already owns the behavior
-- the app-level contract needs to expose it through `useAppDomain()` or the legacy `useApp()` wrapper
+- the app-level contract needs to expose it through `useAppDomain()`
 - the hook is only flattening, lightly adapting, or preserving compatibility
 
 Example:
@@ -112,7 +111,6 @@ Example:
 - the provider composition order changes
 - combined loading/error/public shape changes
 - a cross-domain wrapper is truly necessary
-- the legacy `useApp()` contract itself must change
 
 If the change can live in a module or a `use-*-app-state.ts` hook, prefer that.
 
@@ -120,12 +118,12 @@ If the change can live in a module or a `use-*-app-state.ts` hook, prefer that.
 
 - Do not put fresh business rules straight into `connected-app-provider.tsx`.
 - Do not add new domain state directly to the provider if a matching module already exists.
-- Do not expose new module internals through `useApp()` unless multiple consumers actually need them.
-- Prefer new public access through narrow hooks, not by extending `useApp()`.
-- If you extend `useApp()`, update this file and `docs/ARCHITECTURE.md` in the same change.
+- Do not reintroduce `useApp()`.
+- Prefer new public access through narrow hooks and `useAppDomain()`.
+- Runtime code should not introduce `useApp()` imports; lint is expected to block that path.
 
 ## 5. Current Limitation
 
-The implementation is cleaner than before, and the runtime app now mostly uses narrow hooks instead of `useApp()`.
+The implementation is cleaner than before, and the runtime app now uses narrow hooks instead of `useApp()`.
 
-The remaining limitation is that the compatibility `useApp()` surface is still broad. Future cleanup should focus on either shrinking it further or removing it entirely once downstream compatibility is no longer needed.
+The remaining limitation is not a compatibility hook anymore; it is just the general need to keep ownership clear between `connected-app-provider.tsx`, the app-state hooks, and the underlying domain modules.

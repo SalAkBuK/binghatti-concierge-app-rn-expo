@@ -21,14 +21,14 @@ jest.mock('react-native-safe-area-context', () => ({
 
 jest.mock('@expo/vector-icons', () => ({
   Ionicons: ({ name }: { name: string }) => {
-    const { Text } = require('react-native');
+    const { Text } = jest.requireActual('react-native');
     return <Text>{`icon:${name}`}</Text>;
   },
 }));
 
 jest.mock('expo-router', () => {
-  const React = require('react');
-  const { Text } = require('react-native');
+  const React = jest.requireActual('react');
+  const { Text } = jest.requireActual('react-native');
 
   const Tabs = Object.assign(
     ({ children, ...props }: { children?: React.ReactNode }) => {
