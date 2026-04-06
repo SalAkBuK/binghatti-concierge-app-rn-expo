@@ -7,16 +7,16 @@ import { HeaderBar } from "../../../components/ui/HeaderBar";
 import { SideMenu } from "../../../components/ui/SideMenu";
 import { MaintenanceSchedulerApiService } from "../../../lib/services/api/maintenance-scheduler";
 import type { MaintenanceSchedule } from "../../../lib/types";
-import { MANAGEMENT_NOTIFICATION_ROUTE, MAINTENANCE_TYPE_ICONS } from "./_constants";
-import { FiltersPanel } from "./_components/FiltersPanel";
-import { CreateScheduleModal } from "./_components/CreateScheduleModal";
-import { ScheduleDetailModal } from "./_components/ScheduleDetailModal";
-import { ScheduleList } from "./_components/ScheduleList";
-import { StatsCards } from "./_components/StatsCards";
-import { useMaintenanceData } from "./_hooks/useMaintenanceData";
-import { styles } from "./_styles";
-import type { MaintenanceFormState, MaintenanceSummary } from "./_types";
-import type { StatusFilter, ViewMode } from "./_constants";
+import { CreateScheduleModal } from "../../../components/management/maintenance/CreateScheduleModal";
+import { FiltersPanel } from "../../../components/management/maintenance/FiltersPanel";
+import { ScheduleDetailModal } from "../../../components/management/maintenance/ScheduleDetailModal";
+import { ScheduleList } from "../../../components/management/maintenance/ScheduleList";
+import { StatsCards } from "../../../components/management/maintenance/StatsCards";
+import { MANAGEMENT_NOTIFICATION_ROUTE, MAINTENANCE_TYPE_ICONS } from "../../../components/management/maintenance/_constants";
+import { styles } from "../../../components/management/maintenance/_styles";
+import type { MaintenanceFormState, MaintenanceSummary } from "../../../components/management/maintenance/_types";
+import type { StatusFilter, ViewMode } from "../../../components/management/maintenance/_constants";
+import { useMaintenanceData } from "../../../lib/hooks/management/maintenance/useMaintenanceData";
 
 const maintenanceService = new MaintenanceSchedulerApiService();
 

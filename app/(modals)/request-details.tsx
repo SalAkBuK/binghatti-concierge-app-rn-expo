@@ -14,9 +14,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { ImageViewer } from "../../components/ui/ImageViewer";
-import { RequestDetailsComments } from "./_components/request-details-comments";
-import { RequestDetailsDeleteModal } from "./_components/request-details-delete-modal";
-import { RequestDetailsOverview } from "./_components/request-details-overview";
+import { RequestDetailsComments } from "../../components/modals/request-details/request-details-comments";
+import { RequestDetailsDeleteModal } from "../../components/modals/request-details/request-details-delete-modal";
+import { RequestDetailsOverview } from "../../components/modals/request-details/request-details-overview";
 import {
   REQUEST_DETAILS_PALETTE as P,
   formatCurrency,
@@ -29,8 +29,8 @@ import {
   normalizeAttachments,
   normalizePriority,
   normalizeStatus,
-} from "./_hooks/request-details-helpers";
-import { useRequestDetailsScreen } from "./_hooks/useRequestDetailsScreen";
+} from "../../lib/hooks/modals/request-details/request-details-helpers";
+import { useRequestDetailsScreen } from "../../lib/hooks/modals/request-details/useRequestDetailsScreen";
 
 export default function RequestDetailsScreen() {
   const params = useLocalSearchParams<{ initialTab?: string | string[] }>();

@@ -41,6 +41,9 @@ export default function TabLayout() {
         tabBarActiveTintColor: "#2B3437",
         tabBarInactiveTintColor: "#8A969B",
         headerShown: false,
+        lazy: true,
+        freezeOnBlur: true,
+        animation: "fade",
         tabBarHideOnKeyboard: true,
         tabBarStyle: {
           position: "absolute",

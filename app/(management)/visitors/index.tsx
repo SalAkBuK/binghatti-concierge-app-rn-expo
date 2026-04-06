@@ -24,10 +24,10 @@ import { HeaderBar } from "../../../components/ui/HeaderBar";
 import { SideMenu } from "../../../components/ui/SideMenu";
 import { VisitorsApiService } from "../../../lib/services/api/visitors";
 
-import { VisitorDetailModal } from "./_components/VisitorDetailModal";
-import { MANAGEMENT_NOTIFICATION_ROUTE, getStatusColor, getStatusIcon } from "./_constants";
-import { useVisitorsData } from "./_hooks/useVisitorsData";
-import { styles } from "./_styles";
+import { VisitorDetailModal } from "../../../components/management/visitors/VisitorDetailModal";
+import { MANAGEMENT_NOTIFICATION_ROUTE, getStatusColor, getStatusIcon } from "../../../components/management/visitors/_constants";
+import { styles } from "../../../components/management/visitors/_styles";
+import { useVisitorsData } from "../../../lib/hooks/management/visitors/useVisitorsData";
 
 const visitorsService = new VisitorsApiService();
 

@@ -672,6 +672,10 @@ export default function RequestsScreen() {
         ListHeaderComponent={renderListHeader}
         ListFooterComponent={renderListFooter}
         contentContainerStyle={[styles.listContent, { paddingBottom: tabBarHeight + 32 }]}
+        initialNumToRender={6}
+        maxToRenderPerBatch={6}
+        windowSize={7}
+        removeClippedSubviews
         refreshControl={
           <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={P.primary} />
         }

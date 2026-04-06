@@ -19,16 +19,16 @@ import { SideMenu } from "../../../components/ui/SideMenu";
 import { BillingApiService } from "../../../lib/services/api/billing";
 import type { MeterReading, BillSummary } from "../../../lib/types";
 
-import { BillDetailModal } from "./_components/BillDetailModal";
-import { MeterReadingDetailModal } from "./_components/MeterReadingDetailModal";
+import { BillDetailModal } from "../../../components/management/billing/BillDetailModal";
+import { MeterReadingDetailModal } from "../../../components/management/billing/MeterReadingDetailModal";
 import {
   MANAGEMENT_NOTIFICATION_ROUTE,
   BILL_STATUS_OPTIONS,
   METER_READING_STATUS_OPTIONS,
-} from "./_constants";
-import { useBillingData } from "./_hooks/useBillingData";
-import { styles } from "./_styles";
-import type { TabType } from "./_types";
+} from "../../../components/management/billing/_constants";
+import { styles } from "../../../components/management/billing/_styles";
+import type { TabType } from "../../../components/management/billing/_types";
+import { useBillingData } from "../../../lib/hooks/management/billing/useBillingData";
 
 const billingService = new BillingApiService();
 

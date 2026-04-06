@@ -19,10 +19,10 @@ import { SideMenu } from "../../../components/ui/SideMenu";
 import { ParcelsApiService } from "../../../lib/services/api/parcels";
 import type { Parcel } from "../../../lib/types";
 
-import { ParcelDetailModal } from "./_components/ParcelDetailModal";
-import { MANAGEMENT_NOTIFICATION_ROUTE } from "./_constants";
-import { useParcelsData } from "./_hooks/useParcelsData";
-import { styles } from "./_styles";
+import { ParcelDetailModal } from "../../../components/management/parcels/ParcelDetailModal";
+import { MANAGEMENT_NOTIFICATION_ROUTE } from "../../../components/management/parcels/_constants";
+import { styles } from "../../../components/management/parcels/_styles";
+import { useParcelsData } from "../../../lib/hooks/management/parcels/useParcelsData";
 
 const parcelsService = new ParcelsApiService();
 

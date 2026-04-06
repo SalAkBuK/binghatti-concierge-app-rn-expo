@@ -13,13 +13,13 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useAuth } from "../../lib/context/auth-context";
 import { useNotifications } from "../../lib/context/notifications-context";
-import { ManagementRequestAssignmentModal } from "./_components/management-request-assignment-modal";
-import { ManagementRequestDetailModal } from "./_components/management-request-detail-modal";
-import { ManagementRequestsFilters } from "./_components/management-requests-filters";
-import { ManagementRequestsList } from "./_components/management-requests-list";
-import { useManagementRequestDetails } from "./_hooks/useManagementRequestDetails";
-import { useManagementRequestsScreen } from "./_hooks/useManagementRequestsScreen";
-import { useRequestAssignmentFlow } from "./_hooks/useRequestAssignmentFlow";
+import { ManagementRequestAssignmentModal } from "../../components/management/requests/management-request-assignment-modal";
+import { ManagementRequestDetailModal } from "../../components/management/requests/management-request-detail-modal";
+import { ManagementRequestsFilters } from "../../components/management/requests/management-requests-filters";
+import { ManagementRequestsList } from "../../components/management/requests/management-requests-list";
+import { useManagementRequestDetails } from "../../lib/hooks/management/requests/useManagementRequestDetails";
+import { useManagementRequestsScreen } from "../../lib/hooks/management/requests/useManagementRequestsScreen";
+import { useRequestAssignmentFlow } from "../../lib/hooks/management/requests/useRequestAssignmentFlow";
 
 const MANAGEMENT_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
 
