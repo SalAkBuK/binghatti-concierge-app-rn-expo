@@ -1,12 +1,15 @@
-# Admin Role Deep Dive
+# Admin Role Reference
 
 ## Overview
-- The admin experience lives under `app/(admin)/` and orchestrates portfolio-level operations across users, buildings, jobs, vendors, and analytics.
-- The layout is shared by three roles. `admin` and `super_admin` receive full visibility, while `management` users can mount the same stack but the UI scopes results to their assigned buildings and hides privileged navigation.
+- The admin experience described here is reference material, not a live mounted portal.
+- There is no `app/(admin)/` route group in the current Expo Router tree.
+- This document captures intended or legacy admin workflows across users, buildings, jobs, vendors, and analytics.
 - All screens consume `useApp()` from `lib/context/connected-app-provider.tsx`. The provider supplies mock data and mutation helpers that should ultimately delegate to the REST client in `lib/services/api/admin.ts`.
 
 ## Access Model & Routing
-`app/(admin)/_layout.tsx` enforces authentication and limits access to `admin`, `super_admin`, and `management`. Navigation is tab-based with role-specific visibility:
+Treat every `app/(admin)/*` path below as a planned or historical target path. It is not mounted by `app/_layout.tsx` today.
+
+The prior admin IA assumed a tab-based layout with role-specific visibility:
 
 | Tab | Screen | Admin access | Management access | Notes |
 | --- | --- | --- | --- | --- |

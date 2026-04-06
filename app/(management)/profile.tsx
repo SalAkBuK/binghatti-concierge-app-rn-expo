@@ -20,7 +20,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { AttachmentPicker } from "../../components/ui/AttachmentPicker";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
-import { useApp } from "../../lib/context/connected-app-provider";
+import { useAuth } from "../../lib/context/auth-context";
+import { useAppDomain } from "../../lib/context/connected-app-provider";
+import { useNotifications } from "../../lib/context/notifications-context";
 import { apiService } from "../../lib/services/api";
 import type { UserProfile } from "../../lib/types";
 import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
@@ -33,7 +35,9 @@ import { APP_CONFIG } from "../../lib/utils/constants";
 const MANAGEMENT_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
 
 export default function ManagementProfileScreen() {
-  const { currentUser, notifications, actions } = useApp();
+  const { currentUser, actions: authActions } = useAuth();
+  const { notifications } = useNotifications();
+  const { property } = useAppDomain();
   const { width } = useWindowDimensions();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
@@ -47,8 +51,8 @@ export default function ManagementProfileScreen() {
 
   // Get managed buildings
   const managedBuildings = useMemo(() => {
-    return actions.getManagedBuildings?.() ?? [];
-  }, [actions]);
+    return property.getManagedBuildings?.() ?? [];
+  }, [property]);
 
   const initialProfile = useMemo(
     () => ({
@@ -89,14 +93,14 @@ export default function ManagementProfileScreen() {
         avatar: avatar[0] || undefined,
       };
 
-      await actions.updateProfile({
+      await authActions.updateProfile({
         name: profileForm.name.trim() || undefined,
         profile: profileUpdates,
       } as any);
 
       // Mark profile as completed after saving details if needed
       if (currentUser && !currentUser.profileCompleted) {
-        await actions.updateUser(currentUser.email, {
+        await authActions.updateUser(currentUser.email, {
           ...currentUser,
           name: profileForm.name.trim(),
           profileCompleted: true,

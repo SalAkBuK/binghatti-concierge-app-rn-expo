@@ -48,12 +48,12 @@ kotlin.incremental=true
 
 ## Ultra-Fast Build Script
 
-### Use `build-apk-fast.bat`
+### Use `scripts/windows/build-apk-fast.bat`
 
 Double-click this file to build and automatically copy APK to Desktop:
 
 ```batch
-build-apk-fast.bat
+scripts\windows\build-apk-fast.bat
 ```
 
 This script:
@@ -239,7 +239,7 @@ cd android && ./gradlew assembleRelease
 cd android && ./gradlew clean assembleRelease
 
 # Use the batch script (recommended)
-build-apk-fast.bat
+scripts\windows\build-apk-fast.bat
 ```
 
 ### Where Is My APK?
@@ -277,8 +277,8 @@ BUILD SUCCESSFUL in 10m 34s
 
 ### Files Created:
 
-1. **build-apk-fast.bat** - One-click build and copy to Desktop
-2. **check-build-status.bat** - Check if build is done and copy APK
+1. **scripts/windows/build-apk-fast.bat** - One-click build and copy to Desktop
+2. **scripts/windows/check-build-status.bat** - Check if build is done and copy APK
 3. **BUILD_SHAREABLE_APK.md** - Complete build guide
 4. **ANDROID_BUILD_OPTIMIZATION.md** - Technical details
 5. **FAST_BUILD_GUIDE.md** - This file
@@ -295,4 +295,4 @@ Subsequent builds with only code changes: **2-5 minutes**
 
 ---
 
-**Ready to build?** Just run: `build-apk-fast.bat`
+**Ready to build?** Just run: `scripts\windows\build-apk-fast.bat`

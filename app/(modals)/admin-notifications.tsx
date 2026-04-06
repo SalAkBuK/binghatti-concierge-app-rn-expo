@@ -15,7 +15,12 @@ import { NoticesList } from "../../components/notifications/NoticesList";
 import { NotificationsList } from "../../components/notifications/NotificationsList";
 import { NotificationsTabBar } from "../../components/notifications/NotificationsTabBar";
 import { ConversationsTab } from "../../components/notifications/ConversationsTab";
-import { useApp } from "../../lib/context/connected-app-provider";
+import {
+  useAuth,
+  useMessaging,
+  useNotices,
+  useNotifications,
+} from "../../lib/context/connected-app-provider";
 import type { Notification, UserRole } from "../../lib/types";
 import { isNotificationUnread } from "../../lib/utils/helpers";
 
@@ -24,16 +29,18 @@ const { width: SCREEN_WIDTH } = Dimensions.get("window");
 export default function AdminNotificationsModal() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ initialTab?: string }>();
+  const { currentUser, userRole } = useAuth();
   const {
-    currentUser,
-    userRole,
     notifications,
     unreadCount,
+    actions: notificationActions,
+  } = useNotifications();
+  const {
     notices,
     activeNoticesCount,
-    messagingUnreadCount,
-    actions,
-  } = useApp();
+    actions: noticeActions,
+  } = useNotices();
+  const { totalUnreadCount: messagingUnreadCount } = useMessaging();
 
   const defaultTab =
     params.initialTab === "notices"
@@ -76,19 +83,19 @@ export default function AdminNotificationsModal() {
   }
 
   const handleMarkAsRead = async (id: string) => {
-    await actions.markNotificationAsRead(id);
+    await notificationActions.markNotificationAsRead(id);
   };
 
   const handleMarkAllAsRead = async () => {
-    await actions.markAllNotificationsAsRead(currentUser.id);
+    await notificationActions.markAllNotificationsAsRead(currentUser.id);
   };
 
   const handleDismissNotification = async (id: string) => {
-    await actions.dismissNotification(id);
+    await notificationActions.dismissNotification(id);
   };
 
   const handleDeleteNotice = async (id: string) => {
-    await actions.deleteNotice(id);
+    await noticeActions.deleteNotice(id);
   };
 
   const handleAddNotice = () => {
@@ -96,7 +103,7 @@ export default function AdminNotificationsModal() {
   };
 
   const handleRefresh = async () => {
-    await actions.refreshNotifications?.();
+    await notificationActions.refreshNotifications();
   };
 
   const handleNotificationPress = (notification: Notification) => {
@@ -110,7 +117,7 @@ export default function AdminNotificationsModal() {
       data?.buildingId ?? data?.building_id ?? data?.buildingID ?? null;
 
     if (isNotificationUnread(notification)) {
-      actions.markNotificationAsRead(notification.id);
+      notificationActions.markNotificationAsRead(notification.id);
     }
 
     const params: Record<string, string> = {

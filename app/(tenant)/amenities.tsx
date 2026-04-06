@@ -4,6 +4,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Dimensions,
+  FlatList,
   ScrollView,
   StyleSheet,
   Text,
@@ -16,7 +17,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { AnimatedButton } from "../../components/ui/AnimatedButton";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
-import { useApp } from "../../lib/context/connected-app-provider";
+import { useAppDomain } from "../../lib/context/connected-app-provider";
+import { useAuth } from "../../lib/context/auth-context";
+import { useNotifications } from "../../lib/context/notifications-context";
 import type { Amenity, AmenityType } from "../../lib/types";
 import {
   filterNotificationsByUser,
@@ -38,7 +41,11 @@ const filterOptions: { label: string; value: FilterType }[] = [
 ];
 
 export default function AmenitiesScreen() {
-  const { currentUser, notifications, amenities } = useApp();
+  const { currentUser } = useAuth();
+  const { notifications } = useNotifications();
+  const {
+    amenityVisitor: { amenities },
+  } = useAppDomain();
   const params = useLocalSearchParams();
   const [filterType, setFilterType] = useState<FilterType>("all");
   const [showSideMenu, setShowSideMenu] = useState(false);
@@ -103,166 +110,155 @@ export default function AmenitiesScreen() {
     return colors[type] || "#6B7280";
   };
 
-  return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={{ paddingBottom: tabBarHeight + 32 }}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Header */}
-        <HeaderBar
-          title="Amenities"
-          hasUnreadNotifications={hasUnreadNotifications}
-          showSideMenu={showSideMenu}
-          onSideMenuToggle={setShowSideMenu}
-        />
+  const renderAmenityItem = ({ item: amenity }: { item: Amenity }) => (
+    <AnimatedButton
+      style={[
+        styles.amenityCard,
+        amenity.status === "maintenance" && styles.amenityCardDisabled,
+      ]}
+      onPress={() => handleAmenityPress(amenity)}
+      disabled={amenity.status === "maintenance"}
+    >
+      <View style={styles.amenityImageContainer}>
+        <View style={styles.amenityImagePlaceholder}>
+          <Ionicons
+            name={getAmenityIcon(amenity.amenityType)}
+            size={40}
+            color={getAmenityIconColor(amenity.amenityType)}
+          />
+        </View>
+        {amenity.status === "maintenance" ? (
+          <View style={styles.maintenanceBadge}>
+            <Ionicons name="construct" size={12} color="#DC2626" />
+            <Text style={styles.maintenanceBadgeText}>
+              Under Maintenance
+            </Text>
+          </View>
+        ) : null}
+      </View>
 
-        {/* Filter Tabs */}
-        <Animated.View
-          entering={FadeInDown.delay(50).duration(400)}
-          style={styles.filtersContainer}
-        >
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filtersScrollContent}
-          >
-            {filterOptions.map((filter) => (
-              <TouchableOpacity
-                key={filter.value}
+      <View style={styles.amenityContent}>
+        <Text style={styles.amenityName} numberOfLines={1}>
+          {amenity.name}
+        </Text>
+        <Text style={styles.amenityType}>
+          {amenity.amenityType.toUpperCase()}
+        </Text>
+
+        <View style={styles.amenityInfo}>
+          <View style={styles.amenityInfoRow}>
+            <Ionicons name="people-outline" size={14} color="#6B7280" />
+            <Text style={styles.amenityInfoText}>
+              Capacity: {amenity.capacity}
+            </Text>
+          </View>
+          <View style={styles.amenityInfoRow}>
+            <Ionicons name="time-outline" size={14} color="#6B7280" />
+            <Text style={styles.amenityInfoText}>
+              {amenity.operatingHours.monday?.open} -{" "}
+              {amenity.operatingHours.monday?.close}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.amenityFooter}>
+          {amenity.status === "active" ? (
+            <View
+              style={[
+                styles.statusBadge,
+                { backgroundColor: "#D1FAE5" },
+              ]}
+            >
+              <View style={styles.statusDot} />
+              <Text
                 style={[
-                  styles.filterButton,
-                  filterType === filter.value && styles.filterButtonActive,
+                  styles.statusBadgeText,
+                  { color: "#065F46" },
                 ]}
-                onPress={() => setFilterType(filter.value)}
               >
-                <Text
-                  style={[
-                    styles.filterButtonText,
-                    filterType === filter.value && styles.filterButtonTextActive,
-                  ]}
-                >
-                  {filter.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </Animated.View>
-
-        {/* Amenities List */}
-        <Animated.View
-          entering={FadeInDown.delay(100).duration(400)}
-          style={styles.amenitiesContainer}
-        >
-          {filteredAmenities.length > 0 ? (
-            filteredAmenities.map((amenity, index) => (
-              <Animated.View
-                key={amenity.id}
-                entering={FadeInDown.delay(150 + index * 50).duration(400)}
-              >
-                <AnimatedButton
-                  style={[
-                    styles.amenityCard,
-                    amenity.status === "maintenance" &&
-                      styles.amenityCardDisabled,
-                  ]}
-                  onPress={() => handleAmenityPress(amenity)}
-                  disabled={amenity.status === "maintenance"}
-                >
-                  {/* Amenity Image */}
-                  <View style={styles.amenityImageContainer}>
-                    <View style={styles.amenityImagePlaceholder}>
-                      <Ionicons
-                        name={getAmenityIcon(amenity.amenityType)}
-                        size={40}
-                        color={getAmenityIconColor(amenity.amenityType)}
-                      />
-                    </View>
-                    {amenity.status === "maintenance" && (
-                      <View style={styles.maintenanceBadge}>
-                        <Ionicons name="construct" size={12} color="#DC2626" />
-                        <Text style={styles.maintenanceBadgeText}>
-                          Under Maintenance
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-
-                  {/* Amenity Details */}
-                  <View style={styles.amenityContent}>
-                    <Text style={styles.amenityName} numberOfLines={1}>
-                      {amenity.name}
-                    </Text>
-                    <Text style={styles.amenityType}>
-                      {amenity.amenityType.toUpperCase()}
-                    </Text>
-
-                    <View style={styles.amenityInfo}>
-                      <View style={styles.amenityInfoRow}>
-                        <Ionicons
-                          name="people-outline"
-                          size={14}
-                          color="#6B7280"
-                        />
-                        <Text style={styles.amenityInfoText}>
-                          Capacity: {amenity.capacity}
-                        </Text>
-                      </View>
-                      <View style={styles.amenityInfoRow}>
-                        <Ionicons name="time-outline" size={14} color="#6B7280" />
-                        <Text style={styles.amenityInfoText}>
-                          {amenity.operatingHours.monday?.open} -{" "}
-                          {amenity.operatingHours.monday?.close}
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.amenityFooter}>
-                      {amenity.status === "active" ? (
-                        <View
-                          style={[
-                            styles.statusBadge,
-                            { backgroundColor: "#D1FAE5" },
-                          ]}
-                        >
-                          <View style={styles.statusDot} />
-                          <Text
-                            style={[
-                              styles.statusBadgeText,
-                              { color: "#065F46" },
-                            ]}
-                          >
-                            Available
-                          </Text>
-                        </View>
-                      ) : null}
-                      {amenity.status === "active" && (
-                        <Ionicons
-                          name="chevron-forward"
-                          size={16}
-                          color="#6B7280"
-                        />
-                      )}
-                    </View>
-                  </View>
-                </AnimatedButton>
-              </Animated.View>
-            ))
-          ) : (
-            <View style={styles.emptyState}>
-              <Ionicons name="cube-outline" size={64} color="#D1D5DB" />
-              <Text style={styles.emptyStateTitle}>No amenities found</Text>
-              <Text style={styles.emptyStateText}>
-                No {filterType !== "all" ? filterType : ""} amenities available
-                at this time
+                Available
               </Text>
             </View>
-          )}
-        </Animated.View>
-      </ScrollView>
+          ) : null}
+          {amenity.status === "active" ? (
+            <Ionicons name="chevron-forward" size={16} color="#6B7280" />
+          ) : null}
+        </View>
+      </View>
+    </AnimatedButton>
+  );
 
-      {/* Side Menu */}
+  const renderListHeader = () => (
+    <>
+      <HeaderBar
+        title="Amenities"
+        hasUnreadNotifications={hasUnreadNotifications}
+        showSideMenu={showSideMenu}
+        onSideMenuToggle={setShowSideMenu}
+      />
+
+      <Animated.View
+        entering={FadeInDown.delay(50).duration(400)}
+        style={styles.filtersContainer}
+      >
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filtersScrollContent}
+        >
+          {filterOptions.map((filter) => (
+            <TouchableOpacity
+              key={filter.value}
+              style={[
+                styles.filterButton,
+                filterType === filter.value && styles.filterButtonActive,
+              ]}
+              onPress={() => setFilterType(filter.value)}
+            >
+              <Text
+                style={[
+                  styles.filterButtonText,
+                  filterType === filter.value && styles.filterButtonTextActive,
+                ]}
+              >
+                {filter.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </Animated.View>
+    </>
+  );
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <FlatList
+        data={filteredAmenities}
+        renderItem={renderAmenityItem}
+        keyExtractor={(item) => item.id}
+        ListHeaderComponent={renderListHeader}
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <Ionicons name="cube-outline" size={64} color="#D1D5DB" />
+            <Text style={styles.emptyStateTitle}>No amenities found</Text>
+            <Text style={styles.emptyStateText}>
+              No {filterType !== "all" ? filterType : ""} amenities available at this time
+            </Text>
+          </View>
+        }
+        ItemSeparatorComponent={() => <View style={styles.listSpacer} />}
+        contentContainerStyle={[
+          styles.listContent,
+          { paddingBottom: tabBarHeight + 32 },
+          filteredAmenities.length === 0 && styles.emptyListContent,
+        ]}
+        showsVerticalScrollIndicator={false}
+        removeClippedSubviews
+        windowSize={8}
+        initialNumToRender={6}
+        maxToRenderPerBatch={8}
+      />
+
       <SideMenu
         isVisible={showSideMenu}
         onClose={() => setShowSideMenu(false)}
@@ -276,9 +272,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F9FAFB",
   },
-  scrollView: {
-    flex: 1,
+  listContent: {
     paddingHorizontal: SCREEN_WIDTH * 0.05,
+  },
+  emptyListContent: {
+    flexGrow: 1,
   },
   filtersContainer: {
     marginBottom: 20,
@@ -307,14 +305,13 @@ const styles = StyleSheet.create({
   filterButtonTextActive: {
     color: "#FFFFFF",
   },
-  amenitiesContainer: {
-    paddingBottom: 20,
+  listSpacer: {
+    height: 16,
   },
   amenityCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 12,
     padding: 16,
-    marginBottom: 16,
     borderWidth: 1,
     borderColor: "#E5E7EB",
     width: SCREEN_WIDTH * 0.9,

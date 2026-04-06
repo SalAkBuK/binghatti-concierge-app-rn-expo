@@ -1,5 +1,10 @@
 import { useCallback, useState } from "react";
 
+/**
+ * Data maturity: mock-backed.
+ * Ratings and summaries currently come from `utils/mockData` and are mutated in
+ * local state only. There is no real persistence layer behind this module yet.
+ */
 import type { Rating, RatingSummary, Building } from "../../types";
 import { DEFAULT_RATINGS, DEFAULT_RATING_SUMMARIES } from "../../utils/mockData";
 import { generateId } from "../../utils";

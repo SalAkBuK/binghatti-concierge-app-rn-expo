@@ -1,5 +1,10 @@
 import { useCallback, useState } from "react";
 
+/**
+ * Data maturity: mock-backed.
+ * Jobs still initialize from `utils/mockData` and rely on simulated async
+ * updates in local state. Treat this module as non-persistent for now.
+ */
 import type {
   Building,
   BuildingEmployee,

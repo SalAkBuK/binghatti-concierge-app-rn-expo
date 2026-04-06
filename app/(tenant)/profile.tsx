@@ -20,7 +20,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
-import { useApp } from "../../lib/context/connected-app-provider";
+import { useAuth } from "../../lib/context/auth-context";
+import { useNotifications } from "../../lib/context/notifications-context";
+import { useResidentContract } from "../../lib/hooks/useResidentSelfService";
 import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
 import { apiService } from "../../lib/services/api";
 import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
@@ -48,9 +50,78 @@ interface ValidationErrors {
   emergencyContactPhone?: string;
 }
 
+const P = {
+  bg: "#F8F9FA",
+  surface: "#FFFFFF",
+  surfaceLow: "#F1F4F6",
+  border: "#D9E0E4",
+  text: "#2B3437",
+  muted: "#667176",
+  soft: "#7A8488",
+  primary: "#4D6169",
+  primaryDark: "#34474D",
+  primarySoft: "#D6E4E8",
+  accent: "#F7EEDF",
+  accentBorder: "#EBD8BB",
+  successBg: "#E4F4EA",
+  successText: "#25674A",
+  warningBg: "#FDF1DB",
+  warningText: "#9A5B00",
+  dangerBg: "#FCE3E0",
+  dangerText: "#B24A41",
+  infoBg: "#E7EEF9",
+  infoText: "#3C5A8C",
+};
+
+const formatMoney = (value?: string | null) => {
+  if (!value) return "Not listed";
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return value;
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "AED",
+    maximumFractionDigits: 0,
+  }).format(parsed);
+};
+
+const formatDate = (value?: string | null) => {
+  if (!value) return "Not set";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Not set";
+  return parsed.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+};
+
+const formatRole = (role?: string | null) =>
+  role ? role.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase()) : "Tenant";
+
+const firstName = (name?: string | null) => name?.trim().split(/\s+/)[0] || "Resident";
+
+const initials = (name?: string | null) =>
+  name?.trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("") || "R";
+
+const leaseSummary = (endDate?: string | null) => {
+  if (!endDate) return "Lease dates will appear once a contract is linked.";
+  const parsed = new Date(endDate);
+  if (Number.isNaN(parsed.getTime())) return "Lease dates will appear once a contract is linked.";
+  const days = Math.ceil((parsed.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  if (days >= 0) {
+    return `Lease ends in ${days} day${days === 1 ? "" : "s"}.`;
+  }
+  return `Lease ended ${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"} ago.`;
+};
+
 export default function ProfileScreen() {
   const tabBarHeight = useBottomTabBarHeight();
-  const { currentUser, notifications, actions, isAuthenticated } = useApp();
+  const { currentUser, isAuthenticated, actions: authActions } = useAuth();
+  const { notifications } = useNotifications();
 
   const [profileData, setProfileData] = useState<ProfileFormData>({
     name: currentUser?.profile?.name || currentUser?.name || "",
@@ -66,10 +137,28 @@ export default function ProfileScreen() {
       currentUser?.profile?.emergencyPhone ||
       "",
   });
+  const { data: contractData, isLoading: isContractLoading } = useResidentContract({
+    enabled: Boolean(currentUser?.id && isAuthenticated),
+  });
   const { displayBuildingName } = useResidentTenancy({
     enabled: Boolean(currentUser?.role === "tenant" && currentUser?.id && isAuthenticated),
+    latestContractData: contractData,
   });
   const buildingName = displayBuildingName || currentUser?.profile?.buildingName || "Not provided";
+  const activeContract = contractData.contract;
+  const unitLabel =
+    currentUser?.profile?.apartment ||
+    activeContract?.unitLabel ||
+    activeContract?.unit?.label ||
+    "Not assigned";
+  const floorLabel =
+    currentUser?.profile?.floor ||
+    (activeContract?.unit?.floor != null ? String(activeContract.unit.floor) : null) ||
+    "Not assigned";
+  const residentName = profileData.name || currentUser?.name || "Resident";
+  const leaseStatusLabel = activeContract?.status
+    ? formatRole(String(activeContract.status).toLowerCase())
+    : "No active lease";
 
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
@@ -151,7 +240,7 @@ export default function ProfileScreen() {
         throw new Error("User not found");
       }
 
-      const updatedUser = await actions.updateProfile({
+      const updatedUser = await authActions.updateProfile({
         name: profileData.name,
         profile: {
           phone: profileData.phone,
@@ -196,7 +285,7 @@ export default function ProfileScreen() {
         style: "destructive",
         onPress: async () => {
           try {
-            await actions.logout();
+            await authActions.logout();
             router.replace("/auth");
           } catch (error) {
             console.error("Logout error:", error);
@@ -306,48 +395,131 @@ export default function ProfileScreen() {
           style={styles.scrollView}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingBottom: tabBarHeight + 32 }}
+          showsVerticalScrollIndicator={false}
         >
-          {/* Navigation Header */}
           <HeaderBar
-            title="Profile"
+            showTitle={false}
             hasUnreadNotifications={hasUnreadNotifications}
             showSideMenu={showSideMenu}
             onSideMenuToggle={setShowSideMenu}
+            textColor={P.text}
           />
 
-          {/* Profile Header */}
-          <View style={styles.header}>
-            <View style={styles.headerContent}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>
-                  {(profileData.name || "U").charAt(0).toUpperCase()}
-                </Text>
+          <View style={styles.heroCard}>
+            <View style={styles.heroTopRow}>
+              <View style={styles.heroProfileBlock}>
+                <LinearGradient
+                  colors={[P.primary, P.primaryDark]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.avatar}
+                >
+                  <Text style={styles.avatarText}>{initials(residentName)}</Text>
+                </LinearGradient>
+
+                <View style={styles.headerText}>
+                  <Text style={styles.heroEyebrow}>{buildingName}</Text>
+                  <Text style={styles.headerTitle}>{residentName}</Text>
+                  <Text style={styles.headerSubtitle}>
+                    {unitLabel} • Floor {floorLabel === "Not assigned" ? "-" : floorLabel}
+                  </Text>
+                </View>
               </View>
-              <View style={styles.headerText}>
-                <Text style={styles.headerTitle}>
-                  {profileData.name || "User"}
-                </Text>
-                <Text style={styles.headerSubtitle}>
-                  {currentUser?.role || "Tenant"}
-                </Text>
-              </View>
+
+              <TouchableOpacity
+                style={styles.editButton}
+                onPress={() => setIsEditing(!isEditing)}
+              >
+                <Ionicons
+                  name={isEditing ? "close" : "pencil"}
+                  size={18}
+                  color={isEditing ? P.dangerText : P.primary}
+                />
+              </TouchableOpacity>
             </View>
 
-            <TouchableOpacity
-              style={styles.editButton}
-              onPress={() => setIsEditing(!isEditing)}
-            >
-              <Ionicons
-                name={isEditing ? "close" : "pencil"}
-                size={20}
-                color={isEditing ? "#ef4444" : "#2563eb"}
-              />
-            </TouchableOpacity>
+            <Text style={styles.heroDescription}>
+              {isEditing
+                ? "Update your personal details and emergency contact information."
+                : `Good to see you, ${firstName(residentName)}. Your residence and lease snapshot stay accessible here.`}
+            </Text>
+
+            <View style={styles.profilePillRow}>
+              <View style={styles.profilePill}>
+                <Ionicons name="person-outline" size={15} color={P.primary} />
+                <Text style={styles.profilePillText}>{formatRole(currentUser?.role)}</Text>
+              </View>
+              <View style={styles.profilePill}>
+                <Ionicons name="business-outline" size={15} color={P.primary} />
+                <Text style={styles.profilePillText}>{buildingName}</Text>
+              </View>
+              <View style={styles.profilePill}>
+                <Ionicons name="home-outline" size={15} color={P.primary} />
+                <Text style={styles.profilePillText}>{unitLabel}</Text>
+              </View>
+            </View>
           </View>
 
-          {/* Profile Form */}
+          <LinearGradient
+            colors={[P.primary, P.primaryDark]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.contractHero}
+          >
+            <View style={styles.contractHeroCopy}>
+              <Text style={styles.contractHeroEyebrow}>Lease Snapshot</Text>
+              <Text style={styles.contractHeroValue}>
+                {activeContract
+                  ? formatMoney(activeContract.annualRent || activeContract.contractValue)
+                  : "No active lease"}
+              </Text>
+              <Text style={styles.contractHeroSubtitle}>
+                {activeContract
+                  ? leaseSummary(activeContract.endDate)
+                  : "A linked contract will appear here once available."}
+              </Text>
+            </View>
+
+            <View style={styles.contractHeroFooter}>
+              <View style={styles.contractStatusPill}>
+                <Text style={styles.contractStatusPillText}>{leaseStatusLabel}</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.contractHeroAction}
+                onPress={() => router.push("/(tenant)/lease-details" as any)}
+              >
+                <Text style={styles.contractHeroActionText}>Open Contract</Text>
+              </TouchableOpacity>
+            </View>
+          </LinearGradient>
+
+          <View style={styles.summaryGrid}>
+            <View style={[styles.summaryCard, styles.summaryCardAccent]}>
+              <Text style={styles.summaryLabel}>Lease End</Text>
+              <Text style={styles.summaryValue}>{formatDate(activeContract?.endDate)}</Text>
+            </View>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryLabel}>Deposit</Text>
+              <Text style={styles.summaryValue}>
+                {formatMoney(activeContract?.securityDepositAmount)}
+              </Text>
+            </View>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryLabel}>Contract</Text>
+              <Text style={styles.summaryValue}>
+                {activeContract?.contractNumber || "Not linked"}
+              </Text>
+            </View>
+          </View>
+
           <View style={styles.formContainer}>
-            <Text style={styles.sectionTitle}>Personal Information</Text>
+            <View style={styles.sectionHeader}>
+              <View>
+                <Text style={styles.sectionEyebrow}>Resident Profile</Text>
+                <Text style={styles.sectionTitle}>Personal Information</Text>
+              </View>
+              {isSaving ? <ActivityIndicator size="small" color={P.primary} /> : null}
+            </View>
 
             {renderProfileField(
               "Full Name *",
@@ -355,7 +527,6 @@ export default function ProfileScreen() {
               "name",
               "Enter your full name",
             )}
-
             {renderProfileField(
               "Email Address *",
               profileData.email,
@@ -363,7 +534,6 @@ export default function ProfileScreen() {
               "Enter your email",
               "email-address",
             )}
-
             {renderProfileField(
               "Phone Number",
               profileData.phone,
@@ -371,7 +541,6 @@ export default function ProfileScreen() {
               "Enter your phone number",
               "phone-pad",
             )}
-
             {renderProfileField(
               "Previous Address",
               profileData.previousAddress,
@@ -380,6 +549,15 @@ export default function ProfileScreen() {
               "default",
               true,
             )}
+          </View>
+
+          <View style={styles.formContainer}>
+            <View style={styles.sectionHeader}>
+              <View>
+                <Text style={styles.sectionEyebrow}>Safety</Text>
+                <Text style={styles.sectionTitle}>Emergency Contact</Text>
+              </View>
+            </View>
 
             {renderProfileField(
               "Emergency Contact Name",
@@ -387,7 +565,6 @@ export default function ProfileScreen() {
               "emergencyContactName",
               "Enter emergency contact name",
             )}
-
             {renderProfileField(
               "Emergency Contact Phone",
               profileData.emergencyContactPhone,
@@ -395,46 +572,48 @@ export default function ProfileScreen() {
               "Enter emergency contact phone",
               "phone-pad",
             )}
+          </View>
 
-            <Text style={styles.sectionTitle}>Property Information</Text>
-
-            <View style={styles.fieldContainer}>
-              <Text style={styles.fieldLabel}>Unit</Text>
-              <Text style={styles.fieldValue}>
-                {currentUser?.profile?.apartment || "Not provided"}
-              </Text>
+          <View style={styles.formContainer}>
+            <View style={styles.sectionHeader}>
+              <View>
+                <Text style={styles.sectionEyebrow}>Residence</Text>
+                <Text style={styles.sectionTitle}>Property Information</Text>
+              </View>
+              {isContractLoading ? <ActivityIndicator size="small" color={P.primary} /> : null}
             </View>
 
-            <View style={styles.fieldContainer}>
-              <Text style={styles.fieldLabel}>Floor</Text>
-              <Text style={styles.fieldValue}>
-                {currentUser?.profile?.floor || "Not provided"}
-              </Text>
+            <View style={styles.detailCard}>
+              <Text style={styles.detailLabel}>Building</Text>
+              <Text style={styles.detailValue}>{buildingName}</Text>
             </View>
-
-            <View style={styles.fieldContainer}>
-              <Text style={styles.fieldLabel}>Building</Text>
-              <Text style={styles.fieldValue}>
-                {buildingName}
-              </Text>
+            <View style={styles.detailCard}>
+              <Text style={styles.detailLabel}>Unit</Text>
+              <Text style={styles.detailValue}>{unitLabel}</Text>
             </View>
+            <View style={styles.detailCard}>
+              <Text style={styles.detailLabel}>Floor</Text>
+              <Text style={styles.detailValue}>{floorLabel}</Text>
+            </View>
+            <View style={styles.detailCard}>
+              <Text style={styles.detailLabel}>Lease Status</Text>
+              <Text style={styles.detailValue}>{leaseStatusLabel}</Text>
+            </View>
+          </View>
 
-            {/* Action Buttons */}
-            {isEditing && (
+          {isEditing ? (
+            <View style={styles.formContainer}>
               <View style={styles.buttonContainer}>
                 <TouchableOpacity
                   style={styles.cancelButton}
                   onPress={() => {
                     setIsEditing(false);
                     setValidationErrors({});
-                    // Reset form data
                     setProfileData({
-                      name:
-                        currentUser?.profile?.name || currentUser?.name || "",
+                      name: currentUser?.profile?.name || currentUser?.name || "",
                       email: currentUser?.email || "",
                       phone: currentUser?.profile?.phone || "",
-                      previousAddress:
-                        (currentUser?.profile as any)?.currentAddress || "",
+                      previousAddress: (currentUser?.profile as any)?.currentAddress || "",
                       emergencyContactName:
                         (currentUser?.profile as any)?.emergencyContactName ||
                         currentUser?.profile?.emergencyContact ||
@@ -450,60 +629,54 @@ export default function ProfileScreen() {
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[
-                    styles.saveButton,
-                    isSaving && styles.saveButtonDisabled,
-                  ]}
+                  style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
                   onPress={handleSave}
                   disabled={isSaving}
                 >
                   {isSaving ? (
-                    <ActivityIndicator color="white" />
+                    <ActivityIndicator color={P.surface} />
                   ) : (
                     <>
-                      <Ionicons name="checkmark" size={20} color="white" />
+                      <Ionicons name="checkmark" size={18} color={P.surface} />
                       <Text style={styles.saveButtonText}>Save Changes</Text>
                     </>
                   )}
                 </TouchableOpacity>
               </View>
-            )}
-
-            {/* Logout Button */}
-            {!isEditing && (
+            </View>
+          ) : (
+            <View style={styles.actionGrid}>
               <TouchableOpacity
-                style={styles.leaseDetailsButton}
+                style={styles.actionCard}
                 onPress={() => router.push("/(tenant)/lease-details" as any)}
               >
-                <Ionicons name="document-text-outline" size={20} color="#1f2937" />
-                <Text style={styles.leaseDetailsButtonText}>
-                  Contract Details
-                </Text>
+                <View style={styles.actionIconWrap}>
+                  <Ionicons name="document-text-outline" size={18} color={P.primary} />
+                </View>
+                <Text style={styles.actionTitle}>Contract Details</Text>
+                <Text style={styles.actionText}>Open your full lease and documents</Text>
               </TouchableOpacity>
-            )}
 
-            {!isEditing && (
-              <TouchableOpacity
-                style={styles.changePasswordButton}
-                onPress={handleOpenPasswordModal}
-              >
-                <Ionicons name="key-outline" size={20} color="#1f2937" />
-                <Text style={styles.changePasswordButtonText}>
-                  Change Password
-                </Text>
+              <TouchableOpacity style={styles.actionCard} onPress={handleOpenPasswordModal}>
+                <View style={styles.actionIconWrap}>
+                  <Ionicons name="key-outline" size={18} color={P.primary} />
+                </View>
+                <Text style={styles.actionTitle}>Change Password</Text>
+                <Text style={styles.actionText}>Update your account credentials</Text>
               </TouchableOpacity>
-            )}
 
-            {!isEditing && (
               <TouchableOpacity
-                style={styles.logoutButton}
+                style={[styles.actionCard, styles.actionCardDanger]}
                 onPress={handleLogout}
               >
-                <Ionicons name="log-out-outline" size={20} color="#ef4444" />
-                <Text style={styles.logoutButtonText}>Logout</Text>
+                <View style={[styles.actionIconWrap, styles.actionIconWrapDanger]}>
+                  <Ionicons name="log-out-outline" size={18} color={P.dangerText} />
+                </View>
+                <Text style={styles.actionTitle}>Logout</Text>
+                <Text style={styles.actionText}>Sign out of your resident account</Text>
               </TouchableOpacity>
-            )}
-          </View>
+            </View>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -524,14 +697,14 @@ export default function ProfileScreen() {
           />
           <View style={styles.modalCard}>
             <LinearGradient
-              colors={["#2563EB", "#4F46E5"]}
+              colors={[P.primary, P.primaryDark]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.modalHeader}
             >
               <View style={styles.modalHeaderLeft}>
                 <View style={styles.modalIconCircle}>
-                  <Ionicons name="lock-closed-outline" size={20} color="#fff" />
+                  <Ionicons name="lock-closed-outline" size={20} color={P.surface} />
                 </View>
                 <View>
                   <Text style={styles.modalTitle}>Change Password</Text>
@@ -545,7 +718,7 @@ export default function ProfileScreen() {
                 onPress={() => handleClosePasswordModal()}
                 disabled={isResettingPassword}
               >
-                <Ionicons name="close" size={18} color="#fff" />
+                <Ionicons name="close" size={18} color={P.surface} />
               </TouchableOpacity>
             </LinearGradient>
 
@@ -585,7 +758,7 @@ export default function ProfileScreen() {
                   <Ionicons
                     name={showCurrentPassword ? "eye-off-outline" : "eye-outline"}
                     size={18}
-                    color="#475569"
+                    color={P.muted}
                   />
                 </TouchableOpacity>
               </View>
@@ -618,7 +791,7 @@ export default function ProfileScreen() {
                   <Ionicons
                     name={showPassword ? "eye-off-outline" : "eye-outline"}
                     size={18}
-                    color="#475569"
+                    color={P.muted}
                   />
                 </TouchableOpacity>
               </View>
@@ -653,13 +826,13 @@ export default function ProfileScreen() {
                   }
                 >
                   <LinearGradient
-                    colors={["#2563EB", "#1D4ED8"]}
+                    colors={[P.primary, P.primaryDark]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={styles.modalPrimaryGradient}
                   >
                     {isResettingPassword ? (
-                      <ActivityIndicator color="#fff" />
+                      <ActivityIndicator color={P.surface} />
                     ) : (
                       <Text style={styles.modalPrimaryText}>
                         Update Password
@@ -685,7 +858,7 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f9fafb",
+    backgroundColor: P.bg,
   },
   keyboardAvoidingView: {
     flex: 1,
@@ -694,208 +867,376 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 20,
   },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 20,
+  heroCard: {
+    backgroundColor: P.surface,
+    borderRadius: 28,
+    padding: 20,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: P.border,
   },
-  headerContent: {
+  heroTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
+    marginBottom: 12,
+  },
+  heroProfileBlock: {
     flexDirection: "row",
     alignItems: "center",
     flex: 1,
   },
   avatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "#2563eb",
+    width: 72,
+    height: 72,
+    borderRadius: 24,
     alignItems: "center",
     justifyContent: "center",
     marginRight: 16,
   },
   avatarText: {
     fontSize: 24,
-    fontWeight: "bold",
-    color: "white",
+    fontWeight: "800",
+    color: P.surface,
   },
   headerText: {
     flex: 1,
   },
+  heroEyebrow: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: P.soft,
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
+    marginBottom: 6,
+  },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#111827",
+    fontSize: 28,
+    lineHeight: 32,
+    fontWeight: "800",
+    color: P.text,
   },
   headerSubtitle: {
     fontSize: 14,
-    color: "#6b7280",
-    textTransform: "capitalize",
-    marginTop: 2,
+    lineHeight: 20,
+    color: P.muted,
+    marginTop: 6,
   },
   editButton: {
-    padding: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: P.surfaceLow,
+    borderWidth: 1,
+    borderColor: P.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  heroDescription: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: P.muted,
+    marginBottom: 14,
+  },
+  profilePillRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  profilePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: P.surfaceLow,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderWidth: 1,
+    borderColor: P.border,
+  },
+  profilePillText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: P.text,
+  },
+  contractHero: {
+    borderRadius: 28,
+    padding: 20,
+    marginBottom: 16,
+  },
+  contractHeroCopy: {
+    gap: 8,
+    marginBottom: 18,
+  },
+  contractHeroEyebrow: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "rgba(255,255,255,0.74)",
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
+  },
+  contractHeroValue: {
+    fontSize: 30,
+    lineHeight: 34,
+    fontWeight: "800",
+    color: P.surface,
+  },
+  contractHeroSubtitle: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: "rgba(255,255,255,0.78)",
+  },
+  contractHeroFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+  },
+  contractStatusPill: {
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(255,255,255,0.14)",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.14)",
+  },
+  contractStatusPillText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: P.surface,
+    textTransform: "capitalize",
+  },
+  contractHeroAction: {
+    backgroundColor: "rgba(255,255,255,0.16)",
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  contractHeroActionText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: P.surface,
+  },
+  summaryGrid: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 16,
+  },
+  summaryCard: {
+    flex: 1,
+    minHeight: 96,
+    borderRadius: 22,
+    padding: 16,
+    backgroundColor: P.surface,
+    borderWidth: 1,
+    borderColor: P.border,
+    justifyContent: "space-between",
+  },
+  summaryCardAccent: {
+    backgroundColor: P.accent,
+    borderColor: P.accentBorder,
+  },
+  summaryLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: P.soft,
+    textTransform: "uppercase",
+    letterSpacing: 1.1,
+  },
+  summaryValue: {
+    fontSize: 16,
+    lineHeight: 21,
+    fontWeight: "700",
+    color: P.text,
   },
   formContainer: {
-    backgroundColor: "white",
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    backgroundColor: P.surface,
+    borderRadius: 24,
+    padding: 18,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: P.border,
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
+    marginBottom: 14,
+  },
+  sectionEyebrow: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: P.soft,
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
+    marginBottom: 4,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#111827",
-    marginBottom: 16,
-    marginTop: 8,
+    fontSize: 19,
+    fontWeight: "700",
+    color: P.text,
   },
   fieldContainer: {
-    marginBottom: 20,
+    marginBottom: 18,
   },
   fieldLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#374151",
+    fontSize: 11,
+    fontWeight: "700",
+    color: P.soft,
     marginBottom: 8,
+    textTransform: "uppercase",
+    letterSpacing: 1.1,
   },
   fieldValue: {
-    fontSize: 16,
-    color: "#111827",
-    paddingVertical: 8,
-    minHeight: 24,
+    fontSize: 15,
+    color: P.text,
+    lineHeight: 21,
+    minHeight: 22,
+    paddingHorizontal: 2,
   },
   textInput: {
     borderWidth: 1,
-    borderColor: "#d1d5db",
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    backgroundColor: "white",
-    minHeight: 48,
+    borderColor: P.border,
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 15,
+    backgroundColor: P.surfaceLow,
+    minHeight: 54,
+    color: P.text,
   },
   textArea: {
-    minHeight: 80,
+    minHeight: 100,
     textAlignVertical: "top",
   },
   errorInput: {
-    borderColor: "#ef4444",
+    borderColor: P.dangerText,
   },
   errorText: {
-    color: "#ef4444",
+    color: P.dangerText,
     fontSize: 12,
-    marginTop: 4,
+    marginTop: 6,
+    fontWeight: "600",
+  },
+  detailCard: {
+    backgroundColor: P.surfaceLow,
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: P.border,
+    marginBottom: 10,
+  },
+  detailLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: P.soft,
+    textTransform: "uppercase",
+    letterSpacing: 1.1,
+    marginBottom: 4,
+  },
+  detailValue: {
+    fontSize: 15,
+    lineHeight: 21,
+    color: P.text,
+    fontWeight: "600",
   },
   buttonContainer: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 20,
+    gap: 12,
   },
   cancelButton: {
     flex: 1,
-    backgroundColor: "#f3f4f6",
-    borderRadius: 8,
-    padding: 16,
+    backgroundColor: P.surfaceLow,
+    borderRadius: 18,
+    minHeight: 54,
     alignItems: "center",
-    marginRight: 8,
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: P.border,
   },
   cancelButtonText: {
-    color: "#374151",
-    fontSize: 16,
+    color: P.text,
+    fontSize: 15,
     fontWeight: "600",
   },
   saveButton: {
     flex: 1,
-    backgroundColor: "#2563eb",
-    borderRadius: 8,
-    padding: 16,
+    backgroundColor: P.primary,
+    borderRadius: 18,
+    minHeight: 54,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginLeft: 8,
+    gap: 8,
   },
   saveButtonDisabled: {
-    backgroundColor: "#9ca3af",
+    opacity: 0.6,
   },
   saveButtonText: {
-    color: "white",
-    fontSize: 16,
+    color: P.surface,
+    fontSize: 15,
     fontWeight: "600",
-    marginLeft: 8,
   },
-  logoutButton: {
-    flexDirection: "row",
+  actionGrid: {
+    gap: 12,
+    marginBottom: 16,
+  },
+  actionCard: {
+    backgroundColor: P.surface,
+    borderRadius: 22,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: P.border,
+  },
+  actionCardDanger: {
+    borderColor: "#E9B7B0",
+    backgroundColor: P.dangerBg,
+  },
+  actionIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: P.surfaceLow,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#fef2f2",
-    borderRadius: 8,
-    padding: 16,
-    marginTop: 20,
-    borderWidth: 1,
-    borderColor: "#fecaca",
+    marginBottom: 12,
   },
-  logoutButtonText: {
-    color: "#ef4444",
+  actionIconWrapDanger: {
+    backgroundColor: "#F8D6D1",
+  },
+  actionTitle: {
     fontSize: 16,
-    fontWeight: "600",
-    marginLeft: 8,
+    fontWeight: "700",
+    color: P.text,
+    marginBottom: 4,
   },
-  changePasswordButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#eff6ff",
-    borderRadius: 8,
-    padding: 16,
-    marginTop: 16,
-    borderWidth: 1,
-    borderColor: "#bfdbfe",
-  },
-  leaseDetailsButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#F5F3FF",
-    borderRadius: 8,
-    padding: 16,
-    marginTop: 16,
-    borderWidth: 1,
-    borderColor: "#DDD6FE",
-  },
-  leaseDetailsButtonText: {
-    color: "#5B21B6",
-    fontSize: 16,
-    fontWeight: "600",
-    marginLeft: 8,
-  },
-  changePasswordButtonText: {
-    color: "#1e3a8a",
-    fontSize: 16,
-    fontWeight: "600",
-    marginLeft: 8,
+  actionText: {
+    fontSize: 13,
+    lineHeight: 20,
+    color: P.muted,
   },
   modalOverlay: {
     flex: 1,
     justifyContent: "center",
     padding: 24,
-    backgroundColor: "rgba(15, 23, 42, 0.55)",
+    backgroundColor: "rgba(43, 52, 55, 0.4)",
   },
   modalBackdrop: {
     ...StyleSheet.absoluteFillObject,
   },
   modalCard: {
-    backgroundColor: "#fff",
-    borderRadius: 18,
+    backgroundColor: P.surface,
+    borderRadius: 24,
     overflow: "hidden",
-    shadowColor: "#0f172a",
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 8,
+    shadowColor: "rgba(43, 52, 55, 0.18)",
+    shadowOpacity: 1,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 10,
   },
   modalHeader: {
     paddingHorizontal: 20,
@@ -921,7 +1262,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#fff",
+    color: P.surface,
   },
   modalSubtitle: {
     fontSize: 13,
@@ -944,35 +1285,35 @@ const styles = StyleSheet.create({
   modalLabel: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#334155",
+    color: P.text,
   },
   modalEmailPill: {
     borderWidth: 1,
-    borderColor: "#e2e8f0",
-    backgroundColor: "#f8fafc",
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    borderColor: P.border,
+    backgroundColor: P.surfaceLow,
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
   },
   modalEmailText: {
     fontSize: 14,
-    color: "#0f172a",
+    color: P.text,
     fontWeight: "600",
   },
   modalInputRow: {
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#d1d5db",
-    borderRadius: 10,
-    backgroundColor: "#fff",
+    borderColor: P.border,
+    borderRadius: 16,
+    backgroundColor: P.surface,
     paddingHorizontal: 12,
   },
   modalInput: {
     flex: 1,
     paddingVertical: 12,
     fontSize: 16,
-    color: "#0f172a",
+    color: P.text,
   },
   passwordToggleButton: {
     paddingLeft: 8,
@@ -980,11 +1321,11 @@ const styles = StyleSheet.create({
   },
   modalHint: {
     fontSize: 12,
-    color: "#64748b",
+    color: P.soft,
     marginTop: -4,
   },
   modalErrorText: {
-    color: "#ef4444",
+    color: P.dangerText,
     fontSize: 12,
   },
   modalActions: {
@@ -995,21 +1336,21 @@ const styles = StyleSheet.create({
   modalSecondaryButton: {
     flex: 1,
     paddingVertical: 12,
-    borderRadius: 10,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#bfdbfe",
+    borderColor: P.border,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#fff",
+    backgroundColor: P.surfaceLow,
   },
   modalSecondaryText: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#1e3a8a",
+    color: P.text,
   },
   modalPrimaryButton: {
     flex: 1,
-    borderRadius: 10,
+    borderRadius: 16,
     overflow: "hidden",
   },
   modalPrimaryButtonDisabled: {
@@ -1023,6 +1364,6 @@ const styles = StyleSheet.create({
   modalPrimaryText: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#fff",
+    color: P.surface,
   },
 });

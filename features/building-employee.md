@@ -8,6 +8,11 @@ The **Building Employee** role represents on-site staff who work directly for a 
 **Role Identifier:** `building_employee`
 **Access Level:** Building-scoped access (assigned building only)
 
+**Mount Status:** Live route group, early-stage implementation
+- `app/(buildingEmployee)/` is mounted in the current router.
+- The current mounted files are `index`, `jobs`, `profile`, plus hidden routes `amenities`, `shifts`, and `messages`.
+- Several workflows below remain planned expansions rather than fully implemented screens.
+
 ---
 
 ## Key Characteristics
@@ -27,9 +32,12 @@ The **Building Employee** role represents on-site staff who work directly for a 
 ### Bottom Tabs (Primary Navigation)
 - **Dashboard** - Daily operations overview
 - **Jobs** - Assigned tasks and maintenance
-- **Requests** - Tenant requests to handle
-- **Amenities** - Amenity status monitoring
 - **Profile** - Employee profile and schedule
+
+### Hidden Mounted Routes
+- **Amenities** - Amenity status monitoring
+- **Shifts** - Shift-related flow placeholder
+- **Messages** - Messaging route placeholder
 
 ---
 
@@ -760,4 +768,5 @@ Location: `app/(buildingEmployee)/profile.tsx`
 
 - Backend API Requirements: `docs/backend/README.md`
 - Type Definitions: `lib/types/index.ts`
-- Main Project Docs: `CLAUDE.md`
+- Project Overview: `README.md`
+- Architecture Guide: `docs/ARCHITECTURE.md`

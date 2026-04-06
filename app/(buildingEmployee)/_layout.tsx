@@ -1,10 +1,34 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Tabs } from "expo-router";
-import React from "react";
+import { Tabs, router } from "expo-router";
+import React, { useEffect } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useAuth } from "../../lib/context/auth-context";
+
 export default function BuildingEmployeeLayout() {
+  const { isAuthenticated, currentUser } = useAuth();
   const insets = useSafeAreaInsets();
+  const isBuildingEmployee = currentUser?.role === "building_employee";
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.replace("/auth" as any);
+    }
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (isAuthenticated && currentUser && !isBuildingEmployee) {
+      router.replace("/" as any);
+    }
+  }, [currentUser, isAuthenticated, isBuildingEmployee]);
+
+  if (!isAuthenticated || !currentUser) {
+    return null;
+  }
+
+  if (!isBuildingEmployee) {
+    return null;
+  }
 
   return (
     <Tabs

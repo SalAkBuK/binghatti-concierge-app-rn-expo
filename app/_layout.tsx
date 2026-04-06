@@ -14,8 +14,13 @@ import { Alert, BackHandler, Platform } from "react-native";
 import "react-native-reanimated";
 
 import { useColorScheme } from "@/hooks/use-color-scheme";
-import { ConnectedAppProvider as AppProvider, useApp } from "../lib/context/connected-app-provider";
 import { ErrorBoundary } from "../components/ErrorBoundary";
+import { AppProvider } from "../lib/context/app-provider";
+import { useAuth } from "../lib/context/auth-context";
+import {
+  isMountedPortalHome,
+  MOUNTED_PORTAL_CONFIGS,
+} from "../lib/config/portals";
 import { formatCrashReport, getLastCrashReport } from "../lib/utils/crashReporter";
 
 void SplashScreen.preventAutoHideAsync();
@@ -35,22 +40,7 @@ function ExitConfirmationHandler() {
     const backHandler = BackHandler.addEventListener(
       "hardwareBackPress",
       () => {
-        // Check if we're at a main portal home screen
-        // This includes both the portal root and the main index/home tab
-        const isPortal =
-          segments[0] === "(tenant)" ||
-          segments[0] === "(management)" ||
-          segments[0] === "(buildingEmployee)";
-
-        // Treat as "home" only when at portal root or its index tab (not deep screens)
-        const secondSegment = segments[1] as string | undefined;
-        const isAtPortalHome =
-          isPortal &&
-          (segments.length === 1 ||
-            (segments.length === 2 &&
-              (secondSegment === undefined ||
-                secondSegment === "index" ||
-                secondSegment === "")));
+        const isAtPortalHome = isMountedPortalHome(segments as string[]);
 
         if (isAtPortalHome) {
           // Show confirmation dialog
@@ -84,7 +74,7 @@ function ExitConfirmationHandler() {
 }
 
 function PasswordChangeGate() {
-  const { isAuthenticated, currentUser } = useApp();
+  const { isAuthenticated, currentUser } = useAuth();
   const router = useRouter();
   const segments = useSegments();
 
@@ -142,9 +132,14 @@ export default function RootLayout() {
           <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
           <Stack.Screen name="reset-password" options={{ headerShown: false }} />
           <Stack.Screen name="change-password" options={{ headerShown: false }} />
-          <Stack.Screen name="(tenant)" options={{ headerShown: false }} />
-          <Stack.Screen name="(management)" options={{ headerShown: false }} />
-          <Stack.Screen name="(buildingEmployee)" options={{ headerShown: false }} />
+          <Stack.Screen name="portal-unavailable" options={{ headerShown: false }} />
+          {MOUNTED_PORTAL_CONFIGS.map((portal) => (
+            <Stack.Screen
+              key={portal.segment}
+              name={portal.segment}
+              options={{ headerShown: false }}
+            />
+          ))}
           <Stack.Screen
             name="modal"
             options={{ presentation: "modal", title: "Modal" }}

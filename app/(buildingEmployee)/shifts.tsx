@@ -15,7 +15,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
-import { useApp } from "../../lib/context/connected-app-provider";
+import { useAuth } from "../../lib/context/auth-context";
+import { useAppDomain } from "../../lib/context/connected-app-provider";
+import { useNotifications } from "../../lib/context/notifications-context";
 import type { Shift, ShiftStatus } from "../../lib/types";
 import { getUnreadNotificationsCount } from "../../lib/utils/helpers";
 
@@ -108,7 +110,9 @@ const calculateShiftDuration = (startTime: string, endTime: string): string => {
 };
 
 export default function BuildingEmployeeShiftsScreen() {
-  const { isAuthenticated, currentUser, actions, notifications } = useApp();
+  const { isAuthenticated, currentUser } = useAuth();
+  const { notifications } = useNotifications();
+  const { property } = useAppDomain();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("week");
@@ -123,8 +127,8 @@ export default function BuildingEmployeeShiftsScreen() {
 
   const buildingEmployee = useMemo(() => {
     if (!currentUser) return null;
-    return actions.getBuildingEmployeeByUserId?.(currentUser.id) ?? null;
-  }, [actions, currentUser]);
+    return property.getBuildingEmployeeByUserId?.(currentUser.id) ?? null;
+  }, [currentUser, property]);
 
   const employeeId = buildingEmployee?.id;
 

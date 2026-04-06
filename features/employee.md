@@ -4,9 +4,13 @@
 
 The **Employee** role represents field workers who are employed by service providers to perform maintenance, repair, and other service jobs in buildings. Employees receive job assignments, travel to job locations, complete work, document progress, and earn payments based on job completion.
 
-**Route Group:** `app/(employee)/`
+**Planned Route Group:** `app/(employee)/`
 **Role Identifier:** `employee`
 **Access Level:** Job-scoped access (assigned jobs only)
+
+**Runtime Status:** Not mounted
+- There is no live `app/(employee)/` route group in the current Expo Router tree.
+- Treat the screens and paths below as target-state documentation plus API integration intent, not current runtime routes.
 
 ---
 
@@ -1037,4 +1041,5 @@ All types defined in: `lib/types/index.ts`
 - API Service Implementation: `lib/services/api/employee.ts`
 - API Endpoints: `lib/utils/constants.ts`
 - Type Definitions: `lib/types/index.ts`
-- Main Project Docs: `CLAUDE.md`
+- Project Overview: `README.md`
+- Architecture Guide: `docs/ARCHITECTURE.md`

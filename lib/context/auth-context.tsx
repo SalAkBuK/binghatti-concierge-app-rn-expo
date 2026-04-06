@@ -989,6 +989,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           profileCompleted: true,
         };
 
+        dispatch({
+          type: AUTH_ACTIONS.UPDATE_USER,
+          payload: {
+            email: updatedUser.email,
+            user: updatedUser,
+          },
+        });
+
         actions.setAuth({
           isAuthenticated: state.isAuthenticated,
           currentUser: updatedUser,

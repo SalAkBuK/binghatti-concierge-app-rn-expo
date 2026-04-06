@@ -19,7 +19,8 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
-import { useApp } from "../../lib/context/connected-app-provider";
+import { useAuth } from "../../lib/context/auth-context";
+import { useNotifications } from "../../lib/context/notifications-context";
 import type { Shift, ShiftStatus } from "../../lib/types";
 import {
   filterNotificationsByUser,
@@ -496,7 +497,8 @@ const ShiftDetailsModal = ({
 };
 
 export default function ShiftsScreen() {
-  const { currentUser, notifications } = useApp();
+  const { currentUser } = useAuth();
+  const { notifications } = useNotifications();
   const { width } = useWindowDimensions();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("list");

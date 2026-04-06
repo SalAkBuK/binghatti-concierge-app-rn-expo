@@ -18,7 +18,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AttachmentPicker } from "../../components/ui/AttachmentPicker";
 import { StarRating } from "../../components/ui/StarRating";
-import { useApp } from "../../lib/context/connected-app-provider";
+import { useAppDomain } from "../../lib/context/connected-app-provider";
 
 const MAX_REVIEW_LENGTH = 500;
 
@@ -29,7 +29,9 @@ export default function SubmitRatingScreen() {
   const requestTitle = params.requestTitle as string;
   const serviceProviderName = params.serviceProviderName as string;
 
-  const { actions } = useApp();
+  const {
+    operations: { submitRating },
+  } = useAppDomain();
   const [rating, setRating] = useState<number>(0);
   const [reviewText, setReviewText] = useState<string>("");
   const [attachments, setAttachments] = useState<string[]>([]);
@@ -45,7 +47,7 @@ export default function SubmitRatingScreen() {
     try {
       setLoading(true);
 
-      await actions.submitRating({
+      await submitRating({
         requestId,
         serviceProviderId,
         rating,

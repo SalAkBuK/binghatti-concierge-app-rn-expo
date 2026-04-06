@@ -17,7 +17,9 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
-import { useApp } from "../../lib/context/connected-app-provider";
+import { useAuth } from "../../lib/context/auth-context";
+import { useAppDomain } from "../../lib/context/connected-app-provider";
+import { useNotifications } from "../../lib/context/notifications-context";
 import type { Building, BuildingUnit, Lease, UnitType } from "../../lib/types";
 import { getUserErrorMessage } from "../../lib/services/api/errors";
 import {
@@ -79,9 +81,18 @@ const UNIT_STATUS_OPTIONS: { label: string; value: UnitStatusFilter }[] = [
 ];
 
 export default function ManagementUnitsScreen() {
-  const { currentUser, notifications, actions, buildingUnits, unitTypes, leases } =
-    useApp();
-  const { getBuildings, getManagedBuildings, updateUnit, createUnit } = actions;
+  const { currentUser } = useAuth();
+  const { notifications } = useNotifications();
+  const { property } = useAppDomain();
+  const {
+    buildingUnits,
+    unitTypes,
+    leases,
+    getBuildings,
+    getManagedBuildings,
+    updateUnit,
+    createUnit,
+  } = property;
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [showSideMenu, setShowSideMenu] = useState(false);

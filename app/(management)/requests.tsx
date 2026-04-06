@@ -1,13 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
-  Image,
-  Linking,
-  Modal,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -22,14 +18,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
-import { useApp } from "../../lib/context/connected-app-provider";
+import { useAuth } from "../../lib/context/auth-context";
+import { useNotifications } from "../../lib/context/notifications-context";
 import { orgBuildingsApi } from "../../lib/services/api/org-buildings";
 import type {
   Building,
-  OrgBuildingRequestComment,
   Request,
-  RequestComment,
-  RequestPriority,
   RequestStatus,
 } from "../../lib/types";
 import {
@@ -37,77 +31,14 @@ import {
   formatDateTime,
   getUnreadNotificationsCount,
 } from "../../lib/utils/helpers";
-import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
-
-// Helper function to map backend status to frontend status
-// 1=New, 2=Assigned, 3=InProgress, 4=OnHold, 5=Completed, 6=Cancelled
-const mapStatusFromApi = (status: any): RequestStatus => {
-  if (typeof status === "number") {
-    switch (status) {
-      case 0:
-      case 1:
-        return "pending";
-      case 2:
-        return "assigned";
-      case 3:
-        return "in-progress";
-      case 4:
-        return "on-hold";
-      case 5:
-        return "completed";
-      case 6:
-        return "cancelled";
-      default:
-        return "pending";
-    }
-  }
-
-  const normalized = String(status || "").toUpperCase();
-  if (["OPEN"].includes(normalized)) return "pending";
-  if (["ASSIGNED"].includes(normalized)) return "assigned";
-  if (["IN_PROGRESS"].includes(normalized)) return "in-progress";
-  if (["COMPLETED"].includes(normalized)) return "completed";
-  if (["CANCELED", "CANCELLED"].includes(normalized)) return "cancelled";
-  return "pending";
-};
-
-// Helper function to map backend priority to frontend priority
-const mapPriorityFromApi = (priority: any): RequestPriority => {
-  if (typeof priority === "number") {
-    switch (priority) {
-      case 1:
-        return "low";
-      case 2:
-        return "medium";
-      case 3:
-        return "high";
-      case 4:
-        return "urgent";
-      default:
-        return "medium";
-    }
-  }
-
-  const normalized = String(priority || "").toUpperCase();
-  if (normalized === "LOW") return "low";
-  if (normalized === "NORMAL" || normalized === "MEDIUM") return "medium";
-  if (normalized === "HIGH") return "high";
-  if (normalized === "URGENT") return "urgent";
-  return "medium";
-};
-
-const formatUserLabel = (value?: string | null) => {
-  if (!value) return "";
-  if (!value.includes("@")) return value;
-  const namePart = value.split("@")[0] || "";
-  const cleaned = namePart.replace(/[._-]+/g, " ").trim();
-  if (!cleaned) return value;
-  return cleaned
-    .split(" ")
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-};
+import {
+  getResponseItems,
+  mapOrgBuildingRequestSummary,
+} from "./_hooks/management-request-helpers";
+import { ManagementRequestAssignmentModal } from "./_components/management-request-assignment-modal";
+import { ManagementRequestDetailModal } from "./_components/management-request-detail-modal";
+import { useManagementRequestDetails } from "./_hooks/useManagementRequestDetails";
+import { useRequestAssignmentFlow } from "./_hooks/useRequestAssignmentFlow";
 
 const MANAGEMENT_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
 
@@ -132,21 +63,12 @@ export default function ManagementRequestsScreen() {
     requestId?: string;
     buildingId?: string;
   }>();
-  const {
-    currentUser,
-    notifications,
-    actions,
-  } = useApp();
-  const {
-    setSelectedRequest: setSelectedRequestContext,
-  } = actions;
+  const { currentUser } = useAuth();
+  const { notifications } = useNotifications();
 
   // State for API-fetched data
   const [managedBuildings, setManagedBuildings] = useState<Building[]>([]);
   const [buildingRequests, setBuildingRequests] = useState<Request[]>([]);
-  const buildingRequestsRef = useRef<Request[]>([]);
-  const selectedRequestRef = useRef<Request | null>(null);
-  const lastFetchedRequestIdRef = useRef<string | null>(null);
   const [loadingData, setLoadingData] = useState(true);
 
   const { width } = useWindowDimensions();
@@ -157,35 +79,6 @@ export default function ManagementRequestsScreen() {
   );
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
-  const [selectedRequest, setSelectedRequest] = useState<Request | null>(null);
-  const [detailTab, setDetailTab] = useState<"overview" | "messages" | "timeline">("overview");
-  const [newMessage, setNewMessage] = useState("");
-  const [isRequestDetailLoading, setIsRequestDetailLoading] = useState(false);
-  const [requestComments, setRequestComments] = useState<RequestComment[]>([]);
-  const [requestAttachments, setRequestAttachments] = useState<
-    { id: string; fileUrl: string; fileName?: string; contentType?: string }[]
-  >([]);
-  const [isSendingMessage, setIsSendingMessage] = useState(false);
-
-  // Assignment modal state
-  const [showAssignModal, setShowAssignModal] = useState(false);
-  const [assignmentMode, setAssignmentMode] = useState<"service_provider" | "building_employee">("building_employee");
-  const [maintenanceStaff, setMaintenanceStaff] = useState<{
-    id: string;
-    fullName: string;
-    email: string;
-    phoneNumber: string;
-    isActive: boolean;
-  }[]>([]);
-  const [serviceProviders, setServiceProviders] = useState<{
-    id: string;
-    fullName: string;
-    email: string;
-    phoneNumber: string;
-    isActive: boolean;
-  }[]>([]);
-  const [isAssigning, setIsAssigning] = useState(false);
-  const [isLoadingWorkers, setIsLoadingWorkers] = useState(false);
 
   // Pagination state
   const ITEMS_PER_PAGE = 20;
@@ -195,11 +88,53 @@ export default function ManagementRequestsScreen() {
   const hasAnimatedHeaderRef = useRef(false);
   const lastRequestsFetchAtRef = useRef(0);
   const isRequestsFetchInFlightRef = useRef(false);
-  const pendingRequestIdRef = useRef<string | null>(null);
 
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
-  const isRequestClosed =
-    selectedRequest?.status === "completed" || selectedRequest?.status === "cancelled";
+  const {
+    selectedRequest,
+    detailTab,
+    setDetailTab,
+    newMessage,
+    setNewMessage,
+    isRequestDetailLoading,
+    requestComments,
+    requestAttachments,
+    isSendingMessage,
+    isRequestClosed,
+    openRequestDetails,
+    closeRequestDetails,
+    handleAddMessage,
+    handleMarkAsCompleted,
+    handleCancelRequest,
+  } = useManagementRequestDetails({
+    buildingRequests,
+    currentUser,
+    preselectedBuildingId: params.buildingId
+      ? String(params.buildingId)
+      : undefined,
+    preselectedRequestId: params.requestId
+      ? String(params.requestId)
+      : undefined,
+    setBuildingRequests,
+  });
+  const {
+    showAssignModal,
+    closeAssignModal,
+    assignmentMode,
+    setAssignmentMode,
+    maintenanceStaff,
+    serviceProviders,
+    isAssigning,
+    isLoadingWorkers,
+    openAssignModal,
+    handleAssignRequest,
+  } = useRequestAssignmentFlow({
+    closeRequestDetails,
+    currentUser,
+    managedBuildings,
+    selectedRequest,
+    setBuildingRequests,
+  });
 
   // Fetch buildings and requests from API
   useEffect(() => {
@@ -224,11 +159,7 @@ export default function ManagementRequestsScreen() {
         // Fetch buildings for this manager
         console.log("[ManagementRequests] Fetching assigned buildings for manager:", currentUser.id);
         const buildingsResponse = await orgBuildingsApi.getAssignedBuildings();
-        const buildingsPayload = Array.isArray(buildingsResponse)
-          ? buildingsResponse
-          : Array.isArray(buildingsResponse?.data)
-            ? buildingsResponse.data
-            : [];
+        const buildingsPayload = getResponseItems(buildingsResponse);
 
         if (buildingsPayload.length > 0) {
           const buildings = buildingsPayload.map((building: any): Building => ({
@@ -279,69 +210,17 @@ export default function ManagementRequestsScreen() {
             // Combine all requests from all buildings
             const allRequests: Request[] = [];
             requestsResponses.forEach((response, index) => {
-              const payload = Array.isArray(response)
-                ? response
-                : Array.isArray(response?.data)
-                  ? response.data
-                  : [];
+              const payload = getResponseItems(response);
 
               if (payload.length > 0) {
                 const buildingId = buildings[index].id;
                 const buildingName = buildings[index].name;
-                const mappedRequests = payload.map((item: any) => {
-                  const unit = item.unit || item.unitDetails;
-                  return {
-                    id: String(item.id),
-                    type: "maintenance",
-                    buildingId: String(item.buildingId ?? buildingId),
-                    buildingName: item.buildingName || buildingName,
-                    tenantId:
-                      item.createdByUserId != null
-                        ? String(item.createdByUserId)
-                        : item.createdById != null
-                          ? String(item.createdById)
-                          : item.createdByTenantId != null
-                            ? String(item.createdByTenantId)
-                            : "",
-                    title: item.title || "Untitled Request",
-                    description: item.description || "",
-                    status: mapStatusFromApi(item.status),
-                    priority: mapPriorityFromApi(item.priority),
-                    createdAt: item.createdAt || new Date().toISOString(),
-                    updatedAt: item.updatedAt || item.createdAt || new Date().toISOString(),
-                    apartment:
-                      unit?.label ||
-                      item.unitLabel ||
-                      item.unitNumber ||
-                      item.apartment ||
-                      "",
-                    floor:
-                      item.floorNumber != null
-                        ? String(item.floorNumber)
-                        : unit?.floor != null
-                          ? String(unit.floor)
-                          : "",
-                    contactPhone: item.contactPhone || "",
-                    preferredTime: item.preferredTime || "",
-                    additionalNotes: item.additionalNotes || "",
-                    assignedTo: formatUserLabel(
-                      item.assignedTo?.fullName ||
-                        item.assignedTo?.name ||
-                        item.assignedTo?.email ||
-                        (item.assignedEmployeeId ? String(item.assignedEmployeeId) : undefined) ||
-                        (item.assignedToId ? String(item.assignedToId) : undefined),
-                    ),
-                    attachments: Array.isArray(item.attachments)
-                      ? item.attachments
-                          .map((att: any) => att.fileUrl || att.url || att.uri || "")
-                          .filter(Boolean)
-                      : [],
-                    comments: [],
-                    messages: [],
-                    notes: [],
-                    timeline: [],
-                  } as Request;
-                });
+                const mappedRequests = payload.map((item: any) =>
+                  mapOrgBuildingRequestSummary(item, {
+                    buildingId,
+                    buildingName,
+                  }),
+                );
                 allRequests.push(...mappedRequests);
               }
             });
@@ -412,14 +291,6 @@ export default function ManagementRequestsScreen() {
     });
     return ["all", ...Array.from(types)] as TypeFilter[];
   }, [buildingRequests]);
-
-  useEffect(() => {
-    buildingRequestsRef.current = buildingRequests;
-  }, [buildingRequests]);
-
-  useEffect(() => {
-    selectedRequestRef.current = selectedRequest;
-  }, [selectedRequest]);
 
   // Removed jobs and getJobForRequest - no longer needed after Jobs screen consolidation
 
@@ -492,372 +363,6 @@ export default function ManagementRequestsScreen() {
     return managedBuildings;
   }, [managedBuildings]);
 
-  const isImageAttachment = (attachment: {
-    fileUrl: string;
-    fileName?: string;
-    contentType?: string;
-  }) => {
-    const name = (attachment.fileName || attachment.fileUrl || "").toLowerCase();
-    if (attachment.contentType?.startsWith("image/")) return true;
-    return /\.(png|jpe?g|gif|webp|bmp)$/i.test(name);
-  };
-
-  const isImageUri = (uri: string) => /\.(png|jpe?g|gif|webp|bmp)$/i.test(uri);
-
-  const handleAddMessage = async () => {
-    if (!selectedRequest || !newMessage.trim() || !currentUser) return;
-    if (isRequestClosed) return;
-
-    const buildingId = selectedRequest.buildingId;
-    if (!buildingId) {
-      Alert.alert("Cannot send message", "Missing building information.");
-      return;
-    }
-
-    setIsSendingMessage(true);
-    try {
-      const response = await orgBuildingsApi.addComment(
-        buildingId,
-        selectedRequest.id,
-        newMessage.trim(),
-      );
-      if (response?.success === false) {
-        throw new Error(response.message || "Failed to add comment");
-      }
-      setNewMessage("");
-      await fetchRequestDetails(selectedRequest.id, { force: true });
-    } catch (error) {
-      showErrorAlert(error);
-    } finally {
-      setIsSendingMessage(false);
-    }
-  };
-
-  // Fetch workers when assign modal is opened
-  useEffect(() => {
-    const fetchWorkers = async () => {
-      if (!showAssignModal || !selectedRequest?.buildingId) {
-        setMaintenanceStaff([]);
-        setServiceProviders([]);
-        return;
-      }
-
-      setIsLoadingWorkers(true);
-      try {
-        const buildingId = selectedRequest.buildingId;
-        console.log(
-          "[ManagementRequests] Loading assignments for building:",
-          buildingId,
-        );
-        const assignmentsResponse = await orgBuildingsApi.getAssignments(buildingId);
-        const assignmentsPayload = Array.isArray(assignmentsResponse)
-          ? assignmentsResponse
-          : Array.isArray(assignmentsResponse?.data)
-            ? assignmentsResponse.data
-            : [];
-
-        console.log("[ManagementRequests] Assignments response:", assignmentsPayload);
-        console.log(
-          "[ManagementRequests] Assignments count:",
-          assignmentsPayload.length,
-        );
-
-        const staffList = assignmentsPayload
-          .map((assignment: any) => {
-            const assignmentType = String(assignment?.type || "").toUpperCase();
-            if (assignmentType !== "STAFF") {
-              return null;
-            }
-            const user = assignment.user ?? assignment;
-            const id = String(assignment.userId ?? user?.id ?? user?.userId ?? "");
-            if (!id) return null;
-            return {
-              id,
-              fullName:
-                user?.fullName ||
-                user?.name ||
-                user?.email ||
-                "Staff Member",
-              email: user?.email || "",
-              phoneNumber: user?.phone || user?.phoneNumber || "",
-              isActive: true,
-            };
-          })
-          .filter(Boolean) as {
-          id: string;
-          fullName: string;
-          email: string;
-          phoneNumber: string;
-          isActive: boolean;
-        }[];
-
-        console.log(
-          "[ManagementRequests] Scoped staff list:",
-          staffList.map((staff) => ({
-            id: staff.id,
-            name: staff.fullName,
-            email: staff.email,
-          })),
-        );
-
-        setMaintenanceStaff(staffList);
-        setServiceProviders([]);
-      } catch (error) {
-        console.error('[Requests] Failed to fetch workers:', error);
-        setMaintenanceStaff([]);
-        setServiceProviders([]);
-      } finally {
-        setIsLoadingWorkers(false);
-      }
-    };
-
-    fetchWorkers();
-  }, [showAssignModal, selectedRequest?.buildingId]);
-
-  const handleAssignRequest = async (workerId: string, workerName: string) => {
-    if (!selectedRequest || !currentUser?.id) return;
-
-    setIsAssigning(true);
-    try {
-      const buildingId = selectedRequest.buildingId;
-      if (!buildingId) {
-        throw new Error("Missing building information for this request.");
-      }
-
-      const response = await orgBuildingsApi.assignRequest(
-        buildingId,
-        selectedRequest.id,
-        workerId,
-      );
-      if (response?.success === false) {
-        throw new Error(response.message || "Failed to assign request");
-      }
-
-      showSuccessAlert(`Request assigned to ${workerName}`);
-      setShowAssignModal(false);
-      setSelectedRequest(null);
-
-      // Refresh requests for this building
-      const refreshed = await orgBuildingsApi.getBuildingRequests(buildingId);
-      const payload = Array.isArray(refreshed)
-        ? refreshed
-        : Array.isArray(refreshed?.data)
-          ? refreshed.data
-          : [];
-
-      if (payload.length > 0) {
-        const buildingName = managedBuildings.find((b) => b.id === buildingId)?.name;
-        const mappedRequests = payload.map((item: any) => {
-          const unit = item.unit || item.unitDetails;
-          return {
-            id: String(item.id),
-            type: "maintenance",
-            buildingId: String(item.buildingId ?? buildingId),
-            buildingName: item.buildingName || buildingName,
-            tenantId:
-              item.createdByUserId != null
-                ? String(item.createdByUserId)
-                : item.createdById != null
-                  ? String(item.createdById)
-                  : item.createdByTenantId != null
-                    ? String(item.createdByTenantId)
-                    : "",
-            title: item.title || "Untitled Request",
-            description: item.description || "",
-            status: mapStatusFromApi(item.status),
-            priority: mapPriorityFromApi(item.priority),
-            createdAt: item.createdAt || new Date().toISOString(),
-            updatedAt: item.updatedAt || item.createdAt || new Date().toISOString(),
-            apartment:
-              unit?.label ||
-              item.unitLabel ||
-              item.unitNumber ||
-              item.apartment ||
-              "",
-            floor:
-              item.floorNumber != null
-                ? String(item.floorNumber)
-                : unit?.floor != null
-                  ? String(unit.floor)
-                  : "",
-            contactPhone: item.contactPhone || "",
-            preferredTime: item.preferredTime || "",
-            additionalNotes: item.additionalNotes || "",
-            assignedTo: formatUserLabel(
-              item.assignedTo?.fullName ||
-                item.assignedTo?.name ||
-                item.assignedTo?.email ||
-                (item.assignedEmployeeId ? String(item.assignedEmployeeId) : undefined) ||
-                (item.assignedToId ? String(item.assignedToId) : undefined),
-            ),
-            attachments: Array.isArray(item.attachments)
-              ? item.attachments
-                  .map((att: any) => att.fileUrl || att.url || att.uri || "")
-                  .filter(Boolean)
-              : [],
-            comments: [],
-            messages: [],
-            notes: [],
-            timeline: [],
-          } as Request;
-        });
-
-        setBuildingRequests((prev) => {
-          const next = prev.filter((req) => req.buildingId !== buildingId);
-          return [...next, ...mappedRequests];
-        });
-      }
-    } catch (error) {
-      console.error('[Requests] Assignment failed:', error);
-      showErrorAlert(error);
-    } finally {
-      setIsAssigning(false);
-    }
-  };
-
-  const openAssignModal = () => {
-    if (!selectedRequest) return;
-
-    // Allow assignment for pending, assigned, and in-progress requests
-    if (
-      selectedRequest.status !== "pending" &&
-      selectedRequest.status !== "in-progress" &&
-      (selectedRequest.status as string) !== "assigned"
-    ) {
-      Alert.alert(
-        "Cannot Assign",
-        "Only pending, assigned, or in-progress requests can be (re)assigned. This request is already completed or cancelled."
-      );
-      return;
-    }
-
-    setShowAssignModal(true);
-  };
-
-  const handleMarkAsCompleted = async () => {
-    if (!selectedRequest || !currentUser?.id) return;
-    if ((selectedRequest.status as string) === "assigned") {
-      Alert.alert(
-        "Cannot mark as completed",
-        "This request is still assigned. The worker has not started the job yet.",
-      );
-      return;
-    }
-
-    // Confirm action
-    Alert.alert(
-      "Mark as Completed",
-      "Are you sure you want to mark this request as completed?",
-      [
-        {
-          text: "Cancel",
-          style: "cancel"
-        },
-        {
-          text: "Complete",
-          style: "default",
-          onPress: async () => {
-            setIsRequestDetailLoading(true);
-            try {
-              const buildingId = selectedRequest.buildingId;
-              if (!buildingId) {
-                throw new Error("Missing building information for this request.");
-              }
-
-              const response = await orgBuildingsApi.updateRequestStatus(
-                buildingId,
-                selectedRequest.id,
-                "COMPLETED",
-              );
-              if (response?.success === false) {
-                throw new Error(response.message || "Failed to update status");
-              }
-
-              showSuccessAlert('Request marked as completed');
-
-              // Update the selected request locally
-              setSelectedRequest(prev => prev ? { ...prev, status: 'completed' } : null);
-
-              // Update in the list
-              setBuildingRequests(prev => prev.map(req =>
-                req.id === selectedRequest.id
-                  ? { ...req, status: 'completed' as RequestStatus }
-                  : req
-              ));
-
-              // Fetch fresh details
-              await fetchRequestDetails(selectedRequest.id, { force: true });
-            } catch (error) {
-              console.error('[Requests] Failed to mark as completed:', error);
-              const errorStatus = (error as any)?.status;
-              const errorCode = (error as any)?.code;
-              if (errorStatus === 409 || errorCode === "409") {
-                Alert.alert(
-                  "Cannot mark as completed",
-                  "This request is still assigned. The worker has not started the job yet.",
-                );
-              } else {
-                showErrorAlert(error);
-              }
-            } finally {
-              setIsRequestDetailLoading(false);
-            }
-          }
-        }
-      ]
-    );
-  };
-
-  const handleCancelRequest = async () => {
-    if (!selectedRequest) return;
-    Alert.alert(
-      "Cancel Request",
-      "Are you sure you want to cancel this request?",
-      [
-        { text: "No", style: "cancel" },
-        {
-          text: "Yes, Cancel",
-          style: "destructive",
-          onPress: async () => {
-            setIsRequestDetailLoading(true);
-            try {
-              const buildingId = selectedRequest.buildingId;
-              if (!buildingId) {
-                throw new Error("Missing building information for this request.");
-              }
-
-              const response = await orgBuildingsApi.cancelRequest(
-                buildingId,
-                selectedRequest.id,
-              );
-              if (response?.success === false) {
-                throw new Error(response.message || "Failed to cancel request");
-              }
-
-              showSuccessAlert("Request cancelled");
-              setSelectedRequest((prev) =>
-                prev ? { ...prev, status: "cancelled" } : null,
-              );
-              setBuildingRequests((prev) =>
-                prev.map((req) =>
-                  req.id === selectedRequest.id
-                    ? { ...req, status: "cancelled" as RequestStatus }
-                    : req,
-                ),
-              );
-              await fetchRequestDetails(selectedRequest.id, { force: true });
-            } catch (error) {
-              console.error("[ManagementRequests] Failed to cancel request:", error);
-              showErrorAlert(error);
-            } finally {
-              setIsRequestDetailLoading(false);
-            }
-          },
-        },
-      ],
-    );
-  };
-
   const handleLoadMore = () => {
     if (!isLoadingMore && hasMoreRequests) {
       setIsLoadingMore(true);
@@ -882,11 +387,7 @@ export default function ManagementRequestsScreen() {
     try {
       console.log("[ManagementRequests] Refreshing assigned buildings for manager:", currentUser.id);
       const buildingsResponse = await orgBuildingsApi.getAssignedBuildings();
-      const buildingsPayload = Array.isArray(buildingsResponse)
-        ? buildingsResponse
-        : Array.isArray(buildingsResponse?.data)
-          ? buildingsResponse.data
-          : [];
+      const buildingsPayload = getResponseItems(buildingsResponse);
 
       if (buildingsPayload.length > 0) {
         const buildings = buildingsPayload.map((building: any): Building => ({
@@ -934,69 +435,17 @@ export default function ManagementRequestsScreen() {
           const allRequests: Request[] = [];
 
           requestsResponses.forEach((response, index) => {
-            const payload = Array.isArray(response)
-              ? response
-              : Array.isArray(response?.data)
-                ? response.data
-                : [];
+            const payload = getResponseItems(response);
 
             if (payload.length > 0) {
               const buildingId = buildings[index].id;
               const buildingName = buildings[index].name;
-              const mappedRequests = payload.map((item: any) => {
-                const unit = item.unit || item.unitDetails;
-                return {
-                  id: String(item.id),
-                  type: "maintenance",
-                  buildingId: String(item.buildingId ?? buildingId),
-                  buildingName: item.buildingName || buildingName,
-                  tenantId:
-                    item.createdByUserId != null
-                      ? String(item.createdByUserId)
-                      : item.createdById != null
-                        ? String(item.createdById)
-                        : item.createdByTenantId != null
-                          ? String(item.createdByTenantId)
-                          : "",
-                  title: item.title || "Untitled Request",
-                  description: item.description || "",
-                  status: mapStatusFromApi(item.status),
-                  priority: mapPriorityFromApi(item.priority),
-                  createdAt: item.createdAt || new Date().toISOString(),
-                  updatedAt: item.updatedAt || item.createdAt || new Date().toISOString(),
-                  apartment:
-                    unit?.label ||
-                    item.unitLabel ||
-                    item.unitNumber ||
-                    item.apartment ||
-                    "",
-                  floor:
-                    item.floorNumber != null
-                      ? String(item.floorNumber)
-                      : unit?.floor != null
-                        ? String(unit.floor)
-                        : "",
-                  contactPhone: item.contactPhone || "",
-                  preferredTime: item.preferredTime || "",
-                  additionalNotes: item.additionalNotes || "",
-                  assignedTo: formatUserLabel(
-                    item.assignedTo?.fullName ||
-                      item.assignedTo?.name ||
-                      item.assignedTo?.email ||
-                      (item.assignedEmployeeId ? String(item.assignedEmployeeId) : undefined) ||
-                      (item.assignedToId ? String(item.assignedToId) : undefined),
-                  ),
-                  attachments: Array.isArray(item.attachments)
-                    ? item.attachments
-                        .map((att: any) => att.fileUrl || att.url || att.uri || "")
-                        .filter(Boolean)
-                    : [],
-                  comments: [],
-                  messages: [],
-                  notes: [],
-                  timeline: [],
-                } as Request;
-              });
+              const mappedRequests = payload.map((item: any) =>
+                mapOrgBuildingRequestSummary(item, {
+                  buildingId,
+                  buildingName,
+                }),
+              );
               allRequests.push(...mappedRequests);
             }
           });
@@ -1016,329 +465,6 @@ export default function ManagementRequestsScreen() {
       setIsRefreshing(false);
     }
   };
-
-  const requestStatusBadge = (status: RequestStatus) => {
-    const palette = {
-      pending: { bg: "#FEF3C7", text: "#92400E" },
-      assigned: { bg: "#DBEAFE", text: "#1D4ED8" },
-      "in-progress": { bg: "#DBEAFE", text: "#1D4ED8" },
-      "on-hold": { bg: "#FED7AA", text: "#9A3412" },
-      completed: { bg: "#DCFCE7", text: "#047857" },
-      cancelled: { bg: "#FEE2E2", text: "#DC2626" },
-    };
-    const colors = palette[status] ?? palette.pending;
-    return (
-      <View
-        style={[
-          styles.statusBadge,
-          { backgroundColor: colors.bg },
-        ]}
-      >
-        <Text
-          style={[
-            styles.statusBadgeText,
-            { color: colors.text },
-          ]}
-        >
-          {status.toUpperCase()}
-        </Text>
-      </View>
-    );
-  };
-
-  const openRequestDetails = useCallback((request: Request) => {
-    const sameRequest = selectedRequestRef.current?.id === request.id;
-    console.log("[ManagementRequests] Opening request details modal:", {
-      requestId: request.id,
-      buildingId: request.buildingId,
-      status: request.status,
-      assignedTo: request.assignedTo,
-    });
-    setSelectedRequest(request);
-    setSelectedRequestContext(request);
-    setDetailTab("overview");
-    if (!sameRequest) {
-      setRequestComments([]);
-      setRequestAttachments([]);
-      lastFetchedRequestIdRef.current = null;
-    }
-  }, [setSelectedRequestContext]);
-
-  const closeRequestDetails = () => {
-    setSelectedRequest(null);
-    setSelectedRequestContext(null);
-    setNewMessage("");
-    setDetailTab("overview");
-    setIsRequestDetailLoading(false);
-  };
-
-  const fetchRequestDetails = useCallback(
-    async (
-      requestId: string,
-      options?: { force?: boolean; buildingId?: string },
-    ) => {
-      const normalizedId = String(requestId);
-      if (!options?.force && lastFetchedRequestIdRef.current === normalizedId) {
-        return;
-      }
-
-      console.log("[ManagementRequests] Fetching request details:", {
-        requestId: normalizedId,
-        force: options?.force ?? false,
-      });
-      setIsRequestDetailLoading(true);
-      try {
-        const baseRequest =
-          buildingRequestsRef.current.find((req) => req.id === normalizedId) || null;
-        const buildingId =
-          options?.buildingId ||
-          baseRequest?.buildingId ||
-          selectedRequestRef.current?.buildingId;
-        if (!buildingId) {
-          throw new Error("Missing building information for this request.");
-        }
-
-        const response = await orgBuildingsApi.getRequest(buildingId, requestId);
-        const data = (response as any)?.data ?? response ?? {};
-        console.log("[ManagementRequests] Raw request detail response:", response);
-
-        const commentsResponse = await orgBuildingsApi.getComments(buildingId, requestId);
-        console.log("[ManagementRequests] Raw comments response:", commentsResponse);
-        const commentsPayload = Array.isArray(commentsResponse)
-          ? commentsResponse
-          : Array.isArray(commentsResponse?.data)
-            ? commentsResponse.data
-            : Array.isArray(data.comments)
-              ? data.comments
-              : [];
-
-        if (data) {
-          const currentSelected = selectedRequestRef.current;
-          const baseResolved =
-            (currentSelected && currentSelected.id === normalizedId
-              ? currentSelected
-              : null) ||
-            baseRequest ||
-            null;
-          const mappedStatus = mapStatusFromApi(data.status);
-          const mappedPriority = mapPriorityFromApi(data.priority);
-          const resolvedAssignedTo = formatUserLabel(
-            data.assignedTo?.fullName ||
-              data.assignedTo?.name ||
-              data.assignedTo?.email ||
-              baseResolved?.assignedTo,
-          );
-
-          const timelineEvents =
-            Array.isArray(data.statusHistory) && data.statusHistory.length > 0
-              ? data.statusHistory.map((historyItem: any, index: number) => {
-                  const oldStatus = mapStatusFromApi(historyItem.oldStatus);
-                  const newStatus = mapStatusFromApi(historyItem.newStatus);
-                  const oldStatusLabel = oldStatus.charAt(0).toUpperCase() + oldStatus.slice(1).replace('-', ' ');
-                  const newStatusLabel = newStatus.charAt(0).toUpperCase() + newStatus.slice(1).replace('-', ' ');
-
-                  // Get the actor who made the change
-                  const actorName = historyItem.changedBy?.fullName ||
-                                   historyItem.changedBy?.email ||
-                                   (historyItem.changedById && currentUser?.id === historyItem.changedById
-                                     ? (currentUser as any)?.name || (currentUser as any)?.fullName || currentUser?.email || 'Manager'
-                                     : historyItem.changedById
-                                       ? `User ${historyItem.changedById}`
-                                       : undefined);
-
-                  return {
-                    id: `history-${historyItem.id || index}`,
-                    requestId: String(data.id ?? requestId),
-                    eventType: "status_change" as const,
-                    title: `${oldStatusLabel} → ${newStatusLabel}`,
-                    description: historyItem.note || undefined,
-                    actorId: historyItem.changedBy?.id ? String(historyItem.changedBy.id) : (historyItem.changedById ? String(historyItem.changedById) : undefined),
-                    actorName,
-                    metadata: {
-                      oldStatus,
-                      newStatus,
-                    },
-                    createdAt: historyItem.changedAt,
-                  };
-                })
-              : [];
-
-          const mappedComments: RequestComment[] = Array.isArray(commentsPayload)
-            ? (commentsPayload as OrgBuildingRequestComment[])
-                .map((comment) => {
-                  const author = comment.author ?? undefined;
-                  const userName =
-                    author?.name?.trim() ||
-                    author?.email?.trim() ||
-                    "User";
-                  const userId = author?.id ? String(author.id) : "";
-
-                  return {
-                    id: String(comment.id ?? `${data.id}-comment-${Math.random().toString(36).slice(2)}`),
-                    requestId: String(data.id ?? requestId),
-                    userId,
-                    userName,
-                    message:
-                      comment.message ||
-                      comment.commentText ||
-                      "",
-                    createdAt: comment.createdAt || new Date().toISOString(),
-                    channel: comment.channel || comment.visibility || "internal",
-                    attachments: Array.isArray(comment.attachments)
-                      ? comment.attachments
-                          .map((att: any) => att.fileUrl || att.url || att.uri || att)
-                          .filter(Boolean)
-                      : undefined,
-                  };
-                })
-                .sort(
-                  (a, b) =>
-                    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-                )
-            : [];
-
-          const mappedAttachments =
-            Array.isArray(data.attachments) && data.attachments.length > 0
-              ? data.attachments
-                  .map((attachment: any, index: number) => ({
-                    id: String(attachment.id ?? `${data.id}-att-${index}`),
-                    fileUrl: attachment.fileUrl || attachment.url || attachment.uri || "",
-                    fileName: attachment.fileName || attachment.name,
-                    contentType: attachment.contentType || attachment.mimeType,
-                  }))
-                  .filter((attachment) => attachment.fileUrl)
-              : [];
-
-          const fallbackAttachments =
-            !mappedAttachments.length && baseRequest?.attachments?.length
-              ? baseRequest.attachments.map((uri, index) => ({
-                  id: `${requestId}-fallback-${index}`,
-                  fileUrl: uri,
-                }))
-              : [];
-          const attachmentsForRequest =
-            mappedAttachments.length > 0 ? mappedAttachments : fallbackAttachments;
-
-          setRequestComments(mappedComments);
-          setRequestAttachments(attachmentsForRequest);
-
-          const unit = data.unit || data.unitDetails;
-          const mappedRequest: Request = {
-            id: String(data.id ?? baseRequest?.id ?? requestId),
-            title: data.title || baseRequest?.title || "Untitled Request",
-            description: data.description || baseRequest?.description || "",
-            type: baseRequest?.type || "maintenance",
-            status: mappedStatus,
-            priority: mappedPriority,
-            tenantId: baseRequest?.tenantId || "",
-            assignedTo: resolvedAssignedTo,
-            buildingId: String(data.buildingId ?? baseRequest?.buildingId ?? ""),
-            buildingName: data.buildingName || baseRequest?.buildingName,
-            apartment:
-              unit?.label ||
-              data.unitLabel ||
-              data.unitNumber ||
-              baseRequest?.apartment ||
-              "",
-            tower: baseRequest?.tower,
-            floor:
-              data.floorNumber != null
-                ? String(data.floorNumber)
-                : unit?.floor != null
-                  ? String(unit.floor)
-                  : baseRequest?.floor,
-            preferredTime: data.preferredTime || baseRequest?.preferredTime,
-            contactPhone: data.contactPhone || baseRequest?.contactPhone,
-            additionalNotes: data.additionalNotes || baseRequest?.additionalNotes,
-            attachments:
-              attachmentsForRequest.length > 0
-                ? attachmentsForRequest.map((att) => att.fileUrl)
-                : baseRequest?.attachments || [],
-            slaDueAt: baseRequest?.slaDueAt,
-            lastEscalatedAt: baseRequest?.lastEscalatedAt,
-            comments: mappedComments,
-            messages: baseRequest?.messages || [],
-            notes: [],
-            timeline: timelineEvents.length > 0 ? timelineEvents : baseRequest?.timeline || [],
-            createdAt: data.createdAt || baseRequest?.createdAt || new Date().toISOString(),
-            updatedAt:
-              data.updatedAt || baseRequest?.updatedAt || data.createdAt || new Date().toISOString(),
-          };
-
-          const completedAt =
-            (data as any).completedAt || (baseRequest as any)?.completedAt || undefined;
-          const mappedRequestWithCompletion = completedAt
-            ? ({ ...mappedRequest, completedAt } as Request)
-            : mappedRequest;
-
-          setSelectedRequest(mappedRequestWithCompletion);
-          setSelectedRequestContext(mappedRequestWithCompletion);
-          lastFetchedRequestIdRef.current = normalizedId;
-
-          setBuildingRequests((prev) =>
-            prev.map((req) =>
-              req.id === String(data.id ?? normalizedId)
-                ? {
-                    ...req,
-                    status: mappedStatus,
-                    priority: mappedPriority,
-                    assignedTo: resolvedAssignedTo || req.assignedTo,
-                    updatedAt: mappedRequest.updatedAt || req.updatedAt,
-                    createdAt: mappedRequest.createdAt || req.createdAt,
-                    ...(completedAt ? { completedAt } : null),
-                  }
-                : req,
-            ),
-          );
-        }
-      } catch (error) {
-        console.error("[ManagementRequests] Failed to fetch request details:", error);
-      } finally {
-        setIsRequestDetailLoading(false);
-      }
-    },
-    [currentUser, setSelectedRequestContext],
-  );
-
-  useEffect(() => {
-    const requestId = params.requestId ? String(params.requestId) : null;
-    if (!requestId || pendingRequestIdRef.current === requestId) {
-      return;
-    }
-
-    const request = buildingRequests.find((item) => item.id === requestId);
-    if (request) {
-      pendingRequestIdRef.current = requestId;
-      openRequestDetails(request);
-      fetchRequestDetails(requestId, { force: true });
-      return;
-    }
-
-    if (params.buildingId) {
-      pendingRequestIdRef.current = requestId;
-      fetchRequestDetails(requestId, {
-        force: true,
-        buildingId: String(params.buildingId),
-      });
-    }
-  }, [
-    buildingRequests,
-    fetchRequestDetails,
-    openRequestDetails,
-    params.buildingId,
-    params.requestId,
-  ]);
-
-  useEffect(() => {
-    if (selectedRequest?.id) {
-      const normalizedId = String(selectedRequest.id);
-      if (lastFetchedRequestIdRef.current !== normalizedId) {
-        fetchRequestDetails(normalizedId);
-      } else {
-        setIsRequestDetailLoading(false);
-      }
-    }
-  }, [selectedRequest?.id, fetchRequestDetails]);
 
   const renderHeader = () => {
     const shouldAnimateHeader = !hasAnimatedHeaderRef.current;
@@ -1669,473 +795,41 @@ export default function ManagementRequestsScreen() {
         )}
       </View>
 
-      {/* Assignment Modal */}
-      <Modal
+      <ManagementRequestAssignmentModal
         visible={showAssignModal}
-        animationType="slide"
-        onRequestClose={() => setShowAssignModal(false)}
-      >
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setShowAssignModal(false)}>
-              <Ionicons name="close" size={24} color="#6B7280" />
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>
-              {selectedRequest?.status === "in-progress" ||
-              (selectedRequest?.status as string) === "assigned"
-                ? "Re-assign Request"
-                : "Assign Request"}
-            </Text>
-            <View style={{ width: 24 }} />
-          </View>
-
-          <ScrollView style={styles.modalContent}>
-            <View style={styles.assignmentModeSelector}>
-              <TouchableOpacity
-                style={[
-                  styles.modeTab,
-                  assignmentMode === "building_employee" && styles.modeTabActive,
-                ]}
-                onPress={() => setAssignmentMode("building_employee")}
-              >
-                <Ionicons
-                  name="people"
-                  size={20}
-                  color={assignmentMode === "building_employee" ? "#FFFFFF" : "#6B7280"}
-                />
-                <Text
-                  style={[
-                    styles.modeTabText,
-                    assignmentMode === "building_employee" && styles.modeTabTextActive,
-                  ]}
-                >
-                  Maintenance Staff
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.modeTab,
-                  assignmentMode === "service_provider" && styles.modeTabActive,
-                ]}
-                onPress={() => setAssignmentMode("service_provider")}
-              >
-                <Ionicons
-                  name="business"
-                  size={20}
-                  color={assignmentMode === "service_provider" ? "#FFFFFF" : "#6B7280"}
-                />
-                <Text
-                  style={[
-                    styles.modeTabText,
-                    assignmentMode === "service_provider" && styles.modeTabTextActive,
-                  ]}
-                >
-                  Service Provider
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {isLoadingWorkers ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#2563EB" />
-                <Text style={styles.loadingText}>Loading workers...</Text>
-              </View>
-            ) : (
-              <View style={styles.workersList}>
-                {assignmentMode === "building_employee" ? (
-                  maintenanceStaff.length > 0 ? (
-                    maintenanceStaff.map((staff) => (
-                      <TouchableOpacity
-                        key={staff.id}
-                        style={styles.workerCard}
-                        onPress={() => handleAssignRequest(staff.id, staff.fullName)}
-                        disabled={isAssigning}
-                      >
-                        <View style={styles.workerInfo}>
-                          <Text style={styles.workerName}>{staff.fullName}</Text>
-                          <Text style={styles.workerMeta}>{staff.email}</Text>
-                          {staff.phoneNumber && (
-                            <Text style={styles.workerMeta}>{staff.phoneNumber}</Text>
-                          )}
-                        </View>
-                        <Ionicons name="chevron-forward" size={20} color="#94A3B8" />
-                      </TouchableOpacity>
-                    ))
-                  ) : (
-                    <View style={styles.emptyWorkers}>
-                      <Ionicons name="alert-circle-outline" size={32} color="#94A3B8" />
-                      <Text style={styles.emptyWorkersText}>
-                        No maintenance staff assigned to this building
-                      </Text>
-                    </View>
-                  )
-                ) : (
-                  serviceProviders.length > 0 ? (
-                    serviceProviders.map((provider) => (
-                      <TouchableOpacity
-                        key={provider.id}
-                        style={styles.workerCard}
-                        onPress={() => handleAssignRequest(provider.id, provider.fullName)}
-                        disabled={isAssigning}
-                      >
-                        <View style={styles.workerInfo}>
-                          <Text style={styles.workerName}>{provider.fullName}</Text>
-                          <Text style={styles.workerMeta}>{provider.email}</Text>
-                          {provider.phoneNumber && (
-                            <Text style={styles.workerMeta}>{provider.phoneNumber}</Text>
-                          )}
-                        </View>
-                        <Ionicons name="chevron-forward" size={20} color="#94A3B8" />
-                      </TouchableOpacity>
-                    ))
-                  ) : (
-                    <View style={styles.emptyWorkers}>
-                      <Ionicons name="alert-circle-outline" size={32} color="#94A3B8" />
-                      <Text style={styles.emptyWorkersText}>
-                        No service providers assigned to this building
-                      </Text>
-                    </View>
-                  )
-                )}
-              </View>
-            )}
-          </ScrollView>
-        </SafeAreaView>
-      </Modal>
+        onClose={closeAssignModal}
+        selectedRequest={selectedRequest}
+        assignmentMode={assignmentMode}
+        setAssignmentMode={setAssignmentMode}
+        maintenanceStaff={maintenanceStaff}
+        serviceProviders={serviceProviders}
+        isAssigning={isAssigning}
+        isLoadingWorkers={isLoadingWorkers}
+        onAssignRequest={handleAssignRequest}
+      />
 
       <SideMenu
         isVisible={showSideMenu}
         onClose={() => setShowSideMenu(false)}
       />
 
-      <Modal
-        visible={!!selectedRequest}
-        animationType="slide"
-        onRequestClose={closeRequestDetails}
-      >
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={closeRequestDetails}>
-              <Ionicons name="close" size={24} color="#111827" />
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Request Details</Text>
-            <View style={{ width: 24 }} />
-          </View>
-
-          {/* Tab Navigation */}
-          <View style={styles.tabBar}>
-            {(["overview", "messages"] as const).map((tab) => (
-              <TouchableOpacity
-                key={tab}
-                style={[styles.tab, detailTab === tab && styles.tabActive]}
-                onPress={() => setDetailTab(tab)}
-              >
-                <Text style={[styles.tabText, detailTab === tab && styles.tabTextActive]}>
-                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <ScrollView contentContainerStyle={styles.modalContent}>
-            {isRequestDetailLoading ? (
-              <View style={styles.detailLoadingRow}>
-                <ActivityIndicator size="small" color="#2563EB" />
-                <Text style={styles.detailLoadingText}>Syncing latest details...</Text>
-              </View>
-            ) : null}
-            {detailTab === "overview" && selectedRequest && (
-              <View style={styles.overviewSection}>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Title:</Text>
-                  <Text style={styles.detailValue}>{selectedRequest.title}</Text>
-                </View>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Description:</Text>
-                  <Text style={styles.detailValue}>{selectedRequest.description}</Text>
-                </View>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Status:</Text>
-                  <View>{requestStatusBadge(selectedRequest.status)}</View>
-                </View>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Priority:</Text>
-                  <Text style={styles.detailValue}>{selectedRequest.priority}</Text>
-                </View>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Type:</Text>
-                  <Text style={styles.detailValue}>{selectedRequest.type}</Text>
-                </View>
-                {selectedRequest.assignedTo ? (
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>Assigned To:</Text>
-                    <Text style={styles.detailValue}>{selectedRequest.assignedTo}</Text>
-                  </View>
-                ) : null}
-                {selectedRequest.apartment && (
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>Unit:</Text>
-                    <Text style={styles.detailValue}>{selectedRequest.apartment}</Text>
-                  </View>
-                )}
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Created:</Text>
-                  <Text style={styles.detailValue}>{formatDateTime(selectedRequest.createdAt)}</Text>
-                </View>
-                {(selectedRequest as any).completedAt ? (
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>Completed:</Text>
-                    <Text style={styles.detailValue}>
-                      {formatDateTime((selectedRequest as any).completedAt)}
-                    </Text>
-                  </View>
-                ) : null}
-                {selectedRequest.slaDueAt && (
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>SLA Due:</Text>
-                    <Text style={styles.detailValue}>{formatDateTime(selectedRequest.slaDueAt)}</Text>
-                  </View>
-                )}
-
-                <View style={styles.assignmentSection}>
-                  <View style={styles.assignmentHeaderRow}>
-                    <Text style={styles.assignmentTitle}>Assignment Status</Text>
-                    {selectedRequest.assignedTo && (
-                      <View style={styles.jobStatusBadge}>
-                        <Text style={styles.jobStatusText}>
-                          {selectedRequest.status.toUpperCase()}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                  {selectedRequest.assignedTo ? (
-                    <>
-                      <View style={styles.jobDetailsCard}>
-                        <View style={styles.jobDetailRow}>
-                          <Text style={styles.jobDetailLabel}>Assigned To</Text>
-                          <Text style={styles.jobDetailValue}>
-                            {selectedRequest.assignedTo}
-                          </Text>
-                        </View>
-                        <View style={styles.jobDetailRow}>
-                          <Text style={styles.jobDetailLabel}>Status</Text>
-                          <Text style={styles.jobDetailValue}>
-                            {selectedRequest.status.charAt(0).toUpperCase() + selectedRequest.status.slice(1).replace('-', ' ')}
-                          </Text>
-                        </View>
-                      </View>
-                      {(selectedRequest.status === "in-progress" ||
-                        (selectedRequest.status as string) === "assigned") && (
-                        <>
-                          <View style={styles.actionButtonsRow}>
-                            <TouchableOpacity
-                              style={styles.reassignButton}
-                              onPress={openAssignModal}
-                            >
-                              <Ionicons name="swap-horizontal" size={18} color="#2563EB" />
-                              <Text style={styles.reassignButtonText}>Re-assign</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                              style={styles.completeButton}
-                              onPress={handleMarkAsCompleted}
-                            >
-                              <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
-                              <Text style={styles.completeButtonText}>Mark Completed</Text>
-                            </TouchableOpacity>
-                          </View>
-                          <TouchableOpacity
-                            style={styles.cancelButton}
-                            onPress={handleCancelRequest}
-                          >
-                            <Ionicons name="close-circle" size={18} color="#DC2626" />
-                            <Text style={styles.cancelButtonText}>Cancel Request</Text>
-                          </TouchableOpacity>
-                        </>
-                      )}
-                    </>
-                  ) : selectedRequest?.status === "completed" ? (
-                    <View style={styles.noJobCard}>
-                      <Ionicons name="checkmark-circle-outline" size={24} color="#16A34A" />
-                      <Text style={styles.noJobText}>Completed</Text>
-                      <Text style={styles.noJobHint}>Request was completed</Text>
-                    </View>
-                  ) : (
-                    <View style={styles.noJobCard}>
-                      <Ionicons name="construct-outline" size={24} color="#9CA3AF" />
-                      <Text style={styles.noJobText}>Request not yet assigned</Text>
-                      {selectedRequest.status === "pending" ? (
-                        <>
-                          <Text style={styles.noJobHint}>Assign this request to maintenance staff or a service provider</Text>
-                          <TouchableOpacity
-                            style={styles.assignButton}
-                            onPress={openAssignModal}
-                          >
-                            <Ionicons name="person-add" size={18} color="#FFFFFF" />
-                            <Text style={styles.assignButtonText}>Assign Request</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={styles.cancelButton}
-                            onPress={handleCancelRequest}
-                          >
-                            <Ionicons name="close-circle" size={18} color="#DC2626" />
-                            <Text style={styles.cancelButtonText}>Cancel Request</Text>
-                          </TouchableOpacity>
-                        </>
-                      ) : selectedRequest.status === "on-hold" ? (
-                        <>
-                          <Text style={styles.noJobHint}>This request is on hold</Text>
-                          <TouchableOpacity
-                            style={styles.cancelButton}
-                            onPress={handleCancelRequest}
-                          >
-                            <Ionicons name="close-circle" size={18} color="#DC2626" />
-                            <Text style={styles.cancelButtonText}>Cancel Request</Text>
-                          </TouchableOpacity>
-                        </>
-                      ) : (
-                        <Text style={styles.noJobHint}>This request is {selectedRequest.status}</Text>
-                      )}
-                    </View>
-                  )}
-                </View>
-              </View>
-            )}
-
-            {detailTab === "messages" && (
-              <View style={styles.messagesSection}>
-                <Text style={styles.sectionTitle}>Messages</Text>
-                <Text style={styles.sectionSubtitle}>Communication thread for this request</Text>
-
-                <View style={styles.inputGroup}>
-                  <TextInput
-                    style={styles.noteInput}
-                    placeholder={
-                      isRequestClosed
-                        ? "Messaging disabled for closed requests"
-                        : "Type message..."
-                    }
-                    value={newMessage}
-                    onChangeText={setNewMessage}
-                    multiline
-                    numberOfLines={3}
-                    textAlignVertical="top"
-                    editable={!isRequestClosed}
-                  />
-                  <TouchableOpacity
-                    style={[
-                      styles.addButton,
-                      (!newMessage.trim() || isSendingMessage || isRequestClosed) &&
-                        styles.addButtonDisabled,
-                    ]}
-                    onPress={handleAddMessage}
-                    disabled={!newMessage.trim() || isSendingMessage || isRequestClosed}
-                  >
-                    {isSendingMessage ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <Text style={styles.addButtonText}>Send</Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
-
-                {requestComments.length > 0 ? (
-                  requestComments.map((comment) => (
-                    <View key={comment.id} style={styles.messageCard}>
-                      <View style={styles.messageHeader}>
-                        <Text style={styles.messageSender}>
-                          {comment.userName || "User"}
-                        </Text>
-                        {comment.channel ? (
-                          <Text style={styles.messageRole}>({comment.channel})</Text>
-                        ) : null}
-                      </View>
-                      <Text style={styles.messageBody}>
-                        {comment.message || comment.body || ""}
-                      </Text>
-                      {comment.attachments && comment.attachments.length > 0 ? (
-                        <ScrollView
-                          horizontal
-                          showsHorizontalScrollIndicator={false}
-                          style={styles.messageAttachments}
-                          contentContainerStyle={{ gap: 10 }}
-                        >
-                          {comment.attachments.map((uri) => {
-                            const showImage = isImageUri(uri);
-                            return (
-                              <TouchableOpacity
-                                key={uri}
-                                onPress={() => Linking.openURL(uri)}
-                                activeOpacity={0.85}
-                              >
-                                {showImage ? (
-                                  <Image
-                                    source={{ uri }}
-                                    style={styles.messageAttachmentImage}
-                                    resizeMode="cover"
-                                  />
-                                ) : (
-                                  <View style={styles.messageAttachmentPlaceholder}>
-                                    <Ionicons name="document-outline" size={24} color="#2563EB" />
-                                  </View>
-                                )}
-                              </TouchableOpacity>
-                            );
-                          })}
-                        </ScrollView>
-                      ) : null}
-                      <Text style={styles.messageTime}>
-                        {formatDateTime(comment.createdAt)}
-                      </Text>
-                    </View>
-                  ))
-                ) : (
-                  <Text style={styles.emptyText}>No messages yet</Text>
-                )}
-
-                {requestAttachments.length > 0 ? (
-                  <View style={styles.attachmentsSection}>
-                    <Text style={styles.sectionTitle}>Attachments</Text>
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={{ gap: 12 }}
-                    >
-                      {requestAttachments.map((attachment) => {
-                        const isImage = isImageAttachment(attachment);
-                        return (
-                          <TouchableOpacity
-                            key={attachment.id}
-                            style={styles.attachmentCard}
-                            onPress={() => Linking.openURL(attachment.fileUrl)}
-                            activeOpacity={0.85}
-                          >
-                            {isImage ? (
-                              <Image
-                                source={{ uri: attachment.fileUrl }}
-                                style={styles.attachmentImage}
-                                resizeMode="cover"
-                              />
-                            ) : (
-                              <View style={styles.attachmentPlaceholder}>
-                                <Ionicons name="document-outline" size={28} color="#2563EB" />
-                              </View>
-                            )}
-                            <Text style={styles.attachmentLabel} numberOfLines={1}>
-                              {attachment.fileName || "Attachment"}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </ScrollView>
-                  </View>
-                ) : null}
-              </View>
-            )}
-
-          </ScrollView>
-        </SafeAreaView>
-      </Modal>
+      <ManagementRequestDetailModal
+        selectedRequest={selectedRequest}
+        detailTab={detailTab}
+        setDetailTab={setDetailTab}
+        isRequestDetailLoading={isRequestDetailLoading}
+        isRequestClosed={isRequestClosed}
+        newMessage={newMessage}
+        setNewMessage={setNewMessage}
+        isSendingMessage={isSendingMessage}
+        requestComments={requestComments}
+        requestAttachments={requestAttachments}
+        onClose={closeRequestDetails}
+        onAddMessage={handleAddMessage}
+        onOpenAssignModal={openAssignModal}
+        onMarkAsCompleted={handleMarkAsCompleted}
+        onCancelRequest={handleCancelRequest}
+      />
     </SafeAreaView>
   );
 }
@@ -2934,3 +1628,4 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 });
+

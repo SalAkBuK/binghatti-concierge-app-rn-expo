@@ -13,7 +13,9 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
-import { useApp } from "../../lib/context/connected-app-provider";
+import { useAuth } from "../../lib/context/auth-context";
+import { useAppDomain } from "../../lib/context/connected-app-provider";
+import { useNotifications } from "../../lib/context/notifications-context";
 import type { Notification } from "../../lib/types";
 import {
   filterNotificationsByUser,
@@ -25,7 +27,9 @@ import {
 const MANAGEMENT_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
 
 export default function ActivityFeedScreen() {
-  const { currentUser, notifications, analytics, actions } = useApp();
+  const { currentUser } = useAuth();
+  const { notifications, actions: notificationActions } = useNotifications();
+  const { admin } = useAppDomain();
   const { width } = useWindowDimensions();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const insets = useSafeAreaInsets();
@@ -48,23 +52,23 @@ export default function ActivityFeedScreen() {
 
   const timeline = useMemo(
     () =>
-      analytics.recentActivity
+      admin.analytics.recentActivity
         .slice()
         .sort(
           (a, b) =>
             new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
         ),
-    [analytics.recentActivity],
+    [admin.analytics.recentActivity],
   );
 
   const markNotification = (notification: Notification) => {
     if (!isNotificationUnread(notification)) return;
-    actions.markNotificationAsRead(notification.id);
+    notificationActions.markNotificationAsRead(notification.id);
   };
 
   const markAllNotifications = () => {
     if (!currentUser?.id) return;
-    actions.markAllNotificationsAsRead(currentUser.id);
+    notificationActions.markAllNotificationsAsRead(currentUser.id);
   };
 
   const notificationIcon = (type: Notification["type"]) => {

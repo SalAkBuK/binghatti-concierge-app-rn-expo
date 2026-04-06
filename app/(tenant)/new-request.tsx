@@ -1,11 +1,13 @@
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
-import { Picker } from "@react-native-picker/picker";
+import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -17,38 +19,101 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { AttachmentPicker } from "../../components/ui/AttachmentPicker";
 import { HeaderBar } from "../../components/ui/HeaderBar";
-import { SideMenu } from "../../components/ui/SideMenu";
-import { useApp } from "../../lib/context/connected-app-provider";
+import { useAuth } from "../../lib/context/auth-context";
+import { useNotifications } from "../../lib/context/notifications-context";
+import { useNotices } from "../../lib/context/notices-context";
+import { useRequests } from "../../lib/context/requests-context";
+import {
+  mapResidentRequestFromBackend,
+  upsertResidentRequestSnapshot,
+} from "../../lib/hooks/useResidentRequests";
 import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
 import {
   residentRequestsApi,
   type ResidentRequestPriority,
   type ResidentRequestType,
 } from "../../lib/services/api/resident-requests";
+import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
+import * as FileSystem from "expo-file-system/legacy";
+import {
+  IMAGE_CONFIG,
+  pickImageFromCamera,
+  pickMultipleImagesFromGallery,
+} from "../../lib/utils/imageUtils";
 import {
   filterNotificationsByUser,
   getUnreadNotificationsCount,
 } from "../../lib/utils/helpers";
 import { uploadFileToServer } from "../../lib/utils/fileUpload";
-import { IMAGE_CONFIG } from "../../lib/utils/imageUtils";
-import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
-import * as FileSystem from "expo-file-system/legacy";
 
-interface ValidationErrors {
+const P = {
+  bg: "#F8F9FA",
+  surface: "#FFFFFF",
+  surfaceLow: "#F1F4F6",
+  surfaceHigh: "#DDE5E9",
+  surfaceSoft: "#EAF0F3",
+  border: "#D9E0E4",
+  text: "#2B3437",
+  muted: "#667176",
+  soft: "#7A8488",
+  primary: "#4D6169",
+  primaryDark: "#34474D",
+  primarySoft: "#D6E4E8",
+  accent: "#F7EEDF",
+  accentBorder: "#EBD8BB",
+  error: "#B24A41",
+  errorSoft: "#FCE3E0",
+};
+
+type ValidationErrors = {
   title?: string;
   description?: string;
   type?: string;
   priority?: string;
-}
+};
 
-interface ResidentRequestForm {
+type ResidentRequestForm = {
   type: ResidentRequestType;
   title: string;
   description: string;
   priority: ResidentRequestPriority;
-}
+};
+
+type VisitWindow = "09:00 AM - 12:00 PM" | "12:00 PM - 03:00 PM" | "03:00 PM - 06:00 PM";
+
+const CATEGORY_OPTIONS: { label: string; value: ResidentRequestType; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { label: "Plumbing", value: "PLUMBING_AC_HEATING", icon: "water-outline" },
+  { label: "Electrical", value: "ELECTRICAL", icon: "flash-outline" },
+  { label: "Maintenance", value: "MAINTENANCE", icon: "construct-outline" },
+  { label: "Cleaning", value: "CLEANING", icon: "sparkles-outline" },
+  { label: "Other", value: "OTHER", icon: "apps-outline" },
+];
+
+const PRIORITY_OPTIONS: { label: string; value: ResidentRequestPriority }[] = [
+  { label: "Low", value: "LOW" },
+  { label: "Normal", value: "MEDIUM" },
+  { label: "High", value: "HIGH" },
+];
+
+const VISIT_WINDOWS: VisitWindow[] = [
+  "09:00 AM - 12:00 PM",
+  "12:00 PM - 03:00 PM",
+  "03:00 PM - 06:00 PM",
+];
+
+const getTomorrow = () => {
+  const next = new Date();
+  next.setDate(next.getDate() + 1);
+  return next;
+};
+
+const formatVisitDate = (value: Date) =>
+  value.toLocaleDateString("en-US", {
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+  });
 
 const getFileNameFromUri = (uri: string): string => {
   const cleanUri = uri.split("?")[0];
@@ -84,7 +149,10 @@ const getContentTypeFromName = (fileName: string): string => {
 };
 
 export default function NewRequestScreen() {
-  const { currentUser, notifications, loading } = useApp();
+  const { currentUser, loading: authLoading } = useAuth();
+  const { notifications, loading: notificationsLoading } = useNotifications();
+  const { loading: requestsLoading } = useRequests();
+  const { loading: noticesLoading } = useNotices();
   const {
     canCreateMaintenanceRequest,
     isLoading: isTenancyLoading,
@@ -93,24 +161,26 @@ export default function NewRequestScreen() {
   } = useResidentTenancy({
     enabled: Boolean(currentUser?.role === "tenant" && currentUser?.id),
   });
+  const loading =
+    authLoading || requestsLoading || notificationsLoading || noticesLoading;
   const tabBarHeight = useBottomTabBarHeight();
   const maxAttachments = IMAGE_CONFIG.MAX_ATTACHMENTS;
 
   const [newRequest, setNewRequest] = useState<ResidentRequestForm>({
-    type: "MAINTENANCE",
+    type: "PLUMBING_AC_HEATING",
     title: "",
     description: "",
     priority: "MEDIUM",
   });
-
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const [validationErrors, setValidationErrors] = useState<ValidationErrors>(
-    {},
-  );
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<ValidationErrors>({});
   const [attachments, setAttachments] = useState<string[]>([]);
-  const [isUploadingAttachments, setIsUploadingAttachments] =
-    useState<boolean>(false);
-  const [showSideMenu, setShowSideMenu] = useState(false);
+  const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);
+  const [isPickingAttachments, setIsPickingAttachments] = useState(false);
+  const [preferredVisitDate, setPreferredVisitDate] = useState<Date>(getTomorrow);
+  const [preferredVisitWindow, setPreferredVisitWindow] =
+    useState<VisitWindow>("09:00 AM - 12:00 PM");
+  const [showVisitDatePicker, setShowVisitDatePicker] = useState(false);
 
   const userNotifications = filterNotificationsByUser(
     notifications || [],
@@ -119,54 +189,10 @@ export default function NewRequestScreen() {
   const hasUnreadNotifications =
     getUnreadNotificationsCount(userNotifications) > 0;
 
-  if (!isTenancyLoading && !canCreateMaintenanceRequest) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={{ paddingBottom: tabBarHeight + 32 }}
-        >
-          <HeaderBar
-            title="New Request"
-            hasUnreadNotifications={hasUnreadNotifications}
-            showSideMenu={showSideMenu}
-            onSideMenuToggle={setShowSideMenu}
-          />
-
-          <View style={styles.header}>
-            <Text style={styles.headerTitle}>{statusTitle}</Text>
-            <Text style={styles.headerSubtitle}>{statusMessage}</Text>
-          </View>
-
-          <View style={styles.formContainer}>
-            <Text style={styles.unavailableTitle}>New requests are unavailable</Text>
-            <Text style={styles.unavailableText}>
-              Maintenance requests can only be created while your account has an active unit.
-            </Text>
-
-            <TouchableOpacity
-              style={styles.secondaryButton}
-              onPress={() => router.push("/(tenant)/requests" as any)}
-            >
-              <Text style={styles.secondaryButtonText}>Open Request History</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.secondaryButton}
-              onPress={() => router.push("/(tenant)/lease-details" as any)}
-            >
-              <Text style={styles.secondaryButtonText}>Open Contract Details</Text>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-
-        <SideMenu
-          isVisible={showSideMenu}
-          onClose={() => setShowSideMenu(false)}
-        />
-      </SafeAreaView>
-    );
-  }
+  const selectedCategory = useMemo(
+    () => CATEGORY_OPTIONS.find((item) => item.value === newRequest.type),
+    [newRequest.type],
+  );
 
   const validateForm = (): ValidationErrors => {
     const errors: ValidationErrors = {};
@@ -184,7 +210,7 @@ export default function NewRequestScreen() {
     }
 
     if (!newRequest.type) {
-      errors.type = "Request type is required";
+      errors.type = "Category is required";
     }
 
     if (!newRequest.priority) {
@@ -200,14 +226,74 @@ export default function NewRequestScreen() {
   ) => {
     setNewRequest((prev) => ({ ...prev, [field]: value }));
 
-    // Clear validation error for this field
     if (validationErrors[field as keyof ValidationErrors]) {
       setValidationErrors((prev) => {
-        const newErrors = { ...prev };
-        delete newErrors[field as keyof ValidationErrors];
-        return newErrors;
+        const next = { ...prev };
+        delete next[field as keyof ValidationErrors];
+        return next;
       });
     }
+  };
+
+  const handleAddAttachment = () => {
+    if (attachments.length >= maxAttachments) {
+      Alert.alert(
+        "Maximum Reached",
+        `You can only attach up to ${maxAttachments} photos per request.`,
+      );
+      return;
+    }
+
+    Alert.alert(
+      "Add Photo",
+      "Choose how you want to add a photo",
+      [
+        { text: "Camera", onPress: () => void handleCamera() },
+        { text: "Gallery", onPress: () => void handleGallery() },
+        { text: "Cancel", style: "cancel" },
+      ],
+      { cancelable: true },
+    );
+  };
+
+  const handleCamera = async () => {
+    try {
+      setIsPickingAttachments(true);
+      const uri = await pickImageFromCamera();
+      if (!uri) return;
+      setAttachments((prev) => {
+        if (prev.length >= maxAttachments) return prev;
+        return [...prev, uri];
+      });
+    } catch (error: any) {
+      Alert.alert(
+        "Error",
+        error.message || "Failed to capture photo. Please try again.",
+      );
+    } finally {
+      setIsPickingAttachments(false);
+    }
+  };
+
+  const handleGallery = async () => {
+    try {
+      setIsPickingAttachments(true);
+      const remainingSlots = maxAttachments - attachments.length;
+      const uris = await pickMultipleImagesFromGallery(remainingSlots);
+      if (!uris.length) return;
+      setAttachments((prev) => [...prev, ...uris].slice(0, maxAttachments));
+    } catch (error: any) {
+      Alert.alert(
+        "Error",
+        error.message || "Failed to select photos. Please try again.",
+      );
+    } finally {
+      setIsPickingAttachments(false);
+    }
+  };
+
+  const handleRemoveAttachment = (index: number) => {
+    setAttachments((prev) => prev.filter((_, itemIndex) => itemIndex !== index));
   };
 
   const uploadAttachmentForRequest = async (localUri: string) => {
@@ -215,9 +301,7 @@ export default function NewRequestScreen() {
     const mimeType = getContentTypeFromName(fileName);
     const fileInfo = await FileSystem.getInfoAsync(localUri);
     const sizeBytes =
-      fileInfo.exists && typeof fileInfo.size === "number"
-        ? fileInfo.size
-        : 0;
+      fileInfo.exists && typeof fileInfo.size === "number" ? fileInfo.size : 0;
     const url = await uploadFileToServer(localUri);
 
     return {
@@ -238,7 +322,6 @@ export default function NewRequestScreen() {
     }
 
     const errors = validateForm();
-
     if (Object.keys(errors).length > 0) {
       setValidationErrors(errors);
       return;
@@ -247,7 +330,9 @@ export default function NewRequestScreen() {
     setIsSubmitting(true);
 
     try {
-      let attachmentPayloads: Awaited<ReturnType<typeof uploadAttachmentForRequest>>[] = [];
+      let attachmentPayloads: Awaited<
+        ReturnType<typeof uploadAttachmentForRequest>
+      >[] = [];
 
       if (attachments.length > 0) {
         setIsUploadingAttachments(true);
@@ -257,33 +342,91 @@ export default function NewRequestScreen() {
         setIsUploadingAttachments(false);
       }
 
-      console.log("[NewRequest] Submitting resident request:", {
-        title: newRequest.title,
-        description: newRequest.description,
-        attachmentsCount: attachmentPayloads.length,
-      });
+      const visitPreferenceNote = `Preferred visit time: ${formatVisitDate(
+        preferredVisitDate,
+      )}, ${preferredVisitWindow}.`;
 
       const response = await residentRequestsApi.createRequest({
         title: newRequest.title.trim(),
-        description: newRequest.description.trim(),
+        description: `${newRequest.description.trim()}\n\n${visitPreferenceNote}`,
         type: newRequest.type,
         priority: newRequest.priority,
         attachments: attachmentPayloads.length > 0 ? attachmentPayloads : undefined,
       });
+      const responsePayload =
+        response && typeof response === "object" && "data" in response && response.data
+          ? response.data
+          : response;
+
+      const createdRequest =
+        mapResidentRequestFromBackend(responsePayload, currentUser) ??
+        (currentUser?.id
+          ? {
+              id: String(
+                responsePayload?.id ??
+                  responsePayload?.requestId ??
+                  `resident-request-${Date.now()}`,
+              ),
+              tenantId: currentUser.id,
+              title: newRequest.title.trim(),
+              description: `${newRequest.description.trim()}\n\n${visitPreferenceNote}`,
+              type:
+                newRequest.type === "PLUMBING_AC_HEATING"
+                  ? "hvac"
+                  : newRequest.type === "ELECTRICAL"
+                    ? "electrical"
+                    : newRequest.type === "CLEANING"
+                      ? "cleaning"
+                      : newRequest.type === "OTHER"
+                        ? "other"
+                        : "maintenance",
+              status: "pending" as const,
+              priority:
+                newRequest.priority === "LOW"
+                  ? ("low" as const)
+                  : newRequest.priority === "HIGH"
+                    ? ("high" as const)
+                    : ("medium" as const),
+              assignedTo: undefined,
+              buildingId: currentUser.profile?.buildingId,
+              buildingName: currentUser.profile?.buildingName,
+              apartment: currentUser.profile?.apartment || "",
+              floor: currentUser.profile?.floor || "",
+              contactPhone: currentUser.profile?.phone || "",
+              preferredTime: `${formatVisitDate(preferredVisitDate)}, ${preferredVisitWindow}`,
+              additionalNotes: "",
+              attachments: attachmentPayloads.map((item) => item.url),
+              comments: [],
+              messages: [],
+              notes: [],
+              timeline: [],
+              createdAt:
+                responsePayload?.createdAt ??
+                responsePayload?.updatedAt ??
+                new Date().toISOString(),
+              updatedAt:
+                responsePayload?.updatedAt ??
+                responsePayload?.createdAt ??
+                new Date().toISOString(),
+            }
+          : null);
+
+      if (currentUser?.id && createdRequest) {
+        upsertResidentRequestSnapshot(currentUser.id, createdRequest);
+      }
 
       console.log("[NewRequest] Request created successfully:", response);
 
       showSuccessAlert("Your request has been submitted successfully!");
-
-      // Reset form
       setNewRequest({
-        type: "MAINTENANCE",
+        type: "PLUMBING_AC_HEATING",
         title: "",
         description: "",
         priority: "MEDIUM",
       });
       setAttachments([]);
-      // Navigate back to home
+      setPreferredVisitDate(getTomorrow());
+      setPreferredVisitWindow("09:00 AM - 12:00 PM");
       router.push("/(tenant)" as any);
     } catch (error) {
       console.error("[NewRequest] Error submitting request:", error);
@@ -293,6 +436,51 @@ export default function NewRequestScreen() {
       setIsUploadingAttachments(false);
     }
   };
+
+  if (!isTenancyLoading && !canCreateMaintenanceRequest) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={{ paddingBottom: tabBarHeight + 32 }}
+        >
+          <HeaderBar
+            title="New Request"
+            showBackButton
+            showMenu={false}
+            hasUnreadNotifications={hasUnreadNotifications}
+          />
+
+          <View style={styles.heroBlock}>
+            <Text style={styles.heroEyebrow}>Resident Access</Text>
+            <Text style={styles.heroTitle}>{statusTitle}</Text>
+            <Text style={styles.heroSubtitle}>{statusMessage}</Text>
+          </View>
+
+          <View style={styles.unavailableCard}>
+            <Text style={styles.unavailableTitle}>New requests are unavailable</Text>
+            <Text style={styles.unavailableText}>
+              Maintenance requests can only be created while your account has an active unit.
+            </Text>
+
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={() => router.push("/(tenant)/requests" as any)}
+            >
+              <Text style={styles.secondaryButtonText}>Open Request History</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={() => router.push("/(tenant)/lease-details" as any)}
+            >
+              <Text style={styles.secondaryButtonText}>Open Contract Details</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -304,132 +492,249 @@ export default function NewRequestScreen() {
           style={styles.scrollView}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingBottom: tabBarHeight + 32 }}
+          showsVerticalScrollIndicator={false}
         >
-          {/* Navigation Header */}
           <HeaderBar
             title="New Request"
+            showBackButton
+            showMenu={false}
             hasUnreadNotifications={hasUnreadNotifications}
-            showSideMenu={showSideMenu}
-            onSideMenuToggle={setShowSideMenu}
           />
 
-          {/* Header */}
-          <View style={styles.header}>
-            <Text style={styles.headerTitle}>New Service Request</Text>
-            <Text style={styles.headerSubtitle}>
-              Fill out the form below to submit your request
+          <View style={styles.heroBlock}>
+            <Text style={styles.heroEyebrow}>Service Care</Text>
+            <Text style={styles.heroTitle}>New Request</Text>
+            <Text style={styles.heroSubtitle}>
+              {selectedCategory
+                ? `Describe the issue clearly and we will route it to the right ${selectedCategory.label.toLowerCase()} team.`
+                : "Describe the issue clearly and we will route it to the right team."}
             </Text>
           </View>
 
-          <View style={styles.formContainer}>
-            {/* Request Type */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Request Type *</Text>
-              <View style={styles.pickerContainer}>
-                <Picker
-                  selectedValue={newRequest.type}
-                  onValueChange={(value) => handleInputChange("type", value)}
-                  style={styles.picker}
-                  dropdownIconColor="#111827"
-                  itemStyle={{ color: "#111827" }}
-                >
-                  <Picker.Item label="Cleaning" value="CLEANING" color="#111827" />
-                  <Picker.Item label="Electrical" value="ELECTRICAL" color="#111827" />
-                  <Picker.Item label="Maintenance" value="MAINTENANCE" color="#111827" />
-                  <Picker.Item label="Plumbing/AC/Heating" value="PLUMBING_AC_HEATING" color="#111827" />
-                  <Picker.Item label="Other" value="OTHER" color="#111827" />
-                </Picker>
-              </View>
-              {validationErrors.type && (
+          <View style={styles.formLayout}>
+            <View style={styles.sectionBlock}>
+              <Text style={styles.sectionLabel}>Category</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.categoryRail}
+              >
+                {CATEGORY_OPTIONS.map((option) => {
+                  const selected = option.value === newRequest.type;
+                  return (
+                    <TouchableOpacity
+                      key={option.value}
+                      style={[
+                        styles.categoryChip,
+                        selected && styles.categoryChipSelected,
+                      ]}
+                      activeOpacity={0.9}
+                      onPress={() => handleInputChange("type", option.value)}
+                    >
+                      <Ionicons
+                        name={option.icon}
+                        size={15}
+                        color={selected ? P.surface : P.primary}
+                      />
+                      <Text
+                        style={[
+                          styles.categoryChipText,
+                          selected && styles.categoryChipTextSelected,
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+              {validationErrors.type ? (
                 <Text style={styles.errorText}>{validationErrors.type}</Text>
-              )}
+              ) : null}
             </View>
 
-            {/* Title */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Title *</Text>
+            <View style={styles.sectionBlock}>
+              <Text style={styles.sectionLabel}>Priority Level</Text>
+              <View style={styles.segmentedControl}>
+                {PRIORITY_OPTIONS.map((option) => {
+                  const selected = option.value === newRequest.priority;
+                  return (
+                    <TouchableOpacity
+                      key={option.value}
+                      style={[
+                        styles.segmentItem,
+                        selected && styles.segmentItemSelected,
+                      ]}
+                      activeOpacity={0.9}
+                      onPress={() => handleInputChange("priority", option.value)}
+                    >
+                      <Text
+                        style={[
+                          styles.segmentItemText,
+                          selected && styles.segmentItemTextSelected,
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              {validationErrors.priority ? (
+                <Text style={styles.errorText}>{validationErrors.priority}</Text>
+              ) : null}
+            </View>
+
+            <View style={styles.sectionBlock}>
+              <Text style={styles.sectionLabel}>Request Title</Text>
               <TextInput
                 style={[
-                  styles.textInput,
-                  validationErrors.title && styles.errorInput,
+                  styles.softInput,
+                  validationErrors.title && styles.softInputError,
                 ]}
-                placeholder="Brief description of your request"
+                placeholder="Short summary of the issue"
+                placeholderTextColor={P.soft}
                 value={newRequest.title}
                 onChangeText={(text) => handleInputChange("title", text)}
                 maxLength={100}
               />
-              {validationErrors.title && (
+              {validationErrors.title ? (
                 <Text style={styles.errorText}>{validationErrors.title}</Text>
-              )}
+              ) : null}
             </View>
 
-            {/* Description */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Description *</Text>
+            <View style={styles.sectionBlock}>
+              <Text style={styles.sectionLabel}>Description</Text>
               <TextInput
                 style={[
-                  styles.textArea,
-                  validationErrors.description && styles.errorInput,
+                  styles.descriptionInput,
+                  validationErrors.description && styles.softInputError,
                 ]}
-                placeholder="Detailed description of the issue or request"
+                placeholder="Describe the issue..."
+                placeholderTextColor={P.soft}
                 value={newRequest.description}
                 onChangeText={(text) => handleInputChange("description", text)}
                 multiline
-                numberOfLines={4}
+                numberOfLines={6}
                 textAlignVertical="top"
                 maxLength={500}
               />
-              {validationErrors.description && (
-                <Text style={styles.errorText}>
-                  {validationErrors.description}
-                </Text>
-              )}
+              {validationErrors.description ? (
+                <Text style={styles.errorText}>{validationErrors.description}</Text>
+              ) : null}
             </View>
 
-            {/* Priority */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Priority *</Text>
-              <View style={styles.pickerContainer}>
-                <Picker
-                  selectedValue={newRequest.priority}
-                  onValueChange={(value) =>
-                    handleInputChange("priority", value)
-                  }
-                  style={styles.picker}
-                  dropdownIconColor="#111827"
-                  itemStyle={{ color: "#111827" }}
+            <View style={styles.sectionBlock}>
+              <Text style={styles.sectionLabel}>Attachment</Text>
+              <View style={styles.attachmentRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.addPhotoTile,
+                    (isSubmitting || isPickingAttachments) && styles.tileDisabled,
+                  ]}
+                  activeOpacity={0.85}
+                  onPress={handleAddAttachment}
+                  disabled={isSubmitting || isPickingAttachments}
                 >
-                  <Picker.Item label="Low" value="LOW" color="#111827" />
-                  <Picker.Item label="Medium" value="MEDIUM" color="#111827" />
-                  <Picker.Item label="High" value="HIGH" color="#111827" />
-                </Picker>
+                  {isPickingAttachments ? (
+                    <ActivityIndicator color={P.primary} />
+                  ) : (
+                    <>
+                      <View style={styles.addPhotoIconWrap}>
+                        <Ionicons name="camera-outline" size={20} color={P.soft} />
+                      </View>
+                      <Text style={styles.addPhotoText}>Add Photo</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                {attachments.map((uri, index) => (
+                  <View key={`${uri}-${index}`} style={styles.photoTile}>
+                    <Image source={{ uri }} style={styles.photoImage} />
+                    <TouchableOpacity
+                      style={styles.removePhotoButton}
+                      onPress={() => handleRemoveAttachment(index)}
+                    >
+                      <Ionicons name="close" size={12} color={P.surface} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
               </View>
-              {validationErrors.priority && (
-                <Text style={styles.errorText}>
-                  {validationErrors.priority}
-                </Text>
-              )}
+              <Text style={styles.helperText}>
+                Up to {maxAttachments} photos. JPEG, PNG and WebP are supported.
+              </Text>
             </View>
 
-            {/* Attachment Picker */}
-            <AttachmentPicker
-              attachments={attachments}
-              onAttachmentsChange={(nextAttachments) => {
-                if (nextAttachments.length > maxAttachments) {
-                  Alert.alert(
-                    "Attachment limit exceeded",
-                    `You can only attach up to ${maxAttachments} photos.`,
-                  );
-                  setAttachments(nextAttachments.slice(0, maxAttachments));
-                  return;
-                }
-                setAttachments(nextAttachments);
-              }}
-              disabled={isSubmitting || loading}
-              maxAttachments={maxAttachments}
-            />
+            <View style={styles.sectionBlock}>
+              <Text style={styles.sectionLabel}>Preferred Visit Time</Text>
+              <View style={styles.visitCards}>
+                <TouchableOpacity
+                  style={styles.visitCard}
+                  activeOpacity={0.88}
+                  onPress={() => setShowVisitDatePicker(true)}
+                >
+                  <View style={styles.visitCardIcon}>
+                    <Ionicons name="calendar-outline" size={16} color={P.primary} />
+                  </View>
+                  <View style={styles.visitCardCopy}>
+                    <Text style={styles.visitCardLabel}>Date</Text>
+                    <Text style={styles.visitCardValue}>{formatVisitDate(preferredVisitDate)}</Text>
+                  </View>
+                </TouchableOpacity>
 
-            {/* Submit Button */}
+                <View style={styles.visitWindowGroup}>
+                  {VISIT_WINDOWS.map((window) => {
+                    const selected = preferredVisitWindow === window;
+                    return (
+                      <TouchableOpacity
+                        key={window}
+                        style={[
+                          styles.visitWindowChip,
+                          selected && styles.visitWindowChipSelected,
+                        ]}
+                        activeOpacity={0.88}
+                        onPress={() => setPreferredVisitWindow(window)}
+                      >
+                        <Ionicons
+                          name="time-outline"
+                          size={14}
+                          color={selected ? P.surface : P.primary}
+                        />
+                        <Text
+                          style={[
+                            styles.visitWindowText,
+                            selected && styles.visitWindowTextSelected,
+                          ]}
+                        >
+                          {window}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <Text style={styles.helperText}>
+                  Your preferred visit slot is added to the request notes.
+                </Text>
+              </View>
+            </View>
+
+            {showVisitDatePicker ? (
+              <DateTimePicker
+                value={preferredVisitDate}
+                mode="date"
+                minimumDate={new Date()}
+                display={Platform.OS === "ios" ? "inline" : "default"}
+                onChange={(_, value) => {
+                  if (Platform.OS !== "ios") {
+                    setShowVisitDatePicker(false);
+                  }
+                  if (!value) return;
+                  setPreferredVisitDate(value);
+                }}
+              />
+            ) : null}
+
             <TouchableOpacity
               style={[
                 styles.submitButton,
@@ -438,163 +743,247 @@ export default function NewRequestScreen() {
               ]}
               onPress={handleSubmit}
               disabled={isSubmitting || loading || isUploadingAttachments}
+              activeOpacity={0.9}
             >
-              {isSubmitting || loading || isUploadingAttachments ? (
-                <ActivityIndicator color="white" />
-              ) : (
-                <>
-                  <Ionicons
-                    name="send"
-                    size={20}
-                    color="white"
-                    style={styles.buttonIcon}
-                  />
-                  <Text style={styles.submitButtonText}>Submit Request</Text>
-                </>
-              )}
+              <LinearGradient
+                colors={[P.primary, P.primaryDark]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.submitGradient}
+              >
+                {isSubmitting || loading || isUploadingAttachments ? (
+                  <ActivityIndicator color={P.surface} />
+                ) : (
+                  <>
+                    <Ionicons
+                      name="send-outline"
+                      size={18}
+                      color={P.surface}
+                      style={styles.submitIcon}
+                    />
+                    <Text style={styles.submitButtonText}>Submit Request</Text>
+                  </>
+                )}
+              </LinearGradient>
             </TouchableOpacity>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-
-      {/* Side Menu */}
-      <SideMenu
-        isVisible={showSideMenu}
-        onClose={() => setShowSideMenu(false)}
-      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#f9fafb",
-  },
-  keyboardAvoidingView: {
-    flex: 1,
-  },
-  scrollView: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
-  header: {
-    paddingTop: 20,
-    paddingBottom: 20,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#111827",
+  container: { flex: 1, backgroundColor: P.bg },
+  keyboardAvoidingView: { flex: 1 },
+  scrollView: { flex: 1, paddingHorizontal: 20 },
+  heroBlock: { paddingTop: 12, paddingBottom: 24 },
+  heroEyebrow: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: P.soft,
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
     marginBottom: 8,
   },
-  headerSubtitle: {
-    fontSize: 16,
-    color: "#6b7280",
+  heroTitle: { fontSize: 30, lineHeight: 34, fontWeight: "800", color: P.text, marginBottom: 8 },
+  heroSubtitle: { fontSize: 14, lineHeight: 22, color: P.muted, maxWidth: 300 },
+  formLayout: {
+    backgroundColor: P.surface,
+    borderRadius: 28,
+    padding: 18,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: P.border,
   },
-  formContainer: {
-    backgroundColor: "white",
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+  sectionBlock: { marginBottom: 22 },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: P.soft,
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
+    marginBottom: 12,
+  },
+  categoryRail: { paddingRight: 20, gap: 10 },
+  categoryChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 999,
+    backgroundColor: P.surfaceLow,
+    marginRight: 10,
+  },
+  categoryChipSelected: { backgroundColor: P.primary },
+  categoryChipText: { fontSize: 13, fontWeight: "600", color: P.text },
+  categoryChipTextSelected: { color: P.surface },
+  segmentedControl: {
+    flexDirection: "row",
+    backgroundColor: P.surfaceLow,
+    borderRadius: 18,
+    padding: 4,
+  },
+  segmentItem: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    borderRadius: 14,
+  },
+  segmentItemSelected: {
+    backgroundColor: P.surface,
+    shadowColor: "rgba(43, 52, 55, 0.08)",
+    shadowOpacity: 1,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
     elevation: 2,
   },
-  inputGroup: {
-    marginBottom: 20,
+  segmentItemText: { fontSize: 13, fontWeight: "600", color: P.soft },
+  segmentItemTextSelected: { color: P.text },
+  softInput: {
+    minHeight: 54,
+    borderRadius: 20,
+    backgroundColor: P.surfaceHigh,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    fontSize: 15,
+    color: P.text,
   },
-  label: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#111827",
+  descriptionInput: {
+    minHeight: 138,
+    borderRadius: 22,
+    backgroundColor: P.surfaceHigh,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+    fontSize: 15,
+    lineHeight: 22,
+    color: P.text,
+  },
+  softInputError: {
+    borderWidth: 1,
+    borderColor: P.error,
+    backgroundColor: P.errorSoft,
+  },
+  errorText: { marginTop: 6, fontSize: 12, color: P.error, fontWeight: "600" },
+  attachmentRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  addPhotoTile: {
+    width: 96,
+    height: 96,
+    borderRadius: 22,
+    borderWidth: 1.5,
+    borderStyle: "dashed",
+    borderColor: P.border,
+    backgroundColor: P.surface,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 12,
+  },
+  tileDisabled: { opacity: 0.6 },
+  addPhotoIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: P.surfaceLow,
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: 8,
   },
-  textInput: {
-    borderWidth: 1,
-    borderColor: "#d1d5db",
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    backgroundColor: "white",
-    minHeight: 48,
+  addPhotoText: { fontSize: 12, fontWeight: "600", color: P.muted },
+  photoTile: {
+    width: 96,
+    height: 96,
+    borderRadius: 22,
+    overflow: "hidden",
+    backgroundColor: P.surfaceLow,
+    position: "relative",
   },
-  textArea: {
-    borderWidth: 1,
-    borderColor: "#d1d5db",
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    backgroundColor: "white",
-    minHeight: 100,
+  photoImage: { width: "100%", height: "100%" },
+  removePhotoButton: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "rgba(43,52,55,0.75)",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  pickerContainer: {
-    borderWidth: 1,
-    borderColor: "#d1d5db",
-    borderRadius: 8,
-    backgroundColor: "white",
+  helperText: { marginTop: 10, fontSize: 12, lineHeight: 18, color: P.soft },
+  visitCards: { gap: 12 },
+  visitCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: P.surfaceHigh,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  visitCardIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: P.surface,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  visitCardCopy: { gap: 2 },
+  visitCardLabel: { fontSize: 11, fontWeight: "700", color: P.soft, textTransform: "uppercase" },
+  visitCardValue: { fontSize: 14, fontWeight: "700", color: P.text },
+  visitWindowGroup: { gap: 10 },
+  visitWindowChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: P.surfaceLow,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  visitWindowChipSelected: { backgroundColor: P.primary },
+  visitWindowText: { fontSize: 13, fontWeight: "600", color: P.primary },
+  visitWindowTextSelected: { color: P.surface },
+  submitButton: {
+    marginTop: 8,
+    borderRadius: 20,
     overflow: "hidden",
   },
-  picker: {
-    height: 50,
-    color: "#111827", // Text color for selected item
-    backgroundColor: "white",
-  },
-  errorInput: {
-    borderColor: "#ef4444",
-  },
-  errorText: {
-    color: "#ef4444",
-    fontSize: 14,
-    marginTop: 4,
-  },
-  submitButton: {
-    backgroundColor: "#336BE3",
-    borderRadius: 8,
-    padding: 16,
+  submitButtonDisabled: { opacity: 0.6 },
+  submitGradient: {
+    minHeight: 56,
+    borderRadius: 20,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 10,
+    paddingHorizontal: 18,
   },
-  submitButtonDisabled: {
-    backgroundColor: "#9ca3af",
-  },
-  submitButtonText: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "600",
-    marginLeft: 8,
-  },
-  buttonIcon: {
-    marginRight: 8,
-  },
-  unavailableTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#111827",
-    marginBottom: 8,
-  },
-  unavailableText: {
-    fontSize: 14,
-    lineHeight: 21,
-    color: "#4b5563",
-    marginBottom: 8,
-  },
-  secondaryButton: {
+  submitIcon: { marginRight: 8 },
+  submitButtonText: { fontSize: 16, fontWeight: "700", color: P.surface },
+  unavailableCard: {
+    backgroundColor: P.surface,
+    borderRadius: 28,
+    padding: 20,
     borderWidth: 1,
-    borderColor: "#bfdbfe",
-    backgroundColor: "#eff6ff",
-    borderRadius: 8,
-    padding: 14,
-    marginTop: 12,
+    borderColor: P.accentBorder,
+    marginBottom: 24,
+  },
+  unavailableTitle: { fontSize: 20, fontWeight: "700", color: P.text, marginBottom: 8 },
+  unavailableText: { fontSize: 14, lineHeight: 22, color: P.muted, marginBottom: 8 },
+  secondaryButton: {
+    minHeight: 50,
+    borderRadius: 18,
     alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: P.accent,
+    marginTop: 12,
+    paddingHorizontal: 16,
   },
-  secondaryButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#1d4ed8",
-  },
+  secondaryButtonText: { fontSize: 14, fontWeight: "700", color: P.primary },
 });

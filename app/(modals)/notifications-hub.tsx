@@ -14,7 +14,13 @@ import { NoticesList } from "../../components/notifications/NoticesList";
 import { NotificationsList } from "../../components/notifications/NotificationsList";
 import { NotificationsTabBar } from "../../components/notifications/NotificationsTabBar";
 import { ConversationsTab } from "../../components/notifications/ConversationsTab";
-import { useApp } from "../../lib/context/connected-app-provider";
+import {
+  useAuth,
+  useMessaging,
+  useNotices,
+  useNotifications,
+  useRequests,
+} from "../../lib/context/connected-app-provider";
 import type { Notification } from "../../lib/types";
 import { isNotificationUnread } from "../../lib/utils/helpers";
 
@@ -22,17 +28,19 @@ const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 export default function NotificationsHubScreen() {
   const insets = useSafeAreaInsets();
+  const { currentUser, userRole } = useAuth();
   const {
-    currentUser,
-    userRole,
     notifications,
     unreadCount,
-    requests,
+    actions: notificationActions,
+  } = useNotifications();
+  const { requests, actions: requestActions } = useRequests();
+  const {
     notices,
     activeNoticesCount,
-    messagingUnreadCount,
-    actions,
-  } = useApp();
+    actions: noticeActions,
+  } = useNotices();
+  const { totalUnreadCount: messagingUnreadCount } = useMessaging();
 
   const [activeTab, setActiveTab] = useState<"notifications" | "notices" | "messages">(
     "notifications",
@@ -40,7 +48,7 @@ export default function NotificationsHubScreen() {
 
   const handleMarkAsRead = async (id: string) => {
     try {
-      await actions.markNotificationAsRead(id);
+      await notificationActions.markNotificationAsRead(id);
     } catch (error) {
       console.error("Error marking notification as read:", error);
     }
@@ -50,7 +58,7 @@ export default function NotificationsHubScreen() {
     if (!currentUser) return;
 
     try {
-      await actions.markAllNotificationsAsRead(currentUser.id);
+      await notificationActions.markAllNotificationsAsRead(currentUser.id);
     } catch (error) {
       console.error("Error marking all notifications as read:", error);
     }
@@ -58,7 +66,7 @@ export default function NotificationsHubScreen() {
 
   const handleDismissNotification = async (id: string) => {
     try {
-      await actions.dismissNotification(id);
+      await notificationActions.dismissNotification(id);
     } catch (error) {
       console.error("Error dismissing notification:", error);
     }
@@ -66,7 +74,7 @@ export default function NotificationsHubScreen() {
 
   const handleDeleteNotice = async (id: string) => {
     try {
-      await actions.deleteNotice(id);
+      await noticeActions.deleteNotice(id);
     } catch (error) {
       console.error("Error deleting notice:", error);
     }
@@ -85,7 +93,7 @@ export default function NotificationsHubScreen() {
   };
 
   const handleRefresh = async () => {
-    await actions.refreshNotifications?.();
+    await notificationActions.refreshNotifications();
   };
 
   const handleNotificationPress = (notification: Notification) => {
@@ -99,13 +107,13 @@ export default function NotificationsHubScreen() {
       data?.buildingId ?? data?.building_id ?? data?.buildingID ?? null;
 
     if (isNotificationUnread(notification)) {
-      actions.markNotificationAsRead(notification.id);
+      notificationActions.markNotificationAsRead(notification.id);
     }
 
     if (userRole === "tenant") {
       const request = requests.find((item) => item.id === normalizedRequestId);
       if (request) {
-        actions.setSelectedRequest(request);
+        requestActions.setSelectedRequest(request);
         router.back();
         setTimeout(() => {
           router.push({

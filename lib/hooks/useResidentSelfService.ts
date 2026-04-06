@@ -75,6 +75,13 @@ type UseResidentContractResult = {
   ) => Promise<ResidentContractDocument>;
 };
 
+type ResidentContractSnapshot = {
+  data: ResidentLatestContract;
+  contracts: ResidentContract[];
+  contractsNextCursor: string | null;
+  fetchedAt: number;
+};
+
 const EMPTY_CONTRACT_STATE: ResidentLatestContract = {
   contract: null,
   canRequestMoveIn: false,
@@ -82,6 +89,18 @@ const EMPTY_CONTRACT_STATE: ResidentLatestContract = {
   latestMoveInRequestStatus: null,
   latestMoveOutRequestStatus: null,
 };
+
+const EMPTY_CONTRACT_SNAPSHOT: ResidentContractSnapshot = {
+  data: EMPTY_CONTRACT_STATE,
+  contracts: [],
+  contractsNextCursor: null,
+  fetchedAt: 0,
+};
+
+const CACHE_TTL_MS = 30_000;
+let cachedContractSnapshot: ResidentContractSnapshot = EMPTY_CONTRACT_SNAPSHOT;
+let sharedContractRequestPromise: Promise<ResidentContractSnapshot> | null = null;
+const contractListeners = new Set<(snapshot: ResidentContractSnapshot) => void>();
 
 const getStatusCode = (error: unknown): number | undefined => {
   if (!error || typeof error !== "object") return undefined;
@@ -118,15 +137,42 @@ const mergeContracts = (
   return Array.from(contractMap.values());
 };
 
+const hasFreshContractSnapshot = (): boolean =>
+  Boolean(
+    cachedContractSnapshot.fetchedAt &&
+      Date.now() - cachedContractSnapshot.fetchedAt < CACHE_TTL_MS,
+  );
+
+const getResidentContractSnapshot = (): ResidentContractSnapshot => cachedContractSnapshot;
+
+const publishResidentContractSnapshot = (
+  snapshot: ResidentContractSnapshot,
+): void => {
+  cachedContractSnapshot = snapshot;
+  contractListeners.forEach((listener) => {
+    try {
+      listener(snapshot);
+    } catch (error) {
+      console.warn("[ResidentContract] Failed to notify listener", error);
+    }
+  });
+};
+
 export const useResidentContract = (
   options?: HookOptions,
 ): UseResidentContractResult => {
   const enabled = options?.enabled ?? true;
   const onUnauthorized = options?.onUnauthorized;
   const contractListParams = options?.contractListParams;
+  const initialSnapshot = getResidentContractSnapshot();
+  const hasInitialSnapshot = enabled && hasFreshContractSnapshot();
 
-  const [data, setData] = useState<ResidentLatestContract>(EMPTY_CONTRACT_STATE);
-  const [contracts, setContracts] = useState<ResidentContract[]>([]);
+  const [data, setData] = useState<ResidentLatestContract>(
+    hasInitialSnapshot ? initialSnapshot.data : EMPTY_CONTRACT_STATE,
+  );
+  const [contracts, setContracts] = useState<ResidentContract[]>(
+    hasInitialSnapshot ? initialSnapshot.contracts : [],
+  );
   const [contractDetailsById, setContractDetailsById] = useState<
     Record<string, ResidentContract>
   >({});
@@ -134,14 +180,14 @@ export const useResidentContract = (
     ResidentContractDocument[]
   >([]);
   const [contractsNextCursor, setContractsNextCursor] = useState<string | null>(
-    null,
+    hasInitialSnapshot ? initialSnapshot.contractsNextCursor : null,
   );
   const [moveInHistory, setMoveInHistory] = useState<ResidentMoveRequest[]>([]);
   const [moveOutHistory, setMoveOutHistory] = useState<ResidentMoveRequest[]>([]);
   const [activeHistoryContractId, setActiveHistoryContractId] = useState<
     string | null
   >(null);
-  const [isLoading, setIsLoading] = useState<boolean>(enabled);
+  const [isLoading, setIsLoading] = useState<boolean>(enabled && !hasInitialSnapshot);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [isLoadingContractDetail, setIsLoadingContractDetail] =
     useState<boolean>(false);
@@ -181,6 +227,29 @@ export const useResidentContract = (
     latestContractStateRef.current = data;
   }, [data]);
 
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
+    const handleSnapshot = (snapshot: ResidentContractSnapshot) => {
+      setData(snapshot.data);
+      setContracts(snapshot.contracts);
+      setContractsNextCursor(snapshot.contractsNextCursor);
+      setErrorMessage(null);
+      setIsLoading(false);
+      setIsRefreshing(false);
+      latestContractStateRef.current = snapshot.data;
+      contractsRef.current = snapshot.contracts;
+    };
+
+    contractListeners.add(handleSnapshot);
+
+    return () => {
+      contractListeners.delete(handleSnapshot);
+    };
+  }, [enabled]);
+
   const handleUnauthorizedIfNeeded = useCallback(async (error: unknown) => {
     if (getStatusCode(error) === 401) {
       await onUnauthorizedRef.current?.();
@@ -215,22 +284,44 @@ export const useResidentContract = (
         return;
       }
 
+      if (!asRefresh && hasFreshContractSnapshot()) {
+        const snapshot = getResidentContractSnapshot();
+        setData(snapshot.data);
+        setContracts(snapshot.contracts);
+        setContractsNextCursor(snapshot.contractsNextCursor);
+        latestContractStateRef.current = snapshot.data;
+        contractsRef.current = snapshot.contracts;
+        setErrorMessage(null);
+        setIsLoading(false);
+        setIsRefreshing(false);
+        return;
+      }
+
       inFlightRef.current = true;
       if (showLoading) setIsLoading(true);
       if (asRefresh) setIsRefreshing(true);
 
       try {
-        const [latestContract, contractList] = await Promise.all([
-          residentSelfServiceApi.getResidentLatestContract(),
-          residentSelfServiceApi.listResidentContracts(contractListParams),
-        ]);
+        if (!sharedContractRequestPromise) {
+          sharedContractRequestPromise = (async () => {
+            const [latestContract, contractList] = await Promise.all([
+              residentSelfServiceApi.getResidentLatestContract(),
+              residentSelfServiceApi.listResidentContracts(contractListParams),
+            ]);
 
-        const mergedContracts = mergeContracts(latestContract, contractList.items);
-        setData(latestContract);
-        setContracts(mergedContracts);
-        latestContractStateRef.current = latestContract;
-        contractsRef.current = mergedContracts;
-        setContractsNextCursor(contractList.nextCursor);
+            return {
+              data: latestContract,
+              contracts: mergeContracts(latestContract, contractList.items),
+              contractsNextCursor: contractList.nextCursor,
+              fetchedAt: Date.now(),
+            };
+          })().finally(() => {
+            sharedContractRequestPromise = null;
+          });
+        }
+
+        const snapshot = await sharedContractRequestPromise;
+        publishResidentContractSnapshot(snapshot);
         setErrorMessage(null);
         invalidateResidentTenancy();
       } catch (error) {
@@ -430,7 +521,7 @@ export const useResidentContract = (
         appStateRef.current.match(/inactive|background/) &&
         nextAppState === "active"
       ) {
-        void refetch({ asRefresh: true, showLoading: false });
+        void load({ asRefresh: false, showLoading: false });
       }
       appStateRef.current = nextAppState;
     });
@@ -438,7 +529,7 @@ export const useResidentContract = (
     return () => {
       subscription.remove();
     };
-  }, [enabled, refetch]);
+  }, [enabled, load]);
 
   useEffect(() => {
     void refetchActiveLeaseDocuments().catch(() => {

@@ -5,8 +5,8 @@ import React, { useMemo, useState } from "react";
 import {
   Alert,
   Dimensions,
+  FlatList,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -18,7 +18,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { AnimatedButton } from "../../components/ui/AnimatedButton";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
-import { useApp } from "../../lib/context/connected-app-provider";
+import { useAppDomain } from "../../lib/context/connected-app-provider";
+import { useAuth } from "../../lib/context/auth-context";
+import { useNotifications } from "../../lib/context/notifications-context";
 import type { AmenityBooking, BookingStatus } from "../../lib/types";
 import {
   filterNotificationsByUser,
@@ -30,14 +32,18 @@ const { width: SCREEN_WIDTH } = Dimensions.get("window");
 type FilterType = "all" | "upcoming" | "past" | "cancelled";
 
 export default function MyBookingsScreen() {
-  const { currentUser, notifications, actions } = useApp();
+  const { currentUser } = useAuth();
+  const { notifications } = useNotifications();
+  const {
+    amenityVisitor: { getBookings, cancelBooking },
+  } = useAppDomain();
   const [filterType, setFilterType] = useState<FilterType>("all");
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const tabBarHeight = useBottomTabBarHeight();
 
   // Get bookings from context
-  const bookings = actions.getBookings();
+  const bookings = getBookings();
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -101,7 +107,7 @@ export default function MyBookingsScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              await actions.cancelBooking(booking.id, "Cancelled by user");
+              await cancelBooking(booking.id, "Cancelled by user");
               Alert.alert("Success", "Booking cancelled successfully");
             } catch (error) {
               console.error("Failed to cancel booking:", error);
@@ -168,294 +174,293 @@ export default function MyBookingsScreen() {
     );
   };
 
+  const renderBookingItem = ({ item: booking }: { item: AmenityBooking }) => {
+    const statusColors = getStatusColors(booking.status);
+    const canCancel = isUpcoming(booking);
+
+    return (
+      <AnimatedButton
+        style={styles.bookingCard}
+        onPress={() => handleBookingPress(booking)}
+      >
+        <View style={styles.bookingHeader}>
+          <View style={styles.bookingIconContainer}>
+            <Ionicons
+              name={getAmenityIcon(booking.amenityType)}
+              size={24}
+              color={getAmenityIconColor(booking.amenityType)}
+            />
+          </View>
+          <View style={styles.bookingHeaderText}>
+            <Text style={styles.bookingAmenityName}>
+              {booking.amenityName}
+            </Text>
+            <Text style={styles.bookingAmenityType}>
+              {booking.amenityType.toUpperCase()}
+            </Text>
+          </View>
+          <View
+            style={[
+              styles.statusBadge,
+              { backgroundColor: statusColors.bg },
+            ]}
+          >
+            <Text
+              style={[
+                styles.statusBadgeText,
+                { color: statusColors.text },
+              ]}
+            >
+              {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.bookingDivider} />
+
+        <View style={styles.bookingDetails}>
+          <View style={styles.bookingDetailRow}>
+            <Ionicons
+              name="calendar-outline"
+              size={16}
+              color="#6B7280"
+            />
+            <Text style={styles.bookingDetailText}>
+              {new Date(booking.slotDate).toLocaleDateString(
+                "en-US",
+                {
+                  weekday: "short",
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                },
+              )}
+            </Text>
+          </View>
+          <View style={styles.bookingDetailRow}>
+            <Ionicons
+              name="time-outline"
+              size={16}
+              color="#6B7280"
+            />
+            <Text style={styles.bookingDetailText}>
+              {booking.slotTimeStart} - {booking.slotTimeEnd}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.bookingFooter}>
+          <View style={styles.bookingCodeContainer}>
+            <Ionicons
+              name="barcode-outline"
+              size={14}
+              color="#6B7280"
+            />
+            <Text style={styles.bookingCode}>{booking.bookingCode}</Text>
+          </View>
+          {canCancel ? (
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={(e) => {
+                e.stopPropagation();
+                handleCancelBooking(booking);
+              }}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      </AnimatedButton>
+    );
+  };
+
+  const renderListHeader = () => (
+    <>
+      <HeaderBar
+        title="My Bookings"
+        hasUnreadNotifications={hasUnreadNotifications}
+        showSideMenu={showSideMenu}
+        onSideMenuToggle={setShowSideMenu}
+      />
+
+      <Animated.View
+        entering={FadeInDown.delay(50).duration(400)}
+        style={styles.filtersContainer}
+      >
+        <TouchableOpacity
+          style={[
+            styles.filterTab,
+            filterType === "all" && styles.filterTabActive,
+          ]}
+          onPress={() => setFilterType("all")}
+        >
+          <Text
+            style={[
+              styles.filterTabText,
+              filterType === "all" && styles.filterTabTextActive,
+            ]}
+          >
+            All
+          </Text>
+          <View
+            style={[
+              styles.filterTabBadge,
+              filterType === "all" && styles.filterTabBadgeActive,
+            ]}
+          >
+            <Text
+              style={[
+                styles.filterTabBadgeText,
+                filterType === "all" && styles.filterTabBadgeTextActive,
+              ]}
+            >
+              {counts.all}
+            </Text>
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.filterTab,
+            filterType === "upcoming" && styles.filterTabActive,
+          ]}
+          onPress={() => setFilterType("upcoming")}
+        >
+          <Text
+            style={[
+              styles.filterTabText,
+              filterType === "upcoming" && styles.filterTabTextActive,
+            ]}
+          >
+            Upcoming
+          </Text>
+          <View
+            style={[
+              styles.filterTabBadge,
+              filterType === "upcoming" && styles.filterTabBadgeActive,
+            ]}
+          >
+            <Text
+              style={[
+                styles.filterTabBadgeText,
+                filterType === "upcoming" && styles.filterTabBadgeTextActive,
+              ]}
+            >
+              {counts.upcoming}
+            </Text>
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.filterTab,
+            filterType === "past" && styles.filterTabActive,
+          ]}
+          onPress={() => setFilterType("past")}
+        >
+          <Text
+            style={[
+              styles.filterTabText,
+              filterType === "past" && styles.filterTabTextActive,
+            ]}
+          >
+            Past
+          </Text>
+          <View
+            style={[
+              styles.filterTabBadge,
+              filterType === "past" && styles.filterTabBadgeActive,
+            ]}
+          >
+            <Text
+              style={[
+                styles.filterTabBadgeText,
+                filterType === "past" && styles.filterTabBadgeTextActive,
+              ]}
+            >
+              {counts.past}
+            </Text>
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.filterTab,
+            filterType === "cancelled" && styles.filterTabActive,
+          ]}
+          onPress={() => setFilterType("cancelled")}
+        >
+          <Text
+            style={[
+              styles.filterTabText,
+              filterType === "cancelled" && styles.filterTabTextActive,
+            ]}
+          >
+            Cancelled
+          </Text>
+          <View
+            style={[
+              styles.filterTabBadge,
+              filterType === "cancelled" && styles.filterTabBadgeActive,
+            ]}
+          >
+            <Text
+              style={[
+                styles.filterTabBadgeText,
+                filterType === "cancelled" && styles.filterTabBadgeTextActive,
+              ]}
+            >
+              {counts.cancelled}
+            </Text>
+          </View>
+        </TouchableOpacity>
+      </Animated.View>
+    </>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={{ paddingBottom: tabBarHeight + 32 }}
+      <FlatList
+        data={filteredBookings}
+        renderItem={renderBookingItem}
+        keyExtractor={(item) => item.id}
+        ListHeaderComponent={renderListHeader}
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <Ionicons name="calendar-outline" size={64} color="#D1D5DB" />
+            <Text style={styles.emptyStateTitle}>No bookings found</Text>
+            <Text style={styles.emptyStateText}>
+              {filterType === "all"
+                ? "You haven't made any bookings yet"
+                : `No ${filterType} bookings`}
+            </Text>
+            {filterType === "all" ? (
+              <TouchableOpacity
+                style={styles.emptyStateButton}
+                onPress={() => router.push("/(tenant)/amenities")}
+              >
+                <Text style={styles.emptyStateButtonText}>
+                  Browse Amenities
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        }
+        ItemSeparatorComponent={() => <View style={styles.listSpacer} />}
+        contentContainerStyle={[
+          styles.listContent,
+          { paddingBottom: tabBarHeight + 32 },
+          filteredBookings.length === 0 && styles.emptyListContent,
+        ]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
         showsVerticalScrollIndicator={false}
-      >
-        {/* Header */}
-        <HeaderBar
-          title="My Bookings"
-          hasUnreadNotifications={hasUnreadNotifications}
-          showSideMenu={showSideMenu}
-          onSideMenuToggle={setShowSideMenu}
-        />
-
-        {/* Filter Tabs */}
-        <Animated.View
-          entering={FadeInDown.delay(50).duration(400)}
-          style={styles.filtersContainer}
-        >
-          <TouchableOpacity
-            style={[
-              styles.filterTab,
-              filterType === "all" && styles.filterTabActive,
-            ]}
-            onPress={() => setFilterType("all")}
-          >
-            <Text
-              style={[
-                styles.filterTabText,
-                filterType === "all" && styles.filterTabTextActive,
-              ]}
-            >
-              All
-            </Text>
-            <View
-              style={[
-                styles.filterTabBadge,
-                filterType === "all" && styles.filterTabBadgeActive,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.filterTabBadgeText,
-                  filterType === "all" && styles.filterTabBadgeTextActive,
-                ]}
-              >
-                {counts.all}
-              </Text>
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.filterTab,
-              filterType === "upcoming" && styles.filterTabActive,
-            ]}
-            onPress={() => setFilterType("upcoming")}
-          >
-            <Text
-              style={[
-                styles.filterTabText,
-                filterType === "upcoming" && styles.filterTabTextActive,
-              ]}
-            >
-              Upcoming
-            </Text>
-            <View
-              style={[
-                styles.filterTabBadge,
-                filterType === "upcoming" && styles.filterTabBadgeActive,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.filterTabBadgeText,
-                  filterType === "upcoming" && styles.filterTabBadgeTextActive,
-                ]}
-              >
-                {counts.upcoming}
-              </Text>
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.filterTab,
-              filterType === "past" && styles.filterTabActive,
-            ]}
-            onPress={() => setFilterType("past")}
-          >
-            <Text
-              style={[
-                styles.filterTabText,
-                filterType === "past" && styles.filterTabTextActive,
-              ]}
-            >
-              Past
-            </Text>
-            <View
-              style={[
-                styles.filterTabBadge,
-                filterType === "past" && styles.filterTabBadgeActive,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.filterTabBadgeText,
-                  filterType === "past" && styles.filterTabBadgeTextActive,
-                ]}
-              >
-                {counts.past}
-              </Text>
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.filterTab,
-              filterType === "cancelled" && styles.filterTabActive,
-            ]}
-            onPress={() => setFilterType("cancelled")}
-          >
-            <Text
-              style={[
-                styles.filterTabText,
-                filterType === "cancelled" && styles.filterTabTextActive,
-              ]}
-            >
-              Cancelled
-            </Text>
-            <View
-              style={[
-                styles.filterTabBadge,
-                filterType === "cancelled" && styles.filterTabBadgeActive,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.filterTabBadgeText,
-                  filterType === "cancelled" && styles.filterTabBadgeTextActive,
-                ]}
-              >
-                {counts.cancelled}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        </Animated.View>
-
-        {/* Bookings List */}
-        <Animated.View
-          entering={FadeInDown.delay(100).duration(400)}
-          style={styles.bookingsContainer}
-        >
-          {filteredBookings.length > 0 ? (
-            filteredBookings.map((booking, index) => {
-              const statusColors = getStatusColors(booking.status);
-              const canCancel = isUpcoming(booking);
-
-              return (
-                <Animated.View
-                  key={booking.id}
-                  entering={FadeInDown.delay(150 + index * 50).duration(400)}
-                >
-                  <AnimatedButton
-                    style={styles.bookingCard}
-                    onPress={() => handleBookingPress(booking)}
-                  >
-                    <View style={styles.bookingHeader}>
-                      <View style={styles.bookingIconContainer}>
-                        <Ionicons
-                          name={getAmenityIcon(booking.amenityType)}
-                          size={24}
-                          color={getAmenityIconColor(booking.amenityType)}
-                        />
-                      </View>
-                      <View style={styles.bookingHeaderText}>
-                        <Text style={styles.bookingAmenityName}>
-                          {booking.amenityName}
-                        </Text>
-                        <Text style={styles.bookingAmenityType}>
-                          {booking.amenityType.toUpperCase()}
-                        </Text>
-                      </View>
-                      <View
-                        style={[
-                          styles.statusBadge,
-                          { backgroundColor: statusColors.bg },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.statusBadgeText,
-                            { color: statusColors.text },
-                          ]}
-                        >
-                          {booking.status.charAt(0).toUpperCase() +
-                            booking.status.slice(1)}
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.bookingDivider} />
-
-                    <View style={styles.bookingDetails}>
-                      <View style={styles.bookingDetailRow}>
-                        <Ionicons
-                          name="calendar-outline"
-                          size={16}
-                          color="#6B7280"
-                        />
-                        <Text style={styles.bookingDetailText}>
-                          {new Date(booking.slotDate).toLocaleDateString(
-                            "en-US",
-                            {
-                              weekday: "short",
-                              month: "short",
-                              day: "numeric",
-                              year: "numeric",
-                            },
-                          )}
-                        </Text>
-                      </View>
-                      <View style={styles.bookingDetailRow}>
-                        <Ionicons
-                          name="time-outline"
-                          size={16}
-                          color="#6B7280"
-                        />
-                        <Text style={styles.bookingDetailText}>
-                          {booking.slotTimeStart} - {booking.slotTimeEnd}
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.bookingFooter}>
-                      <View style={styles.bookingCodeContainer}>
-                        <Ionicons
-                          name="barcode-outline"
-                          size={14}
-                          color="#6B7280"
-                        />
-                        <Text style={styles.bookingCode}>
-                          {booking.bookingCode}
-                        </Text>
-                      </View>
-                      {canCancel && (
-                        <TouchableOpacity
-                          style={styles.cancelButton}
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            handleCancelBooking(booking);
-                          }}
-                        >
-                          <Text style={styles.cancelButtonText}>Cancel</Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  </AnimatedButton>
-                </Animated.View>
-              );
-            })
-          ) : (
-            <View style={styles.emptyState}>
-              <Ionicons name="calendar-outline" size={64} color="#D1D5DB" />
-              <Text style={styles.emptyStateTitle}>No bookings found</Text>
-              <Text style={styles.emptyStateText}>
-                {filterType === "all"
-                  ? "You haven't made any bookings yet"
-                  : `No ${filterType} bookings`}
-              </Text>
-              {filterType === "all" && (
-                <TouchableOpacity
-                  style={styles.emptyStateButton}
-                  onPress={() => router.push("/(tenant)/amenities")}
-                >
-                  <Text style={styles.emptyStateButtonText}>
-                    Browse Amenities
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          )}
-        </Animated.View>
-      </ScrollView>
+        removeClippedSubviews
+        windowSize={8}
+        initialNumToRender={6}
+        maxToRenderPerBatch={8}
+      />
 
       {/* Side Menu */}
       <SideMenu
@@ -471,9 +476,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F9FAFB",
   },
-  scrollView: {
-    flex: 1,
+  listContent: {
     paddingHorizontal: SCREEN_WIDTH * 0.05,
+  },
+  emptyListContent: {
+    flexGrow: 1,
   },
   filtersContainer: {
     flexDirection: "row",
@@ -524,14 +531,13 @@ const styles = StyleSheet.create({
   filterTabBadgeTextActive: {
     color: "#FFFFFF",
   },
-  bookingsContainer: {
-    paddingBottom: 20,
+  listSpacer: {
+    height: 16,
   },
   bookingCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 12,
     padding: 16,
-    marginBottom: 16,
     borderWidth: 1,
     borderColor: "#E5E7EB",
   },

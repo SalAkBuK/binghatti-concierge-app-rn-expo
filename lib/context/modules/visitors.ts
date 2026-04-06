@@ -1,5 +1,10 @@
 import { useCallback, useState } from "react";
 
+/**
+ * Data maturity: hybrid.
+ * Resident visitor CRUD is API-backed via `residentVisitorsApi`, while visitor
+ * lists, passes, and logs still start from mock data and local in-memory state.
+ */
 import type {
   CreateResidentVisitorDTO,
   ResidentVisitor,

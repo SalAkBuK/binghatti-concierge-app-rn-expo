@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
+  FlatList,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -21,7 +22,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { AnimatedButton } from "../../components/ui/AnimatedButton";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
-import { useApp } from "../../lib/context/connected-app-provider";
+import { useAppDomain } from "../../lib/context/connected-app-provider";
+import { useAuth } from "../../lib/context/auth-context";
+import { useNotifications } from "../../lib/context/notifications-context";
 import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
 import type { ResidentVisitor, ResidentVisitorStatus } from "../../lib/types";
 import {
@@ -66,15 +69,16 @@ const getStatusColor = (status: ResidentVisitorStatus) => {
 };
 
 export default function VisitorsScreen() {
+  const { currentUser } = useAuth();
+  const { notifications } = useNotifications();
   const {
-    currentUser,
-    notifications,
-    residentVisitors,
-    residentVisitorsLoading,
-    actions,
-  } = useApp();
-  const fetchResidentVisitors = actions.fetchResidentVisitors;
-  const cancelResidentVisitor = actions.cancelResidentVisitor;
+    amenityVisitor: {
+      residentVisitors,
+      residentVisitorsLoading,
+      fetchResidentVisitors,
+      cancelResidentVisitor,
+    },
+  } = useAppDomain();
   const {
     canManageVisitors,
     isLoading: isTenancyLoading,
@@ -292,15 +296,117 @@ export default function VisitorsScreen() {
     );
   };
 
-  return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={{ paddingBottom: tabBarHeight + 32 }}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-      >
+  const renderVisitorItem = useCallback(
+    ({ item: visitor }: { item: ResidentVisitor }) => {
+      const statusColors = getStatusColor(visitor.status);
+
+      return (
+        <AnimatedButton
+          style={styles.visitorCard}
+          onPress={() => handleVisitorPress(visitor)}
+        >
+          <View style={styles.visitorCardHeader}>
+            <View style={styles.visitorIdentity}>
+              <View style={styles.iconBadge}>
+                <Ionicons name="person-outline" size={18} color="#336BE3" />
+              </View>
+              <View style={styles.visitorNameBlock}>
+                <Text style={styles.visitorName} numberOfLines={1}>
+                  {visitor.visitorName}
+                </Text>
+                <Text style={styles.visitorPhone}>{visitor.phoneNumber}</Text>
+              </View>
+            </View>
+
+            <View
+              style={[
+                styles.statusBadge,
+                { backgroundColor: statusColors.bg },
+              ]}
+            >
+              <Text
+                style={[styles.statusBadgeText, { color: statusColors.text }]}
+              >
+                {visitor.status}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.metaRow}>
+            <Ionicons name="pricetag-outline" size={15} color="#6B7280" />
+            <Text style={styles.metaText}>
+              {formatResidentVisitorType(visitor.type)}
+            </Text>
+          </View>
+
+          <View style={styles.metaRow}>
+            <Ionicons name="business-outline" size={15} color="#6B7280" />
+            <Text style={styles.metaText}>
+              Unit {visitor.unit.label || "Assigned automatically"}
+            </Text>
+          </View>
+
+          <View style={styles.metaRow}>
+            <Ionicons name="time-outline" size={15} color="#6B7280" />
+            <Text style={styles.metaText}>
+              Arrival: {formatDateTime(visitor.expectedArrivalAt)}
+            </Text>
+          </View>
+
+          {visitor.notes ? (
+            <View style={styles.metaRow}>
+              <Ionicons
+                name="document-text-outline"
+                size={15}
+                color="#6B7280"
+              />
+              <Text style={styles.metaText} numberOfLines={2}>
+                {visitor.notes}
+              </Text>
+            </View>
+          ) : null}
+
+          {visitor.status === "EXPECTED" ? (
+            <View style={styles.cardActions}>
+              <TouchableOpacity
+                style={styles.secondaryAction}
+                onPress={(event) => {
+                  event.stopPropagation();
+                  router.push({
+                    pathname: "/(modals)/register-visitor",
+                    params: { visitorId: visitor.id },
+                  } as any);
+                }}
+              >
+                <Ionicons name="create-outline" size={16} color="#1D4ED8" />
+                <Text style={styles.secondaryActionText}>Edit</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.destructiveAction}
+                onPress={(event) => {
+                  event.stopPropagation();
+                  void handleCancelVisitor(visitor);
+                }}
+              >
+                <Ionicons
+                  name="close-circle-outline"
+                  size={16}
+                  color="#B91C1C"
+                />
+                <Text style={styles.destructiveActionText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+        </AnimatedButton>
+      );
+    },
+    [handleCancelVisitor],
+  );
+
+  const renderListHeader = useCallback(
+    () => (
+      <>
         <HeaderBar
           title="My Visitors"
           hasUnreadNotifications={hasUnreadNotifications}
@@ -369,117 +475,36 @@ export default function VisitorsScreen() {
 
         <Animated.View
           entering={FadeInDown.delay(160).duration(320)}
-          style={styles.visitorsContainer}
+          style={styles.sectionHeader}
         >
           <Text style={styles.visitorsTitle}>Visitor History</Text>
+        </Animated.View>
+      </>
+    ),
+    [
+      hasUnreadNotifications,
+      searchQuery,
+      showSideMenu,
+      stats.ARRIVED,
+      stats.CANCELLED,
+      stats.COMPLETED,
+      stats.EXPECTED,
+      stats.all,
+    ],
+  );
 
-          {residentVisitorsLoading && residentVisitors.length === 0 ? (
+  return (
+    <SafeAreaView style={styles.container}>
+      <FlatList
+        data={filteredVisitors}
+        renderItem={renderVisitorItem}
+        keyExtractor={(item) => item.id}
+        ListHeaderComponent={renderListHeader}
+        ListEmptyComponent={
+          residentVisitorsLoading && residentVisitors.length === 0 ? (
             <View style={styles.loadingState}>
               <ActivityIndicator size="large" color="#336BE3" />
               <Text style={styles.loadingText}>Loading visitors...</Text>
-            </View>
-          ) : filteredVisitors.length > 0 ? (
-            <View style={styles.visitorsList}>
-              {filteredVisitors.map((visitor) => {
-                const statusColors = getStatusColor(visitor.status);
-                return (
-                  <AnimatedButton
-                    key={visitor.id}
-                    style={styles.visitorCard}
-                    onPress={() => handleVisitorPress(visitor)}
-                  >
-                    <View style={styles.visitorCardHeader}>
-                      <View style={styles.visitorIdentity}>
-                        <View style={styles.iconBadge}>
-                          <Ionicons name="person-outline" size={18} color="#336BE3" />
-                        </View>
-                        <View style={styles.visitorNameBlock}>
-                          <Text style={styles.visitorName} numberOfLines={1}>
-                            {visitor.visitorName}
-                          </Text>
-                          <Text style={styles.visitorPhone}>{visitor.phoneNumber}</Text>
-                        </View>
-                      </View>
-
-                      <View
-                        style={[
-                          styles.statusBadge,
-                          { backgroundColor: statusColors.bg },
-                        ]}
-                      >
-                        <Text
-                          style={[styles.statusBadgeText, { color: statusColors.text }]}
-                        >
-                          {visitor.status}
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View style={styles.metaRow}>
-                      <Ionicons name="pricetag-outline" size={15} color="#6B7280" />
-                      <Text style={styles.metaText}>
-                        {formatResidentVisitorType(visitor.type)}
-                      </Text>
-                    </View>
-
-                    <View style={styles.metaRow}>
-                      <Ionicons name="business-outline" size={15} color="#6B7280" />
-                      <Text style={styles.metaText}>
-                        Unit {visitor.unit.label || "Assigned automatically"}
-                      </Text>
-                    </View>
-
-                    <View style={styles.metaRow}>
-                      <Ionicons name="time-outline" size={15} color="#6B7280" />
-                      <Text style={styles.metaText}>
-                        Arrival: {formatDateTime(visitor.expectedArrivalAt)}
-                      </Text>
-                    </View>
-
-                    {visitor.notes ? (
-                      <View style={styles.metaRow}>
-                        <Ionicons
-                          name="document-text-outline"
-                          size={15}
-                          color="#6B7280"
-                        />
-                        <Text style={styles.metaText} numberOfLines={2}>
-                          {visitor.notes}
-                        </Text>
-                      </View>
-                    ) : null}
-
-                    {visitor.status === "EXPECTED" ? (
-                      <View style={styles.cardActions}>
-                        <TouchableOpacity
-                          style={styles.secondaryAction}
-                          onPress={(event) => {
-                            event.stopPropagation();
-                            router.push({
-                              pathname: "/(modals)/register-visitor",
-                              params: { visitorId: visitor.id },
-                            } as any);
-                          }}
-                        >
-                          <Ionicons name="create-outline" size={16} color="#1D4ED8" />
-                          <Text style={styles.secondaryActionText}>Edit</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={styles.destructiveAction}
-                          onPress={(event) => {
-                            event.stopPropagation();
-                            void handleCancelVisitor(visitor);
-                          }}
-                        >
-                          <Ionicons name="close-circle-outline" size={16} color="#B91C1C" />
-                          <Text style={styles.destructiveActionText}>Cancel</Text>
-                        </TouchableOpacity>
-                      </View>
-                    ) : null}
-                  </AnimatedButton>
-                );
-              })}
             </View>
           ) : (
             <View style={styles.emptyState}>
@@ -493,9 +518,24 @@ export default function VisitorsScreen() {
                     : `No ${filterStatus.toLowerCase()} visitors found.`}
               </Text>
             </View>
-          )}
-        </Animated.View>
-      </ScrollView>
+          )
+        }
+        ItemSeparatorComponent={() => <View style={styles.listSpacer} />}
+        contentContainerStyle={[
+          styles.listContent,
+          { paddingBottom: tabBarHeight + 32 },
+          filteredVisitors.length === 0 && styles.emptyListContent,
+        ]}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+        showsVerticalScrollIndicator={false}
+        removeClippedSubviews
+        windowSize={8}
+        initialNumToRender={6}
+        maxToRenderPerBatch={8}
+        updateCellsBatchingPeriod={50}
+      />
 
       <SideMenu
         isVisible={showSideMenu}
@@ -513,6 +553,12 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
     paddingHorizontal: SCREEN_WIDTH * 0.05,
+  },
+  listContent: {
+    paddingHorizontal: SCREEN_WIDTH * 0.05,
+  },
+  emptyListContent: {
+    flexGrow: 1,
   },
   infoBanner: {
     flexDirection: "row",
@@ -595,8 +641,8 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#111827",
   },
-  visitorsContainer: {
-    marginBottom: 16,
+  sectionHeader: {
+    marginBottom: 14,
   },
   visitorsTitle: {
     fontSize: 20,
@@ -604,8 +650,8 @@ const styles = StyleSheet.create({
     color: "#111827",
     marginBottom: 14,
   },
-  visitorsList: {
-    gap: 12,
+  listSpacer: {
+    height: 12,
   },
   visitorCard: {
     backgroundColor: "#FFFFFF",

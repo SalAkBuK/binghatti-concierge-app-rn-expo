@@ -1,37 +1,92 @@
 # Repository Guidelines
 
-## Project Structure & Module Organization
-- `app/` holds Expo Router entry points and navigation glue; keep feature logic out of this layer.
-- `src/` contains feature code under `screens/`, `components/`, `hooks/`, and `services/`; reusable UI lives in `components/common/`.
-- `assets/` stores images, icons, and fonts referenced via Expo’s asset system.
-- Native scaffolding resides in `ios/` and `android/`; touch these only for configuration that Expo config files cannot express.
-- Mirror source structure when adding test suites under `__tests__/`.
+## Project Structure And Ownership
 
-## Build, Test, and Development Commands
-- `npm install` resolves JavaScript and native dependencies.
-- `npx expo start` boots Metro; add `--clear` to flush caches when the packager misbehaves.
-- `npm run android` / `npm run ios` launches Expo Go or connected simulators.
-- `npm run lint` enforces the shared ESLint + Prettier ruleset before commits.
-- `npm test` runs the Jest suite; `npm run test:watch` helps during active development.
+- `app/` contains Expo Router entry points, layouts, and screen composition.
+- `lib/` is the main app core today. Use it for shared state, services, types, hooks, and utilities.
+- `components/` holds reusable UI, icons, and role-specific view components.
+- `assets/` stores fonts, images, lottie files, and static assets.
+- `features/` contains product and role documentation. Treat it as intent, not always runtime truth.
+- `APIs/` contains backend notes and contracts.
+- `docs/guides/` contains operational and contributor guides that are useful but not runtime code.
+- `docs/archive/` contains historical notes, task dumps, source backups, design exports, and diagnostics kept for reference only.
+- `scripts/` contains repo utilities; prefer `scripts/windows/` for Windows helpers and `scripts/dev/` for local development utilities.
 
-## Coding Style & Naming Conventions
-- Formatting follows Prettier defaults: 2-space indentation, single quotes, trailing commas.
-- TypeScript runs in strict mode; define reusable types in `src/types/`.
-- React components use PascalCase (e.g., `BookingHeader.tsx`); hooks follow `useSomething` naming.
-- Prefer named exports for utilities and shared modules to aid tree shaking.
+## Active Portals
+
+The router currently mounts these live route groups:
+
+- `app/(tenant)/`
+- `app/(management)/`
+- `app/(buildingEmployee)/`
+- `app/(modals)/`
+
+Other roles may appear in docs, types, or navigation helpers, but they are not fully mounted portals unless the router explicitly registers them.
+
+## Where New Code Should Go
+
+- Add route-level UI in `app/`.
+- Add shared business logic in `lib/context/` or `lib/hooks/`.
+- Add backend access in `lib/services/api/`.
+- Add reusable presentational UI in `components/`.
+- Add shared types in `lib/types/`.
+
+Avoid putting feature logic directly into route files unless it is truly route-specific glue.
+Avoid adding new one-off docs, source backups, design exports, logs, or diagnostics to the repo root. Put them under `docs/guides/` or `docs/archive/` instead.
+Keep `CLAUDE.md` at the repo root unless there is a deliberate tooling migration, since some Claude-oriented tooling expects it there.
+
+## Build, Test, And Development Commands
+
+- `npm install` installs dependencies.
+- `npm start` starts Expo.
+- `npm run android` launches Android.
+- `npm run ios` launches iOS.
+- `npm run web` launches web.
+- `npm run lint` runs ESLint.
+- `npm run typecheck` runs TypeScript without emit.
+- `npm test` runs Jest.
+
+## Coding Style
+
+- TypeScript is strict. Prefer explicit types for shared interfaces and API payloads.
+- Use 2-space indentation, single quotes, and trailing commas.
+- Prefer named exports for shared utilities and modules.
+- Keep components in PascalCase and hooks in `useSomething` form.
+
+## Working With Roles And Portals
+
+- Do not assume a role is live just because it exists in `User["role"]`.
+- If you add or change role-based routing, update all of:
+  - `app/_layout.tsx`
+  - `app/index.tsx`
+  - auth role mapping
+  - navigation/menu logic
+  - contributor docs
+
+## Data Flow Expectations
+
+- Some modules are API-backed.
+- Some are hybrid or still rely on local/mock state.
+- Use `docs/MODULE_MATURITY.md` as the repo-level source of truth for that status.
+- Before editing a workflow, inspect the route file, the relevant app-state hook under `lib/context/use-*-app-state.ts`, the matching module under `lib/context/modules/`, and the service under `lib/services/api/`.
+- Treat `lib/context/connected-app-provider.tsx` as composition glue for `useApp()`, not the default home for new domain rules. See `docs/APP_STATE.md`.
 
 ## Testing Guidelines
-- Jest with React Native Testing Library powers the tests; keep interaction-focused assertions over snapshots.
-- Target at least 80% coverage for new screens and cover new context actions with integration-style tests.
-- Place tests in `__tests__` directories beside their source counterparts (e.g., `src/screens/Dashboard/__tests__/DashboardScreen.test.tsx`).
 
-## Commit & Pull Request Guidelines
-- Use Conventional Commits (`feat:`, `fix:`, `chore:`); keep subject lines under 72 characters.
-- Ensure linting and tests pass locally before pushing.
-- Pull requests need a concise summary, linked Linear/Jira ticket, UI proof (screenshot/video) for user-facing changes, and rollout notes for native config updates.
-- Document OTA releases in the PR description, including any `eas update --branch <branch>` commands executed.
+- Add tests beside the source area when practical, using `__tests__/`.
+- Favor interaction and behavior tests over snapshots.
+- Be explicit when a new screen or flow is still mock-backed and cannot be meaningfully integration-tested yet.
 
-## Security & Configuration Notes
-- Store environment secrets in `.env.*`; never commit `.env.local`.
-- Update `app.json` and `eas.json` together when changing identifiers or build profiles.
-- Record any EAS OTA release steps for traceability and handoff.
+## Commit And PR Guidelines
+
+- Use Conventional Commits such as `feat:`, `fix:`, `docs:`, and `chore:`.
+- Keep PRs focused.
+- Use the PR checklist in `.github/pull_request_template.md` for routing, docs, and validation changes.
+- If you change repo structure, routing, or contributor workflows, update docs in the same PR.
+- Do not mix cleanup of historical/generated artifacts with unrelated feature work unless the PR is explicitly a cleanup pass.
+
+## Security And Configuration Notes
+
+- Keep secrets in `.env.*` files and do not commit local-only env files.
+- Update `app.json` and `eas.json` together when build identifiers or profiles change.
+- Treat logs, profiling dumps, and generated exports as non-source artifacts unless there is a specific reason to keep them in version control.

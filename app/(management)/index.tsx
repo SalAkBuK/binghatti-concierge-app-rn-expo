@@ -21,7 +21,9 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { ManagementTile } from "../../components/management/ManagementTile";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
-import { useApp } from "../../lib/context/connected-app-provider";
+import { useAuth } from "../../lib/context/auth-context";
+import { useAppDomain } from "../../lib/context/connected-app-provider";
+import { useNotifications } from "../../lib/context/notifications-context";
 import { orgBuildingsApi } from "../../lib/services/api/org-buildings";
 import type { Building, NotificationType, Request, RequestPriority, RequestStatus } from "../../lib/types";
 import {
@@ -147,7 +149,9 @@ const BROADCAST_TYPE_VISUALS: Record<
 };
 
 export default function ManagementDashboard() {
-  const { currentUser, notifications, actions } = useApp();
+  const { currentUser, users } = useAuth();
+  const { notifications, actions: notificationActions } = useNotifications();
+  const { admin } = useAppDomain();
   const router = useRouter();
   const params = useLocalSearchParams();
   const { width } = useWindowDimensions();
@@ -173,7 +177,7 @@ export default function ManagementDashboard() {
   const broadcastFooterInset = Math.max(insets.bottom, 16);
   const broadcastContentBottomPadding = broadcastFooterInset + 100;
 
-  const analytics = useMemo(() => actions.getAnalytics(), [actions]);
+  const analytics = useMemo(() => admin.getAnalytics(), [admin]);
 
   const userNotifications = filterNotificationsByUser(
     notifications || [],
@@ -698,11 +702,12 @@ export default function ManagementDashboard() {
         ? `[${audienceTag}] ${broadcastMessage.trim()}`
         : broadcastMessage.trim();
 
-      await actions.broadcastNotificationToRole?.(
+      await notificationActions.broadcastNotificationToRole?.(
         "tenant",
         broadcastTitle.trim(),
         finalMessage,
         broadcastType,
+        users,
       );
 
       Alert.alert(

@@ -4,9 +4,13 @@
 
 The **Service Provider** role represents external vendors and companies that provide maintenance, repair, and other services to buildings. Service providers receive job assignments, manage their teams, track job progress, and maintain service quality ratings across multiple buildings.
 
-**Route Group:** `app/(serviceProvider)/`
+**Planned Route Group:** `app/(serviceProvider)/`
 **Role Identifier:** `service_provider`
 **Access Level:** Job-scoped access (assigned jobs and buildings with access)
+
+**Runtime Status:** Not mounted
+- There is no live `app/(serviceProvider)/` route group in the current Expo Router tree.
+- Treat the screens and paths below as target-state documentation and API planning reference, not mounted runtime behavior.
 
 ---
 
@@ -1199,4 +1203,5 @@ All types defined in: `lib/types/index.ts`
 - Backend API Requirements: `docs/backend/README.md`
 - API Endpoints: `lib/utils/constants.ts`
 - Type Definitions: `lib/types/index.ts`
-- Main Project Docs: `CLAUDE.md`
+- Project Overview: `README.md`
+- Architecture Guide: `docs/ARCHITECTURE.md`

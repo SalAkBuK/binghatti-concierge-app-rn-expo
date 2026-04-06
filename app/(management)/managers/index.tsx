@@ -15,7 +15,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { HeaderBar } from "../../../components/ui/HeaderBar";
 import { SideMenu } from "../../../components/ui/SideMenu";
-import { useApp } from "../../../lib/context/connected-app-provider";
+import { useAuth } from "../../../lib/context/auth-context";
+import { useAppDomain } from "../../../lib/context/connected-app-provider";
+import { useNotifications } from "../../../lib/context/notifications-context";
 import type { User } from "../../../lib/types";
 import {
   filterNotificationsByUser,
@@ -25,7 +27,9 @@ import {
 const MANAGEMENT_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
 
 export default function ManagersScreen() {
-  const { currentUser, notifications, actions } = useApp();
+  const { currentUser } = useAuth();
+  const { notifications } = useNotifications();
+  const { admin, property } = useAppDomain();
   const { width } = useWindowDimensions();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [selectedManager, setSelectedManager] = useState<User | null>(null);
@@ -34,8 +38,8 @@ export default function ManagersScreen() {
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
 
   const managedBuildings = useMemo(
-    () => actions.getManagedBuildings?.() ?? [],
-    [actions]
+    () => property.getManagedBuildings?.() ?? [],
+    [property]
   );
 
   const managedBuildingIds = useMemo(
@@ -45,7 +49,7 @@ export default function ManagersScreen() {
 
   // Get all managers that manage any of the same buildings
   const managers = useMemo(() => {
-    const allUsers = actions.getUsers();
+    const allUsers = admin.getUsers();
     return allUsers.filter((user) => {
       if (user.role !== "management") return false;
       if (user.id === currentUser?.id) return false; // Exclude self
@@ -54,7 +58,7 @@ export default function ManagersScreen() {
       // Check if this manager has any overlapping buildings
       return userBuildingIds.some((id) => managedBuildingIds.includes(id));
     });
-  }, [actions, currentUser?.id, managedBuildingIds]);
+  }, [admin, currentUser?.id, managedBuildingIds]);
 
   const userNotifications = filterNotificationsByUser(
     notifications || [],

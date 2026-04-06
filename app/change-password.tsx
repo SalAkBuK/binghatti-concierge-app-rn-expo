@@ -15,14 +15,14 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { useApp } from "../lib/context/connected-app-provider";
+import { useAuth } from "../lib/context/auth-context";
 import { apiService } from "../lib/services/api";
 import { getUserErrorMessage } from "../lib/services/api/errors";
 import { APP_CONFIG, STORAGE_KEYS } from "../lib/utils/constants";
 import * as SecureStore from "expo-secure-store";
 
 export default function ChangePasswordScreen() {
-  const { isAuthenticated, currentUser, actions } = useApp();
+  const { isAuthenticated, currentUser, actions } = useAuth();
   const minPasswordLength = APP_CONFIG.validation.minPasswordLength;
 
   const [currentPassword, setCurrentPassword] = useState("");

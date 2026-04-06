@@ -20,7 +20,12 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useApp } from "../../lib/context/connected-app-provider";
+import {
+  getRoleHomeHref,
+  hasMountedPortal,
+} from "../../lib/config/portals";
+import { useAuth } from "../../lib/context/auth-context";
+import { useMessaging } from "../../lib/context/messaging-context";
 import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
 import type { User } from "../../lib/types";
 
@@ -53,14 +58,18 @@ interface MenuItem {
 
 type RouterPushInput = Parameters<typeof router.push>[0];
 
-export function SideMenu({ isVisible, onClose }: SideMenuProps) {
-  const { currentUser, actions, messagingUnreadCount } = useApp();
+export function SideMenu({ isVisible, onClose, userRole }: SideMenuProps) {
+  const { currentUser, actions } = useAuth();
+  const { totalUnreadCount: messagingUnreadCount } = useMessaging();
+  const effectiveRole = userRole ?? currentUser?.role;
   const { canCreateMaintenanceRequest, canManageVisitors } = useResidentTenancy({
-    enabled: Boolean(currentUser?.role === "tenant" && currentUser?.id),
+    enabled: Boolean(effectiveRole === "tenant" && currentUser?.id),
   });
   const insets = useSafeAreaInsets();
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
   const [isRendered, setIsRendered] = useState(isVisible);
+  const roleHomeHref = getRoleHomeHref(effectiveRole);
+  const roleHasMountedPortal = hasMountedPortal(effectiveRole);
 
   // Animation values
   const translateX = useSharedValue(-MENU_WIDTH - 20);
@@ -71,14 +80,17 @@ export function SideMenu({ isVisible, onClose }: SideMenuProps) {
     onClose();
   };
 
-const navigateAndClose = (href: RouterPushInput | string, useReplace = false) => {
-  closeMenu();
-  if (useReplace) {
-    router.replace(href as any);
-  } else {
-    router.push(href as RouterPushInput);
-  }
-};
+  const navigateAndClose = (
+    href: RouterPushInput | string,
+    useReplace = false,
+  ) => {
+    closeMenu();
+    if (useReplace) {
+      router.replace(href as any);
+    } else {
+      router.push(href as RouterPushInput);
+    }
+  };
 
   const handleLogout = () => {
     Alert.alert("Logout", "Are you sure you want to logout?", [
@@ -150,79 +162,26 @@ const navigateAndClose = (href: RouterPushInput | string, useReplace = false) =>
     },
   ];
 
-  // Super Admin Menu - Full Super Admin Portal
-  const superAdminMenu: MenuItem[] = [
+  const managementMenu: MenuItem[] = [
     {
-      id: "superadmin-dashboard",
-      title: "Dashboard",
-      icon: "grid-outline",
-      action: () => navigateAndClose("/(superadmin)", true), // Use replace to reset navigation stack
-    },
-    {
-      id: "superadmin-admins",
-      title: "Admin Users",
-      icon: "shield-checkmark-outline",
-      action: () => navigateAndClose("/(superadmin)/admins"),
-    },
-    {
-      id: "superadmin-buildings",
-      title: "Buildings",
-      icon: "business-outline",
-      action: () => navigateAndClose("/(superadmin)/buildings"),
-    },
-    {
-      id: "divider-super-admin",
-      title: "",
-      icon: "remove",
-      action: () => {},
-    },
-    {
-      id: "superadmin-profile",
-      title: "My Profile",
-      icon: "person-outline",
-      action: () => navigateAndClose("/(superadmin)/profile"),
-    },
-    {
-      id: "logout",
-      title: "Sign Out",
-      icon: "log-out-outline",
-      color: "#ef4444",
+      id: "management-dashboard",
+      title: "Operations Dashboard",
+      icon: "analytics-outline",
       action: () => {
-        closeMenu();
-        handleLogout();
+        if (roleHomeHref) {
+          navigateAndClose(roleHomeHref, true);
+        }
       },
     },
-  ];
-
-  // Regular Admin Menu - Full access
-  const adminMenu: MenuItem[] = [
     {
-      id: "users",
-      title: "User Management",
-      icon: "people-circle-outline",
-      action: () => navigateAndClose("/(admin)/users"),
+      id: "management-requests",
+      title: "Service Requests",
+      icon: "clipboard-outline",
+      action: () => navigateAndClose("/(management)/requests"),
     },
     {
-      id: "buildings",
-      title: "Buildings",
-      icon: "business-outline",
-      action: () => navigateAndClose("/(admin)/buildings"),
-    },
-    {
-      id: "admin-service-providers",
-      title: "Service Providers",
-      icon: "construct-outline",
-      action: () => navigateAndClose("/(admin)/service-providers"),
-    },
-    {
-      id: "permissions",
-      title: "Role Permissions",
-      icon: "shield-checkmark-outline",
-      action: () => navigateAndClose("/(admin)/permissions"),
-    },
-    {
-      id: "notices",
-      title: "Maintenance Notices",
+      id: "management-notices",
+      title: "Notices & Alerts",
       icon: "alert-circle-outline",
       action: () =>
         navigateAndClose({
@@ -231,10 +190,16 @@ const navigateAndClose = (href: RouterPushInput | string, useReplace = false) =>
         }),
     },
     {
-      id: "divider-admin",
+      id: "divider-management",
       title: "",
       icon: "remove",
       action: () => {},
+    },
+    {
+      id: "management-profile",
+      title: "My Profile",
+      icon: "person-outline",
+      action: () => navigateAndClose("/(management)/profile"),
     },
     {
       id: "logout",
@@ -248,60 +213,16 @@ const navigateAndClose = (href: RouterPushInput | string, useReplace = false) =>
     },
   ];
 
-const managementMenu: MenuItem[] = [
-  {
-    id: "management-dashboard",
-    title: "Operations Dashboard",
-    icon: "analytics-outline",
-    action: () => navigateAndClose("/(management)", true), // Use replace to reset navigation stack
-  },
-  {
-    id: "management-requests",
-    title: "Service Requests",
-    icon: "clipboard-outline",
-    action: () => navigateAndClose("/(management)/requests"),
-  },
-
-  {
-    id: "management-notices",
-    title: "Notices & Alerts",
-    icon: "alert-circle-outline",
-    action: () =>
-      navigateAndClose({
-        pathname: "/(modals)/admin-notifications",
-        params: { initialTab: "notices" },
-      }),
-  },
-  {
-    id: "divider-management",
-    title: "",
-    icon: "remove",
-    action: () => {},
-  },
-  {
-    id: "management-profile",
-    title: "My Profile",
-    icon: "person-outline",
-    action: () => navigateAndClose("/(management)/profile"),
-  },
-  {
-    id: "logout",
-    title: "Sign Out",
-    icon: "log-out-outline",
-    color: "#ef4444",
-    action: () => {
-      closeMenu();
-      handleLogout();
-    },
-  },
-];
-
   const buildingEmployeeMenu: MenuItem[] = [
     {
       id: "be-dashboard",
       title: "Shift Dashboard",
       icon: "speedometer-outline",
-      action: () => navigateAndClose("/(buildingEmployee)", true), // Use replace to reset navigation stack
+      action: () => {
+        if (roleHomeHref) {
+          navigateAndClose(roleHomeHref, true);
+        }
+      },
     },
     {
       id: "be-jobs",
@@ -340,92 +261,30 @@ const managementMenu: MenuItem[] = [
     },
   ];
 
-  const serviceProviderMenu: MenuItem[] = [
+  const unsupportedPortalMenu: MenuItem[] = [
     {
-      id: "sp-dashboard",
-      title: "Dashboard",
-      icon: "grid-outline",
-      action: () => navigateAndClose("/(serviceProvider)", true), // Use replace to reset navigation stack
+      id: "portal-status",
+      title: "Portal Status",
+      icon: "information-circle-outline",
+      action: () => navigateAndClose("/portal-unavailable", true),
     },
     {
-      id: "sp-jobs",
-      title: "Jobs",
-      icon: "construct-outline",
-      action: () => navigateAndClose("/(serviceProvider)/jobs"),
-    },
-    {
-      id: "sp-service-areas",
-      title: "Service Areas",
-      icon: "location-outline",
-      action: () => navigateAndClose("/(serviceProvider)/service-areas"),
-    },
-    {
-      id: "divider-sp",
+      id: "divider-unsupported",
       title: "",
       icon: "remove",
       action: () => {},
     },
     {
-      id: "sp-profile",
-      title: "Profile & Settings",
-      icon: "person-outline",
-      action: () => navigateAndClose("/(serviceProvider)/profile"),
-    },
-    {
-      id: "logout",
-      title: "Sign Out",
-      icon: "log-out-outline",
-      color: "#ef4444",
-      action: () => {
-        closeMenu();
-        handleLogout();
-      },
-    },
-  ];
-
-  const employeeMenu: MenuItem[] = [
-    {
-      id: "emp-dashboard",
-      title: "Dashboard",
-      icon: "home-outline",
-      action: () => navigateAndClose("/(employee)", true), // Use replace to reset navigation stack
-    },
-    {
-      id: "emp-jobs",
-      title: "My Jobs",
-      icon: "briefcase-outline",
-      action: () => navigateAndClose("/(employee)/jobs"),
-    },
-    {
-      id: "emp-schedule",
-      title: "Schedule",
-      icon: "calendar-outline",
-      action: () => navigateAndClose("/(employee)/schedule"),
-    },
-    {
-      id: "emp-earnings",
-      title: "Earnings",
-      icon: "cash-outline",
-      action: () => navigateAndClose("/(employee)/earnings"),
-    },
-    {
-      id: "emp-messages",
-      title: "Messages",
-      icon: "chatbubbles-outline",
-      badge: messagingUnreadCount,
-      action: () => navigateAndClose("/(employee)/messages"),
-    },
-    {
-      id: "divider-emp",
-      title: "",
-      icon: "remove",
-      action: () => {},
-    },
-    {
-      id: "emp-profile",
-      title: "Profile",
-      icon: "person-outline",
-      action: () => navigateAndClose("/(employee)/profile"),
+      id: "unsupported-role",
+      title: roleHasMountedPortal ? "Open Portal" : "Mobile Portal Not Mounted",
+      icon: "warning-outline",
+      action: () =>
+        navigateAndClose(
+          roleHasMountedPortal && roleHomeHref
+            ? roleHomeHref
+            : "/portal-unavailable",
+          true,
+        ),
     },
     {
       id: "logout",
@@ -440,19 +299,13 @@ const managementMenu: MenuItem[] = [
   ];
 
   const menuItems: MenuItem[] =
-    currentUser?.role === "super_admin"
-      ? superAdminMenu
-      : currentUser?.role === "admin"
-        ? adminMenu.filter(item => item.id !== "permissions") // Hide permissions for admin
-        : currentUser?.role === "management"
-          ? managementMenu
-          : currentUser?.role === "building_employee"
-            ? buildingEmployeeMenu
-            : currentUser?.role === "service_provider"
-              ? serviceProviderMenu
-              : currentUser?.role === "employee"
-                ? employeeMenu
-                : tenantMenu;
+    effectiveRole === "management"
+      ? managementMenu
+      : effectiveRole === "building_employee"
+        ? buildingEmployeeMenu
+        : effectiveRole === "tenant"
+          ? tenantMenu
+          : unsupportedPortalMenu;
 
   // Animation effects
   useEffect(() => {

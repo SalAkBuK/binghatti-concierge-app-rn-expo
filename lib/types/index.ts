@@ -136,6 +136,7 @@ export interface Request {
   id: string;
   title: string;
   description: string;
+  _source?: "backend" | "mock";
   type:
     | "maintenance"
     | "repair"

@@ -3,10 +3,10 @@ import React, { useEffect } from "react";
 import { BackHandler } from "react-native";
 
 import { ManagementTabBar } from "../../components/ui/ManagementTabBar";
-import { useApp } from "../../lib/context/connected-app-provider";
+import { useAuth } from "../../lib/context/auth-context";
 
 export default function ManagementLayout() {
-  const { isAuthenticated, currentUser } = useApp();
+  const { isAuthenticated, currentUser } = useAuth();
   const pathname = usePathname();
   const isManagement = currentUser?.role === "management";
 

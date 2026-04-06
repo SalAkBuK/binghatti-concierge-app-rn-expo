@@ -16,11 +16,17 @@ import {
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { useApp } from "../../lib/context/connected-app-provider";
+import { useAppDomain } from "../../lib/context/connected-app-provider";
 
 export default function ApproveJobCompletionScreen() {
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
-  const { actions, jobs } = useApp();
+  const {
+    operations: {
+      jobs,
+      approveTenantJobCompletion,
+      rejectTenantJobCompletion,
+    },
+  } = useAppDomain();
   const [approvalNotes, setApprovalNotes] = useState("");
   const [rejectionReason, setRejectionReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -55,7 +61,7 @@ export default function ApproveJobCompletionScreen() {
           onPress: async () => {
             setSubmitting(true);
             try {
-              await actions.approveTenantJobCompletion?.(
+              await approveTenantJobCompletion?.(
                 job.id,
                 approvalNotes.trim() || undefined,
               );
@@ -101,7 +107,7 @@ export default function ApproveJobCompletionScreen() {
           onPress: async () => {
             setSubmitting(true);
             try {
-              await actions.rejectTenantJobCompletion?.(
+              await rejectTenantJobCompletion?.(
                 job.id,
                 rejectionReason.trim(),
               );

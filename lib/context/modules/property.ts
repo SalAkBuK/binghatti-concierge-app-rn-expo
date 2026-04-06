@@ -1,5 +1,11 @@
 import { useCallback, useState, useEffect } from "react";
 
+/**
+ * Data maturity: hybrid, leaning API-backed.
+ * Building, manager, admin, tenant, and service-provider flows use `adminApi`,
+ * but this module still mixes in cache/local-storage support and some simulated
+ * async local state for units, leases, employees, and related helpers.
+ */
 import type {
   Building,
   UnitType,
@@ -15,7 +21,6 @@ import type {
   CreateVisitorPassDTO,
   User,
 } from "../../types";
-// No mock data imports - all data comes from API
 import { generateId } from "../../utils";
 import type { AuthContextType } from "../auth-context";
 import type { NotificationsContextType } from "../notifications-context";

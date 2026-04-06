@@ -18,7 +18,10 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
-import { useApp } from "../../lib/context/connected-app-provider";
+import {
+  useAppDomain,
+  useAuth,
+} from "../../lib/context/connected-app-provider";
 import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
 import type {
   CreateResidentVisitorDTO,
@@ -93,10 +96,14 @@ export default function RegisterVisitorScreen() {
     ? params.visitorId[0]
     : params.visitorId;
   const isEditMode = Boolean(visitorId);
-  const { actions, currentUser } = useApp();
-  const getResidentVisitor = actions.getResidentVisitor;
-  const createResidentVisitor = actions.createResidentVisitor;
-  const updateResidentVisitor = actions.updateResidentVisitor;
+  const { currentUser } = useAuth();
+  const {
+    amenityVisitor: {
+      getResidentVisitor,
+      createResidentVisitor,
+      updateResidentVisitor,
+    },
+  } = useAppDomain();
   const { canManageVisitors, isLoading: isTenancyLoading, statusMessage } =
     useResidentTenancy({
       enabled: Boolean(currentUser?.role === "tenant" && currentUser?.id),

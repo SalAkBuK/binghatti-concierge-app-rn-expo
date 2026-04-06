@@ -16,7 +16,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AnimatedButton } from "../components/ui/AnimatedButton";
 import { LoadingScreen } from "../components/ui/LoadingScreen";
-import { useApp } from "../lib/context/connected-app-provider";
+import { useAuth } from "../lib/context/auth-context";
 import { STORAGE_KEYS } from "../lib/utils/constants";
 
 interface FormData {
@@ -33,7 +33,7 @@ interface FormErrors {
 const MIN_PASSWORD_LENGTH = 8;
 
 export default function AuthScreen() {
-  const { actions, isAuthenticated, currentUser } = useApp();
+  const { actions, isAuthenticated, currentUser } = useAuth();
   const [formData, setFormData] = useState<FormData>({
     email: "",
     password: "",

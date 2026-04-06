@@ -1,5 +1,11 @@
 import { useCallback, useState } from "react";
 
+/**
+ * Data maturity: mock-backed.
+ * This module currently seeds state from `utils/mockData` and simulates async
+ * mutations locally. Treat it as non-persistent until a real API/service layer
+ * is introduced.
+ */
 import type {
   Amenity,
   AmenityBooking,

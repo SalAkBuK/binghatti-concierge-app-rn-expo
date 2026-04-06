@@ -1,15 +1,15 @@
 import { Redirect, type Href } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { LoadingScreen } from "../components/ui/LoadingScreen";
-import { useApp } from "../lib/context/connected-app-provider";
+import { useAuth } from "../lib/context/auth-context";
+import {
+  getMountedPortalConfig,
+  getPostLoginHrefForRole,
+} from "../lib/config/portals";
 
 export default function IndexScreen() {
-  const { isAuthenticated, currentUser } = useApp();
+  const { isAuthenticated, currentUser } = useAuth();
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
-
-  const managementHomeHref = "/(management)" as Href;
-  const tenantHomeHref = "/(tenant)" as Href;
-  const buildingEmployeeHomeHref = "/(buildingEmployee)" as Href;
 
   // Initial load timer
   useEffect(() => {
@@ -46,17 +46,18 @@ export default function IndexScreen() {
     return <Redirect href="/change-password" />;
   }
 
-  // Authenticated - redirect based on role
-  if (currentUser.role === "management") {
-    console.log("[Index] Management user, redirecting to /(management)");
-    return <Redirect href={managementHomeHref} />;
+  const portalConfig = getMountedPortalConfig(currentUser.role);
+  const destinationHref = getPostLoginHrefForRole(currentUser.role) as Href;
+
+  if (portalConfig) {
+    console.log(
+      `[Index] ${currentUser.role} user, redirecting to ${portalConfig.rootHref}`,
+    );
+  } else {
+    console.log(
+      `[Index] No mounted portal for role "${currentUser.role}", redirecting to /portal-unavailable`,
+    );
   }
 
-  if (currentUser.role === "building_employee") {
-    console.log("[Index] Building employee user, redirecting to /(buildingEmployee)");
-    return <Redirect href={buildingEmployeeHomeHref} />;
-  }
-
-  console.log("[Index] Regular user, redirecting to /(tenant)");
-  return <Redirect href={tenantHomeHref} />;
+  return <Redirect href={destinationHref} />;
 }

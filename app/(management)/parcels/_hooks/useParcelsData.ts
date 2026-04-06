@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 
-import { useApp } from "../../../../lib/context/connected-app-provider";
+import { useAuth } from "../../../../lib/context/auth-context";
+import { useAppDomain } from "../../../../lib/context/connected-app-provider";
+import { useNotifications } from "../../../../lib/context/notifications-context";
 import type { Building, User } from "../../../../lib/types";
 import {
   filterNotificationsByUser,
@@ -11,14 +13,17 @@ export interface UseParcelsDataResult {
   currentUser: User | null;
   allBuildings: Building[];
   hasUnreadNotifications: boolean;
-  actions: ReturnType<typeof useApp>["actions"];
 }
 
 export function useParcelsData(): UseParcelsDataResult {
-  const { currentUser, notifications, actions } = useApp();
-  const { getManagedBuildings } = actions;
+  const { currentUser } = useAuth();
+  const { notifications } = useNotifications();
+  const { property } = useAppDomain();
 
-  const allBuildings = useMemo(() => getManagedBuildings?.() ?? [], [getManagedBuildings]);
+  const allBuildings = useMemo(
+    () => property.getManagedBuildings?.() ?? [],
+    [property],
+  );
 
   const userNotifications = filterNotificationsByUser(
     notifications || [],
@@ -31,6 +36,5 @@ export function useParcelsData(): UseParcelsDataResult {
     currentUser,
     allBuildings,
     hasUnreadNotifications,
-    actions,
   };
 }

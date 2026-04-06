@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAsyncStorage } from "./useAsyncStorage";
@@ -16,6 +17,31 @@ type RefreshOptions = {
   asRefresh?: boolean;
   reason?: "initial" | "manual" | "notification";
 };
+
+type ResidentRequestsSnapshot = {
+  userId: string;
+  items: Request[];
+  fetchedAt: number;
+};
+
+type PublishOptions = {
+  persist?: boolean;
+};
+
+const CACHE_TTL_MS = 30_000;
+const EMPTY_CACHE: ResidentRequestsCache = {
+  items: [],
+  fetchedAt: null,
+};
+const residentRequestsSnapshots = new Map<string, ResidentRequestsSnapshot>();
+const sharedResidentRequestsPromises = new Map<
+  string,
+  Promise<ResidentRequestsSnapshot>
+>();
+const residentRequestsListeners = new Map<
+  string,
+  Set<(snapshot: ResidentRequestsSnapshot) => void>
+>();
 
 const mapStatusFromBackend = (status: any): RequestStatus => {
   const numeric = Number(status);
@@ -98,6 +124,218 @@ const isRequestNotification = (notification: Notification) => {
   return type === "REQUEST_STATUS_CHANGED" || type === "REQUEST_COMMENTED";
 };
 
+const getStatusCode = (error: unknown): number | undefined => {
+  if (!error || typeof error !== "object") return undefined;
+  const status = (error as { status?: unknown }).status;
+  return typeof status === "number" ? status : undefined;
+};
+
+const getResidentRequestsStorageKey = (userId?: string | null): string =>
+  userId
+    ? `${STORAGE_KEYS.resident_requests}_${userId}`
+    : STORAGE_KEYS.resident_requests;
+
+const getTimestamp = (value?: string | number | null): number => {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  if (!value) {
+    return 0;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? 0 : parsed;
+};
+
+const getRequestTimestamp = (request: Pick<Request, "createdAt" | "updatedAt">): number => {
+  const updatedAt = getTimestamp(request.updatedAt);
+  if (updatedAt > 0) return updatedAt;
+  return getTimestamp(request.createdAt);
+};
+
+const ensureResidentRequestShape = (request: Request): Request => ({
+  ...request,
+  attachments: Array.isArray(request.attachments)
+    ? request.attachments.filter(Boolean)
+    : [],
+  comments: Array.isArray(request.comments) ? request.comments : [],
+  messages: Array.isArray(request.messages) ? request.messages : [],
+  notes: Array.isArray(request.notes) ? request.notes : [],
+  timeline: Array.isArray(request.timeline) ? request.timeline : [],
+});
+
+const normalizeResidentRequests = (items: Request[]): Request[] =>
+  items
+    .map((item) => ensureResidentRequestShape(item))
+    .sort((a, b) => getRequestTimestamp(b) - getRequestTimestamp(a));
+
+const isResidentRequestsSnapshotFresh = (
+  snapshot: ResidentRequestsSnapshot | null | undefined,
+): boolean =>
+  Boolean(
+    snapshot?.fetchedAt && Date.now() - snapshot.fetchedAt < CACHE_TTL_MS,
+  );
+
+const getResidentRequestsSnapshot = (
+  userId?: string | null,
+): ResidentRequestsSnapshot | null => {
+  if (!userId) return null;
+  return residentRequestsSnapshots.get(userId) ?? null;
+};
+
+const getResidentRequestsListenerSet = (
+  userId: string,
+): Set<(snapshot: ResidentRequestsSnapshot) => void> => {
+  let listeners = residentRequestsListeners.get(userId);
+  if (!listeners) {
+    listeners = new Set();
+    residentRequestsListeners.set(userId, listeners);
+  }
+  return listeners;
+};
+
+const persistResidentRequestsSnapshot = async (
+  snapshot: ResidentRequestsSnapshot,
+): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(
+      getResidentRequestsStorageKey(snapshot.userId),
+      JSON.stringify({
+        items: snapshot.items,
+        fetchedAt: snapshot.fetchedAt
+          ? new Date(snapshot.fetchedAt).toISOString()
+          : null,
+      } satisfies ResidentRequestsCache),
+    );
+  } catch (error) {
+    console.warn("[ResidentRequests] Failed to persist snapshot", error);
+  }
+};
+
+const publishResidentRequestsSnapshot = (
+  snapshot: ResidentRequestsSnapshot,
+  options?: PublishOptions,
+): ResidentRequestsSnapshot => {
+  const normalizedSnapshot: ResidentRequestsSnapshot = {
+    userId: snapshot.userId,
+    items: normalizeResidentRequests(snapshot.items),
+    fetchedAt: snapshot.fetchedAt || Date.now(),
+  };
+
+  residentRequestsSnapshots.set(snapshot.userId, normalizedSnapshot);
+
+  getResidentRequestsListenerSet(snapshot.userId).forEach((listener) => {
+    try {
+      listener(normalizedSnapshot);
+    } catch (error) {
+      console.warn("[ResidentRequests] Failed to notify listener", error);
+    }
+  });
+
+  if (options?.persist !== false) {
+    void persistResidentRequestsSnapshot(normalizedSnapshot);
+  }
+
+  return normalizedSnapshot;
+};
+
+const getSnapshotFromCache = (
+  userId: string,
+  cache: ResidentRequestsCache,
+): ResidentRequestsSnapshot | null => {
+  const items = Array.isArray(cache.items) ? cache.items : [];
+  const fetchedAt = getTimestamp(cache.fetchedAt);
+
+  if (items.length === 0 && !fetchedAt) {
+    return null;
+  }
+
+  return {
+    userId,
+    items: normalizeResidentRequests(items),
+    fetchedAt,
+  };
+};
+
+export const mapResidentRequestFromBackend = (
+  item: any,
+  currentUser: User | null,
+): Request | null => {
+  if (!currentUser?.id) return null;
+
+  return ensureResidentRequestShape({
+    id: String(item.id),
+    tenantId: currentUser.id,
+    title: item.title || "Untitled Request",
+    description: item.description || "",
+    type: mapTypeFromBackend(item.type),
+    status: mapStatusFromBackend(item.status),
+    priority: mapPriorityFromBackend(item.priority),
+    assignedTo:
+      item.assignedTo?.name ||
+      item.assignedTo?.fullName ||
+      item.assignedTo?.email ||
+      item.assignedTo ||
+      undefined,
+    buildingId: item.buildingId ? String(item.buildingId) : undefined,
+    buildingName: item.buildingName || currentUser?.profile?.buildingName,
+    apartment: item.unit?.label || item.unitNumber || currentUser?.profile?.apartment || "",
+    floor:
+      item.unit?.floor != null
+        ? String(item.unit.floor)
+        : item.floorNumber != null
+          ? String(item.floorNumber)
+          : currentUser?.profile?.floor || "",
+    contactPhone: currentUser?.profile?.phone || "",
+    preferredTime: "",
+    additionalNotes: "",
+    attachments: Array.isArray(item.attachments)
+      ? item.attachments
+          .map((att: any) => att?.url || att?.fileUrl || att?.uri || null)
+          .filter(Boolean)
+      : [],
+    comments: [],
+    messages: [],
+    notes: [],
+    timeline: [],
+    createdAt: item.createdAt || new Date().toISOString(),
+    updatedAt: item.updatedAt || item.createdAt || new Date().toISOString(),
+    _source: "backend" as const,
+  });
+};
+
+export const mapResidentRequestsFromBackend = (
+  items: any[],
+  currentUser: User | null,
+): Request[] =>
+  normalizeResidentRequests(
+    items
+      .map((item) => mapResidentRequestFromBackend(item, currentUser))
+      .filter((item): item is Request => Boolean(item)),
+  );
+
+export const upsertResidentRequestSnapshot = (
+  userId: string,
+  request: Request,
+  options?: { fetchedAt?: number },
+): ResidentRequestsSnapshot => {
+  const existing = getResidentRequestsSnapshot(userId);
+  const nextItems = [
+    ensureResidentRequestShape(request),
+    ...(existing?.items ?? []).filter((item) => item.id !== request.id),
+  ];
+
+  return publishResidentRequestsSnapshot(
+    {
+      userId,
+      items: nextItems,
+      fetchedAt: options?.fetchedAt ?? Date.now(),
+    },
+    { persist: true },
+  );
+};
+
 const getLatestNotification = (notifications: Notification[]) => {
   return notifications.reduce((latest, current) => {
     if (!latest) return current;
@@ -116,72 +354,62 @@ export const useResidentRequests = ({
   notifications?: Notification[];
   onUnauthorized?: () => void | Promise<void>;
 }) => {
-  const storageKey = currentUser?.id
-    ? `${STORAGE_KEYS.resident_requests}_${currentUser.id}`
-    : STORAGE_KEYS.resident_requests;
-  const [cache, setCache, cacheLoading] = useAsyncStorage<ResidentRequestsCache>(
+  const currentUserId = currentUser?.id ?? null;
+  const storageKey = getResidentRequestsStorageKey(currentUserId);
+  const [cache, , cacheLoading] = useAsyncStorage<ResidentRequestsCache>(
     storageKey,
-    { items: [], fetchedAt: null },
+    EMPTY_CACHE,
   );
-  const [requests, setRequests] = useState<Request[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const initialSnapshot = getResidentRequestsSnapshot(currentUserId);
+  const hasInitialSnapshot = isResidentRequestsSnapshotFresh(initialSnapshot);
+  const [requests, setRequests] = useState<Request[]>(
+    hasInitialSnapshot ? initialSnapshot?.items ?? [] : [],
+  );
+  const [isLoading, setIsLoading] = useState(Boolean(currentUserId && !hasInitialSnapshot));
   const [isRefreshing, setIsRefreshing] = useState(false);
   const inFlightRef = useRef(false);
   const pendingNotificationRefreshRef = useRef(false);
   const lastNotificationIdRef = useRef<string | null>(null);
-  const initialFetchRef = useRef(false);
+  const bootstrappedUserIdRef = useRef<string | null>(null);
+  const onUnauthorizedRef = useRef(onUnauthorized);
 
   const userNotifications = useMemo(
-    () => filterNotificationsByUser(notifications ?? [], currentUser?.id),
-    [notifications, currentUser?.id],
+    () => filterNotificationsByUser(notifications ?? [], currentUserId),
+    [currentUserId, notifications],
   );
 
-  const mapBackendRequests = useCallback(
-    (items: any[]): Request[] => {
-      if (!currentUser?.id) return [];
-      return items.map((item: any) => ({
-        id: String(item.id),
-        tenantId: currentUser.id,
-        title: item.title || "Untitled Request",
-        description: item.description || "",
-        type: mapTypeFromBackend(item.type),
-        status: mapStatusFromBackend(item.status),
-        priority: mapPriorityFromBackend(item.priority),
-        assignedTo:
-          item.assignedTo?.name ||
-          item.assignedTo?.fullName ||
-          item.assignedTo?.email ||
-          item.assignedTo ||
-          undefined,
-        buildingId: item.buildingId ? String(item.buildingId) : undefined,
-        apartment: item.unit?.label || currentUser?.profile?.apartment || "",
-        floor:
-          item.unit?.floor != null
-            ? String(item.unit.floor)
-            : currentUser?.profile?.floor || "",
-        contactPhone: currentUser?.profile?.phone || "",
-        preferredTime: "",
-        additionalNotes: "",
-        attachments: Array.isArray(item.attachments)
-          ? item.attachments
-              .map((att: any) => att?.url || att?.fileUrl || att?.uri || null)
-              .filter(Boolean)
-          : [],
-        comments: [],
-        messages: [],
-        notes: [],
-        timeline: [],
-        createdAt: item.createdAt || new Date().toISOString(),
-        updatedAt: item.updatedAt || item.createdAt || new Date().toISOString(),
-        _source: "backend" as const,
-      }));
-    },
-    [currentUser],
-  );
+  useEffect(() => {
+    onUnauthorizedRef.current = onUnauthorized;
+  }, [onUnauthorized]);
+
+  useEffect(() => {
+    inFlightRef.current = false;
+    pendingNotificationRefreshRef.current = false;
+    lastNotificationIdRef.current = null;
+    bootstrappedUserIdRef.current = null;
+
+    if (!currentUserId) {
+      setRequests([]);
+      setIsLoading(false);
+      setIsRefreshing(false);
+      return;
+    }
+
+    const snapshot = getResidentRequestsSnapshot(currentUserId);
+    setRequests(snapshot?.items ?? []);
+    setIsLoading(!isResidentRequestsSnapshotFresh(snapshot));
+    setIsRefreshing(false);
+  }, [currentUserId]);
 
   const refreshRequests = useCallback(
     async (options: RefreshOptions = {}): Promise<void> => {
-      if (!currentUser?.id) return;
+      if (!currentUserId) {
+        setRequests([]);
+        setIsLoading(false);
+        setIsRefreshing(false);
+        return;
+      }
+
       if (inFlightRef.current) {
         if (options.reason === "notification") {
           pendingNotificationRefreshRef.current = true;
@@ -189,38 +417,61 @@ export const useResidentRequests = ({
         return;
       }
 
+      if (!options.asRefresh && options.reason !== "notification") {
+        const cachedSnapshot = getResidentRequestsSnapshot(currentUserId);
+        if (isResidentRequestsSnapshotFresh(cachedSnapshot)) {
+          setRequests(cachedSnapshot?.items ?? []);
+          setIsLoading(false);
+          setIsRefreshing(false);
+          return;
+        }
+      }
+
       inFlightRef.current = true;
       if (options.showLoading) setIsLoading(true);
       if (options.asRefresh) setIsRefreshing(true);
 
       try {
-        const response = await residentRequestsApi.getRequests();
-        const items = Array.isArray(response)
-          ? response
-          : Array.isArray(response?.data)
-            ? response.data
-            : Array.isArray((response as any)?.items)
-              ? (response as any).items
-              : [];
-        const mappedRequests = mapBackendRequests(items);
-        setRequests(mappedRequests);
-        await setCache({
-          items: mappedRequests,
-          fetchedAt: new Date().toISOString(),
+        let sharedPromise = sharedResidentRequestsPromises.get(currentUserId);
+
+        if (!sharedPromise) {
+          sharedPromise = (async (): Promise<ResidentRequestsSnapshot> => {
+            const response = await residentRequestsApi.getRequests();
+            const items = Array.isArray(response)
+              ? response
+              : Array.isArray(response?.data)
+                ? response.data
+                : Array.isArray((response as any)?.items)
+                  ? (response as any).items
+                  : [];
+
+            return {
+              userId: currentUserId,
+              items: mapResidentRequestsFromBackend(items, currentUser),
+              fetchedAt: Date.now(),
+            };
+          })().finally(() => {
+            sharedResidentRequestsPromises.delete(currentUserId);
+          });
+
+          sharedResidentRequestsPromises.set(currentUserId, sharedPromise);
+        }
+
+        const snapshot = await sharedPromise;
+        const publishedSnapshot = publishResidentRequestsSnapshot(snapshot, {
+          persist: true,
         });
+        setRequests(publishedSnapshot.items);
       } catch (error) {
-        if (
-          error &&
-          typeof error === "object" &&
-          "status" in error &&
-          (error as { status?: number }).status === 401
-        ) {
-          await onUnauthorized?.();
+        if (getStatusCode(error) === 401) {
+          await onUnauthorizedRef.current?.();
           return;
         }
+
         console.error("[Requests] Failed to fetch requests:", error);
-        setRequests([]);
-        await setCache({ items: [], fetchedAt: cache.fetchedAt ?? null });
+
+        const cachedSnapshot = getResidentRequestsSnapshot(currentUserId);
+        setRequests(cachedSnapshot?.items ?? []);
       } finally {
         if (options.showLoading) setIsLoading(false);
         if (options.asRefresh) setIsRefreshing(false);
@@ -228,43 +479,89 @@ export const useResidentRequests = ({
 
         if (pendingNotificationRefreshRef.current) {
           pendingNotificationRefreshRef.current = false;
-          refreshRequests({ reason: "notification" });
+          void refreshRequests({ reason: "notification" });
         }
       }
     },
-    [cache.fetchedAt, currentUser?.id, mapBackendRequests, onUnauthorized, setCache],
+    [currentUser, currentUserId],
   );
 
   useEffect(() => {
-    if (cacheLoading) return;
-    if (!currentUser?.id) {
-      setRequests([]);
-      setIsLoading(false);
+    if (!currentUserId) {
       return;
     }
 
-    setRequests(cache.items ?? []);
-    setIsLoading(false);
+    const listeners = getResidentRequestsListenerSet(currentUserId);
+    const handleSnapshot = (snapshot: ResidentRequestsSnapshot) => {
+      setRequests(snapshot.items);
+      setIsLoading(false);
+      setIsRefreshing(false);
+    };
 
-    if (!initialFetchRef.current && (cache.items?.length ?? 0) === 0) {
-      initialFetchRef.current = true;
-      refreshRequests({ showLoading: true, reason: "initial" });
-    } else {
-      initialFetchRef.current = true;
-    }
-  }, [cache.items, cacheLoading, currentUser?.id, refreshRequests]);
+    listeners.add(handleSnapshot);
+
+    return () => {
+      listeners.delete(handleSnapshot);
+    };
+  }, [currentUserId]);
 
   useEffect(() => {
-    if (!currentUser?.id || userNotifications.length === 0) return;
+    if (cacheLoading) return;
+    if (!currentUserId) return;
+    if (bootstrappedUserIdRef.current === currentUserId) return;
+
+    bootstrappedUserIdRef.current = currentUserId;
+
+    const liveSnapshot = getResidentRequestsSnapshot(currentUserId);
+    if (liveSnapshot) {
+      setRequests(liveSnapshot.items);
+      setIsLoading(false);
+      if (isResidentRequestsSnapshotFresh(liveSnapshot)) {
+        return;
+      }
+    }
+
+    const cacheSnapshot = getSnapshotFromCache(currentUserId, cache);
+    const hydratedItems = liveSnapshot?.items ?? cacheSnapshot?.items ?? [];
+
+    if (!liveSnapshot && cacheSnapshot) {
+      publishResidentRequestsSnapshot(cacheSnapshot, { persist: false });
+      setRequests(cacheSnapshot.items);
+      setIsLoading(false);
+
+      if (isResidentRequestsSnapshotFresh(cacheSnapshot)) {
+        return;
+      }
+    }
+
+    void refreshRequests({
+      showLoading: hydratedItems.length === 0,
+      reason: "initial",
+    });
+  }, [cache, cacheLoading, currentUserId, refreshRequests]);
+
+  useEffect(() => {
+    if (!currentUserId || userNotifications.length === 0) return;
     const relevant = userNotifications.filter(isRequestNotification);
     if (relevant.length === 0) return;
 
     const latest = getLatestNotification(relevant);
     if (!latest?.id || lastNotificationIdRef.current === latest.id) return;
 
+    const cachedSnapshot = getResidentRequestsSnapshot(currentUserId);
+    const latestNotificationAt = getTimestamp(latest.createdAt);
+    if (
+      cachedSnapshot &&
+      latestNotificationAt > 0 &&
+      latestNotificationAt <= cachedSnapshot.fetchedAt
+    ) {
+      lastNotificationIdRef.current = latest.id;
+      return;
+    }
+
     lastNotificationIdRef.current = latest.id;
-    refreshRequests({ reason: "notification" });
-  }, [currentUser?.id, refreshRequests, userNotifications]);
+    void refreshRequests({ reason: "notification" });
+  }, [currentUserId, refreshRequests, userNotifications]);
 
   return {
     requests,

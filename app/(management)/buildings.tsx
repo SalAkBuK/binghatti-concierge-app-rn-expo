@@ -18,7 +18,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { EntityTable } from "../../components/admin/EntityTable";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
-import { useApp } from "../../lib/context/connected-app-provider";
+import { useAuth } from "../../lib/context/auth-context";
+import { useAppDomain } from "../../lib/context/connected-app-provider";
+import { useNotifications } from "../../lib/context/notifications-context";
 import { getUserErrorMessage } from "../../lib/services/api/errors";
 import type {
   Building,
@@ -38,7 +40,10 @@ import {
 const MANAGEMENT_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
 
 export default function BuildingsScreen() {
-  const { currentUser, notifications, actions, unitTypes } = useApp();
+  const { currentUser } = useAuth();
+  const { notifications } = useNotifications();
+  const { admin, amenityVisitor, operations, property } = useAppDomain();
+  const { unitTypes } = property;
   const { width } = useWindowDimensions();
   const pagePadding = Math.max(16, Math.min(28, width * 0.05));
   const isCompact = width < 768;
@@ -53,8 +58,8 @@ export default function BuildingsScreen() {
   const isManagement = currentUser?.role === "management";
   const hasScopedBuildings = currentUser?.role === "management";
   const managedBuildingIds = useMemo(
-    () => (hasScopedBuildings ? actions.getManagedBuildingIds?.() ?? [] : []),
-    [actions, hasScopedBuildings],
+    () => (hasScopedBuildings ? property.getManagedBuildingIds?.() ?? [] : []),
+    [hasScopedBuildings, property],
   );
   const canManageBuildings = currentUser?.role === "management";
 
@@ -69,8 +74,8 @@ export default function BuildingsScreen() {
     status: "active" as BuildingStatus,
   });
 
-  const allBuildings = actions.getBuildings();
-  const allUsers = actions.getUsers();
+  const allBuildings = property.getBuildings();
+  const allUsers = admin.getUsers();
 
   // Get management users for manager dropdown
   const managementUsers = useMemo(
@@ -132,7 +137,7 @@ export default function BuildingsScreen() {
 
     setIsAssigning(true);
     try {
-      await actions.updateBuilding(selectedBuilding.id, {
+      await property.updateBuilding(selectedBuilding.id, {
         managerId: formData.managerId,
       });
 
@@ -165,7 +170,7 @@ export default function BuildingsScreen() {
   };
 
   const resolveUnitType = (id: string): UnitType | undefined => {
-    return actions.getUnitTypeById?.(id) || unitTypes?.find((type) => type.id === id);
+    return property.getUnitTypeById?.(id) || unitTypes?.find((type) => type.id === id);
   };
 
   const getUnitStatusStyle = (status: BuildingUnit["status"]): ViewStyle => {
@@ -269,7 +274,7 @@ export default function BuildingsScreen() {
     if (!detailsBuilding) return null;
 
     const buildingUnitsData =
-      actions.getUnitsByBuilding?.(detailsBuilding.id) || [];
+      property.getUnitsByBuilding?.(detailsBuilding.id) || [];
     const occupiedUnits = buildingUnitsData.filter(
       (unit) => unit.status === "occupied",
     ).length;
@@ -280,13 +285,13 @@ export default function BuildingsScreen() {
       (unit) => unit.status === "maintenance",
     ).length;
     const employees =
-      actions.getBuildingEmployees?.(detailsBuilding.id) || [];
+      property.getBuildingEmployees?.(detailsBuilding.id) || [];
     const visitorEntries =
-      actions.getVisitorLogsByBuilding?.(detailsBuilding.id) || [];
+      amenityVisitor.getVisitorLogsByBuilding?.(detailsBuilding.id) || [];
     const providerSummaries =
-      actions.getRatingSummaries?.("service_provider") || [];
+      operations.getRatingSummaries?.("service_provider") || [];
     const providers =
-      actions.getServiceProviders?.() as ServiceProviderProfile[] | undefined;
+      property.getServiceProviders?.() as ServiceProviderProfile[] | undefined;
     const providerCards =
       providerSummaries.length > 0 && providers
         ? (providerSummaries

@@ -14,14 +14,18 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
-import { useApp } from "../../lib/context/connected-app-provider";
+import { useAuth } from "../../lib/context/auth-context";
+import { useAppDomain } from "../../lib/context/connected-app-provider";
+import { useNotifications } from "../../lib/context/notifications-context";
 import type { AmenityBooking, BookingStatus } from "../../lib/types";
 import { getUnreadNotificationsCount } from "../../lib/utils/helpers";
 
 type BookingFilter = "all" | BookingStatus;
 
 export default function BuildingEmployeeAmenitiesScreen() {
-  const { isAuthenticated, currentUser, notifications, actions } = useApp();
+  const { isAuthenticated, currentUser } = useAuth();
+  const { notifications } = useNotifications();
+  const { amenityVisitor, property } = useAppDomain();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<BookingFilter>("all");
@@ -34,15 +38,15 @@ export default function BuildingEmployeeAmenitiesScreen() {
 
   const buildingEmployee = useMemo(() => {
     if (!currentUser) return null;
-    return actions.getBuildingEmployeeByUserId?.(currentUser.id) ?? null;
-  }, [actions, currentUser]);
+    return property.getBuildingEmployeeByUserId?.(currentUser.id) ?? null;
+  }, [currentUser, property]);
 
   const buildingId = buildingEmployee?.buildingId;
 
   const bookings = useMemo(() => {
     if (!buildingId) return [];
-    return actions.getBookingsByBuilding?.(buildingId) ?? [];
-  }, [actions, buildingId]);
+    return amenityVisitor.getBookingsByBuilding?.(buildingId) ?? [];
+  }, [amenityVisitor, buildingId]);
 
   const filteredBookings = useMemo(() => {
     if (selectedFilter === "all") {

@@ -3,6 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo, useState } from "react";
 import {
   Dimensions,
+  FlatList,
   Image,
   Modal,
   RefreshControl,
@@ -12,7 +13,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AnimatedButton } from "../../components/ui/AnimatedButton";
@@ -20,7 +20,9 @@ import { HeaderBar } from "../../components/ui/HeaderBar";
 import { ImageViewer } from "../../components/ui/ImageViewer";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { StarRating } from "../../components/ui/StarRating";
-import { useApp } from "../../lib/context/connected-app-provider";
+import { useAppDomain } from "../../lib/context/connected-app-provider";
+import { useAuth } from "../../lib/context/auth-context";
+import { useNotifications } from "../../lib/context/notifications-context";
 import type { Rating } from "../../lib/types";
 import {
   filterNotificationsByUser,
@@ -30,7 +32,11 @@ import {
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 export default function MyRatingsScreen() {
-  const { currentUser, notifications, actions } = useApp();
+  const { currentUser } = useAuth();
+  const { notifications } = useNotifications();
+  const {
+    operations: { getRatings },
+  } = useAppDomain();
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [selectedRating, setSelectedRating] = useState<Rating | null>(null);
@@ -39,7 +45,7 @@ export default function MyRatingsScreen() {
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 
   // Get ratings from context
-  const ratings = actions.getRatings() as Rating[];
+  const ratings = getRatings() as Rating[];
 
   const userRatings = useMemo(() => {
     return ratings.filter((rating) => rating.tenantId === currentUser?.id);
@@ -82,105 +88,98 @@ export default function MyRatingsScreen() {
   const hasUnreadNotifications =
     getUnreadNotificationsCount(userNotifications) > 0;
 
+  const renderRatingItem = ({ item: rating }: { item: Rating }) => (
+    <AnimatedButton
+      style={styles.ratingCard}
+      onPress={() => handleRatingPress(rating)}
+    >
+      <View style={styles.cardHeader}>
+        <Ionicons name="clipboard-outline" size={16} color="#6B7280" />
+        <Text style={styles.requestTitle} numberOfLines={1}>
+          Request #{rating.requestId.substring(0, 8)}
+        </Text>
+      </View>
+
+      <View style={styles.providerRow}>
+        <Ionicons name="person-outline" size={14} color="#6B7280" />
+        <Text style={styles.providerName}>Service Provider</Text>
+      </View>
+
+      <View style={styles.ratingRow}>
+        <StarRating rating={rating.rating} size={20} color="#10B981" />
+        <Text style={styles.ratingDate}>{formatDate(rating.createdAt)}</Text>
+      </View>
+
+      {rating.reviewText ? (
+        <Text style={styles.reviewPreview}>
+          {truncateText(rating.reviewText, 100)}
+          {rating.reviewText.length > 100 ? (
+            <Text style={styles.readMore}> Read more...</Text>
+          ) : null}
+        </Text>
+      ) : null}
+
+      {rating.responseText ? (
+        <View style={styles.responseContainer}>
+          <View style={styles.responseHeader}>
+            <Ionicons name="chatbubble-outline" size={14} color="#356FEC" />
+            <Text style={styles.responseLabel}>Provider Response</Text>
+          </View>
+          <Text style={styles.responseText} numberOfLines={2}>
+            {rating.responseText}
+          </Text>
+        </View>
+      ) : null}
+
+      {rating.attachments && rating.attachments.length > 0 ? (
+        <View style={styles.photosIndicator}>
+          <Ionicons name="images-outline" size={14} color="#6B7280" />
+          <Text style={styles.photosText}>
+            {rating.attachments.length} photo{rating.attachments.length > 1 ? "s" : ""}
+          </Text>
+        </View>
+      ) : null}
+    </AnimatedButton>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={{ paddingBottom: tabBarHeight + 32 }}
+      <FlatList
+        data={userRatings}
+        renderItem={renderRatingItem}
+        keyExtractor={(item) => item.id}
+        ListHeaderComponent={
+          <HeaderBar
+            title="My Ratings"
+            hasUnreadNotifications={hasUnreadNotifications}
+            showSideMenu={showSideMenu}
+            onSideMenuToggle={setShowSideMenu}
+          />
+        }
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <Ionicons name="star-outline" size={64} color="#D1D5DB" />
+            <Text style={styles.emptyStateTitle}>No ratings yet</Text>
+            <Text style={styles.emptyStateText}>
+              You haven&apos;t rated any services yet. Complete a request to leave a rating.
+            </Text>
+          </View>
+        }
+        ItemSeparatorComponent={() => <View style={styles.listSpacer} />}
+        contentContainerStyle={[
+          styles.listContent,
+          { paddingBottom: tabBarHeight + 32 },
+          userRatings.length === 0 && styles.emptyListContent,
+        ]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
-      >
-        {/* Header */}
-        <HeaderBar
-          title="My Ratings"
-          hasUnreadNotifications={hasUnreadNotifications}
-          showSideMenu={showSideMenu}
-          onSideMenuToggle={setShowSideMenu}
-        />
-
-        {/* Ratings List */}
-        <View style={styles.ratingsContainer}>
-          {userRatings.length > 0 ? (
-            userRatings.map((rating, index) => (
-              <Animated.View
-                key={rating.id}
-                entering={FadeInDown.delay(index * 50).duration(400)}
-              >
-                <AnimatedButton
-                  style={styles.ratingCard}
-                  onPress={() => handleRatingPress(rating)}
-                >
-                  {/* Request Title - Linked Request */}
-                  <View style={styles.cardHeader}>
-                    <Ionicons name="clipboard-outline" size={16} color="#6B7280" />
-                    <Text style={styles.requestTitle} numberOfLines={1}>
-                      {/* TODO: Get request title from requestId */}
-                      Request #{rating.requestId.substring(0, 8)}
-                    </Text>
-                  </View>
-
-                  {/* Service Provider Name */}
-                  <View style={styles.providerRow}>
-                    <Ionicons name="person-outline" size={14} color="#6B7280" />
-                    <Text style={styles.providerName}>
-                      {/* TODO: Get service provider name from serviceProviderId */}
-                      Service Provider
-                    </Text>
-                  </View>
-
-                  {/* Star Rating */}
-                  <View style={styles.ratingRow}>
-                    <StarRating rating={rating.rating} size={20} color="#10B981" />
-                    <Text style={styles.ratingDate}>{formatDate(rating.createdAt)}</Text>
-                  </View>
-
-                  {/* Review Text Preview */}
-                  {rating.reviewText && (
-                    <Text style={styles.reviewPreview}>
-                      {truncateText(rating.reviewText, 100)}
-                      {rating.reviewText.length > 100 && (
-                        <Text style={styles.readMore}> Read more...</Text>
-                      )}
-                    </Text>
-                  )}
-
-                  {/* Service Provider Response */}
-                  {rating.responseText && (
-                    <View style={styles.responseContainer}>
-                      <View style={styles.responseHeader}>
-                        <Ionicons name="chatbubble-outline" size={14} color="#356FEC" />
-                        <Text style={styles.responseLabel}>Provider Response</Text>
-                      </View>
-                      <Text style={styles.responseText} numberOfLines={2}>
-                        {rating.responseText}
-                      </Text>
-                    </View>
-                  )}
-
-                  {/* Photo Indicator */}
-                  {rating.attachments && rating.attachments.length > 0 && (
-                    <View style={styles.photosIndicator}>
-                      <Ionicons name="images-outline" size={14} color="#6B7280" />
-                      <Text style={styles.photosText}>
-                        {rating.attachments.length} photo{rating.attachments.length > 1 ? "s" : ""}
-                      </Text>
-                    </View>
-                  )}
-                </AnimatedButton>
-              </Animated.View>
-            ))
-          ) : (
-            <View style={styles.emptyState}>
-              <Ionicons name="star-outline" size={64} color="#D1D5DB" />
-              <Text style={styles.emptyStateTitle}>No ratings yet</Text>
-              <Text style={styles.emptyStateText}>
-                You haven&apos;t rated any services yet. Complete a request to leave a rating.
-              </Text>
-            </View>
-          )}
-        </View>
-      </ScrollView>
+        showsVerticalScrollIndicator={false}
+        removeClippedSubviews
+        windowSize={8}
+        initialNumToRender={6}
+        maxToRenderPerBatch={8}
+      />
 
       {/* Side Menu */}
       <SideMenu
@@ -317,18 +316,19 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F8F9FA",
   },
-  scrollView: {
-    flex: 1,
+  listContent: {
     paddingHorizontal: SCREEN_WIDTH * 0.05,
   },
-  ratingsContainer: {
-    paddingBottom: 20,
+  emptyListContent: {
+    flexGrow: 1,
+  },
+  listSpacer: {
+    height: 16,
   },
   ratingCard: {
     backgroundColor: "#fff",
     borderRadius: 12,
     padding: 16,
-    marginBottom: 16,
     borderWidth: 1,
     borderColor: "#E5E7EB",
   },

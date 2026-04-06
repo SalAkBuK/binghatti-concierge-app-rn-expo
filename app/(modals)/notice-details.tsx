@@ -17,11 +17,18 @@ import {
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { useApp } from "../../lib/context/connected-app-provider";
+import {
+  useAuth,
+  useNotices,
+} from "../../lib/context/connected-app-provider";
 import type { MaintenanceNotice } from "../../lib/types";
 
 export default function NoticeDetailsScreen() {
-  const { selectedNotice, currentUser, actions } = useApp();
+  const { currentUser } = useAuth();
+  const {
+    selectedNotice,
+    actions: noticeActions,
+  } = useNotices();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showEditMode, setShowEditMode] = useState(false);
   const [editForm, setEditForm] = useState({
@@ -81,7 +88,7 @@ export default function NoticeDetailsScreen() {
 
     setLoading(true);
     try {
-      await actions.deleteNotice(selectedNotice.id);
+      await noticeActions.deleteNotice(selectedNotice.id);
       setShowDeleteConfirm(false);
       Alert.alert("Success", "Notice deleted successfully");
       router.back();
@@ -98,7 +105,7 @@ export default function NoticeDetailsScreen() {
 
     setLoading(true);
     try {
-      await actions.updateNotice(selectedNotice.id, {
+      await noticeActions.updateNotice(selectedNotice.id, {
         ...editForm,
         affectedAreas: editForm.affectedAreas
           .split(",")

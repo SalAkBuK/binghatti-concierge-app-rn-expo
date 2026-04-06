@@ -15,7 +15,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
-import { useApp } from "../../lib/context/connected-app-provider";
+import { useAuth } from "../../lib/context/auth-context";
+import { useNotifications } from "../../lib/context/notifications-context";
 import { orgBuildingsApi } from "../../lib/services/api/org-buildings";
 import { getUnreadNotificationsCount } from "../../lib/utils/helpers";
 
@@ -38,7 +39,8 @@ type BuildingAssignment = {
 };
 
 export default function BuildingEmployeeDashboard() {
-  const { isAuthenticated, currentUser, notifications } = useApp();
+  const { isAuthenticated, currentUser } = useAuth();
+  const { notifications } = useNotifications();
   const tabBarHeight = useBottomTabBarHeight();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [refreshing, setRefreshing] = useState(false);

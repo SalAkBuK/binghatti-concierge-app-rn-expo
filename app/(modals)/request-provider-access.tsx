@@ -13,13 +13,27 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useApp } from "../../lib/context/connected-app-provider";
+import {
+  useAppDomain,
+  useAuth,
+  useNotifications,
+} from "../../lib/context/connected-app-provider";
 import type { ProviderAccessRequest } from "../../lib/types";
 
 export default function RequestProviderAccessModal() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
-  const { currentUser, actions, serviceProviders, buildings, providerAccessRequests } = useApp();
+  const { currentUser, users } = useAuth();
+  const { actions: notificationActions } = useNotifications();
+  const {
+    property: {
+      serviceProviders,
+      buildings,
+      providerAccessRequests,
+      getServiceProviderBuildingAssignments,
+      createProviderAccessRequest,
+    },
+  } = useAppDomain();
 
   const providerId = params.providerId as string;
   const buildingId = params.buildingId as string;
@@ -39,7 +53,7 @@ export default function RequestProviderAccessModal() {
   );
 
   // Get provider's building assignments
-  const assignments = actions?.getServiceProviderBuildingAssignments?.(providerId) ?? [];
+  const assignments = getServiceProviderBuildingAssignments(providerId) ?? [];
   const assignedBuildings = assignments
     .filter((a) => a.status === "active")
     .map((a) => buildings?.find((b) => b.id === a.buildingId))
@@ -72,26 +86,19 @@ export default function RequestProviderAccessModal() {
       };
 
       // Add the request to the system (you'll need to implement this in context)
-      if (actions?.createProviderAccessRequest) {
-        await actions.createProviderAccessRequest(request);
-      }
+      await createProviderAccessRequest(request);
 
-      // Create notification for admin users
-      if (actions?.createNotification && actions?.getUsers) {
-        // Find all admin users and send them notifications
-        const allUsers = actions.getUsers();
-        const adminUsers = allUsers.filter(
-          (u) => u.role === "admin" || u.role === "super_admin"
+      const adminUsers = Object.values(users).filter(
+        (user) => user.role === "admin" || user.role === "super_admin",
+      );
+
+      for (const admin of adminUsers) {
+        notificationActions.createNotification(
+          admin.id,
+          "Provider Access Request",
+          `${currentUser.name} requests ${provider.name} for ${building.name}`,
+          "info",
         );
-
-        for (const admin of adminUsers) {
-          actions.createNotification(
-            admin.id,
-            "Provider Access Request",
-            `${currentUser.name} requests ${provider.name} for ${building.name}`,
-            "info"
-          );
-        }
       }
 
       Alert.alert(

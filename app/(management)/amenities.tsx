@@ -18,7 +18,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
-import { useApp } from "../../lib/context/connected-app-provider";
+import { useAuth } from "../../lib/context/auth-context";
+import { useAppDomain } from "../../lib/context/connected-app-provider";
+import { useNotifications } from "../../lib/context/notifications-context";
 import { getUserErrorMessage } from "../../lib/services/api/errors";
 import type { Building, BuildingAmenityConfig } from "../../lib/types";
 import {
@@ -29,8 +31,15 @@ import {
 const MANAGEMENT_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
 
 export default function ManagementAmenitiesScreen() {
-  const { currentUser, notifications, actions, amenityConfigs } = useApp();
-  const { getBuildings, getManagedBuildings, updateAmenityConfig, createAmenityConfig } = actions;
+  const { currentUser } = useAuth();
+  const { notifications } = useNotifications();
+  const { amenityVisitor, property } = useAppDomain();
+  const { amenityConfigs } = amenityVisitor;
+  const {
+    getBuildings,
+    getManagedBuildings,
+  } = property;
+  const { updateAmenityConfig, createAmenityConfig } = amenityVisitor;
   const { width } = useWindowDimensions();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [selectedConfig, setSelectedConfig] =

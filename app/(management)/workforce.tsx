@@ -14,7 +14,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
-import { useApp } from "../../lib/context/connected-app-provider";
+import { useAuth } from "../../lib/context/auth-context";
+import { useAppDomain } from "../../lib/context/connected-app-provider";
+import { useNotifications } from "../../lib/context/notifications-context";
 import { orgBuildingsApi } from "../../lib/services/api/org-buildings";
 import { getUserErrorMessage } from "../../lib/services/api/errors";
 import type {
@@ -34,12 +36,14 @@ const SHIFT_SEQUENCE: NonNullable<BuildingEmployee["shift"]>[] = [
 ];
 
 export default function WorkforceManagementScreen() {
-  const { currentUser, notifications, actions } = useApp();
+  const { currentUser } = useAuth();
+  const { notifications } = useNotifications();
+  const { property } = useAppDomain();
   const {
     getBuildingEmployees,
     updateBuildingEmployee,
     removeBuildingEmployee,
-  } = actions;
+  } = property;
   const { width } = useWindowDimensions();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [maintenanceStaff, setMaintenanceStaff] = useState<{

@@ -1,21 +1,15 @@
 import { Tabs, router } from "expo-router";
 import React, { useEffect, useRef } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import MessagesTabIcon from "../../components/icons/MessagesTabIcon";
 import NewHomeTabIcon from "../../components/icons/NewHomeTabIcon";
-import NewTabIcon from "../../components/icons/NewTabIcon";
 import ProfileIcon from "../../components/icons/ProfileIcon";
 import RequestsTabIcon from "../../components/icons/RequestsTabIcon";
 
-import { useApp } from "../../lib/context/connected-app-provider";
-import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
+import { useAuth } from "../../lib/context/auth-context";
 
 export default function TabLayout() {
-  const { isAuthenticated, currentUser } = useApp();
-  const { canCreateMaintenanceRequest } = useResidentTenancy({
-    enabled: Boolean(
-      isAuthenticated && currentUser?.role === "tenant" && currentUser?.id,
-    ),
-  });
+  const { isAuthenticated, currentUser } = useAuth();
   const insets = useSafeAreaInsets();
   const hasRedirectedToRole = useRef(false);
 
@@ -44,34 +38,44 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: "#336BE3",
-        tabBarInactiveTintColor: "#8296C4",
+        tabBarActiveTintColor: "#2B3437",
+        tabBarInactiveTintColor: "#8A969B",
         headerShown: false,
+        tabBarHideOnKeyboard: true,
         tabBarStyle: {
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          width: '100%',
+          position: "absolute",
+          bottom: Math.max(insets.bottom, 10),
+          left: 16,
+          right: 16,
+          width: undefined,
           backgroundColor: "#FFFFFF",
           borderTopWidth: 0,
-          paddingBottom: Math.max(insets.bottom, 8),
-          paddingTop: 12,
-          height: 74 + Math.max(insets.bottom, 8),
-          shadowColor: "#9CAFD9",
+          borderRadius: 28,
+          paddingBottom: Math.max(insets.bottom, 12),
+          paddingTop: 10,
+          paddingHorizontal: 10,
+          height: 78 + Math.max(insets.bottom, 12),
+          shadowColor: "rgba(43, 52, 55, 0.18)",
           shadowOffset: {
             width: 0,
-            height: -3,
+            height: -6,
           },
-          shadowOpacity: 0.102,
-          shadowRadius: 20,
-          elevation: 20,
+          shadowOpacity: 1,
+          shadowRadius: 24,
+          elevation: 18,
           opacity: 1,
         },
+        tabBarItemStyle: {
+          paddingTop: 2,
+        },
+        tabBarIconStyle: {
+          marginBottom: 2,
+        },
         tabBarLabelStyle: {
-          fontSize: 14,
+          fontSize: 11,
           fontWeight: "700",
-          letterSpacing: 0,
+          letterSpacing: 0.2,
+          marginTop: 2,
         },
       }}
     >
@@ -95,12 +99,11 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="new-request"
+        name="messages"
         options={{
-          title: "New",
-          href: canCreateMaintenanceRequest ? undefined : null,
+          title: "Messages",
           tabBarIcon: ({ color, focused }) => (
-            <NewTabIcon color={color} focused={focused} />
+            <MessagesTabIcon color={color} focused={focused} />
           ),
         }}
       />
@@ -140,7 +143,7 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="messages"
+        name="new-request"
         options={{
           href: null,
         }}

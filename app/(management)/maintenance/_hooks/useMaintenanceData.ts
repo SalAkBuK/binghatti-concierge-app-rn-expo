@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 
-import { useApp } from "../../../../lib/context/connected-app-provider";
+import { useAuth } from "../../../../lib/context/auth-context";
+import { useAppDomain } from "../../../../lib/context/connected-app-provider";
+import { useNotifications } from "../../../../lib/context/notifications-context";
 import {
   filterNotificationsByUser,
   getUnreadNotificationsCount,
@@ -8,9 +10,14 @@ import {
 import type { UseMaintenanceDataResult } from "../_types";
 
 export function useMaintenanceData(): UseMaintenanceDataResult {
-  const { currentUser, notifications, actions } = useApp();
+  const { currentUser } = useAuth();
+  const { notifications } = useNotifications();
+  const { property } = useAppDomain();
 
-  const buildingOptions = useMemo(() => actions.getManagedBuildings?.() ?? [], [actions]);
+  const buildingOptions = useMemo(
+    () => property.getManagedBuildings?.() ?? [],
+    [property],
+  );
 
   const userNotifications = filterNotificationsByUser(
     notifications || [],

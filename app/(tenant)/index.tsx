@@ -1,10 +1,10 @@
+import { Ionicons } from "@expo/vector-icons";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
-  Dimensions,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -15,16 +15,12 @@ import {
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import BuildingIcon from "../../components/icons/BuildingIcon";
-import FireIcon from "../../components/icons/FireIcon";
-import NewHomeIcon from "../../components/icons/NewHomeIcon";
-import NewIcon from "../../components/icons/NewIcon";
-import RequestsIcon from "../../components/icons/RequestsIcon";
-import { AnimatedButton } from "../../components/ui/AnimatedButton";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { HomeScreenSkeleton } from "../../components/ui/HomeScreenSkeleton";
 import { SideMenu } from "../../components/ui/SideMenu";
-import { useApp } from "../../lib/context/connected-app-provider";
+import { useAuth } from "../../lib/context/auth-context";
+import { useNotifications } from "../../lib/context/notifications-context";
+import { useRequests } from "../../lib/context/requests-context";
 import { useBroadcastNotifications } from "../../lib/hooks/useBroadcastNotifications";
 import { useResidentContract } from "../../lib/hooks/useResidentSelfService";
 import { useResidentRequests } from "../../lib/hooks/useResidentRequests";
@@ -36,35 +32,114 @@ import {
   isNotificationUnread,
 } from "../../lib/utils/helpers";
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
+const P = {
+  bg: "#F8F9FA",
+  surface: "#FFFFFF",
+  surfaceLow: "#F1F4F6",
+  border: "#D9E0E4",
+  text: "#2B3437",
+  muted: "#667176",
+  soft: "#7A8488",
+  primary: "#4D6169",
+  primaryDark: "#34474D",
+  secondary: "#DDE8F1",
+  accent: "#F8EFE4",
+  successBg: "#E4F4EA",
+  successText: "#25674A",
+  warningBg: "#FDF1DB",
+  warningText: "#9A5B00",
+  dangerBg: "#FCE3E0",
+  dangerText: "#B24A41",
+  infoBg: "#E7EEF9",
+  infoText: "#3C5A8C",
+  shadow: "rgba(43, 52, 55, 0.06)",
+};
+
+const parseAmount = (value?: string | null) => {
+  if (!value) return null;
+  const amount = Number(String(value).replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(amount) ? amount : null;
+};
+
+const formatCurrency = (value?: number | null) =>
+  value == null
+    ? "Unavailable"
+    : new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "AED",
+        maximumFractionDigits: 0,
+      }).format(value);
+
+const formatDate = (value?: string | null) => {
+  if (!value) return "Date unavailable";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Date unavailable";
+  return parsed.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+};
+
+const daysUntil = (value?: string | null) => {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return Math.ceil((parsed.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+};
+
+const greeting = () => {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+};
+
+const firstName = (name?: string | null) => name?.trim().split(/\s+/)[0] || "Resident";
+const initials = (name?: string | null) =>
+  name?.trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("") || "R";
+
+const requestStatusMeta = (status?: string | null) => {
+  switch (status) {
+    case "completed":
+      return { label: "Completed", bg: P.successBg, text: P.successText };
+    case "cancelled":
+      return { label: "Cancelled", bg: P.dangerBg, text: P.dangerText };
+    case "assigned":
+      return { label: "Assigned", bg: P.infoBg, text: P.infoText };
+    case "in-progress":
+      return { label: "In Progress", bg: P.infoBg, text: P.infoText };
+    case "on-hold":
+      return { label: "On Hold", bg: P.warningBg, text: P.warningText };
+    default:
+      return { label: "Pending", bg: P.warningBg, text: P.warningText };
+  }
+};
 
 export default function TenantHomeScreen() {
-  const {
-    currentUser,
-    notifications,
-    actions,
-    isAuthenticated,
-  } = useApp();
-  const [isLoading, setIsLoading] = useState(true);
+  const { currentUser, isAuthenticated, actions: authActions } = useAuth();
+  const { notifications, actions: notificationActions } = useNotifications();
+  const { actions: requestActions } = useRequests();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const tabBarHeight = useBottomTabBarHeight();
   const isHandlingUnauthorizedRef = useRef(false);
 
   const handleUnauthorized = useCallback(async () => {
-    if (isHandlingUnauthorizedRef.current) {
-      return;
-    }
-
+    if (isHandlingUnauthorizedRef.current) return;
     isHandlingUnauthorizedRef.current = true;
     try {
-      await actions.logout();
+      await authActions.logout();
     } catch (error) {
       console.warn("[TenantHome] Failed to clear session after 401:", error);
     } finally {
       router.replace("/auth" as any);
       isHandlingUnauthorizedRef.current = false;
     }
-  }, [actions]);
+  }, [authActions]);
 
   const {
     data: contractData,
@@ -77,6 +152,7 @@ export default function TenantHomeScreen() {
 
   const {
     canCreateMaintenanceRequest,
+    canManageVisitors,
     displayBuildingName,
     displayUnitLabel,
     isFormerResident,
@@ -113,21 +189,8 @@ export default function TenantHomeScreen() {
   });
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.replace("/auth");
-    }
+    if (!isAuthenticated) router.replace("/auth");
   }, [isAuthenticated]);
-
-  useEffect(() => {
-    // Simulate minimum loading time for smooth animation
-    const timer = setTimeout(() => {
-      if (currentUser && !isTenancyLoading) {
-        setIsLoading(false);
-      }
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [currentUser, isTenancyLoading]);
 
   const onRefreshHome = useCallback(async () => {
     await Promise.all([
@@ -136,718 +199,729 @@ export default function TenantHomeScreen() {
       refetchTenancy({ asRefresh: true, showLoading: false }),
       refetchBroadcastNotices({ asRefresh: true, showLoading: false }),
     ]);
-  }, [
-    refetchBroadcastNotices,
-    refetchContract,
-    refetchTenancy,
-    refreshRequests,
-  ]);
+  }, [refetchBroadcastNotices, refetchContract, refetchTenancy, refreshRequests]);
 
   const isHomeRefreshing =
     isRequestsRefreshing || isContractRefreshing || isBroadcastNoticesRefreshing;
 
-  const profileBuildingName = currentUser?.profile?.buildingName;
-  const unitLabel = currentUser?.profile?.apartment;
-  const floorLabel = currentUser?.profile?.floor;
+  const buildingName =
+    displayBuildingName || currentUser?.profile?.buildingName || "Towerdesk Residence";
   const profileUnitInfo =
-    unitLabel || floorLabel
-      ? [unitLabel, floorLabel ? `Floor ${floorLabel}` : null]
+    currentUser?.profile?.apartment || currentUser?.profile?.floor
+      ? [
+          currentUser?.profile?.apartment,
+          currentUser?.profile?.floor ? `Floor ${currentUser.profile.floor}` : null,
+        ]
           .filter(Boolean)
           .join(" - ")
-      : "-";
-  const buildingName = displayBuildingName || profileBuildingName || "-";
+      : "Not assigned";
   const unitInfo = displayUnitLabel || profileUnitInfo;
 
-  const recentRequests = useMemo(() => {
-    return [...residentRequests]
-      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
-      .slice(0, 3);
-  }, [residentRequests]);
-
-  const handleNoticePress = (notification: any) => {
-    const body = getNotificationBody(notification).trim();
-
-    if (isNotificationUnread(notification)) {
-      actions.markNotificationAsRead?.(notification.id).catch((error: unknown) => {
-        console.warn("[TenantHome] Failed to mark notice as read:", error);
-      });
-    }
-
-    Alert.alert(
-      notification.title || "Building notice",
-      body || "No additional details were provided for this building notice.",
-      [
-        { text: "Close", style: "cancel" },
-        {
-          text: "Open Inbox",
-          onPress: () => router.push("/(modals)/notifications-hub" as any),
-        },
-      ],
-    );
-  };
-
-  if (isLoading || !currentUser) {
-    return <HomeScreenSkeleton />;
-  }
-
-  const userNotifications = filterNotificationsByUser(
-    notifications || [],
-    currentUser?.id,
+  const userNotifications = useMemo(
+    () => filterNotificationsByUser(notifications || [], currentUser?.id),
+    [currentUser?.id, notifications],
   );
-  const hasUnreadNotifications =
-    getUnreadNotificationsCount(userNotifications) > 0;
+  const hasUnreadNotifications = getUnreadNotificationsCount(userNotifications) > 0;
+
+  const recentRequests = useMemo(
+    () =>
+      [...residentRequests]
+        .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+        .slice(0, 3),
+    [residentRequests],
+  );
+
+  const activeContract = contractData.contract;
+  const annualRent = parseAmount(activeContract?.annualRent ?? activeContract?.contractValue);
+  const deposit = parseAmount(activeContract?.securityDepositAmount);
+  const leaseEndInDays = daysUntil(activeContract?.endDate);
+  const openRequestsCount = residentRequests.filter(
+    (request) => !["completed", "cancelled"].includes(request.status),
+  ).length;
+
+  const overviewCards = useMemo(() => {
+    const leaseCopy =
+      leaseEndInDays == null
+        ? "Lease details available in your contract"
+        : leaseEndInDays >= 0
+          ? `Ends in ${leaseEndInDays} day${leaseEndInDays === 1 ? "" : "s"}`
+          : `Ended ${Math.abs(leaseEndInDays)} day${Math.abs(leaseEndInDays) === 1 ? "" : "s"} ago`;
+
+    return [
+      {
+        key: "lease",
+        eyebrow: annualRent != null ? "Annual Rent" : "Lease Status",
+        title: annualRent != null ? formatCurrency(annualRent) : statusTitle,
+        subtitle: leaseCopy,
+        tone: "primary",
+        icon: "wallet-outline",
+        action: "View lease",
+        onPress: () => router.push("/(tenant)/lease-details" as any),
+      },
+      {
+        key: "residence",
+        eyebrow: "Residence",
+        title: buildingName,
+        subtitle: unitInfo,
+        tone: "secondary",
+        icon: "business-outline",
+        action: "Profile",
+        onPress: () => router.push("/(tenant)/profile" as any),
+      },
+      {
+        key: "requests",
+        eyebrow: "Service Requests",
+        title: `${openRequestsCount}`,
+        subtitle:
+          openRequestsCount > 0
+            ? "Open items need your attention"
+            : "Everything is clear right now",
+        tone: "accent",
+        icon: "construct-outline",
+        action: "My requests",
+        onPress: () => router.push("/(tenant)/requests" as any),
+      },
+      {
+        key: "deposit",
+        eyebrow: "Security Deposit",
+        title: deposit != null ? formatCurrency(deposit) : "Not listed",
+        subtitle: activeContract?.contractNumber
+          ? `Contract ${activeContract.contractNumber}`
+          : "Stored from your latest contract",
+        tone: "neutral",
+        icon: "shield-checkmark-outline",
+        action: "Contract details",
+        onPress: () => router.push("/(tenant)/lease-details" as any),
+      },
+    ];
+  }, [activeContract?.contractNumber, annualRent, buildingName, deposit, leaseEndInDays, openRequestsCount, statusTitle, unitInfo]);
+
+  const quickActions = useMemo(
+    () => [
+      {
+        key: "main",
+        label: canCreateMaintenanceRequest ? "New Request" : "Lease Details",
+        icon: canCreateMaintenanceRequest ? "add-outline" : "document-text-outline",
+        onPress: () =>
+          router.push(
+            (canCreateMaintenanceRequest ? "/(tenant)/new-request" : "/(tenant)/lease-details") as any,
+          ),
+      },
+      {
+        key: "requests",
+        label: isFormerResident ? "History" : "My Requests",
+        icon: "receipt-outline",
+        onPress: () => router.push("/(tenant)/requests" as any),
+      },
+      {
+        key: "messages",
+        label: "Messages",
+        icon: "chatbubble-ellipses-outline",
+        onPress: () => router.push("/(tenant)/messages" as any),
+      },
+      {
+        key: canManageVisitors ? "visitors" : "profile",
+        label: canManageVisitors ? "Visitors" : "Profile",
+        icon: canManageVisitors ? "people-outline" : "person-outline",
+        onPress: () =>
+          router.push((canManageVisitors ? "/(tenant)/visitors" : "/(tenant)/profile") as any),
+      },
+    ],
+    [canCreateMaintenanceRequest, canManageVisitors, isFormerResident],
+  );
+
+  const handleNoticePress = useCallback(
+    (notification: any) => {
+        const body = getNotificationBody(notification).trim();
+        if (isNotificationUnread(notification)) {
+        notificationActions.markNotificationAsRead?.(notification.id).catch((error: unknown) => {
+          console.warn("[TenantHome] Failed to mark notice as read:", error);
+        });
+      }
+      Alert.alert(
+        notification.title || "Building notice",
+        body || "No additional details were provided for this building notice.",
+        [
+          { text: "Close", style: "cancel" },
+          { text: "Open Inbox", onPress: () => router.push("/(modals)/notifications-hub" as any) },
+        ],
+      );
+    },
+    [notificationActions],
+  );
+
+  if (!currentUser || isTenancyLoading) return <HomeScreenSkeleton />;
 
   return (
     <SafeAreaView style={styles.container}>
-      <Animated.View
-        entering={FadeIn.duration(400)}
-        style={styles.fixedContent}
-      >
-        {/* Header */}
-        <HeaderBar
-          showTitle={false}
-          hasUnreadNotifications={hasUnreadNotifications}
-          showSideMenu={showSideMenu}
-          onSideMenuToggle={setShowSideMenu}
-        />
-
-        {/* Welcome Card */}
-        <Animated.View
-          entering={FadeInDown.delay(50).duration(400)}
-          style={styles.welcomeCardContainer}
-        >
-          <LinearGradient
-            colors={["#7034FF", "#1B28B1"]}
-            start={{ x: 1, y: 0 }}
-            end={{ x: 0, y: 0 }}
-            style={styles.welcomeCard}
-          >
-            <Text style={styles.welcomeTitle}>
-              Welcome back, {currentUser?.name || "Ahmed"}!
-            </Text>
-            <Text style={styles.welcomeSubtitle}>
-              Your premium living experience
-            </Text>
-
-            <View style={styles.buildingInfo}>
-              <View style={styles.infoRow}>
-                <BuildingIcon size={44} color="rgba(255,255,255,0.8)" />
-                <View>
-                  <Text style={styles.infoLabel}>Building</Text>
-                  <Text style={styles.infoValue}>{buildingName}</Text>
-                </View>
-              </View>
-
-              <View style={styles.infoRow}>
-                <NewHomeIcon size={44} color="rgba(255,255,255,0.8)" />
-                <View>
-                  <Text style={styles.infoLabel}>Your Unit</Text>
-                  <Text style={styles.infoValue}>{unitInfo}</Text>
-                </View>
-              </View>
-            </View>
-          </LinearGradient>
-        </Animated.View>
-
-        {isFormerResident ? (
-          <Animated.View
-            entering={FadeInDown.delay(100).duration(400)}
-            style={styles.formerResidentBanner}
-          >
-            <Text style={styles.formerResidentTitle}>{statusTitle}</Text>
-            <Text style={styles.formerResidentText}>{statusMessage}</Text>
-          </Animated.View>
-        ) : null}
-
-        <Animated.View
-          entering={FadeInDown.delay(100).duration(400)}
-          style={styles.actionButtonsContainer}
-        >
-          {canCreateMaintenanceRequest ? (
-            <AnimatedButton
-              style={[styles.actionButton, styles.newRequestButton]}
-              onPress={() => router.push("/(tenant)/new-request")}
-            >
-              <View style={styles.actionButtonContent}>
-                <View style={[styles.actionButtonIcon, styles.newRequestIcon]}>
-                  <NewIcon size={18} color="#fff" />
-                </View>
-                <Text
-                  style={styles.actionButtonText}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                >
-                  New Request
-                </Text>
-              </View>
-            </AnimatedButton>
-          ) : (
-            <AnimatedButton
-              style={[styles.actionButton, styles.contractButton]}
-              onPress={() => router.push("/(tenant)/lease-details" as any)}
-            >
-              <View style={styles.actionButtonContent}>
-                <View style={[styles.actionButtonIcon, styles.contractIcon]}>
-                  <NewIcon size={18} color="#fff" />
-                </View>
-                <Text
-                  style={styles.actionButtonText}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                >
-                  Contract Details
-                </Text>
-              </View>
-            </AnimatedButton>
-          )}
-
-          <AnimatedButton
-            style={[styles.actionButton, styles.myRequestsButton]}
-            onPress={() => router.push("/(tenant)/requests")}
-          >
-            <View style={styles.actionButtonContent}>
-              <View style={[styles.actionButtonIcon, styles.myRequestsIcon]}>
-                <RequestsIcon size={18} color="#fff" />
-              </View>
-              <Text
-                style={styles.actionButtonText}
-                numberOfLines={1}
-                adjustsFontSizeToFit
-              >
-                {isFormerResident ? "Request History" : "My Requests"}
-              </Text>
-            </View>
-          </AnimatedButton>
-        </Animated.View>
-
-      </Animated.View>
-
-      {/* Scrollable Content */}
       <ScrollView
-        style={styles.scrollableContent}
-        contentContainerStyle={{ paddingBottom: tabBarHeight + 32 }}
+        style={styles.scrollView}
+        contentContainerStyle={[styles.content, { paddingBottom: tabBarHeight + 32 }]}
         refreshControl={
-          <RefreshControl refreshing={isHomeRefreshing} onRefresh={onRefreshHome} />
+          <RefreshControl
+            refreshing={isHomeRefreshing}
+            onRefresh={onRefreshHome}
+            tintColor={P.primary}
+          />
         }
         showsVerticalScrollIndicator={false}
       >
-        {/* Building Notices Section */}
-        <Animated.View
-          entering={FadeInDown.delay(150).duration(400)}
-          style={styles.buildingNoticesSection}
-        >
-          <View style={styles.buildingNoticesHeader}>
-            <View style={styles.noticesIcon}>
-              <FireIcon size={20} color="#FF5722" />
-            </View>
-            <Text style={styles.buildingNoticesTitle}>Building Notices</Text>
-          </View>
-
-          {broadcastNotifications.length > 0 ? (
-            broadcastNotifications
-              .slice(0, 2)
-              .map((notice) => {
-                const isUnread = isNotificationUnread(notice);
-                const noticeBody = getNotificationBody(notice).trim();
-
-                return (
-                <TouchableOpacity
-                  key={notice.id}
-                  style={styles.noticeCard}
-                  onPress={() => handleNoticePress(notice)}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.noticeCardHeader}>
-                    <Text style={styles.noticeCardTitle}>{notice.title}</Text>
-                    <View
-                      style={[
-                        styles.noticeStatusBadge,
-                        isUnread ? styles.inProgressBadge : styles.scheduledBadge,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.noticeStatusText,
-                          isUnread ? styles.inProgressText : styles.scheduledText,
-                        ]}
-                      >
-                        {isUnread ? "New" : "Notice"}
-                      </Text>
-                    </View>
-                  </View>
-                  <Text style={styles.noticeCardDescription} numberOfLines={2}>
-                    {noticeBody || "New building notice available."}
-                  </Text>
-                  <Text style={styles.noticeAreas}>
-                    Posted{" "}
-                    {new Date(notice.createdAt).toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })
-          ) : isBroadcastNoticesLoading ? (
-            <View style={styles.noNoticesCard}>
-              <Text style={styles.noNoticesText}>Loading building notices...</Text>
-            </View>
-          ) : broadcastNoticesError ? (
-            <View style={styles.noNoticesCard}>
-              <Text style={styles.noNoticesText}>{broadcastNoticesError}</Text>
-            </View>
-          ) : (
-            <View style={styles.noNoticesCard}>
-              <Text style={styles.noNoticesText}>No active notices at this time</Text>
-            </View>
-          )}
+        <Animated.View entering={FadeIn.duration(400)}>
+          <HeaderBar
+            showTitle={false}
+            hasUnreadNotifications={hasUnreadNotifications}
+            showSideMenu={showSideMenu}
+            onSideMenuToggle={setShowSideMenu}
+            textColor={P.text}
+          />
         </Animated.View>
 
-        {/* Recent Activity Section */}
-        <Animated.View
-          entering={FadeInDown.delay(200).duration(400)}
-          style={styles.recentActivitySection}
-        >
-          <Text style={styles.recentActivityTitle}>Recent Activity</Text>
+        <Animated.View entering={FadeInDown.delay(40).duration(400)} style={styles.hero}>
+          <View style={styles.heroCopy}>
+            <Text style={styles.heroEyebrow}>{buildingName}</Text>
+            <Text style={styles.heroTitle}>
+              {greeting()},{"\n"}
+              {firstName(currentUser?.name)}
+            </Text>
+            <Text style={styles.heroSubtitle}>
+              {isFormerResident
+                ? "Your contract history and resident records stay accessible here."
+                : "A quieter overview of your home, requests, and building updates."}
+            </Text>
+          </View>
+          <LinearGradient
+            colors={[P.primary, P.primaryDark]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.avatar}
+          >
+            <Text style={styles.avatarText}>{initials(currentUser?.name)}</Text>
+          </LinearGradient>
+        </Animated.View>
 
-          {recentRequests
-            .map((request) => {
-              const statusConfig = {
-                pending: {
-                  bg: "#FFEDD5",
-                  text: "#EA5846",
-                  label: "Pending",
-                },
-                assigned: {
-                  bg: "#DBEAFE",
-                  text: "#1E40AF",
-                  label: "Assigned",
-                },
-                "in-progress": {
-                  bg: "#DBEAFE",
-                  text: "#1E40AF",
-                  label: "Progress",
-                },
-                "on-hold": {
-                  bg: "#FEE2E2",
-                  text: "#BE123C",
-                  label: "On Hold",
-                },
-                completed: {
-                  bg: "#D1FAE5",
-                  text: "#065F46",
-                  label: "Completed",
-                },
-                cancelled: {
-                  bg: "#FEE2E2",
-                  text: "#DC2626",
-                  label: "Cancelled",
-                },
-              };
+        <Animated.View entering={FadeInDown.delay(80).duration(400)} style={styles.profileStrip}>
+          <View style={styles.profilePill}>
+            <Ionicons name="business-outline" size={16} color={P.primary} />
+            <Text style={styles.profilePillText} numberOfLines={1}>
+              {buildingName}
+            </Text>
+          </View>
+          <View style={styles.profilePill}>
+            <Ionicons name="home-outline" size={16} color={P.primary} />
+            <Text style={styles.profilePillText} numberOfLines={1}>
+              {unitInfo}
+            </Text>
+          </View>
+        </Animated.View>
 
-              const status =
-                statusConfig[request.status] ?? statusConfig.pending;
+        {isFormerResident ? (
+          <Animated.View entering={FadeInDown.delay(110).duration(400)} style={styles.banner}>
+            <View style={styles.bannerIcon}>
+              <Ionicons name="information-circle-outline" size={18} color={P.warningText} />
+            </View>
+            <View style={styles.bannerCopy}>
+              <Text style={styles.bannerTitle}>{statusTitle}</Text>
+              <Text style={styles.bannerText}>{statusMessage}</Text>
+            </View>
+          </Animated.View>
+        ) : null}
+
+        <Animated.View entering={FadeInDown.delay(140).duration(400)} style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <Text style={styles.sectionTitle}>Overview</Text>
+              <Text style={styles.sectionSubtitle}>Swipe across your household summary</Text>
+            </View>
+          </View>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
+            {overviewCards.map((card) => {
+              const isPrimary = card.tone === "primary";
+              const cardToneStyle =
+                card.tone === "primary"
+                  ? styles.cardPrimary
+                  : card.tone === "secondary"
+                    ? styles.cardSecondary
+                    : card.tone === "accent"
+                      ? styles.cardAccent
+                      : styles.cardNeutral;
 
               return (
                 <TouchableOpacity
-                  key={request.id}
-                  style={styles.activityItem}
-                  onPress={() => {
-                    actions.setSelectedRequest(request);
-                    router.push("/(modals)/request-details");
-                  }}
+                  key={card.key}
+                  activeOpacity={0.9}
+                  onPress={card.onPress}
+                  style={[styles.overviewCard, cardToneStyle]}
                 >
-                  <View style={styles.activityContent}>
-                    <Text style={styles.activityTitle} numberOfLines={1}>
-                      {request.title}
+                  <View style={styles.cardTop}>
+                    <Text style={[styles.cardEyebrow, isPrimary ? styles.cardEyebrowPrimary : null]}>
+                      {card.eyebrow}
                     </Text>
-                    <Text style={styles.activityDate}>
-                      {new Date(request.createdAt).toLocaleDateString()}
+                    <View style={styles.cardIcon}>
+                      <Ionicons name={card.icon as any} size={18} color={isPrimary ? P.surface : P.primary} />
+                    </View>
+                  </View>
+                  <View style={styles.cardBody}>
+                    <Text style={[styles.cardTitle, isPrimary ? styles.cardTitlePrimary : null]}>
+                      {card.title}
+                    </Text>
+                    <Text style={[styles.cardSubtitle, isPrimary ? styles.cardSubtitlePrimary : null]}>
+                      {card.subtitle}
                     </Text>
                   </View>
-                  <View
-                    style={[styles.statusBadge, { backgroundColor: status.bg }]}
-                  >
-                    <Text style={[styles.statusText, { color: status.text }]}>
-                      {status.label}
+                  <View style={styles.cardFooter}>
+                    <Text style={[styles.cardAction, isPrimary ? styles.cardActionPrimary : null]}>
+                      {card.action}
                     </Text>
+                    <Ionicons name="arrow-forward" size={16} color={isPrimary ? P.surface : P.primary} />
                   </View>
                 </TouchableOpacity>
               );
             })}
+          </ScrollView>
+        </Animated.View>
 
-          {residentRequests.length === 0 && (
-            <View style={styles.emptyActivityState}>
-              <Text style={styles.emptyActivityText}>
-                No recent activity to display
+        <Animated.View entering={FadeInDown.delay(170).duration(400)} style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <Text style={styles.sectionTitle}>Active Service Requests</Text>
+              <Text style={styles.sectionSubtitle}>Track the latest movement on your requests</Text>
+            </View>
+            <TouchableOpacity onPress={() => router.push("/(tenant)/requests" as any)}>
+              <Text style={styles.linkText}>View all</Text>
+            </TouchableOpacity>
+          </View>
+
+          {recentRequests.length > 0 ? (
+            recentRequests.map((request) => {
+              const status = requestStatusMeta(request.status);
+
+              return (
+                <TouchableOpacity
+                  key={request.id}
+                  style={styles.requestCard}
+                  activeOpacity={0.85}
+                  onPress={() => {
+                    requestActions.setSelectedRequest(request);
+                    router.push("/(modals)/request-details" as any);
+                  }}
+                >
+                  <View style={styles.requestTop}>
+                    <View style={styles.requestIconWrap}>
+                      <Ionicons name="construct-outline" size={18} color={P.primary} />
+                    </View>
+                    <View style={styles.requestCopy}>
+                      <Text style={styles.requestTitle} numberOfLines={1}>
+                        {request.title}
+                      </Text>
+                      <Text style={styles.requestMeta}>Created {formatDate(request.createdAt)}</Text>
+                    </View>
+                    <View style={[styles.requestBadge, { backgroundColor: status.bg }]}>
+                      <Text style={[styles.requestBadgeText, { color: status.text }]}>
+                        {status.label}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.requestBottom}>
+                    <Text style={styles.requestDescription} numberOfLines={1}>
+                      {request.description || "Tap to review request details and latest updates."}
+                    </Text>
+                    <Ionicons name="chevron-forward" size={16} color={P.soft} />
+                  </View>
+                </TouchableOpacity>
+              );
+            })
+          ) : (
+            <View style={styles.emptyCard}>
+              <Ionicons name="clipboard-outline" size={26} color={P.soft} />
+              <Text style={styles.emptyTitle}>No recent requests</Text>
+              <Text style={styles.emptyText}>
+                When you submit a maintenance request, it will appear here.
               </Text>
             </View>
           )}
         </Animated.View>
+
+        <Animated.View entering={FadeInDown.delay(200).duration(400)} style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <Text style={styles.sectionTitle}>Recent Announcements</Text>
+              <Text style={styles.sectionSubtitle}>Building-wide updates curated for residents</Text>
+            </View>
+            <TouchableOpacity onPress={() => router.push("/(modals)/notifications-hub" as any)}>
+              <Text style={styles.linkText}>Inbox</Text>
+            </TouchableOpacity>
+          </View>
+
+          {broadcastNotifications.length > 0 ? (
+            broadcastNotifications.slice(0, 2).map((notice, index) => {
+              const unread = isNotificationUnread(notice);
+              const body = getNotificationBody(notice).trim();
+              const colors =
+                index % 2 === 0
+                  ? ([P.primaryDark, P.primary] as const)
+                  : (["#86694B", "#B99673"] as const);
+
+              return (
+                <TouchableOpacity
+                  key={notice.id}
+                  style={styles.noticeCard}
+                  activeOpacity={0.88}
+                  onPress={() => handleNoticePress(notice)}
+                >
+                  <LinearGradient
+                    colors={colors}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.noticeVisual}
+                  >
+                    <View style={styles.noticeVisualBadge}>
+                      <Ionicons name="megaphone-outline" size={18} color={P.surface} />
+                    </View>
+                    {unread ? (
+                      <View style={styles.noticeVisualPill}>
+                        <Text style={styles.noticeVisualPillText}>New</Text>
+                      </View>
+                    ) : null}
+                  </LinearGradient>
+
+                  <View style={styles.noticeBody}>
+                    <Text style={styles.noticeTitle} numberOfLines={1}>
+                      {notice.title || "Building notice"}
+                    </Text>
+                    <Text style={styles.noticeDescription} numberOfLines={2}>
+                      {body || "No additional details were provided for this building notice."}
+                    </Text>
+                    <View style={styles.noticeMeta}>
+                      <Text style={styles.noticeMetaText}>{formatDate(notice.createdAt)}</Text>
+                      <Ionicons name="arrow-forward" size={16} color={P.soft} />
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              );
+            })
+          ) : (
+            <View style={styles.emptyCard}>
+              <Ionicons
+                name={isBroadcastNoticesLoading ? "sync-outline" : "notifications-outline"}
+                size={26}
+                color={P.soft}
+              />
+              <Text style={styles.emptyTitle}>
+                {isBroadcastNoticesLoading ? "Loading announcements" : "No announcements"}
+              </Text>
+              <Text style={styles.emptyText}>
+                {broadcastNoticesError || "Fresh building announcements will show up here."}
+              </Text>
+            </View>
+          )}
+        </Animated.View>
+
+        <Animated.View entering={FadeInDown.delay(230).duration(400)} style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <Text style={styles.sectionTitle}>Quick Actions</Text>
+              <Text style={styles.sectionSubtitle}>Fast access to your most used tasks</Text>
+            </View>
+          </View>
+
+          <View style={styles.quickGrid}>
+            {quickActions.map((action) => (
+              <TouchableOpacity
+                key={action.key}
+                style={styles.quickCard}
+                activeOpacity={0.88}
+                onPress={action.onPress}
+              >
+                <View style={styles.quickIconWrap}>
+                  <Ionicons name={action.icon as any} size={20} color={P.primary} />
+                </View>
+                <Text style={styles.quickLabel}>{action.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </Animated.View>
+
+        <Animated.View entering={FadeInDown.delay(260).duration(400)} style={styles.footerCard}>
+          <View style={styles.footerIcon}>
+            <Ionicons name="document-text-outline" size={18} color={P.surface} />
+          </View>
+          <View style={styles.footerCopy}>
+            <Text style={styles.footerTitle}>Contract Snapshot</Text>
+            <Text style={styles.footerText}>
+              {activeContract?.endDate
+                ? `Lease ends on ${formatDate(activeContract.endDate)}.`
+                : "Your lease dates will appear here once contract details are available."}
+            </Text>
+          </View>
+          <TouchableOpacity onPress={() => router.push("/(tenant)/lease-details" as any)}>
+            <Text style={styles.footerLink}>Open</Text>
+          </TouchableOpacity>
+        </Animated.View>
       </ScrollView>
 
-      {/* Side Menu */}
-      <SideMenu
-        isVisible={showSideMenu}
-        onClose={() => setShowSideMenu(false)}
-      />
+      <SideMenu isVisible={showSideMenu} onClose={() => setShowSideMenu(false)} />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#F9FAFB",
-  },
-  fixedContent: {
-    paddingHorizontal: SCREEN_WIDTH * 0.05,
-  },
-  scrollableContent: {
-    flex: 1,
-    paddingHorizontal: SCREEN_WIDTH * 0.05,
-  },
-  header: {
+  container: { flex: 1, backgroundColor: P.bg },
+  scrollView: { flex: 1 },
+  content: { paddingHorizontal: 20 },
+  hero: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingBottom: 15,
-  },
-  menuButton: {
-    padding: 8,
-  },
-  notificationButton: {
-    padding: 8,
-    position: "relative",
-  },
-  notificationDot: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: "#10B981",
-    borderWidth: 2,
-    borderColor: "#fff",
-  },
-  welcomeCardContainer: {
-    marginBottom: 30,
-  },
-  welcomeCard: {
-    borderRadius: 10,
-    padding: SCREEN_WIDTH * 0.055, // Responsive padding ~24px on 430px screens
-    justifyContent: "center",
-    width: SCREEN_WIDTH * 0.9,
-    minHeight: Math.min(SCREEN_WIDTH * 0.9 * 0.736, SCREEN_HEIGHT * 0.35), // Max 35% of screen height
-  },
-  welcomeTitle: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#FFFFFF",
-    marginBottom: 8,
-  },
-  welcomeSubtitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "rgba(255,255,255,0.8)",
-    marginBottom: 32,
-    lineHeight: 22,
-  },
-  buildingInfo: {
-    gap: 16,
-  },
-  infoRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  infoIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(255,255,255,0.2)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  infoLabel: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "rgba(255,255,255,0.7)",
-    marginBottom: 2,
-  },
-  infoValue: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#FFFFFF",
-  },
-  actionButtonsContainer: {
-    flexDirection: "row",
-    gap: 20,
-    marginBottom: 20,
-  },
-  actionButton: {
-    flex: 1,
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    minHeight: 64,
-    borderWidth: 1,
-    justifyContent: "center",
-  },
-  newRequestButton: {
-    backgroundColor: "#DBEAFE",
-    borderColor: "#BCD7FB",
-  },
-  myRequestsButton: {
-    backgroundColor: "#DCFCE7",
-    borderColor: "#8EEEAF",
-  },
-  contractButton: {
-    backgroundColor: "#EDE9FE",
-    borderColor: "#DDD6FE",
-  },
-  actionButtonContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  actionButtonIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  newRequestIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 7,
-    backgroundColor: "#356FEC",
-  },
-  myRequestsIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 7,
-    backgroundColor: "#16A34A",
-  },
-  contractIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 7,
-    backgroundColor: "#6D28D9",
-  },
-  actionButtonText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#1F2937",
-    flex: 1,
-  },
-  formerResidentBanner: {
-    backgroundColor: "#FFF7ED",
-    borderRadius: 10,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#FDBA74",
-    marginBottom: 20,
-  },
-  formerResidentTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#9A3412",
-    marginBottom: 6,
-  },
-  formerResidentText: {
-    fontSize: 13,
-    lineHeight: 19,
-    color: "#9A3412",
-  },
-  buildingNoticesSection: {
-    marginTop: 20,
-    marginBottom: 20,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 10,
-    padding: 20,
-    width: SCREEN_WIDTH * 0.9,
-    minHeight: 187,
-    borderWidth: 1,
-    borderColor: "#F3F4F6",
-  },
-  buildingNoticesHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 16,
-    gap: 8,
-  },
-  noticesIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  buildingNoticesTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#1F2937",
-  },
-  noticeCard: {
-    backgroundColor: "#FFF8EC",
-    borderRadius: 10,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: "#EEDAB8",
-    width: "100%",
-    minHeight: 98,
-    marginTop: 12,
-  },
-  noticeCardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 8,
+    justifyContent: "space-between",
+    gap: 16,
+    marginBottom: 18,
   },
-  noticeCardTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#000000",
-    flex: 1,
-    marginRight: 8,
-    textAlign: "left",
-    lineHeight: 19,
-    letterSpacing: 0,
-  },
-  noticeCardDescription: {
+  heroCopy: { flex: 1, gap: 8 },
+  heroEyebrow: {
     fontSize: 12,
-    fontWeight: "normal",
-    color: "#000000",
-    lineHeight: 20,
-    textAlign: "left",
-    letterSpacing: 0,
-    marginBottom: 8,
+    fontWeight: "700",
+    color: P.soft,
+    textTransform: "uppercase",
+    letterSpacing: 1.1,
   },
-  noticeAreas: {
+  heroTitle: { fontSize: 31, lineHeight: 36, fontWeight: "800", color: P.text },
+  heroSubtitle: { fontSize: 14, lineHeight: 22, color: P.muted, maxWidth: 280 },
+  avatar: {
+    width: 58,
+    height: 58,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: P.shadow,
+    shadowOpacity: 1,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 4,
+  },
+  avatarText: { color: P.surface, fontSize: 18, fontWeight: "800" },
+  profileStrip: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 18 },
+  profilePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: P.surface,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: P.border,
+  },
+  profilePillText: { flexShrink: 1, fontSize: 13, fontWeight: "600", color: P.text },
+  banner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    backgroundColor: P.accent,
+    borderRadius: 22,
+    padding: 16,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: "#EFD8BB",
+  },
+  bannerIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#FFF8EE",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bannerCopy: { flex: 1, gap: 4 },
+  bannerTitle: { fontSize: 15, fontWeight: "700", color: P.text },
+  bannerText: { fontSize: 13, lineHeight: 20, color: P.muted },
+  section: { marginBottom: 28 },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 14,
+  },
+  sectionTitle: { fontSize: 19, fontWeight: "700", color: P.text, marginBottom: 3 },
+  sectionSubtitle: { fontSize: 13, lineHeight: 19, color: P.soft },
+  linkText: { fontSize: 13, fontWeight: "700", color: P.primary },
+  rail: { paddingRight: 20, gap: 14 },
+  overviewCard: {
+    width: 288,
+    minHeight: 204,
+    borderRadius: 28,
+    padding: 20,
+    justifyContent: "space-between",
+    borderWidth: 1,
+    shadowColor: P.shadow,
+    shadowOpacity: 1,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 14 },
+    elevation: 4,
+  },
+  cardPrimary: { backgroundColor: P.primary, borderColor: P.primary },
+  cardSecondary: { backgroundColor: P.secondary, borderColor: "#CBD8E2" },
+  cardAccent: { backgroundColor: P.accent, borderColor: "#EFD8BB" },
+  cardNeutral: { backgroundColor: P.surface, borderColor: P.border },
+  cardTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+  },
+  cardEyebrow: {
     fontSize: 11,
-    color: "#FF5722",
-    fontWeight: "500",
-  },
-  noticeStatusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  scheduledBadge: {
-    backgroundColor: "#FEF3C7",
-  },
-  inProgressBadge: {
-    backgroundColor: "#DBEAFE",
-  },
-  noticeStatusText: {
-    fontSize: 10,
-    fontWeight: "600",
+    fontWeight: "700",
+    color: P.soft,
+    letterSpacing: 1.1,
     textTransform: "uppercase",
   },
-  scheduledText: {
-    color: "#92400E",
-  },
-  inProgressText: {
-    color: "#1E40AF",
-  },
-  noNoticesCard: {
-    backgroundColor: "#F9FAFB",
-    borderRadius: 10,
-    padding: 20,
-    marginTop: 12,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    borderStyle: "dashed",
-    width: "100%",
-    minHeight: 98,
-    justifyContent: "center",
+  cardEyebrowPrimary: { color: "rgba(255,255,255,0.74)" },
+  cardIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.18)",
     alignItems: "center",
+    justifyContent: "center",
   },
-  noNoticesText: {
-    fontSize: 14,
-    color: "#6B7280",
-    textAlign: "center",
-    fontStyle: "italic",
-  },
-  recentActivitySection: {
-    marginBottom: 40,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 10,
-    padding: 20,
-    width: SCREEN_WIDTH * 0.9,
-    minHeight: 215,
-    borderWidth: 1,
-    borderColor: "#F3F4F6",
-  },
-  recentActivityTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#1F2937",
-    marginBottom: 16,
-  },
-  activityItem: {
-    backgroundColor: "#F1F5F9",
-    borderRadius: 8,
+  cardBody: { gap: 8 },
+  cardTitle: { fontSize: 26, lineHeight: 31, fontWeight: "800", color: P.text },
+  cardTitlePrimary: { fontSize: 29, lineHeight: 33, color: P.surface },
+  cardSubtitle: { fontSize: 13, lineHeight: 20, color: P.muted },
+  cardSubtitlePrimary: { color: "rgba(255,255,255,0.78)" },
+  cardFooter: { flexDirection: "row", alignItems: "center", gap: 8 },
+  cardAction: { fontSize: 13, fontWeight: "700", color: P.primary },
+  cardActionPrimary: { color: P.surface },
+  requestCard: {
+    backgroundColor: P.surface,
+    borderRadius: 24,
     padding: 16,
     marginBottom: 12,
-    width: "100%",
-    minHeight: 56,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    borderWidth: 1,
+    borderColor: P.border,
+    shadowColor: P.shadow,
+    shadowOpacity: 1,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 3,
   },
-  activityContent: {
-    flex: 1,
-    justifyContent: "space-between",
-    marginRight: 12,
-  },
-  activityTitle: {
-    fontSize: 13,
-    fontWeight: "bold",
-    color: "#000000",
-    textAlign: "left",
-    lineHeight: 18,
-    letterSpacing: 0,
-    marginBottom: 4,
-  },
-  activityDate: {
-    fontSize: 12,
-    fontWeight: "normal",
-    color: "#000000",
-    textAlign: "left",
-    lineHeight: 20,
-    letterSpacing: 0,
-    opacity: 0.7,
-  },
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
+  requestTop: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 14 },
+  requestIconWrap: {
+    width: 42,
+    height: 42,
     borderRadius: 14,
-    minWidth: 68,
-    minHeight: 26,
-    justifyContent: "center",
+    backgroundColor: P.surfaceLow,
     alignItems: "center",
+    justifyContent: "center",
   },
-  statusText: {
-    fontSize: 12,
-    fontWeight: "bold",
-    textAlign: "center",
-    lineHeight: 17,
-    letterSpacing: 0,
+  requestCopy: { flex: 1, gap: 3 },
+  requestTitle: { fontSize: 15, fontWeight: "700", color: P.text },
+  requestMeta: { fontSize: 12, color: P.soft },
+  requestBadge: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
+  requestBadgeText: { fontSize: 11, fontWeight: "700" },
+  requestBottom: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: P.border,
+    paddingTop: 12,
   },
-  emptyActivityState: {
+  requestDescription: { flex: 1, fontSize: 13, lineHeight: 20, color: P.muted },
+  noticeCard: {
+    backgroundColor: P.surface,
+    borderRadius: 24,
+    overflow: "hidden",
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: P.border,
+    shadowColor: P.shadow,
+    shadowOpacity: 1,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 3,
+  },
+  noticeVisual: { height: 134, padding: 16, justifyContent: "space-between" },
+  noticeVisualBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  noticeVisualPill: {
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(255,255,255,0.22)",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  noticeVisualPillText: { color: P.surface, fontSize: 11, fontWeight: "700" },
+  noticeBody: { padding: 16, gap: 8 },
+  noticeTitle: { fontSize: 16, fontWeight: "700", color: P.text },
+  noticeDescription: { fontSize: 13, lineHeight: 20, color: P.muted },
+  noticeMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 2,
+  },
+  noticeMetaText: { fontSize: 12, fontWeight: "600", color: P.soft },
+  quickGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  quickCard: {
+    width: "47%",
+    minHeight: 108,
+    justifyContent: "space-between",
+    backgroundColor: P.surface,
+    borderRadius: 22,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: P.border,
+  },
+  quickIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: P.surfaceLow,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  quickLabel: { fontSize: 15, fontWeight: "700", color: P.text },
+  emptyCard: {
+    minHeight: 160,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: P.surface,
+    borderRadius: 24,
     padding: 24,
+    borderWidth: 1,
+    borderColor: P.border,
+  },
+  emptyTitle: { fontSize: 15, fontWeight: "700", color: P.text },
+  emptyText: { fontSize: 13, lineHeight: 20, color: P.muted, textAlign: "center" },
+  footerCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    backgroundColor: "#253237",
+    borderRadius: 24,
+    padding: 18,
+  },
+  footerIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.14)",
     alignItems: "center",
     justifyContent: "center",
   },
-  emptyActivityText: {
-    fontSize: 14,
-    color: "#6B7280",
-    textAlign: "center",
-  },
+  footerCopy: { flex: 1, gap: 4 },
+  footerTitle: { fontSize: 15, fontWeight: "700", color: P.surface },
+  footerText: { fontSize: 13, lineHeight: 20, color: "rgba(255,255,255,0.74)" },
+  footerLink: { fontSize: 13, fontWeight: "700", color: "#D9EBF1" },
 });

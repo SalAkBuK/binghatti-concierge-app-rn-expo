@@ -18,7 +18,7 @@ import {
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { useApp } from "../../lib/context/connected-app-provider";
+import { useAppDomain } from "../../lib/context/connected-app-provider";
 import type { Amenity } from "../../lib/types";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -72,7 +72,9 @@ const calculateEndTime = (startTime: string, durationMinutes: number): string =>
 
 export default function AmenityBookingFormScreen() {
   const params = useLocalSearchParams();
-  const { amenities, actions } = useApp();
+  const {
+    amenityVisitor: { amenities, createBooking },
+  } = useAppDomain();
   const amenityId = params.amenityId as string;
 
   const [amenity, setAmenity] = useState<Amenity | null>(null);
@@ -161,7 +163,7 @@ export default function AmenityBookingFormScreen() {
         bookingNotes,
       };
 
-      const newBooking = await actions.createBooking(bookingData);
+      const newBooking = await createBooking(bookingData);
 
       Alert.alert(
         "Booking Confirmed!",

@@ -8,9 +8,13 @@
 ## Access Model & Navigation
 - **Route group:** `app/(tenant)/`
 - **Role identifier:** `tenant`
-- **Tabs:** Defined in `_layout.tsx`. The bottom bar exposes `Home`, `Requests`, `New`, and `Profile`. Additional modules (`amenities`, `visitors`, `my-bookings`, `my-ratings`) are hidden from the tab bar and reached through the drawer or in-app navigation.
+- **Tabs:** Defined in `_layout.tsx`. The current bottom bar exposes `Home`, `Requests`, `Messages`, and `Profile`.
+- **Hidden mounted routes:** `amenities`, `visitors`, `my-bookings`, `my-ratings`, `new-request`, and `lease-details` stay off the tab bar and are reached through the drawer or in-app navigation.
 - **Side menu:** `components/ui/SideMenu.tsx` adjusts its menu items per role. For tenants, it links to bookings, visitors, amenities, ratings, and logout.
 - **Modals:** Requests and notices deep-link into modal routes under `app/(modals)/`, e.g., `/request-details`, `/notice-details`, `/amenity-booking-form`, `/register-visitor`.
+
+Note:
+- `messages` and `lease-details` are mounted in the current tenant router, but this deep dive still focuses mostly on requests, notices, amenities, visitors, ratings, and profile.
 
 ## Shared UI & State Patterns
 - `HeaderBar` handles notification badges and toggles the side menu; tenant screens typically set `showTitle` or pass a subtitle for context.

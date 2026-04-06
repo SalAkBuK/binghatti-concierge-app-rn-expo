@@ -19,7 +19,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
-import { useApp } from "../../lib/context/connected-app-provider";
+import { useAuth } from "../../lib/context/auth-context";
+import { useAppDomain } from "../../lib/context/connected-app-provider";
+import { useNotifications } from "../../lib/context/notifications-context";
 import { apiService } from "../../lib/services/api";
 import { orgBuildingsApi } from "../../lib/services/api/org-buildings";
 import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
@@ -30,7 +32,9 @@ import {
 import { APP_CONFIG } from "../../lib/utils/constants";
 
 export default function BuildingEmployeeProfileScreen() {
-  const { isAuthenticated, currentUser, actions, notifications } = useApp();
+  const { isAuthenticated, currentUser, actions: authActions } = useAuth();
+  const { notifications } = useNotifications();
+  const { property } = useAppDomain();
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -42,11 +46,11 @@ export default function BuildingEmployeeProfileScreen() {
   const [buildingName, setBuildingName] = useState("Assigned Building");
   const minPasswordLength = APP_CONFIG.validation.minPasswordLength;
   const buildingEmployee = currentUser?.id
-    ? actions.getBuildingEmployeeByUserId?.(currentUser.id)
+    ? property.getBuildingEmployeeByUserId?.(currentUser.id)
     : undefined;
   const building =
     buildingEmployee?.buildingId &&
-    actions.getBuildingById?.(buildingEmployee.buildingId);
+    property.getBuildingById?.(buildingEmployee.buildingId);
   const userNotifications = filterNotificationsByUser(
     notifications || [],
     currentUser?.id || "",
@@ -122,7 +126,7 @@ export default function BuildingEmployeeProfileScreen() {
         style: "destructive",
         onPress: async () => {
           try {
-            await actions.logout?.();
+            await authActions.logout?.();
             router.replace("/auth" as any);
           } catch (error) {
             console.error("Failed to sign out building employee:", error);

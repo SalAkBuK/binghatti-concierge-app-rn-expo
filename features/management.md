@@ -3,21 +3,22 @@
 ## Overview
 - The management experience (`app/(management)/`) is designed for building managers who operate within a limited portfolio. Managers visualize building health, drive request resolution, assign work, and communicate with residents.
 - Access is building-scoped. Every list, summary, and mutation is filtered through `actions.getManagedBuildings?.()` and related helpers so managers only see their assigned properties.
+- This doc mixes current mounted routes with target-state management workflows. If a path below does not exist under `app/(management)/`, treat it as planned/reference, not live router truth.
 - The UI leans on the same shared primitives as the admin suite—`AnalyticsSection`, `MiniTrendCard`, `JobCard`, `EntityTable`, `HeaderBar`, and `SideMenu`—but layers management-specific tooling such as tenant broadcasts, amenity policies, and visitor passes.
 
 ## Access Model & Routing
 - **Route group:** `app/(management)/`
 - **Role identifier:** `management`
-- **Navigation:** Bottom tabs expose the core workflow, while the **More** tab and `SideMenu` unlock additional modules.
+- **Navigation:** The current bottom tab bar exposes `index`, `requests`, and `more`, with `profile` mounted as a stack route. Additional modules are reached through **More** or in-app navigation.
 
 | Entry point | Screen | Availability | Notes |
 | --- | --- | --- | --- |
 | Operations (tab) | `app/(management)/index.tsx` | Always | Building dashboard + broadcast composer. |
 | Requests (tab) | `app/(management)/requests.tsx` | Always | Request triage with notes/messages. |
-| Jobs (tab) | `app/(management)/jobs.tsx` | Always | Assign providers or in-house staff; workers update status. |
-| Tenants (tab) | `app/(management)/tenants.tsx` | Always | Directory with occupancy metrics and lease snapshot. |
-| More (tab) | `app/(management)/more.tsx` | Always | Links to Units, Amenities, Parcels, Shifts, Maintenance, Visitors, Buildings, Workforce, Activity. |
-| Hidden tab routes | `units`, `amenities`, `visitors`, `buildings`, `workforce`, `activity`, `parcels`, `shifts`, `maintenance-schedules` | Navigable via More menu or `SideMenu`. | `Tabs.Screen` sets `href: null` to keep them off the bottom nav. |
+| More (tab) | `app/(management)/more.tsx` | Always | Current UI is minimal and primarily exposes profile navigation. |
+| Profile (stack route) | `app/(management)/profile.tsx` | Always | Mounted, but hidden from the custom tab bar. |
+| Secondary mounted routes | `units`, `amenities`, `visitors`, `buildings`, `workforce`, `activity`, `shifts`, `parcels`, `maintenance`, `billing`, `managers` | Mounted | These routes exist under `app/(management)/`, but current navigation only surfaces a subset of them. |
+| Planned/reference routes | `jobs`, `tenants`, `maintenance-schedules` | Not mounted today | The deep-dive sections remain useful intent, but those route files are not present in the current router tree. |
 | Global drawer | `components/ui/SideMenu.tsx` | Role-aware | Shows Management shortcuts plus account + sign-out. |
 
 `MANAGEMENT_NOTIFICATION_ROUTE` is passed to every screen header so notification taps open the admin/management notification modal.
