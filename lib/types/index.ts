@@ -2,6 +2,45 @@
 
 export type UserStatus = "active" | "inactive";
 
+export interface UserAccessAssignment {
+  assignmentId?: string;
+  roleTemplateKey?: string;
+  roleId?: string;
+  roleKey?: string;
+  roleName?: string;
+  description?: string | null;
+  scopeType?: string;
+  scopeId?: string;
+  buildingId?: string;
+  buildingName?: string;
+  type?: string;
+}
+
+export interface UserResidentAccess {
+  occupancyId?: string;
+  unitId?: string;
+  unitLabel?: string;
+  unitNumber?: string;
+  buildingId?: string;
+  buildingName?: string;
+  floor?: string | number;
+  floorNumber?: string | number;
+  building?: {
+    id?: string;
+    name?: string;
+    buildingName?: string;
+  } | null;
+  unit?: {
+    id?: string;
+    label?: string;
+    number?: string;
+    unitNumber?: string;
+    floor?: string | number;
+    floorNumber?: string | number;
+    name?: string;
+  } | null;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -25,7 +64,12 @@ export interface User {
   userRole?: string;
   type?: string;
   roles?: Array<{ roleName?: string; key?: string; name?: string }>;
+  effectivePermissions?: string[];
   orgId?: string;
+  orgAccess?: UserAccessAssignment[] | UserAccessAssignment | null;
+  buildingAccess?: UserAccessAssignment[] | UserAccessAssignment | null;
+  buildingAssignments?: UserAccessAssignment[] | UserAccessAssignment | null;
+  resident?: UserResidentAccess | null;
   profile?: UserProfile;
   profileCompleted?: boolean; // Track if user has completed initial profile setup
   createdAt: string;

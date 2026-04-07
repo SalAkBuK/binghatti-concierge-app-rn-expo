@@ -33,6 +33,7 @@ import { orgBuildingsApi } from "../../lib/services/api/org-buildings";
 import { uploadFileToServer } from "../../lib/utils/fileUpload";
 import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
 import { getUnreadNotificationsCount } from "../../lib/utils/helpers";
+import { hasEffectivePermission } from "../../lib/utils/permissions";
 
 type StaffRequestStatus =
   | "pending"
@@ -160,6 +161,15 @@ export default function BuildingEmployeeJobsScreen() {
   const tenantNamesRef = useRef<Record<string, string>>({});
   const isJobClosed =
     selectedJob?.status === "completed" || selectedJob?.status === "cancelled";
+  const canReadRequests = hasEffectivePermission(currentUser, "requests.read");
+  const canUpdateRequestStatus = hasEffectivePermission(
+    currentUser,
+    "requests.update_status",
+  );
+  const canCommentOnRequests = hasEffectivePermission(
+    currentUser,
+    "requests.comment",
+  );
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -173,7 +183,11 @@ export default function BuildingEmployeeJobsScreen() {
   );
 
   const fetchAssignedJobs = useCallback(async () => {
-    if (!isAuthenticated || currentUser?.role !== "building_employee") {
+    if (
+      !isAuthenticated ||
+      currentUser?.role !== "building_employee" ||
+      !canReadRequests
+    ) {
       setAssignedJobs([]);
       setAssignedBuildings([]);
       setIsLoading(false);
@@ -261,7 +275,7 @@ export default function BuildingEmployeeJobsScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, [currentUser?.role, isAuthenticated]);
+  }, [canReadRequests, currentUser?.role, isAuthenticated]);
 
   useEffect(() => {
     fetchAssignedJobs();
@@ -573,7 +587,7 @@ export default function BuildingEmployeeJobsScreen() {
     apiStatus: "IN_PROGRESS" | "COMPLETED",
     nextStatus: StaffRequestStatus,
   ) => {
-    if (!selectedJob) return;
+    if (!selectedJob || !canUpdateRequestStatus) return;
 
     // Show confirmation for marking as completed
     if (nextStatus === "completed") {
@@ -605,7 +619,7 @@ export default function BuildingEmployeeJobsScreen() {
     apiStatus: "IN_PROGRESS" | "COMPLETED",
     nextStatus: StaffRequestStatus,
   ) => {
-    if (!selectedJob) return;
+    if (!selectedJob || !canUpdateRequestStatus) return;
     setStatusUpdating(true);
     try {
       const buildingId =
@@ -645,7 +659,14 @@ export default function BuildingEmployeeJobsScreen() {
   };
 
   const handleAddComment = async () => {
-    if (!selectedJob || !commentText.trim() || isJobClosed) return;
+    if (
+      !selectedJob ||
+      !commentText.trim() ||
+      isJobClosed ||
+      !canCommentOnRequests
+    ) {
+      return;
+    }
 
     const buildingId =
       selectedJob.buildingId || currentUser?.profile?.buildingId || assignedBuildings[0]?.id;
@@ -897,6 +918,16 @@ export default function BuildingEmployeeJobsScreen() {
           </View>
         )}
 
+        {!canReadRequests && (
+          <View style={styles.emptyCard}>
+            <Ionicons name="lock-closed-outline" size={40} color="#F59E0B" />
+            <Text style={styles.emptyCardTitle}>Requests unavailable</Text>
+            <Text style={styles.emptyCardSubtitle}>
+              Your account does not currently include request access for this building.
+            </Text>
+          </View>
+        )}
+
         <Animated.View
           entering={FadeInDown.duration(400)}
           style={styles.filtersContainer}
@@ -1119,7 +1150,7 @@ export default function BuildingEmployeeJobsScreen() {
                 </View>
 
                 {/* Action Buttons */}
-                {!isJobClosed && (
+                {!isJobClosed && canUpdateRequestStatus && (
                   <View style={styles.actionsCard}>
                     {selectedJob.status === "assigned" && (
                       <TouchableOpacity
@@ -1169,7 +1200,7 @@ export default function BuildingEmployeeJobsScreen() {
                     </Text>
                   </View>
 
-                  {!isJobClosed && (
+                  {!isJobClosed && canCommentOnRequests && (
                     <View style={styles.inputSection}>
                       <TextInput
                         style={styles.commentInput}
@@ -1186,7 +1217,11 @@ export default function BuildingEmployeeJobsScreen() {
                           (!commentText.trim() || isAddingComment) && styles.disabledButton
                         ]}
                         onPress={handleAddComment}
-                        disabled={!commentText.trim() || isAddingComment}
+                        disabled={
+                          !commentText.trim() ||
+                          isAddingComment ||
+                          !canCommentOnRequests
+                        }
                       >
                         {isAddingComment ? (
                           <ActivityIndicator size="small" color="#FFFFFF" />

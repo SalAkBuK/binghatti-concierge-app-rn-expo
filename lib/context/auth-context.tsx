@@ -9,6 +9,7 @@ import React, {
 import * as SecureStore from "expo-secure-store";
 import { useAsyncStorage } from "../hooks/useAsyncStorage";
 import {
+  hasCanonicalAccessAxes,
   resolveExplicitUserRole,
   resolveUserRole,
   shouldFetchAssignmentsForAuthRole,
@@ -199,6 +200,95 @@ const buildAssignmentProfile = (assignments: any[], role: User["role"]) => {
     assignmentProfile.buildingName = assignmentBuildingName;
   }
   return assignmentProfile;
+};
+
+const asAccessEntries = (value: unknown): Record<string, any>[] => {
+  if (Array.isArray(value)) {
+    return value.filter(
+      (entry): entry is Record<string, any> =>
+        entry != null && typeof entry === "object",
+    );
+  }
+
+  if (value != null && typeof value === "object") {
+    return [value as Record<string, any>];
+  }
+
+  return [];
+};
+
+const buildAccessProfile = (
+  payloadUser: any,
+  role: User["role"] | null,
+) => {
+  const buildingAccess = [
+    ...asAccessEntries(payloadUser?.buildingAccess),
+    ...asAccessEntries(payloadUser?.buildingAssignments),
+  ];
+  const buildingIds = buildingAccess
+    .map(
+      (entry) =>
+        entry?.scopeId ??
+        entry?.buildingId ??
+        entry?.building?.id ??
+        entry?.building?.buildingId,
+    )
+    .filter((id) => id != null)
+    .map((id) => String(id));
+  const buildingName = buildingAccess.find(
+    (entry) => entry?.buildingName ?? entry?.building?.name ?? entry?.building?.buildingName,
+  );
+  const resident = payloadUser?.resident ?? null;
+  const residentBuildingId =
+    resident?.buildingId ??
+    resident?.building?.id ??
+    resident?.building?.buildingId;
+  const residentBuildingName =
+    resident?.buildingName ??
+    resident?.building?.name ??
+    resident?.building?.buildingName;
+  const residentApartment =
+    resident?.unitLabel ??
+    resident?.unitNumber ??
+    resident?.unit?.label ??
+    resident?.unit?.number ??
+    resident?.unit?.unitNumber ??
+    resident?.unit?.name;
+  const residentFloor =
+    resident?.floor ??
+    resident?.floorNumber ??
+    resident?.unit?.floor ??
+    resident?.unit?.floorNumber;
+
+  const accessProfile: Record<string, any> = {};
+
+  if (buildingIds.length > 0) {
+    accessProfile.buildingId = buildingIds[0];
+    if (role === "management") {
+      accessProfile.managedBuildingIds = buildingIds;
+    }
+  } else if (residentBuildingId != null) {
+    accessProfile.buildingId = String(residentBuildingId);
+  }
+
+  const derivedBuildingName =
+    buildingName?.buildingName ??
+    buildingName?.building?.name ??
+    buildingName?.building?.buildingName ??
+    residentBuildingName;
+  if (derivedBuildingName) {
+    accessProfile.buildingName = String(derivedBuildingName);
+  }
+
+  if (residentApartment != null) {
+    accessProfile.apartment = String(residentApartment);
+  }
+
+  if (residentFloor != null) {
+    accessProfile.floor = String(residentFloor);
+  }
+
+  return accessProfile;
 };
 
 const getStatusCode = (error: unknown): number | undefined => {
@@ -395,7 +485,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 "restore",
               );
               let assignmentsPayload: any[] = [];
-              if (shouldFetchAssignmentsForAuthRole(resolvedRole)) {
+              if (
+                shouldFetchAssignmentsForAuthRole(resolvedRole) &&
+                !hasCanonicalAccessAxes(resolvedUser)
+              ) {
                 try {
                   const assignmentsResponse = await apiService.users.getMyAssignments();
                   assignmentsPayload = Array.isArray(assignmentsResponse)
@@ -417,6 +510,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                   role: resolvedRole,
                   profile: {
                     ...(resolvedUser?.profile ?? {}),
+                    ...buildAccessProfile(resolvedUser, resolvedRole),
                     ...buildAssignmentProfile(assignmentsPayload, resolvedRole),
                   },
                 };
@@ -428,9 +522,27 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               }
 
               if (resolvedUser?.role == null) {
+                const fallbackRole = resolveUserRole(resolvedUser);
+                if (!fallbackRole) {
+                  throw new Error("Stored session is missing a resolvable role");
+                }
                 resolvedUser = {
                   ...resolvedUser,
-                  role: "tenant",
+                  role: fallbackRole,
+                };
+              }
+
+              const restoredAccessProfile = buildAccessProfile(
+                resolvedUser,
+                resolvedUser.role,
+              );
+              if (Object.keys(restoredAccessProfile).length > 0) {
+                resolvedUser = {
+                  ...resolvedUser,
+                  profile: {
+                    ...(resolvedUser?.profile ?? {}),
+                    ...restoredAccessProfile,
+                  },
                 };
               }
 
@@ -630,7 +742,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const explicitUserRole = resolveExplicitUserRole(payloadUser);
         let userRole = await resolveOwnerRuntimeRole(explicitUserRole, "login");
         let assignmentsPayload: any[] = [];
-        if (shouldFetchAssignmentsForAuthRole(userRole)) {
+        if (
+          shouldFetchAssignmentsForAuthRole(userRole) &&
+          !hasCanonicalAccessAxes(payloadUser)
+        ) {
           try {
             const assignmentsResponse = await apiService.users.getMyAssignments();
             console.log("[Auth] Assignments raw response:", assignmentsResponse);
@@ -653,6 +768,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           userRole = assignmentRole;
         }
         userRole = userRole ?? resolveUserRole(payloadUser);
+        if (!userRole) {
+          throw new Error("Unable to resolve user role from login response");
+        }
         console.log("[Auth] Resolved user role:", {
           rawRole: payloadUser?.role ?? payloadUser?.roleKey ?? payloadUser?.roleName ?? payloadUser?.userRole ?? payloadUser?.type,
           explicitRole: explicitUserRole,
@@ -660,6 +778,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           assignmentRole,
         });
 
+        const accessProfile = buildAccessProfile(payloadUser, userRole);
         const assignmentProfile = buildAssignmentProfile(assignmentsPayload, userRole);
 
         const authenticatedUser: User = {
@@ -678,8 +797,28 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             payloadUser?.orgId ??
             (payloadUser as any)?.org_id ??
             existingUser?.orgId,
+          orgAccess:
+            payloadUser?.orgAccess ??
+            existingUser?.orgAccess ??
+            null,
+          buildingAccess:
+            payloadUser?.buildingAccess ??
+            payloadUser?.buildingAssignments ??
+            existingUser?.buildingAccess ??
+            null,
+          resident:
+            payloadUser?.resident ??
+            existingUser?.resident ??
+            null,
+          effectivePermissions:
+            Array.isArray(payloadUser?.effectivePermissions)
+              ? payloadUser.effectivePermissions.filter(
+                  (permission: unknown): permission is string =>
+                    typeof permission === "string" && permission.length > 0,
+                )
+              : existingUser?.effectivePermissions ?? [],
           phone:
-            payloadUser?.phone ??
+            payloadUser?.phone ?? 
             payloadUser?.phoneNumber ??
             existingUser?.phone,
           profile: {
@@ -695,6 +834,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               payloadUser?.phone ??
               payloadUser?.phoneNumber ??
               existingUser?.profile?.phone,
+            ...accessProfile,
             ...assignmentProfile,
           },
           createdAt: existingUser?.createdAt ?? payloadUser?.createdAt ?? nowIso,

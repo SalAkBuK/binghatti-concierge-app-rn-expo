@@ -1,4 +1,5 @@
 import {
+  hasCanonicalAccessAxes,
   resolveExplicitUserRole,
   resolveUserRole,
   shouldFetchAssignmentsForAuthRole,
@@ -17,8 +18,49 @@ describe('auth role helpers', () => {
     expect(resolveExplicitUserRole({ orgId: null, role: '' })).toBeNull();
   });
 
-  it('keeps the legacy tenant fallback only in resolveUserRole', () => {
-    expect(resolveUserRole({})).toBe('tenant');
+  it('does not default to tenant when the payload has no resident or access axes', () => {
+    expect(resolveUserRole({})).toBeNull();
+  });
+
+  it('derives building staff from building access role templates', () => {
+    expect(
+      resolveExplicitUserRole({
+        buildingAccess: [{ roleTemplateKey: 'building_staff', scopeType: 'BUILDING' }],
+      }),
+    ).toBe('building_employee');
+  });
+
+  it('derives management from building manager-style access', () => {
+    expect(
+      resolveExplicitUserRole({
+        buildingAccess: [{ roleTemplateKey: 'building_admin', scopeType: 'BUILDING' }],
+      }),
+    ).toBe('management');
+  });
+
+  it('derives admin from org access and only derives tenant when resident exists', () => {
+    expect(
+      resolveExplicitUserRole({
+        orgAccess: [{ roleKey: 'org_admin', scopeType: 'ORG' }],
+      }),
+    ).toBe('admin');
+    expect(resolveExplicitUserRole({ resident: { buildingId: 'b1' } })).toBe('tenant');
+  });
+
+  it('prefers staff/building access over resident fallback when both exist', () => {
+    expect(
+      resolveExplicitUserRole({
+        buildingAccess: [{ roleTemplateKey: 'building_staff', scopeType: 'BUILDING' }],
+        resident: { buildingId: 'b1' },
+      }),
+    ).toBe('building_employee');
+  });
+
+  it('detects canonical access axes from auth payloads', () => {
+    expect(hasCanonicalAccessAxes({ buildingAccess: [{ roleTemplateKey: 'building_staff' }] })).toBe(true);
+    expect(hasCanonicalAccessAxes({ orgAccess: [{ roleKey: 'org_admin' }] })).toBe(true);
+    expect(hasCanonicalAccessAxes({ resident: { buildingId: 'b1' } })).toBe(true);
+    expect(hasCanonicalAccessAxes({})).toBe(false);
   });
 
   it('only fetches assignments for staff-style or ambiguous auth roles', () => {
