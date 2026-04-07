@@ -35,6 +35,7 @@ type HookOptions = {
   enabled?: boolean;
   contractListParams?: ListResidentContractsParams;
   onUnauthorized?: () => void | Promise<void>;
+  loadActiveLeaseDocumentsOnMount?: boolean;
 };
 
 type UseResidentContractResult = {
@@ -164,6 +165,8 @@ export const useResidentContract = (
   const enabled = options?.enabled ?? true;
   const onUnauthorized = options?.onUnauthorized;
   const contractListParams = options?.contractListParams;
+  const loadActiveLeaseDocumentsOnMount =
+    options?.loadActiveLeaseDocumentsOnMount ?? false;
   const initialSnapshot = getResidentContractSnapshot();
   const hasInitialSnapshot = enabled && hasFreshContractSnapshot();
 
@@ -532,10 +535,14 @@ export const useResidentContract = (
   }, [enabled, load]);
 
   useEffect(() => {
+    if (!loadActiveLeaseDocumentsOnMount) {
+      return;
+    }
+
     void refetchActiveLeaseDocuments().catch(() => {
       // The lease/details screen handles doc failures via explicit alerts on manual actions.
     });
-  }, [refetchActiveLeaseDocuments]);
+  }, [loadActiveLeaseDocumentsOnMount, refetchActiveLeaseDocuments]);
 
   const requestMoveIn = useCallback(
     async (

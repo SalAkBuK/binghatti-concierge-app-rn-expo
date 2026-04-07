@@ -50,10 +50,27 @@ describe("IndexScreen", () => {
     });
 
     act(() => {
-      jest.advanceTimersByTime(300);
+      jest.advanceTimersByTime(2600);
     });
 
     expect(mockRedirect).toHaveBeenLastCalledWith({ href: "/(tenant)" });
+  });
+
+  it("redirects authenticated owner users to the owner portal", () => {
+    mockUseAuth.mockReturnValue({
+      isAuthenticated: true,
+      currentUser: buildUser({ role: "owner" }),
+    });
+
+    act(() => {
+      TestRenderer.create(<IndexScreen />);
+    });
+
+    act(() => {
+      jest.advanceTimersByTime(2600);
+    });
+
+    expect(mockRedirect).toHaveBeenLastCalledWith({ href: "/(owner)" });
   });
 
   it("redirects unsupported roles to the unavailable portal", () => {
@@ -67,7 +84,7 @@ describe("IndexScreen", () => {
     });
 
     act(() => {
-      jest.advanceTimersByTime(300);
+      jest.advanceTimersByTime(2600);
     });
 
     expect(mockRedirect).toHaveBeenLastCalledWith({
@@ -86,7 +103,7 @@ describe("IndexScreen", () => {
     });
 
     act(() => {
-      jest.advanceTimersByTime(300);
+      jest.advanceTimersByTime(2600);
     });
 
     expect(mockRedirect).toHaveBeenLastCalledWith({ href: "/auth" });

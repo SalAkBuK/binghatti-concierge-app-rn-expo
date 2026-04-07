@@ -10,15 +10,23 @@ import {
 export default function IndexScreen() {
   const { isAuthenticated, currentUser } = useAuth();
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+  const [isFinishingSplash, setIsFinishingSplash] = useState(false);
 
   // Initial load timer
   useEffect(() => {
-    const timer = setTimeout(() => {
+    const finishTimer = setTimeout(() => {
+      setIsFinishingSplash(true);
+    }, 2200);
+
+    const completeTimer = setTimeout(() => {
       console.log("[Index] Initial load complete");
       setInitialLoadComplete(true);
-    }, 300);
+    }, 2560);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(finishTimer);
+      clearTimeout(completeTimer);
+    };
   }, []);
 
   // Log whenever auth state changes
@@ -32,7 +40,13 @@ export default function IndexScreen() {
 
   // Show loading during initial load
   if (!initialLoadComplete) {
-    return <LoadingScreen message="Loading..." useLottie={false} />;
+    return (
+      <LoadingScreen
+        message="Loading..."
+        useLottie={false}
+        isFinishing={isFinishingSplash}
+      />
+    );
   }
 
   // Not authenticated - redirect to auth

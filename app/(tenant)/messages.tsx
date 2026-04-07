@@ -1,7 +1,8 @@
-import React, { useCallback, useDeferredValue, useMemo, useState } from "react";
+import React, { startTransition, useCallback, useDeferredValue, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -12,12 +13,16 @@ import { Ionicons } from "@expo/vector-icons";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAuth } from "../../lib/context/auth-context";
 import { useMessaging } from "../../lib/context/messaging-context";
+import { useNotifications } from "../../lib/context/notifications-context";
 import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
 import type { Conversation } from "../../lib/types";
+import { filterNotificationsByUser, getUnreadNotificationsCount } from "../../lib/utils/helpers";
+import { HeaderBar } from "../../components/ui/HeaderBar";
+import { SideMenu } from "../../components/ui/SideMenu";
 
 const P = {
   bg: "#F8F9FA",
@@ -46,8 +51,11 @@ type ConversationListItem = {
   avatarColors: { bg: string; text: string };
   avatarLetter: string;
   category: ConversationCategory;
+  categoryLabel: string;
   contextLabel: string;
   displayName: string;
+  lastSenderLabel: string | null;
+  messageCountLabel: string;
   preview: string;
   searchableText: string;
   time: string;
@@ -80,27 +88,10 @@ function inferConversationCategory(
   conversation: Conversation,
   displayName: string,
   preview: string,
-): Exclude<MessageFilter, "all" | "unread"> | "resident" {
+): ConversationCategory {
   const searchable = `${displayName} ${conversation.subject ?? ""} ${preview}`.toLowerCase();
-  const managementKeywords = [
-    "management",
-    "operations",
-    "admin",
-    "leasing",
-    "accounts",
-    "finance",
-    "office",
-  ];
-  const staffKeywords = [
-    "maintenance",
-    "concierge",
-    "security",
-    "support",
-    "technician",
-    "service",
-    "staff",
-    "helpdesk",
-  ];
+  const managementKeywords = ["management", "operations", "admin", "leasing", "accounts", "finance", "office"];
+  const staffKeywords = ["maintenance", "concierge", "security", "support", "technician", "service", "staff", "helpdesk"];
 
   if (managementKeywords.some((keyword) => searchable.includes(keyword))) {
     return "management";
@@ -118,10 +109,34 @@ function avatarPalette(seed: string) {
     { bg: "#F8EFE4", text: "#7A5A2B" },
     { bg: "#E4F4EA", text: "#25674A" },
   ];
-  const code = seed
-    .split("")
-    .reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  const code = seed.split("").reduce((sum, char) => sum + char.charCodeAt(0), 0);
   return variants[code % variants.length];
+}
+
+function getConversationCategoryMeta(category: ConversationCategory) {
+  switch (category) {
+    case "management":
+      return {
+        label: "Management",
+        icon: "briefcase-outline" as const,
+        badgeBg: P.primarySoft,
+        badgeText: P.primary,
+      };
+    case "staff":
+      return {
+        label: "Staff",
+        icon: "construct-outline" as const,
+        badgeBg: P.accent,
+        badgeText: P.accentText,
+      };
+    default:
+      return {
+        label: "Resident",
+        icon: "people-outline" as const,
+        badgeBg: P.surfaceLow,
+        badgeText: P.muted,
+      };
+  }
 }
 
 function getConversationMeta(conversation: Conversation, currentUserId?: string) {
@@ -135,12 +150,18 @@ function getConversationMeta(conversation: Conversation, currentUserId?: string)
   const unread = conversation.unreadCount > 0;
   const avatarLetter = (others[0]?.name || displayName || "?").charAt(0).toUpperCase();
   const category = inferConversationCategory(conversation, displayName, preview);
+  const categoryLabel = getConversationCategoryMeta(category).label;
+  const lastSenderLabel = conversation.lastMessage?.sender
+    ? conversation.lastMessage.sender.id === currentUserId
+      ? "You"
+      : conversation.lastMessage.sender.name
+    : null;
   const contextLabel =
     conversation.subject?.trim() ||
     (category === "management"
-      ? "Management"
+      ? "Management desk"
       : category === "staff"
-        ? "Staff"
+        ? "Support team"
         : others.length > 1
           ? `${others.length} participants`
           : "Direct message");
@@ -148,8 +169,10 @@ function getConversationMeta(conversation: Conversation, currentUserId?: string)
   return {
     avatarLetter,
     category,
+    categoryLabel,
     contextLabel,
     displayName,
+    lastSenderLabel,
     preview,
     time,
     unread,
@@ -167,10 +190,15 @@ function buildConversationListItem(
     avatarColors: avatarPalette(meta.displayName),
     avatarLetter: meta.avatarLetter,
     category: meta.category,
+    categoryLabel: meta.categoryLabel,
     contextLabel: meta.contextLabel,
     displayName: meta.displayName,
+    lastSenderLabel: meta.lastSenderLabel,
+    messageCountLabel:
+      conversation.participants.length > 2 ? `${conversation.participants.length} people` : "Direct thread",
     preview: meta.preview,
-    searchableText: `${meta.displayName} ${meta.preview} ${meta.contextLabel}`.toLowerCase(),
+    searchableText:
+      `${meta.displayName} ${meta.preview} ${meta.contextLabel} ${meta.categoryLabel} ${meta.lastSenderLabel ?? ""}`.toLowerCase(),
     time: meta.time,
     timeLabel: formatTime(meta.time),
     unread: meta.unread,
@@ -180,10 +208,14 @@ function buildConversationListItem(
 
 function FilterChip({
   active,
+  count,
+  icon,
   label,
   onPress,
 }: {
   active: boolean;
+  count: number;
+  icon: keyof typeof Ionicons.glyphMap;
   label: string;
   onPress: () => void;
 }) {
@@ -193,7 +225,38 @@ function FilterChip({
       onPress={onPress}
       style={[styles.filterChip, active && styles.filterChipActive]}
     >
+      <Ionicons name={icon} size={14} color={active ? "#F8F9FA" : P.muted} />
       <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>{label}</Text>
+      <View style={[styles.filterChipCount, active && styles.filterChipCountActive]}>
+        <Text style={[styles.filterChipCountText, active && styles.filterChipCountTextActive]}>
+          {count}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function InboxAction({
+  icon,
+  label,
+  onPress,
+  primary = false,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+  primary?: boolean;
+}) {
+  return (
+    <TouchableOpacity
+      activeOpacity={0.9}
+      onPress={onPress}
+      style={[styles.inboxAction, primary && styles.inboxActionPrimary]}
+    >
+      <Ionicons name={icon} size={16} color={primary ? "#EEF7FB" : P.primary} />
+      <Text style={[styles.inboxActionText, primary && styles.inboxActionTextPrimary]}>
+        {label}
+      </Text>
     </TouchableOpacity>
   );
 }
@@ -203,6 +266,8 @@ function ConversationRow({
 }: {
   item: ConversationListItem;
 }) {
+  const categoryMeta = getConversationCategoryMeta(item.category);
+
   return (
     <TouchableOpacity
       activeOpacity={0.9}
@@ -232,22 +297,24 @@ function ConversationRow({
         </View>
 
         <View style={styles.metaLine}>
-          <Text style={styles.metaText} numberOfLines={1}>
-            {item.contextLabel}
-          </Text>
-          {item.category === "management" ? (
-            <View style={[styles.metaBadge, styles.metaBadgePrimary]}>
-              <Text style={[styles.metaBadgeText, styles.metaBadgeTextPrimary]}>Management</Text>
-            </View>
-          ) : null}
-          {item.category === "staff" ? (
-            <View style={styles.metaBadge}>
-              <Text style={styles.metaBadgeText}>Staff</Text>
-            </View>
-          ) : null}
+          <View style={styles.metaLead}>
+            <Ionicons name={categoryMeta.icon} size={12} color={P.soft} />
+            <Text style={styles.metaText} numberOfLines={1}>
+              {item.contextLabel}
+            </Text>
+          </View>
+          <View style={[styles.metaBadge, { backgroundColor: categoryMeta.badgeBg }]}>
+            <Text style={[styles.metaBadgeText, { color: categoryMeta.badgeText }]}>
+              {item.categoryLabel}
+            </Text>
+          </View>
+          <View style={styles.metaBadge}>
+            <Text style={styles.metaBadgeText}>{item.messageCountLabel}</Text>
+          </View>
         </View>
 
         <Text style={[styles.preview, item.unread && styles.previewUnread]} numberOfLines={2}>
+          {item.lastSenderLabel ? `${item.lastSenderLabel}: ` : ""}
           {item.preview}
         </Text>
       </View>
@@ -273,6 +340,7 @@ const MemoizedConversationRow = React.memo(ConversationRow);
 export default function MessagesScreen() {
   const { conversations, loading, actions } = useMessaging();
   const { currentUser } = useAuth();
+  const { notifications } = useNotifications();
   const {
     canCreateManagementConversation,
     isFormerResident,
@@ -281,11 +349,17 @@ export default function MessagesScreen() {
     enabled: Boolean(currentUser?.role === "tenant" && currentUser?.id),
   });
   const tabBarHeight = useBottomTabBarHeight();
-  const insets = useSafeAreaInsets();
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<MessageFilter>("all");
+  const [showSideMenu, setShowSideMenu] = useState(false);
   const deferredSearchQuery = useDeferredValue(searchQuery);
+
+  const userNotifications = useMemo(
+    () => filterNotificationsByUser(notifications || [], currentUser?.id),
+    [currentUser?.id, notifications],
+  );
+  const hasUnreadNotifications = getUnreadNotificationsCount(userNotifications) > 0;
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -294,15 +368,25 @@ export default function MessagesScreen() {
   }, [actions]);
 
   const conversationItems = useMemo(
-    () => conversations.map((conversation) => buildConversationListItem(conversation, currentUser?.id)),
+    () =>
+      conversations
+        .map((conversation) => buildConversationListItem(conversation, currentUser?.id))
+        .sort((a, b) => Date.parse(b.time) - Date.parse(a.time)),
     [conversations, currentUser?.id],
   );
 
   const summary = useMemo(() => {
     const unreadThreads = conversationItems.filter((conversation) => conversation.unread).length;
+    const staffThreads = conversationItems.filter((conversation) => conversation.category === "staff").length;
+    const managementThreads = conversationItems.filter(
+      (conversation) => conversation.category === "management",
+    ).length;
+
     return {
       total: conversationItems.length,
       unread: unreadThreads,
+      staff: staffThreads,
+      management: managementThreads,
     };
   }, [conversationItems]);
 
@@ -310,9 +394,7 @@ export default function MessagesScreen() {
     const query = deferredSearchQuery.trim().toLowerCase();
 
     return conversationItems.filter((conversation) => {
-      const matchesQuery =
-        !query ||
-        conversation.searchableText.includes(query);
+      const matchesQuery = !query || conversation.searchableText.includes(query);
 
       if (!matchesQuery) return false;
       if (activeFilter === "all") return true;
@@ -321,10 +403,40 @@ export default function MessagesScreen() {
     });
   }, [activeFilter, conversationItems, deferredSearchQuery]);
 
+  const hasActiveQuery = searchQuery.trim().length > 0 || activeFilter !== "all";
+
+  const featuredConversation = useMemo(
+    () => filteredConversations.find((conversation) => conversation.unread) ?? filteredConversations[0] ?? null,
+    [filteredConversations],
+  );
+
+  const filterOptions = useMemo(
+    () => [
+      { key: "all" as const, label: "All", icon: "mail-outline" as const, count: summary.total },
+      {
+        key: "unread" as const,
+        label: "Unread",
+        icon: "radio-button-on-outline" as const,
+        count: summary.unread,
+      },
+      {
+        key: "staff" as const,
+        label: "Staff",
+        icon: "construct-outline" as const,
+        count: summary.staff,
+      },
+      {
+        key: "management" as const,
+        label: "Management",
+        icon: "briefcase-outline" as const,
+        count: summary.management,
+      },
+    ],
+    [summary.management, summary.staff, summary.total, summary.unread],
+  );
+
   const renderItem = useCallback(
-    ({ item }: { item: ConversationListItem }) => (
-      <MemoizedConversationRow item={item} />
-    ),
+    ({ item }: { item: ConversationListItem }) => <MemoizedConversationRow item={item} />,
     [],
   );
 
@@ -333,35 +445,26 @@ export default function MessagesScreen() {
   const header = useMemo(
     () => (
       <View style={styles.headerBlock}>
-        <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            style={styles.iconButton}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="arrow-back" size={22} color={P.text} />
-          </TouchableOpacity>
-
-          <View style={styles.headerCopy}>
-            <Text style={styles.headerTitle}>Messages</Text>
-            <Text style={styles.headerSubtitle}>Resident inbox and ongoing conversations</Text>
-          </View>
-
-          <View style={styles.headerActionSlot}>
-            {summary.unread > 0 ? (
-              <View style={styles.headerPill}>
-                <Text style={styles.headerPillText}>{summary.unread} unread</Text>
-              </View>
-            ) : null}
-          </View>
+        <View>
+          <HeaderBar
+            title="Messages"
+            subtitle="Resident inbox and ongoing conversations"
+            hasUnreadNotifications={hasUnreadNotifications}
+            showSideMenu={showSideMenu}
+            onSideMenuToggle={setShowSideMenu}
+            textColor={P.text}
+          />
         </View>
 
         <View style={styles.heroCard}>
+          <View style={styles.heroGlowPrimary} />
+          <View style={styles.heroGlowSecondary} />
+
           <View style={styles.heroCopy}>
             <Text style={styles.heroEyebrow}>Conversation overview</Text>
-            <Text style={styles.heroTitle}>A quieter inbox for building support</Text>
+            <Text style={styles.heroTitle}>Everything you need to follow up, in one inbox</Text>
             <Text style={styles.heroSubtitle}>
-              Search messages, scan unread threads, and jump back into the conversations that still need attention.
+              Scan unread threads, search by team, and jump straight into the conversations that still need your attention.
             </Text>
           </View>
 
@@ -380,6 +483,18 @@ export default function MessagesScreen() {
               <Text style={styles.heroStatLabelPrimary}>Unread now</Text>
             </LinearGradient>
           </View>
+
+          <View style={styles.heroActionRow}>
+            {canCreateManagementConversation ? (
+              <InboxAction
+                icon="create-outline"
+                label="New message"
+                onPress={() => router.push("/(modals)/new-conversation" as any)}
+                primary
+              />
+            ) : null}
+            <InboxAction icon="refresh-outline" label="Refresh" onPress={onRefresh} />
+          </View>
         </View>
 
         {isFormerResident ? (
@@ -389,18 +504,72 @@ export default function MessagesScreen() {
           </View>
         ) : null}
 
+        {featuredConversation ? (
+          <TouchableOpacity
+            activeOpacity={0.9}
+            style={styles.featuredCard}
+            onPress={() =>
+              router.push({
+                pathname: "/(modals)/conversation-detail",
+                params: { conversationId: featuredConversation.conversation.id },
+              } as any)
+            }
+          >
+            <View style={styles.featuredHeader}>
+              <View style={styles.featuredHeaderCopy}>
+                <Text style={styles.featuredEyebrow}>
+                  {featuredConversation.unread ? "Needs attention" : "Latest thread"}
+                </Text>
+                <Text style={styles.featuredTitle} numberOfLines={1}>
+                  {featuredConversation.displayName}
+                </Text>
+              </View>
+              <View style={styles.featuredTimeWrap}>
+                <Text style={styles.featuredTime}>{featuredConversation.timeLabel}</Text>
+              </View>
+            </View>
+
+            <View style={styles.featuredBadgeRow}>
+              <View style={styles.featuredBadge}>
+                <Text style={styles.featuredBadgeText}>{featuredConversation.categoryLabel}</Text>
+              </View>
+              <View style={styles.featuredBadge}>
+                <Text style={styles.featuredBadgeText}>{featuredConversation.contextLabel}</Text>
+              </View>
+            </View>
+
+            <Text style={styles.featuredPreview} numberOfLines={2}>
+              {featuredConversation.lastSenderLabel ? `${featuredConversation.lastSenderLabel}: ` : ""}
+              {featuredConversation.preview}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+
         <View style={styles.searchShell}>
           <Ionicons name="search" size={18} color={P.soft} />
           <TextInput
             value={searchQuery}
-            onChangeText={setSearchQuery}
+            onChangeText={(value) => {
+              startTransition(() => {
+                setSearchQuery(value);
+              });
+            }}
             placeholder="Search conversations"
             placeholderTextColor="#8A969B"
             style={styles.searchInput}
           />
+          {hasActiveQuery ? (
+            <View style={styles.searchStatusPill}>
+              <Text style={styles.searchStatusPillText}>{filteredConversations.length}</Text>
+            </View>
+          ) : null}
           {searchQuery ? (
             <TouchableOpacity
-              onPress={() => setSearchQuery("")}
+              onPress={() => {
+                startTransition(() => {
+                  setSearchQuery("");
+                });
+              }}
               style={styles.clearSearchButton}
               activeOpacity={0.85}
             >
@@ -409,20 +578,26 @@ export default function MessagesScreen() {
           ) : null}
         </View>
 
-        <View style={styles.filterRow}>
-          <FilterChip active={activeFilter === "all"} label="All" onPress={() => setActiveFilter("all")} />
-          <FilterChip
-            active={activeFilter === "unread"}
-            label="Unread"
-            onPress={() => setActiveFilter("unread")}
-          />
-          <FilterChip active={activeFilter === "staff"} label="Staff" onPress={() => setActiveFilter("staff")} />
-          <FilterChip
-            active={activeFilter === "management"}
-            label="Management"
-            onPress={() => setActiveFilter("management")}
-          />
-        </View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterRow}
+        >
+          {filterOptions.map((option) => (
+            <FilterChip
+              key={option.key}
+              active={activeFilter === option.key}
+              count={option.count}
+              icon={option.icon}
+              label={option.label}
+              onPress={() => {
+                startTransition(() => {
+                  setActiveFilter(option.key);
+                });
+              }}
+            />
+          ))}
+        </ScrollView>
 
         <View style={styles.sectionRow}>
           <Text style={styles.sectionTitle}>
@@ -430,16 +605,24 @@ export default function MessagesScreen() {
               ? "All conversations"
               : `${filteredConversations.length} result${filteredConversations.length === 1 ? "" : "s"}`}
           </Text>
-          <Text style={styles.sectionMeta}>Pull to refresh</Text>
+          <Text style={styles.sectionMeta}>{loading ? "Syncing..." : "Sorted by latest activity"}</Text>
         </View>
       </View>
     ),
     [
       activeFilter,
+      canCreateManagementConversation,
       conversationItems.length,
+      featuredConversation,
+      filterOptions,
       filteredConversations.length,
+      hasUnreadNotifications,
+      hasActiveQuery,
       isFormerResident,
+      loading,
+      onRefresh,
       searchQuery,
+      showSideMenu,
       statusMessage,
       summary.total,
       summary.unread,
@@ -448,14 +631,14 @@ export default function MessagesScreen() {
 
   if (loading && conversations.length === 0) {
     return (
-      <View style={[styles.loadingContainer, { paddingTop: insets.top + 24 }]}>
+      <SafeAreaView style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={P.primary} />
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <SafeAreaView style={styles.container}>
       <FlatList
         data={filteredConversations}
         renderItem={renderItem}
@@ -503,6 +686,7 @@ export default function MessagesScreen() {
             ) : null}
           </View>
         }
+        ListFooterComponent={<View style={styles.listFooterSpacer} />}
       />
 
       {canCreateManagementConversation ? (
@@ -521,7 +705,9 @@ export default function MessagesScreen() {
           </LinearGradient>
         </TouchableOpacity>
       ) : null}
-    </View>
+
+      <SideMenu isVisible={showSideMenu} onClose={() => setShowSideMenu(false)} />
+    </SafeAreaView>
   );
 }
 
@@ -538,7 +724,6 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: 20,
-    paddingTop: 8,
   },
   emptyListContent: {
     flexGrow: 1,
@@ -593,6 +778,8 @@ const styles = StyleSheet.create({
     color: P.primary,
   },
   heroCard: {
+    position: "relative",
+    overflow: "hidden",
     backgroundColor: P.surface,
     borderRadius: 28,
     padding: 20,
@@ -603,6 +790,24 @@ const styles = StyleSheet.create({
     shadowOpacity: 1,
     shadowRadius: 24,
     elevation: 4,
+  },
+  heroGlowPrimary: {
+    position: "absolute",
+    right: -30,
+    top: -26,
+    width: 132,
+    height: 132,
+    borderRadius: 66,
+    backgroundColor: "#ECF3F6",
+  },
+  heroGlowSecondary: {
+    position: "absolute",
+    right: 44,
+    bottom: -36,
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: "#F3EADF",
   },
   heroCopy: {
     gap: 8,
@@ -629,6 +834,35 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     marginTop: 18,
     gap: 12,
+  },
+  heroActionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginTop: 16,
+  },
+  inboxAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderRadius: 999,
+    backgroundColor: P.surfaceLow,
+    borderWidth: 1,
+    borderColor: P.border,
+  },
+  inboxActionPrimary: {
+    backgroundColor: P.primary,
+    borderColor: P.primary,
+  },
+  inboxActionText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: P.primary,
+  },
+  inboxActionTextPrimary: {
+    color: "#EEF7FB",
   },
   heroStatCard: {
     flex: 1,
@@ -681,6 +915,70 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     color: P.warningText,
   },
+  featuredCard: {
+    marginTop: 14,
+    padding: 18,
+    borderRadius: 24,
+    backgroundColor: P.surface,
+    borderWidth: 1,
+    borderColor: P.border,
+  },
+  featuredHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  featuredHeaderCopy: {
+    flex: 1,
+  },
+  featuredEyebrow: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    color: P.primary,
+  },
+  featuredTitle: {
+    marginTop: 6,
+    fontSize: 18,
+    fontWeight: "800",
+    color: P.text,
+  },
+  featuredTimeWrap: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: P.surfaceLow,
+  },
+  featuredTime: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: P.soft,
+  },
+  featuredBadgeRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 12,
+  },
+  featuredBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: P.surfaceLow,
+  },
+  featuredBadgeText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: P.muted,
+  },
+  featuredPreview: {
+    marginTop: 12,
+    fontSize: 14,
+    lineHeight: 21,
+    color: P.muted,
+  },
   searchShell: {
     flexDirection: "row",
     alignItems: "center",
@@ -699,6 +997,20 @@ const styles = StyleSheet.create({
     color: P.text,
     paddingVertical: 0,
   },
+  searchStatusPill: {
+    minWidth: 26,
+    height: 26,
+    paddingHorizontal: 7,
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: P.primarySoft,
+  },
+  searchStatusPillText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: P.primary,
+  },
   clearSearchButton: {
     width: 28,
     height: 28,
@@ -712,8 +1024,12 @@ const styles = StyleSheet.create({
     gap: 10,
     marginTop: 14,
     marginBottom: 18,
+    paddingRight: 4,
   },
   filterChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 999,
@@ -728,6 +1044,26 @@ const styles = StyleSheet.create({
     color: P.muted,
   },
   filterChipTextActive: {
+    color: "#F8F9FA",
+  },
+  filterChipCount: {
+    minWidth: 22,
+    height: 22,
+    paddingHorizontal: 6,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(43, 52, 55, 0.08)",
+  },
+  filterChipCountActive: {
+    backgroundColor: "rgba(255,255,255,0.16)",
+  },
+  filterChipCountText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: P.text,
+  },
+  filterChipCountTextActive: {
     color: "#F8F9FA",
   },
   sectionRow: {
@@ -823,6 +1159,12 @@ const styles = StyleSheet.create({
     gap: 8,
     flexWrap: "wrap",
   },
+  metaLead: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    maxWidth: "100%",
+  },
   metaText: {
     fontSize: 12,
     color: P.soft,
@@ -833,16 +1175,10 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: P.surfaceLow,
   },
-  metaBadgePrimary: {
-    backgroundColor: P.primarySoft,
-  },
   metaBadgeText: {
     fontSize: 11,
     fontWeight: "700",
     color: P.muted,
-  },
-  metaBadgeTextPrimary: {
-    color: P.primary,
   },
   preview: {
     fontSize: 14,
@@ -906,7 +1242,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   emptySubtitle: {
-    marginTop: 8,
+    marginTop: 10,
     fontSize: 14,
     lineHeight: 21,
     color: P.muted,
@@ -914,30 +1250,33 @@ const styles = StyleSheet.create({
   },
   emptyButton: {
     marginTop: 20,
-    paddingHorizontal: 20,
-    paddingVertical: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
     borderRadius: 999,
-    backgroundColor: P.text,
+    backgroundColor: P.primary,
   },
   emptyButtonText: {
     fontSize: 14,
-    fontWeight: "700",
-    color: "#F8F9FA",
+    fontWeight: "800",
+    color: "#EEF7FB",
+  },
+  listFooterSpacer: {
+    height: 8,
   },
   fabWrap: {
     position: "absolute",
-    right: 22,
+    right: 24,
   },
   fab: {
-    width: 64,
-    height: 64,
-    borderRadius: 22,
+    width: 62,
+    height: 62,
+    borderRadius: 31,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: P.shadow,
-    shadowOffset: { width: 0, height: 14 },
+    shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 1,
-    shadowRadius: 24,
+    shadowRadius: 20,
     elevation: 6,
   },
 });

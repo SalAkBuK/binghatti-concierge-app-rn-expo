@@ -118,6 +118,7 @@ describe('TenantLayout', () => {
     expect(renderedTexts).toContain('screen:requests');
     expect(renderedTexts).toContain('screen:messages');
     expect(renderedTexts).toContain('screen:profile');
+    expect(renderedTexts).toContain('screen:visitors');
     expect(mockTabsScreen).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'index',
@@ -142,6 +143,12 @@ describe('TenantLayout', () => {
         options: expect.objectContaining({ title: 'Profile' }),
       }),
     );
+    expect(mockTabsScreen).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'visitors',
+        options: expect.objectContaining({ title: 'Visitors' }),
+      }),
+    );
   });
 
   it('keeps tenant detail routes hidden from the tab bar', () => {
@@ -157,12 +164,6 @@ describe('TenantLayout', () => {
     expect(mockTabsScreen).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'amenities',
-        options: expect.objectContaining({ href: null }),
-      }),
-    );
-    expect(mockTabsScreen).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'visitors',
         options: expect.objectContaining({ href: null }),
       }),
     );

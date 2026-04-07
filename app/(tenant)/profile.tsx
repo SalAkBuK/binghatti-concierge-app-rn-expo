@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -174,9 +174,9 @@ export default function ProfileScreen() {
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  const userNotifications = filterNotificationsByUser(
-    notifications || [],
-    currentUser?.id,
+  const userNotifications = useMemo(
+    () => filterNotificationsByUser(notifications || [], currentUser?.id),
+    [currentUser?.id, notifications],
   );
   const hasUnreadNotifications =
     getUnreadNotificationsCount(userNotifications) > 0;

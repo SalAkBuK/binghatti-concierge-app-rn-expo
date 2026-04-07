@@ -14,6 +14,7 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
+import { ScreenEntrance } from "../../components/ui/ScreenEntrance";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useAuth } from "../../lib/context/auth-context";
 import { useNotifications } from "../../lib/context/notifications-context";
@@ -331,7 +332,8 @@ export default function BuildingEmployeeDashboard() {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
+    <ScreenEntrance>
+      <SafeAreaView style={styles.container} edges={["top"]}>
       <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
@@ -489,7 +491,8 @@ export default function BuildingEmployeeDashboard() {
         onClose={() => setShowSideMenu(false)}
         userRole={currentUser.role}
       />
-    </SafeAreaView>
+      </SafeAreaView>
+    </ScreenEntrance>
   );
 }
 

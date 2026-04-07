@@ -2,8 +2,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ActivityIndicator,
   FlatList,
+  Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -11,11 +14,31 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useMessaging } from "../../lib/context/messaging-context";
 import { useAuth } from "../../lib/context/auth-context";
-import type { ConversationMessage } from "../../lib/types";
+import type {
+  ConversationMessage,
+  ConversationParticipant,
+} from "../../lib/types";
+
+const P = {
+  bg: "#F8F9FA",
+  surface: "#FFFFFF",
+  surfaceLow: "#F1F4F6",
+  border: "#D9E0E4",
+  text: "#2B3437",
+  muted: "#667176",
+  soft: "#7A8488",
+  primary: "#4D6169",
+  primaryDark: "#34474D",
+  primarySoft: "#DCE8EE",
+  accent: "#F8EFE4",
+  accentText: "#7A5A2B",
+  shadow: "rgba(43, 52, 55, 0.08)",
+};
 
 function formatMessageTime(dateStr: string): string {
   const date = new Date(dateStr);
@@ -47,6 +70,17 @@ function shouldShowDateSeparator(
   return current !== previous;
 }
 
+function getInitials(name?: string | null): string {
+  if (!name) return "?";
+  const parts = name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2);
+  if (parts.length === 0) return "?";
+  return parts.map((part) => part.charAt(0).toUpperCase()).join("");
+}
+
 export default function ConversationDetailModal() {
   const { conversationId } = useLocalSearchParams<{ conversationId: string }>();
   const { activeConversation, loading, actions } = useMessaging();
@@ -54,6 +88,7 @@ export default function ConversationDetailModal() {
   const insets = useSafeAreaInsets();
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [showParticipantsModal, setShowParticipantsModal] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
   useEffect(() => {
@@ -91,12 +126,75 @@ export default function ConversationDetailModal() {
     [activeConversation?.messages],
   );
 
-  const others = activeConversation
-    ? activeConversation.participants.filter((p) => p.id !== currentUser?.id)
-    : [];
-  const headerTitle =
-    activeConversation?.subject ||
-    (others.length > 0 ? others.map((p) => p.name).join(", ") : "Conversation");
+  const threadParticipants = useMemo(
+    () => activeConversation?.participants ?? [],
+    [activeConversation?.participants],
+  );
+  const others = useMemo(
+    () => threadParticipants.filter((participant) => participant.id !== currentUser?.id),
+    [currentUser?.id, threadParticipants],
+  );
+  const participantSummary =
+    others.length > 0 ? others.map((p) => p.name).join(", ") : "No participants yet";
+  const conversationTitle = activeConversation?.subject?.trim() || "";
+  const isGroupConversation = others.length > 1;
+  const participantCount = threadParticipants.length;
+  const primaryParticipant = isGroupConversation ? null : others[0] ?? null;
+  const primaryParticipantName =
+    primaryParticipant?.name?.trim() || conversationTitle || "Conversation";
+  const primaryParticipantAvatar = primaryParticipant?.avatarUrl?.trim() || null;
+  const headerTitle = conversationTitle
+    ? conversationTitle
+    : isGroupConversation
+      ? `${participantCount} people`
+      : primaryParticipantName;
+  const headerSubtitle = conversationTitle
+    ? participantSummary
+    : isGroupConversation
+      ? participantSummary
+      : messages.length > 0
+        ? "In conversation"
+        : "Online";
+  const onlineLabel = messages.length > 0 ? "In conversation" : "Online";
+
+  const renderParticipantRow = useCallback(
+    (participant: ConversationParticipant) => {
+      const isCurrentUser = participant.id === currentUser?.id;
+
+      return (
+        <View key={participant.id} style={styles.participantRow}>
+          {participant.avatarUrl ? (
+            <Image
+              source={{ uri: participant.avatarUrl }}
+              style={styles.participantAvatarImage}
+            />
+          ) : (
+            <View style={styles.participantAvatarFallback}>
+              <Text style={styles.participantAvatarFallbackText}>
+                {getInitials(participant.name)}
+              </Text>
+            </View>
+          )}
+
+          <View style={styles.participantCopy}>
+            <Text style={styles.participantName}>
+              {participant.name}
+            </Text>
+            <Text style={styles.participantMeta}>
+              {isCurrentUser ? "You" : "Participant"}
+            </Text>
+          </View>
+
+          {isCurrentUser ? (
+            <View style={styles.youBadge}>
+              <Text style={styles.youBadgeText}>You</Text>
+            </View>
+          ) : null}
+        </View>
+      );
+    },
+    [currentUser?.id],
+  );
 
   const renderMessage = useCallback(
     ({ item, index }: { item: ConversationMessage; index: number }) => {
@@ -117,38 +215,65 @@ export default function ConversationDetailModal() {
             style={[styles.messageBubbleRow, isMe ? styles.myRow : styles.otherRow]}
           >
             {!isMe && (
-              <View style={styles.senderAvatar}>
-                <Text style={styles.senderAvatarText}>
-                  {(item.sender.name || "?").charAt(0).toUpperCase()}
-                </Text>
-              </View>
+              item.sender.avatarUrl ? (
+                <Image
+                  source={{ uri: item.sender.avatarUrl }}
+                  style={styles.senderAvatarImage}
+                />
+              ) : (
+                <View style={styles.senderAvatar}>
+                  <Text style={styles.senderAvatarText}>
+                    {getInitials(item.sender.name)}
+                  </Text>
+                </View>
+              )
             )}
             <View style={styles.bubbleWrapper}>
-              {!isMe && (
-                <Text style={styles.senderName}>{item.sender.name}</Text>
-              )}
-              <View
-                style={[
-                  styles.bubble,
-                  isMe ? styles.myBubble : styles.otherBubble,
-                  isOptimistic && styles.optimisticBubble,
-                ]}
-              >
-                <Text
+              {!isMe ? <Text style={styles.senderName}>{item.sender.name}</Text> : null}
+              {isMe ? (
+                <LinearGradient
+                  colors={[P.primary, P.primaryDark]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
                   style={[
-                    styles.bubbleText,
-                    isMe ? styles.myBubbleText : styles.otherBubbleText,
+                    styles.bubble,
+                    styles.myBubble,
+                    isOptimistic && styles.optimisticBubble,
                   ]}
                 >
-                  {item.content}
+                  <Text style={[styles.bubbleText, styles.myBubbleText]}>
+                    {item.content}
+                  </Text>
+                </LinearGradient>
+              ) : (
+                <View
+                  style={[
+                    styles.bubble,
+                    styles.otherBubble,
+                    isOptimistic && styles.optimisticBubble,
+                  ]}
+                >
+                  <Text style={[styles.bubbleText, styles.otherBubbleText]}>
+                    {item.content}
+                  </Text>
+                </View>
+              )}
+              <View style={[styles.messageMetaRow, isMe ? styles.myMetaRow : styles.otherMetaRow]}>
+                <Text
+                  style={[styles.messageTime, isMe ? styles.myTime : styles.otherTime]}
+                >
+                  {formatMessageTime(item.createdAt)}
+                  {isOptimistic ? " ..." : ""}
                 </Text>
+                {isMe ? (
+                  <Ionicons
+                    name="checkmark-done"
+                    size={12}
+                    color={P.primary}
+                    style={styles.messageStatusIcon}
+                  />
+                ) : null}
               </View>
-              <Text
-                style={[styles.messageTime, isMe ? styles.myTime : styles.otherTime]}
-              >
-                {formatMessageTime(item.createdAt)}
-                {isOptimistic ? " ..." : ""}
-              </Text>
             </View>
           </View>
         </>
@@ -163,141 +288,383 @@ export default function ConversationDetailModal() {
   );
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={Platform.OS === "ios" ? insets.top + 8 : 0}
-    >
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#111827" />
-        </TouchableOpacity>
-        <View style={styles.headerInfo}>
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            {headerTitle}
-          </Text>
-          {others.length > 0 && activeConversation?.subject && (
-            <Text style={styles.headerSubtitle} numberOfLines={1}>
-              {others.map((p) => p.name).join(", ")}
-            </Text>
-          )}
+    <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? insets.top + 8 : 0}
+      >
+        <View style={styles.backgroundDecoration}>
+          <View style={styles.backgroundGlowPrimary} />
+          <View style={styles.backgroundGlowSecondary} />
         </View>
-        <View style={{ width: 32 }} />
-      </View>
 
-      {/* Messages */}
-      {loading && messages.length === 0 ? (
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#336BE3" />
-        </View>
-      ) : (
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          renderItem={renderMessage}
-          keyExtractor={keyExtractor}
-          contentContainerStyle={styles.messagesList}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
-          ListEmptyComponent={
-            <View style={styles.emptyMessages}>
-              <Text style={styles.emptyMessagesText}>
-                No messages yet. Say hello!
-              </Text>
+        <View style={[styles.headerShell, { paddingTop: Math.max(insets.top, 8) }]}>
+          <View style={styles.header}>
+            <TouchableOpacity
+              onPress={() => router.back()}
+              style={styles.backButton}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="arrow-back" size={20} color={P.text} />
+            </TouchableOpacity>
+
+            <View style={styles.headerIdentity}>
+              <View style={styles.headerAvatarWrap}>
+                {isGroupConversation ? (
+                  <View style={styles.groupAvatarFallback}>
+                    <Ionicons name="people-outline" size={18} color={P.primaryDark} />
+                    <Text style={styles.groupAvatarCount}>{participantCount}</Text>
+                  </View>
+                ) : primaryParticipantAvatar ? (
+                  <Image
+                    source={{ uri: primaryParticipantAvatar }}
+                    style={styles.headerAvatarImage}
+                  />
+                ) : (
+                  <View style={styles.headerAvatarFallback}>
+                    <Text style={styles.headerAvatarFallbackText}>
+                      {getInitials(primaryParticipantName)}
+                    </Text>
+                  </View>
+                )}
+                {!isGroupConversation ? <View style={styles.headerOnlineDot} /> : null}
+              </View>
+
+              <View style={styles.headerInfo}>
+                <Text style={styles.headerTitle} numberOfLines={1}>
+                  {headerTitle}
+                </Text>
+                <Text style={styles.headerSubtitle} numberOfLines={isGroupConversation || conversationTitle ? 2 : 1}>
+                  {headerSubtitle || onlineLabel}
+                </Text>
+              </View>
             </View>
-          }
-        />
-      )}
 
-      {/* Input */}
-      <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
-        <TextInput
-          style={styles.textInput}
-          placeholder="Type a message..."
-          placeholderTextColor="#94A3B8"
-          value={text}
-          onChangeText={setText}
-          multiline
-          maxLength={2000}
-          onSubmitEditing={handleSend}
-          blurOnSubmit={false}
-        />
-        <TouchableOpacity
-          style={[styles.sendButton, (!text.trim() || sending) && styles.sendButtonDisabled]}
-          onPress={handleSend}
-          disabled={!text.trim() || sending}
+            <View style={styles.headerActions}>
+              <TouchableOpacity style={styles.headerIconButton} activeOpacity={0.85}>
+                <Ionicons name="call-outline" size={18} color={P.text} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.headerIconButton}
+                activeOpacity={0.85}
+                onPress={() => setShowParticipantsModal(true)}
+                disabled={threadParticipants.length === 0}
+              >
+                <Ionicons name="information-circle-outline" size={18} color={P.text} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+
+        {loading && messages.length === 0 ? (
+          <View style={styles.centered}>
+            <ActivityIndicator size="large" color={P.primary} />
+          </View>
+        ) : (
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            renderItem={renderMessage}
+            keyExtractor={keyExtractor}
+            contentContainerStyle={[
+              styles.messagesList,
+              messages.length === 0 && styles.messagesListEmpty,
+            ]}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+            ListEmptyComponent={
+              <View style={styles.emptyMessages}>
+                <Text style={styles.emptyMessagesTitle}>No messages yet</Text>
+                <Text style={styles.emptyMessagesText}>
+                  Start the conversation with a clear first message.
+                </Text>
+              </View>
+            }
+          />
+        )}
+
+        <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+          <View style={styles.composerCard}>
+            <TouchableOpacity style={styles.attachButton} activeOpacity={0.85}>
+              <Ionicons name="add-circle" size={20} color={P.muted} />
+            </TouchableOpacity>
+            <View style={styles.inputShell}>
+              <TextInput
+                style={styles.textInput}
+                placeholder="Type a message..."
+                placeholderTextColor="#8A969B"
+                value={text}
+                onChangeText={setText}
+                multiline
+                maxLength={2000}
+                onSubmitEditing={handleSend}
+                blurOnSubmit={false}
+              />
+              <View style={styles.inputFocusLine} />
+            </View>
+            <View style={styles.composerActions}>
+              {text.trim().length > 0 ? (
+                <Text style={styles.composerHint}>{text.trim().length}/2000</Text>
+              ) : null}
+              <TouchableOpacity
+                style={[
+                  styles.sendButton,
+                  (!text.trim() || sending) && styles.sendButtonDisabled,
+                ]}
+                onPress={handleSend}
+                disabled={!text.trim() || sending}
+                activeOpacity={0.9}
+              >
+                <LinearGradient
+                  colors={
+                    !text.trim() || sending
+                      ? ["#AAB7BC", "#8F9DA3"]
+                      : [P.primary, P.primaryDark]
+                  }
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.sendButtonGradient}
+                >
+                  {sending ? (
+                    <ActivityIndicator size="small" color="#EEF7FB" />
+                  ) : (
+                    <Ionicons name="send" size={16} color="#EEF7FB" />
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+
+        <Modal
+          animationType="fade"
+          transparent
+          visible={showParticipantsModal}
+          onRequestClose={() => setShowParticipantsModal(false)}
         >
-          {sending ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
-          ) : (
-            <Ionicons name="send" size={20} color="#FFFFFF" />
-          )}
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+          <View style={styles.modalOverlay}>
+            <TouchableOpacity
+              activeOpacity={1}
+              style={styles.modalBackdrop}
+              onPress={() => setShowParticipantsModal(false)}
+            />
+            <View style={styles.modalSheet}>
+              <View style={styles.modalHandle} />
+              <View style={styles.modalHeader}>
+                <View style={styles.modalHeaderCopy}>
+                  <Text style={styles.modalEyebrow}>Thread Participants</Text>
+                  <Text style={styles.modalTitle}>
+                    {participantCount === 1 ? "1 person" : `${participantCount} people`}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.modalCloseButton}
+                  onPress={() => setShowParticipantsModal(false)}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="close" size={18} color={P.text} />
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.modalSubtitle}>
+                Everyone currently visible in this conversation thread.
+              </Text>
+
+              <ScrollView
+                style={styles.participantsScroll}
+                contentContainerStyle={styles.participantsScrollContent}
+                showsVerticalScrollIndicator={false}
+              >
+                {threadParticipants.length > 0 ? (
+                  threadParticipants.map(renderParticipantRow)
+                ) : (
+                  <View style={styles.participantsEmptyState}>
+                    <Text style={styles.participantsEmptyTitle}>No participants found</Text>
+                    <Text style={styles.participantsEmptyText}>
+                      This thread does not expose participant details yet.
+                    </Text>
+                  </View>
+                )}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: P.bg,
+  },
   container: {
     flex: 1,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: P.bg,
+  },
+  headerShell: {
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 8,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    backgroundColor: "#FFFFFF",
-    borderBottomWidth: 1,
-    borderBottomColor: "#E2E8F0",
+    justifyContent: "space-between",
   },
   backButton: {
-    padding: 4,
-    marginRight: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "transparent",
+  },
+  headerIdentity: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginLeft: 4,
+  },
+  headerAvatarWrap: {
+    position: "relative",
+    width: 40,
+    height: 40,
+  },
+  headerAvatarImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+  },
+  headerAvatarFallback: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: P.primarySoft,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerAvatarFallbackText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: P.primaryDark,
+  },
+  groupAvatarFallback: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: P.primarySoft,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 3,
+  },
+  groupAvatarCount: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: P.primaryDark,
+  },
+  headerOnlineDot: {
+    position: "absolute",
+    right: -1,
+    bottom: -1,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: "#10B981",
+    borderWidth: 2,
+    borderColor: P.surfaceLow,
   },
   headerInfo: {
     flex: 1,
+    minWidth: 0,
   },
   headerTitle: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: "#111827",
+    fontSize: 16,
+    fontWeight: "800",
+    color: P.text,
   },
   headerSubtitle: {
-    fontSize: 13,
-    color: "#64748B",
     marginTop: 1,
+    fontSize: 11,
+    color: P.muted,
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginLeft: 8,
+  },
+  headerIconButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
   },
   centered: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: 20,
+  },
+  backgroundDecoration: {
+    ...StyleSheet.absoluteFillObject,
+    pointerEvents: "none",
+    overflow: "hidden",
+  },
+  backgroundGlowPrimary: {
+    position: "absolute",
+    top: -180,
+    right: -170,
+    width: 360,
+    height: 360,
+    borderRadius: 180,
+    backgroundColor: "rgba(77, 97, 105, 0.07)",
+  },
+  backgroundGlowSecondary: {
+    position: "absolute",
+    bottom: -180,
+    left: -190,
+    width: 360,
+    height: 360,
+    borderRadius: 180,
+    backgroundColor: "rgba(114, 91, 63, 0.05)",
   },
   messagesList: {
-    paddingHorizontal: 12,
-    paddingVertical: 16,
+    paddingHorizontal: 16,
+    paddingTop: 22,
+    paddingBottom: 124,
     flexGrow: 1,
+  },
+  messagesListEmpty: {
+    justifyContent: "center",
   },
   dateSeparator: {
     alignItems: "center",
-    marginVertical: 12,
+    marginBottom: 28,
   },
   dateSeparatorText: {
-    fontSize: 12,
-    color: "#94A3B8",
-    backgroundColor: "#F1F5F9",
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 10,
+    fontSize: 10,
+    color: P.soft,
+    backgroundColor: P.surfaceLow,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 999,
     overflow: "hidden",
+    fontWeight: "700",
+    letterSpacing: 1.3,
+    textTransform: "uppercase",
   },
   messageBubbleRow: {
     flexDirection: "row",
-    marginBottom: 8,
-    maxWidth: "85%",
+    alignItems: "flex-end",
+    marginBottom: 22,
+    maxWidth: "84%",
   },
   myRow: {
     alignSelf: "flex-end",
@@ -309,109 +676,326 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "#CBD5E1",
+    backgroundColor: P.primarySoft,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 8,
-    marginTop: 16,
+    marginRight: 10,
+    marginBottom: 6,
+  },
+  senderAvatarImage: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginRight: 10,
+    marginBottom: 6,
   },
   senderAvatarText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "800",
+    color: P.primaryDark,
   },
   bubbleWrapper: {
     flexShrink: 1,
+    minWidth: 0,
+    gap: 2,
   },
   senderName: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#64748B",
-    marginBottom: 2,
-    marginLeft: 4,
+    display: "none",
   },
   bubble: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderRadius: 18,
+    shadowColor: P.shadow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 1,
+    shadowRadius: 10,
+    elevation: 2,
   },
   myBubble: {
-    backgroundColor: "#336BE3",
-    borderBottomRightRadius: 4,
+    maxWidth: 270,
+    borderBottomRightRadius: 8,
   },
   otherBubble: {
-    backgroundColor: "#FFFFFF",
-    borderBottomLeftRadius: 4,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
+    backgroundColor: P.surfaceLow,
+    borderBottomLeftRadius: 8,
   },
   optimisticBubble: {
     opacity: 0.7,
   },
   bubbleText: {
     fontSize: 15,
-    lineHeight: 20,
+    lineHeight: 23,
   },
   myBubbleText: {
-    color: "#FFFFFF",
+    color: "#EEF7FB",
   },
   otherBubbleText: {
-    color: "#1E293B",
+    color: P.text,
+  },
+  messageMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    marginTop: 2,
+  },
+  myMetaRow: {
+    alignSelf: "flex-end",
+  },
+  otherMetaRow: {
+    alignSelf: "flex-start",
   },
   messageTime: {
-    fontSize: 11,
-    marginTop: 3,
+    fontSize: 10,
+    fontWeight: "500",
   },
   myTime: {
-    color: "#94A3B8",
+    color: P.soft,
     textAlign: "right",
-    marginRight: 4,
   },
   otherTime: {
-    color: "#94A3B8",
-    marginLeft: 4,
+    color: P.soft,
+  },
+  messageStatusIcon: {
+    marginTop: 1,
   },
   emptyMessages: {
-    flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 40,
+    paddingVertical: 44,
+    paddingHorizontal: 24,
+  },
+  emptyMessagesTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: P.text,
   },
   emptyMessagesText: {
-    fontSize: 14,
-    color: "#94A3B8",
+    marginTop: 8,
+    fontSize: 13,
+    lineHeight: 20,
+    color: P.muted,
+    textAlign: "center",
   },
   inputBar: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    paddingHorizontal: 12,
-    paddingTop: 8,
-    backgroundColor: "#FFFFFF",
-    borderTopWidth: 1,
-    borderTopColor: "#E2E8F0",
-  },
-  textInput: {
-    flex: 1,
-    minHeight: 40,
-    maxHeight: 120,
-    backgroundColor: "#F1F5F9",
-    borderRadius: 20,
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    fontSize: 15,
-    color: "#1E293B",
-    marginRight: 8,
+    paddingTop: 0,
+    backgroundColor: "transparent",
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
-  sendButton: {
+  composerCard: {
+    backgroundColor: "rgba(255,255,255,0.92)",
+    borderRadius: 28,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    shadowColor: P.shadow,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 1,
+    shadowRadius: 18,
+    elevation: 3,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  attachButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "#336BE3",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 0,
+  },
+  inputShell: {
+    flex: 1,
+    position: "relative",
+    backgroundColor: P.surfaceLow,
+    borderRadius: 999,
+    minHeight: 46,
+    justifyContent: "center",
+  },
+  textInput: {
+    minHeight: 46,
+    maxHeight: 104,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    fontSize: 15,
+    lineHeight: 21,
+    color: P.text,
+  },
+  inputFocusLine: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    bottom: 6,
+    height: 2,
+    backgroundColor: P.primary,
+    opacity: 0,
+  },
+  composerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    alignSelf: "center",
+  },
+  composerHint: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: P.soft,
+  },
+  sendButtonGradient: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sendButton: {
+    borderRadius: 22,
+    overflow: "hidden",
   },
   sendButtonDisabled: {
-    backgroundColor: "#CBD5E1",
+    opacity: 0.9,
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(16, 24, 28, 0.34)",
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  modalSheet: {
+    backgroundColor: P.surface,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 24,
+    minHeight: 260,
+    maxHeight: "68%",
+  },
+  modalHandle: {
+    alignSelf: "center",
+    width: 44,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: P.border,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginTop: 16,
+  },
+  modalHeaderCopy: {
+    flex: 1,
+  },
+  modalEyebrow: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    color: P.primary,
+  },
+  modalTitle: {
+    marginTop: 4,
+    fontSize: 22,
+    fontWeight: "800",
+    color: P.text,
+  },
+  modalSubtitle: {
+    marginTop: 8,
+    fontSize: 13,
+    lineHeight: 19,
+    color: P.muted,
+  },
+  modalCloseButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: P.surfaceLow,
+  },
+  participantsScroll: {
+    marginTop: 18,
+  },
+  participantsScrollContent: {
+    paddingBottom: 8,
+    gap: 10,
+  },
+  participantRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: P.surfaceLow,
+    borderWidth: 1,
+    borderColor: P.border,
+  },
+  participantAvatarImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+  },
+  participantAvatarFallback: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: P.primarySoft,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  participantAvatarFallbackText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: P.primaryDark,
+  },
+  participantCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  participantName: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: P.text,
+  },
+  participantMeta: {
+    marginTop: 4,
+    fontSize: 12,
+    color: P.muted,
+  },
+  youBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: P.primarySoft,
+  },
+  youBadgeText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: P.primaryDark,
+  },
+  participantsEmptyState: {
+    paddingVertical: 28,
+    paddingHorizontal: 12,
+    alignItems: "center",
+  },
+  participantsEmptyTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: P.text,
+  },
+  participantsEmptyText: {
+    marginTop: 8,
+    fontSize: 13,
+    lineHeight: 19,
+    color: P.muted,
+    textAlign: "center",
   },
 });

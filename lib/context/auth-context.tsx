@@ -8,8 +8,15 @@ import React, {
 } from "react";
 import * as SecureStore from "expo-secure-store";
 import { useAsyncStorage } from "../hooks/useAsyncStorage";
+import {
+  resolveExplicitUserRole,
+  resolveUserRole,
+  shouldFetchAssignmentsForAuthRole,
+  shouldProbeOwnerRuntimeForAuthRole,
+} from "./auth-role";
 import { API_ENDPOINTS, STORAGE_KEYS } from "../utils";
 import apiService from "../services/api";
+import { ownerPortalApi } from "../services/api/owner-portal";
 import type { ApiResponse, LoginDTO, User } from "../types";
 
 // Auth State Interface
@@ -152,53 +159,6 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
-const resolveUserRole = (payloadUser: any): User["role"] => {
-  const candidates: Array<string | undefined> = [
-    payloadUser?.role,
-    payloadUser?.roleKey,
-    payloadUser?.roleName,
-    payloadUser?.userRole,
-    payloadUser?.type,
-  ];
-
-  if (Array.isArray(payloadUser?.roles) && payloadUser.roles.length > 0) {
-    candidates.push(
-      payloadUser.roles[0]?.roleName ??
-        payloadUser.roles[0]?.key ??
-        payloadUser.roles[0]?.name,
-    );
-  }
-
-  const rawRole = candidates.find((value) => typeof value === "string");
-  const normalized = rawRole ? rawRole.toLowerCase() : "tenant";
-
-  if (["superadmin", "super_admin", "towerdesk"].includes(normalized)) {
-    return "super_admin";
-  }
-
-  if (["admin"].includes(normalized)) {
-    return "admin";
-  }
-
-  if (["manager", "management"].includes(normalized)) {
-    return "management";
-  }
-
-  if (["serviceprovider", "service_provider", "provider"].includes(normalized)) {
-    return "service_provider";
-  }
-
-  if (["building_employee", "maintenancestaff", "maintenance_staff", "staff"].includes(normalized)) {
-    return "building_employee";
-  }
-
-  if (["employee"].includes(normalized)) {
-    return "employee";
-  }
-
-  return "tenant";
-};
-
 const resolveRoleFromAssignments = (assignments: any[]): User["role"] | null => {
   if (!Array.isArray(assignments) || assignments.length === 0) {
     return null;
@@ -241,6 +201,25 @@ const buildAssignmentProfile = (assignments: any[], role: User["role"]) => {
   return assignmentProfile;
 };
 
+const getStatusCode = (error: unknown): number | undefined => {
+  if (!error || typeof error !== "object") {
+    return undefined;
+  }
+
+  const status = (error as { status?: unknown }).status;
+  return typeof status === "number" ? status : undefined;
+};
+
+const OWNER_ACCESS_REQUIRED_CODE = "OWNER_ACCESS_REQUIRED";
+
+const createOwnerAccessError = (): Error & { code: string } => {
+  const error = new Error(
+    "Owner access is not active for this account.",
+  ) as Error & { code: string };
+  error.code = OWNER_ACCESS_REQUIRED_CODE;
+  return error;
+};
+
 // Auth Provider Component
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [users, setUsers, isLoadingUsers] = useAsyncStorage(
@@ -255,6 +234,41 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     ...initialState,
     users: mergedInitialUsers,
   });
+
+  const resolveOwnerRuntimeRole = async (
+    role: User["role"] | null,
+    source: "login" | "restore",
+  ): Promise<User["role"] | null> => {
+    if (!shouldProbeOwnerRuntimeForAuthRole(role)) {
+      return role;
+    }
+
+    try {
+      await ownerPortalApi.getSummary();
+      console.log(`[Auth] Owner runtime probe succeeded during ${source}`);
+      return "owner";
+    } catch (error) {
+      const status = getStatusCode(error);
+
+      if (status === 401 || status === 403 || status === 404) {
+        if (role === "owner") {
+          throw createOwnerAccessError();
+        }
+
+        console.log(
+          `[Auth] Owner runtime probe skipped owner routing during ${source}:`,
+          status,
+        );
+        return role;
+      }
+
+      console.warn(
+        `[Auth] Owner runtime probe failed during ${source}:`,
+        error,
+      );
+      return role;
+    }
+  };
 
   // Sync users from AsyncStorage to state when loaded (only once on mount)
   useEffect(() => {
@@ -374,37 +388,53 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             try {
               const userData = JSON.parse(savedUserData);
               let resolvedUser = userData;
+              let resolvedRole =
+                resolveExplicitUserRole(userData) ?? resolvedUser?.role ?? null;
+              resolvedRole = await resolveOwnerRuntimeRole(
+                resolvedRole,
+                "restore",
+              );
               let assignmentsPayload: any[] = [];
-              try {
-                const assignmentsResponse = await apiService.users.getMyAssignments();
-                assignmentsPayload = Array.isArray(assignmentsResponse)
-                  ? assignmentsResponse
-                  : Array.isArray(assignmentsResponse?.data)
-                    ? assignmentsResponse.data
-                    : [];
-                console.log("[AuthProvider] Assignments response:", assignmentsPayload);
-              } catch (assignmentError) {
-                console.warn("[AuthProvider] Failed to load assignments:", assignmentError);
+              if (shouldFetchAssignmentsForAuthRole(resolvedRole)) {
+                try {
+                  const assignmentsResponse = await apiService.users.getMyAssignments();
+                  assignmentsPayload = Array.isArray(assignmentsResponse)
+                    ? assignmentsResponse
+                    : Array.isArray(assignmentsResponse?.data)
+                      ? assignmentsResponse.data
+                      : [];
+                  console.log("[AuthProvider] Assignments response:", assignmentsPayload);
+                } catch (assignmentError) {
+                  console.warn("[AuthProvider] Failed to load assignments:", assignmentError);
+                }
               }
 
               const assignmentRole = resolveRoleFromAssignments(assignmentsPayload);
-              if (
-                assignmentRole &&
-                ["tenant", "employee", "management", "building_employee"].includes(
-                  resolvedUser?.role,
-                )
-              ) {
+              if (assignmentRole) {
+                resolvedRole = assignmentRole;
                 resolvedUser = {
                   ...resolvedUser,
-                  role: assignmentRole,
+                  role: resolvedRole,
                   profile: {
                     ...(resolvedUser?.profile ?? {}),
-                    ...buildAssignmentProfile(assignmentsPayload, assignmentRole),
+                    ...buildAssignmentProfile(assignmentsPayload, resolvedRole),
                   },
+                };
+              } else if (resolvedRole && resolvedUser?.role !== resolvedRole) {
+                resolvedUser = {
+                  ...resolvedUser,
+                  role: resolvedRole,
                 };
               }
 
-              if (resolvedUser?.role === "tenant") {
+              if (resolvedUser?.role == null) {
+                resolvedUser = {
+                  ...resolvedUser,
+                  role: "tenant",
+                };
+              }
+
+              if (resolvedUser.role === "tenant") {
                 resolvedUser = await enrichTenantProfile(resolvedUser);
               }
               console.log('[AuthProvider] Restored user from storage:', { email: resolvedUser.email, role: resolvedUser.role });
@@ -430,7 +460,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
               console.log('[AuthProvider] Session restored successfully!');
             } catch (parseError) {
-              console.error('[AuthProvider] Failed to parse saved user data:', parseError);
+              if (
+                parseError &&
+                typeof parseError === "object" &&
+                "code" in parseError &&
+                (parseError as { code?: unknown }).code === OWNER_ACCESS_REQUIRED_CODE
+              ) {
+                console.warn("[AuthProvider] Stored owner session no longer has active owner access");
+              } else {
+                console.error('[AuthProvider] Failed to parse saved user data:', parseError);
+              }
+
               // Clear invalid data
               await SecureStore.deleteItemAsync(STORAGE_KEYS.user_data);
               await SecureStore.deleteItemAsync(STORAGE_KEYS.auth_token);
@@ -587,33 +627,35 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         await apiService.setAuthTokens({ accessToken, refreshToken });
 
+        const explicitUserRole = resolveExplicitUserRole(payloadUser);
+        let userRole = await resolveOwnerRuntimeRole(explicitUserRole, "login");
         let assignmentsPayload: any[] = [];
-        try {
-          const assignmentsResponse = await apiService.users.getMyAssignments();
-          console.log("[Auth] Assignments raw response:", assignmentsResponse);
-          assignmentsPayload = Array.isArray(assignmentsResponse)
-            ? assignmentsResponse
-            : Array.isArray(assignmentsResponse?.data)
-              ? assignmentsResponse.data
-              : [];
-          console.log("[Auth] Assignments response:", assignmentsPayload);
-        } catch (assignmentError) {
-          console.warn("[Auth] Failed to load assignments:", assignmentError);
+        if (shouldFetchAssignmentsForAuthRole(userRole)) {
+          try {
+            const assignmentsResponse = await apiService.users.getMyAssignments();
+            console.log("[Auth] Assignments raw response:", assignmentsResponse);
+            assignmentsPayload = Array.isArray(assignmentsResponse)
+              ? assignmentsResponse
+              : Array.isArray(assignmentsResponse?.data)
+                ? assignmentsResponse.data
+                : [];
+            console.log("[Auth] Assignments response:", assignmentsPayload);
+          } catch (assignmentError) {
+            console.warn("[Auth] Failed to load assignments:", assignmentError);
+          }
         }
 
         const nowIso = new Date().toISOString();
         const userEmail = (payloadUser.email || normalizedEmail).toLowerCase();
         const existingUser = state.users[userEmail];
-        let userRole = resolveUserRole(payloadUser);
         const assignmentRole = resolveRoleFromAssignments(assignmentsPayload);
-        if (
-          assignmentRole &&
-          ["tenant", "employee", "management", "building_employee"].includes(userRole)
-        ) {
+        if (assignmentRole) {
           userRole = assignmentRole;
         }
+        userRole = userRole ?? resolveUserRole(payloadUser);
         console.log("[Auth] Resolved user role:", {
           rawRole: payloadUser?.role ?? payloadUser?.roleKey ?? payloadUser?.roleName ?? payloadUser?.userRole ?? payloadUser?.type,
+          explicitRole: explicitUserRole,
           resolvedRole: userRole,
           assignmentRole,
         });
@@ -705,6 +747,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         } else if (error?.status === 500) {
           console.warn("[Auth] Login failed: server error");
           errorMessage = "Server error. Please try again later";
+        } else if (error?.code === OWNER_ACCESS_REQUIRED_CODE) {
+          console.warn("[Auth] Login failed: owner access is not active");
+          errorMessage = "Owner access is not active for this account.";
         } else if (error.code === "NETWORK_ERROR" || error.message?.includes("Network")) {
           console.warn("[Auth] Login failed: network error");
           errorMessage = "Network error. Please check your connection.";

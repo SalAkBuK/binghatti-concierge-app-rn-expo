@@ -15,11 +15,15 @@ import {
 } from "../services/notificationsSocket";
 import { playIncomingNotificationSound } from "../services/local-notifications";
 import { useAuth } from "./auth-context";
+import { useNotifications } from "./notifications-context";
 import type {
   Conversation,
   ConversationDetail,
   ConversationMessage,
   CreateConversationDTO,
+  CreateResidentConversationDTO,
+  ResidentConversationTarget,
+  ResidentManagementContact,
   MessageNewPayload,
   ConversationNewPayload,
   ConversationReadPayload,
@@ -37,10 +41,16 @@ interface MessagingState {
 // Actions interface
 interface MessagingActions {
   fetchConversations: () => Promise<void>;
+  fetchUnreadCount: () => Promise<void>;
+  fetchResidentManagementContacts: () => Promise<ResidentManagementContact[]>;
   openConversation: (id: string) => Promise<void>;
   closeConversation: () => void;
   sendMessage: (conversationId: string, content: string) => Promise<void>;
   createConversation: (data: CreateConversationDTO) => Promise<Conversation | null>;
+  createResidentConversation: (
+    target: ResidentConversationTarget,
+    data: CreateResidentConversationDTO,
+  ) => Promise<Conversation | null>;
   setLoading: (loading: boolean) => void;
   setError: (error: string) => void;
   clearError: () => void;
@@ -60,6 +70,7 @@ const ACTIONS = {
   REPLACE_OPTIMISTIC_MESSAGE: "REPLACE_OPTIMISTIC_MESSAGE",
   UPDATE_CONVERSATION_LAST_MESSAGE: "UPDATE_CONVERSATION_LAST_MESSAGE",
   MARK_READ: "MARK_READ",
+  SET_TOTAL_UNREAD: "SET_TOTAL_UNREAD",
   SET_LOADING: "SET_LOADING",
   SET_ERROR: "SET_ERROR",
   CLEAR_ERROR: "CLEAR_ERROR",
@@ -71,6 +82,166 @@ interface Action {
   type: ActionType;
   payload?: any;
 }
+
+const isConversationMessageArray = (value: unknown): value is ConversationMessage[] =>
+  Array.isArray(value);
+
+const normalizeConversationSummary = (response: any): Conversation | null => {
+  const candidate =
+    response?.data?.conversation ??
+    response?.conversation ??
+    response?.data?.item ??
+    response?.item ??
+    response?.data ??
+    response;
+
+  if (!candidate || typeof candidate !== "object" || !candidate.id) {
+    return null;
+  }
+
+  return {
+    ...candidate,
+    id: String(candidate.id),
+    participants: Array.isArray(candidate.participants) ? candidate.participants : [],
+    unreadCount: typeof candidate.unreadCount === "number" ? candidate.unreadCount : 0,
+    createdAt: candidate.createdAt ?? new Date().toISOString(),
+    updatedAt:
+      candidate.updatedAt ??
+      candidate.lastMessage?.createdAt ??
+      candidate.createdAt ??
+      new Date().toISOString(),
+  } as Conversation;
+};
+
+const parseUnreadCount = (response: any): number | null => {
+  const candidate =
+    response?.data?.unreadCount ??
+    response?.unreadCount ??
+    response?.data?.count ??
+    response?.count ??
+    null;
+
+  return typeof candidate === "number" && Number.isFinite(candidate) ? candidate : null;
+};
+
+const normalizeResidentManagementContacts = (
+  response: any,
+): ResidentManagementContact[] => {
+  const candidate =
+    response?.data?.contacts ??
+    response?.contacts ??
+    response?.data?.items ??
+    response?.items ??
+    response?.data ??
+    response;
+
+  if (!Array.isArray(candidate)) {
+    return [];
+  }
+
+  return candidate
+    .map((item): ResidentManagementContact | null => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const managementUserId =
+        item.managementUserId ??
+        item.userId ??
+        item.id;
+
+      if (managementUserId == null) {
+        return null;
+      }
+
+      const name =
+        item.name ??
+        item.fullName ??
+        item.displayName ??
+        item.userName ??
+        item.email ??
+        "Management";
+      const avatarUrl =
+        typeof item.avatarUrl === "string"
+          ? item.avatarUrl
+          : typeof item.avatar === "string"
+            ? item.avatar
+            : null;
+      const role =
+        typeof item.role === "string"
+          ? item.role
+          : typeof item.title === "string"
+            ? item.title
+            : null;
+
+      return {
+        managementUserId: String(managementUserId),
+        name: String(name),
+        ...(avatarUrl ? { avatarUrl } : {}),
+        ...(role ? { role } : {}),
+      };
+    })
+    .filter((item): item is ResidentManagementContact => item !== null);
+};
+
+const normalizeConversationDetail = (
+  response: any,
+  fallbackConversation?: Conversation | null,
+): ConversationDetail | null => {
+  const candidate =
+    response?.data?.conversation ??
+    response?.conversation ??
+    response?.data?.item ??
+    response?.item ??
+    response?.data?.items ??
+    response?.items ??
+    response?.data ??
+    response;
+
+  if (!candidate || typeof candidate !== "object") {
+    return null;
+  }
+
+  const directMessages = isConversationMessageArray(candidate.messages)
+    ? candidate.messages
+    : null;
+  const nestedMessages = isConversationMessageArray(response?.data?.messages)
+    ? response.data.messages
+    : isConversationMessageArray(response?.messages)
+      ? response.messages
+      : null;
+  const fallbackMessages =
+    fallbackConversation?.lastMessage ? [fallbackConversation.lastMessage] : [];
+
+  const id = candidate.id ?? candidate.conversationId ?? fallbackConversation?.id;
+  if (!id) {
+    return null;
+  }
+
+  return {
+    ...(fallbackConversation ?? {}),
+    ...candidate,
+    id: String(id),
+    participants: Array.isArray(candidate.participants)
+      ? candidate.participants
+      : fallbackConversation?.participants ?? [],
+    unreadCount:
+      typeof candidate.unreadCount === "number"
+        ? candidate.unreadCount
+        : fallbackConversation?.unreadCount ?? 0,
+    lastMessage: candidate.lastMessage ?? fallbackConversation?.lastMessage ?? null,
+    createdAt:
+      candidate.createdAt ??
+      fallbackConversation?.createdAt ??
+      new Date().toISOString(),
+    updatedAt:
+      candidate.updatedAt ??
+      candidate.lastMessage?.createdAt ??
+      fallbackConversation?.updatedAt ??
+      new Date().toISOString(),
+    messages: directMessages ?? nestedMessages ?? fallbackMessages,
+  };
+};
 
 const computeUnreadCount = (conversations: Conversation[]) =>
   conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
@@ -211,6 +382,13 @@ const messagingReducer = (state: MessagingState, action: Action): MessagingState
       };
     }
 
+    case ACTIONS.SET_TOTAL_UNREAD:
+      return {
+        ...state,
+        totalUnreadCount:
+          typeof action.payload === "number" ? action.payload : state.totalUnreadCount,
+      };
+
     case ACTIONS.SET_LOADING:
       return { ...state, loading: action.payload };
 
@@ -241,12 +419,15 @@ interface MessagingProviderProps {
 
 export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }) => {
   const { isAuthenticated, currentUser } = useAuth();
+  const { notifications, actions: notificationActions } = useNotifications();
   const [state, dispatch] = useReducer(messagingReducer, initialState);
   const appState = useRef(AppState.currentState);
   const activeConversationIdRef = useRef<string | null>(null);
   const conversationsRef = useRef<Conversation[]>([]);
   const currentUserIdRef = useRef<string | null>(null);
   const notifiedMessageIdsRef = useRef<Set<string>>(new Set());
+  const notificationsRef = useRef(notifications);
+  const isOwnerRuntime = currentUser?.role === "owner";
 
   // Keep ref in sync with state for socket handlers
   useEffect(() => {
@@ -261,10 +442,47 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
     currentUserIdRef.current = currentUser?.id ?? null;
   }, [currentUser?.id]);
 
+  useEffect(() => {
+    notificationsRef.current = notifications;
+  }, [notifications]);
+
+  const fetchUnreadCount = useCallback(async () => {
+    if (isOwnerRuntime) {
+      dispatch({ type: ACTIONS.SET_TOTAL_UNREAD, payload: 0 });
+      return;
+    }
+
+    try {
+      const response = await apiService.conversations.getUnreadCount();
+      const unreadCount = parseUnreadCount(response);
+      if (unreadCount != null) {
+        dispatch({ type: ACTIONS.SET_TOTAL_UNREAD, payload: unreadCount });
+      }
+    } catch (error) {
+      if (__DEV__) {
+        console.log("[Messaging] Failed to fetch unread count", error);
+      }
+    }
+  }, [isOwnerRuntime]);
+
+  const fetchResidentManagementContacts = useCallback(async () => {
+    const response = await apiService.conversations.getResidentManagementContacts();
+    return normalizeResidentManagementContacts(response);
+  }, []);
+
   const fetchConversations = useCallback(async () => {
+    if (isOwnerRuntime) {
+      dispatch({ type: ACTIONS.SET_CONVERSATIONS, payload: [] });
+      dispatch({ type: ACTIONS.SET_TOTAL_UNREAD, payload: 0 });
+      return;
+    }
+
     dispatch({ type: ACTIONS.SET_LOADING, payload: true });
     try {
-      const response = await apiService.conversations.getConversations();
+      const [response, unreadResponse] = await Promise.all([
+        apiService.conversations.getConversations(),
+        apiService.conversations.getUnreadCount().catch(() => null),
+      ]);
       if (__DEV__) {
         console.log("[Messaging] fetchConversations raw response:", JSON.stringify(response, null, 2));
       }
@@ -281,23 +499,49 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
         console.log("[Messaging] fetchConversations parsed count:", data.length);
       }
       dispatch({ type: ACTIONS.SET_CONVERSATIONS, payload: data });
+
+      const unreadCount = parseUnreadCount(unreadResponse);
+      if (unreadCount != null) {
+        dispatch({ type: ACTIONS.SET_TOTAL_UNREAD, payload: unreadCount });
+      }
     } catch (error) {
       if (__DEV__) {
         console.log("[Messaging] Failed to fetch conversations", error);
       }
       dispatch({ type: ACTIONS.SET_ERROR, payload: "Failed to load conversations" });
     }
-  }, []);
+  }, [isOwnerRuntime]);
 
   const openConversation = useCallback(async (id: string) => {
+    if (isOwnerRuntime) {
+      dispatch({ type: ACTIONS.SET_ERROR, payload: "Owner messaging uses owner runtime routes" });
+      return;
+    }
+
     dispatch({ type: ACTIONS.SET_LOADING, payload: true });
     try {
       const response = await apiService.conversations.getConversation(id);
-      const detail = response?.data ?? response;
+      const fallbackConversation =
+        conversationsRef.current.find((conversation) => conversation.id === id) ?? null;
+      const detail = normalizeConversationDetail(response, fallbackConversation);
+
+      if (!detail) {
+        throw new Error("Conversation detail payload was empty");
+      }
+
+      if (__DEV__) {
+        console.log("[Messaging] openConversation parsed detail:", {
+          id: detail.id,
+          messageCount: detail.messages?.length ?? 0,
+          hasParticipants: Array.isArray(detail.participants) && detail.participants.length > 0,
+        });
+      }
+
       dispatch({ type: ACTIONS.SET_ACTIVE_CONVERSATION, payload: detail });
 
       // Mark as read (optimistic)
       dispatch({ type: ACTIONS.MARK_READ, payload: id });
+      void fetchUnreadCount();
       apiService.conversations.markAsRead(id).catch(() => {
         // silent — optimistic update already applied
       });
@@ -307,7 +551,7 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
       }
       dispatch({ type: ACTIONS.SET_ERROR, payload: "Failed to load conversation" });
     }
-  }, []);
+  }, [fetchUnreadCount, isOwnerRuntime]);
 
   const closeConversation = useCallback(() => {
     dispatch({ type: ACTIONS.CLEAR_ACTIVE_CONVERSATION });
@@ -315,6 +559,11 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
 
   const sendMessage = useCallback(
     async (conversationId: string, content: string) => {
+      if (isOwnerRuntime) {
+        dispatch({ type: ACTIONS.SET_ERROR, payload: "Owner messaging uses owner runtime routes" });
+        return;
+      }
+
       if (!content.trim()) return;
 
       // Optimistic message
@@ -354,19 +603,27 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
           console.log("[Messaging] Failed to send message", error);
         }
         dispatch({ type: ACTIONS.SET_ERROR, payload: "Failed to send message" });
+      } finally {
+        void fetchUnreadCount();
       }
     },
-    [currentUser],
+    [currentUser, fetchUnreadCount, isOwnerRuntime],
   );
 
   const createConversation = useCallback(
     async (data: CreateConversationDTO): Promise<Conversation | null> => {
+      if (isOwnerRuntime) {
+        dispatch({ type: ACTIONS.SET_ERROR, payload: "Owner compose uses owner runtime routes" });
+        return null;
+      }
+
       try {
         const response = await apiService.conversations.createConversation(data);
-        const conversation = (response?.data ?? response) as any;
+        const conversation = normalizeConversationSummary(response);
         if (conversation && conversation.id) {
-          dispatch({ type: ACTIONS.UPSERT_CONVERSATION, payload: conversation as Conversation });
-          return conversation as Conversation;
+          dispatch({ type: ACTIONS.UPSERT_CONVERSATION, payload: conversation });
+          void fetchConversations();
+          return conversation;
         }
         return null;
       } catch (error) {
@@ -377,7 +634,34 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
         return null;
       }
     },
-    [],
+    [fetchConversations, isOwnerRuntime],
+  );
+
+  const createResidentConversation = useCallback(
+    async (
+      target: ResidentConversationTarget,
+      data: CreateResidentConversationDTO,
+    ): Promise<Conversation | null> => {
+      if (isOwnerRuntime) {
+        dispatch({ type: ACTIONS.SET_ERROR, payload: "Owner compose uses owner runtime routes" });
+        return null;
+      }
+
+      const response =
+        target === "owner"
+          ? await apiService.conversations.createResidentOwnerConversation(data)
+          : await apiService.conversations.createResidentManagementConversation(data);
+
+      const conversation = normalizeConversationSummary(response);
+      if (conversation && conversation.id) {
+        dispatch({ type: ACTIONS.UPSERT_CONVERSATION, payload: conversation });
+        void fetchConversations();
+        return conversation;
+      }
+
+      return null;
+    },
+    [fetchConversations, isOwnerRuntime],
   );
 
   // Socket event handlers (named functions for clean detach)
@@ -440,6 +724,25 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
 
           const body = payload.message.content?.trim() || "You received a new message";
 
+          const existingMessageNotification = notificationsRef.current.some((notification) => {
+            const notificationMessageId = notification.data?.messageId;
+            return Boolean(notificationMessageId && notificationMessageId === payload.message.id);
+          });
+
+          if (!existingMessageNotification && currentUserId) {
+            notificationActions.createNotification(
+              String(currentUserId),
+              title,
+              body,
+              "MESSAGE_CREATED",
+              {
+                conversationId: payload.conversationId,
+                messageId: payload.message.id,
+                senderId,
+              },
+            );
+          }
+
           void playIncomingNotificationSound({
             title,
             body,
@@ -461,8 +764,10 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
           }
         }
       }
+
+      void fetchUnreadCount();
     },
-    [],
+    [fetchUnreadCount, notificationActions],
   );
 
   const handleConversationRead = useCallback((payload: ConversationReadPayload) => {
@@ -471,8 +776,9 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
     }
     if (payload?.conversationId) {
       dispatch({ type: ACTIONS.MARK_READ, payload: payload.conversationId });
+      void fetchUnreadCount();
     }
-  }, []);
+  }, [fetchUnreadCount]);
 
   const attachSocketHandlers = useCallback(
     (socket: ReturnType<typeof connectNotifications>) => {
@@ -499,6 +805,11 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
   // Socket connection + event subscription
   useEffect(() => {
     if (!isAuthenticated) return;
+    if (isOwnerRuntime) {
+      dispatch({ type: ACTIONS.SET_CONVERSATIONS, payload: [] });
+      dispatch({ type: ACTIONS.SET_TOTAL_UNREAD, payload: 0 });
+      return;
+    }
 
     let isMounted = true;
     let activeSocket: ReturnType<typeof connectNotifications> | null = null;
@@ -551,6 +862,7 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
     };
   }, [
     isAuthenticated,
+    isOwnerRuntime,
     fetchConversations,
     handleConversationNew,
     handleMessageNew,
@@ -576,20 +888,26 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
   const actions: MessagingActions = React.useMemo(
     () => ({
       fetchConversations,
+      fetchUnreadCount,
+      fetchResidentManagementContacts,
       openConversation,
       closeConversation,
       sendMessage,
       createConversation,
+      createResidentConversation,
       setLoading,
       setError,
       clearError,
     }),
     [
       fetchConversations,
+      fetchUnreadCount,
+      fetchResidentManagementContacts,
       openConversation,
       closeConversation,
       sendMessage,
       createConversation,
+      createResidentConversation,
       setLoading,
       setError,
       clearError,

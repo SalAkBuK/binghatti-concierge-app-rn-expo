@@ -6,6 +6,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -15,7 +16,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import {
@@ -67,6 +68,24 @@ const EMPTY_FORM: RegisterVisitorForm = {
   notes: "",
 };
 
+const P = {
+  bg: "#F8F9FA",
+  surface: "#FFFFFF",
+  surfaceLow: "#F1F4F6",
+  border: "#D9E0E4",
+  text: "#2B3437",
+  muted: "#667176",
+  soft: "#7A8488",
+  primary: "#4D6169",
+  primaryDark: "#41555D",
+  primarySoft: "#D0E6EF",
+  accent: "#F8EFE4",
+  accentText: "#7A5A2B",
+  warningBg: "#FDF1DB",
+  warningText: "#9A5B00",
+  danger: "#B24A41",
+};
+
 const formatDateTime = (date: Date | null): string => {
   if (!date) return "Flexible / not specified";
   return date.toLocaleString("en-US", {
@@ -77,6 +96,13 @@ const formatDateTime = (date: Date | null): string => {
     minute: "2-digit",
   });
 };
+
+const formatEnumLabel = (value: string) =>
+  value
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 
 const visitorToForm = (visitor: ResidentVisitor): RegisterVisitorForm => ({
   type: visitor.type,
@@ -108,6 +134,7 @@ export default function RegisterVisitorScreen() {
     useResidentTenancy({
       enabled: Boolean(currentUser?.role === "tenant" && currentUser?.id),
     });
+  const insets = useSafeAreaInsets();
 
   const [formData, setFormData] = useState<RegisterVisitorForm>(EMPTY_FORM);
   const [existingVisitor, setExistingVisitor] = useState<ResidentVisitor | null>(null);
@@ -116,6 +143,24 @@ export default function RegisterVisitorScreen() {
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>({});
   const [showArrivalDatePicker, setShowArrivalDatePicker] = useState(false);
   const [showArrivalTimePicker, setShowArrivalTimePicker] = useState(false);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+    const showSubscription = Keyboard.addListener(showEvent, () => {
+      setIsKeyboardVisible(true);
+    });
+    const hideSubscription = Keyboard.addListener(hideEvent, () => {
+      setIsKeyboardVisible(false);
+    });
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (!visitorId || !canManageVisitors) return;
@@ -296,7 +341,7 @@ export default function RegisterVisitorScreen() {
           onBackPress={() => router.back()}
         />
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#336BE3" />
+          <ActivityIndicator size="large" color={P.primary} />
           <Text style={styles.loadingText}>Loading visitor details...</Text>
         </View>
       </SafeAreaView>
@@ -311,7 +356,11 @@ export default function RegisterVisitorScreen() {
       >
         <ScrollView
           style={styles.scrollView}
+          contentContainerStyle={{
+            paddingBottom: isKeyboardVisible ? 32 : Math.max(insets.bottom, 20) + 28,
+          }}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
           <HeaderBar
             title={isEditMode ? "Edit Visitor" : "Add Visitor"}
@@ -323,18 +372,42 @@ export default function RegisterVisitorScreen() {
           />
 
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>
-              {isEditMode ? "Update Visitor Details" : "Register New Visitor"}
-            </Text>
-            <Text style={styles.headerSubtitle}>
-              Your active unit is inferred on the backend. Do not enter building or
-              unit information here.
-            </Text>
+            <Text style={styles.eyebrow}>Visitor Registration</Text>
+            <View style={styles.heroCard}>
+              <View style={styles.heroCopy}>
+                <Text style={styles.headerTitle}>
+                  {isEditMode ? "Update Visitor Details" : "Register New Visitor"}
+                </Text>
+                <Text style={styles.headerSubtitle}>
+                  Your active unit is inferred on the backend. Do not enter building
+                  or unit information here.
+                </Text>
+              </View>
+              <View style={styles.heroMetaRow}>
+                <View style={styles.heroMetaPill}>
+                  <Ionicons
+                    name={isEditMode ? "create-outline" : "sparkles-outline"}
+                    size={14}
+                    color={P.primaryDark}
+                  />
+                  <Text style={styles.heroMetaPillText}>
+                    {isEditMode ? "Edit pass" : "New pass"}
+                  </Text>
+                </View>
+                {existingVisitor ? (
+                  <View style={[styles.heroMetaPill, styles.heroMetaPillWarm]}>
+                    <Text style={styles.heroMetaPillWarmText}>
+                      {formatEnumLabel(existingVisitor.status)}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            </View>
           </View>
 
           {!isEditable ? (
             <View style={styles.lockedBanner}>
-              <Ionicons name="lock-closed-outline" size={18} color="#92400E" />
+              <Ionicons name="lock-closed-outline" size={18} color={P.warningText} />
               <Text style={styles.lockedBannerText}>
                 This visitor is no longer editable because it is not in EXPECTED
                 status.
@@ -344,12 +417,24 @@ export default function RegisterVisitorScreen() {
 
           {!isTenancyLoading && !canManageVisitors ? (
             <View style={styles.lockedBanner}>
-              <Ionicons name="information-circle-outline" size={18} color="#92400E" />
+              <Ionicons
+                name="information-circle-outline"
+                size={18}
+                color={P.warningText}
+              />
               <Text style={styles.lockedBannerText}>{statusMessage}</Text>
             </View>
           ) : null}
 
           <View style={styles.formContainer}>
+            <View style={styles.formHeader}>
+              <Text style={styles.formTitle}>Visitor Profile</Text>
+              <Text style={styles.formSubtitle}>
+                Security uses these details to pre-authorize access and speed up
+                arrival.
+              </Text>
+            </View>
+
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Visitor Type *</Text>
               <View style={styles.pickerContainer}>
@@ -360,14 +445,14 @@ export default function RegisterVisitorScreen() {
                   }
                   enabled={canManageVisitors && isEditable && !isSubmitting}
                   style={styles.picker}
-                  dropdownIconColor="#111827"
+                  dropdownIconColor={P.text}
                 >
                   {VISITOR_TYPE_OPTIONS.map((option) => (
                     <Picker.Item
                       key={option.value}
                       label={option.label}
                       value={option.value}
-                      color="#111827"
+                      color={P.text}
                     />
                   ))}
                 </Picker>
@@ -383,6 +468,7 @@ export default function RegisterVisitorScreen() {
                   !isEditable && styles.disabledInput,
                 ]}
                 placeholder="Enter visitor's full name"
+                placeholderTextColor={P.soft}
                 value={formData.visitorName}
                 onChangeText={(text) => handleInputChange("visitorName", text)}
                 editable={canManageVisitors && isEditable && !isSubmitting}
@@ -402,6 +488,7 @@ export default function RegisterVisitorScreen() {
                   !isEditable && styles.disabledInput,
                 ]}
                 placeholder="+971501234567"
+                placeholderTextColor={P.soft}
                 value={formData.phoneNumber}
                 onChangeText={handlePhoneChange}
                 editable={canManageVisitors && isEditable && !isSubmitting}
@@ -418,6 +505,7 @@ export default function RegisterVisitorScreen() {
               <TextInput
                 style={[styles.textInput, !isEditable && styles.disabledInput]}
                 placeholder="Optional"
+                placeholderTextColor={P.soft}
                 value={formData.emiratesId}
                 onChangeText={(text) => handleInputChange("emiratesId", text)}
                 editable={canManageVisitors && isEditable && !isSubmitting}
@@ -430,6 +518,7 @@ export default function RegisterVisitorScreen() {
               <TextInput
                 style={[styles.textInput, !isEditable && styles.disabledInput]}
                 placeholder="Optional"
+                placeholderTextColor={P.soft}
                 value={formData.vehicleNumber}
                 onChangeText={(text) => handleInputChange("vehicleNumber", text)}
                 editable={canManageVisitors && isEditable && !isSubmitting}
@@ -452,7 +541,7 @@ export default function RegisterVisitorScreen() {
                 }}
                 disabled={!canManageVisitors || !isEditable || isSubmitting}
               >
-                <Ionicons name="calendar-outline" size={20} color="#6B7280" />
+                <Ionicons name="calendar-outline" size={20} color={P.muted} />
                 <Text style={styles.datePickerText}>
                   {formatDateTime(formData.expectedArrivalAt)}
                 </Text>
@@ -534,6 +623,7 @@ export default function RegisterVisitorScreen() {
               <TextInput
                 style={[styles.textArea, !isEditable && styles.disabledInput]}
                 placeholder="Optional notes for security or reception"
+                placeholderTextColor={P.soft}
                 value={formData.notes}
                 onChangeText={(text) => handleInputChange("notes", text)}
                 editable={canManageVisitors && isEditable && !isSubmitting}
@@ -544,30 +634,32 @@ export default function RegisterVisitorScreen() {
               />
             </View>
 
-            <TouchableOpacity
-              style={[
-                styles.submitButton,
-                (!canManageVisitors || !isEditable || isSubmitting) &&
-                  styles.submitButtonDisabled,
-              ]}
-              onPress={handleSubmit}
-              disabled={!canManageVisitors || !isEditable || isSubmitting}
-            >
-              {isSubmitting ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <>
-                  <Ionicons
-                    name={isEditMode ? "save-outline" : "person-add-outline"}
-                    size={18}
-                    color="#FFFFFF"
-                  />
-                  <Text style={styles.submitButtonText}>
-                    {isEditMode ? "Save Changes" : "Register Visitor"}
-                  </Text>
-                </>
-              )}
-            </TouchableOpacity>
+            {!isKeyboardVisible ? (
+              <TouchableOpacity
+                style={[
+                  styles.submitButton,
+                  (!canManageVisitors || !isEditable || isSubmitting) &&
+                    styles.submitButtonDisabled,
+                ]}
+                onPress={handleSubmit}
+                disabled={!canManageVisitors || !isEditable || isSubmitting}
+              >
+                {isSubmitting ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons
+                      name={isEditMode ? "save-outline" : "person-add-outline"}
+                      size={18}
+                      color="#FFFFFF"
+                    />
+                    <Text style={styles.submitButtonText}>
+                      {isEditMode ? "Save Changes" : "Register Visitor"}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            ) : null}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -578,7 +670,7 @@ export default function RegisterVisitorScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F8F9FA",
+    backgroundColor: P.bg,
   },
   keyboardAvoidingView: {
     flex: 1,
@@ -588,87 +680,161 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   header: {
-    marginBottom: 20,
+    marginBottom: 18,
+  },
+  eyebrow: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1.4,
+    textTransform: "uppercase",
+    color: P.primary,
+    marginBottom: 10,
+  },
+  heroCard: {
+    backgroundColor: P.surface,
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: P.border,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    shadowColor: "#2B3437",
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 4,
+  },
+  heroCopy: {
+    gap: 8,
+  },
+  heroMetaRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 16,
+  },
+  heroMetaPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: P.primarySoft,
+  },
+  heroMetaPillWarm: {
+    backgroundColor: P.accent,
+  },
+  heroMetaPillText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: P.primaryDark,
+  },
+  heroMetaPillWarmText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: P.accentText,
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: "700",
-    color: "#111827",
+    color: P.text,
     marginBottom: 6,
   },
   headerSubtitle: {
     fontSize: 14,
-    color: "#6B7280",
+    color: P.muted,
     lineHeight: 20,
   },
   lockedBanner: {
     flexDirection: "row",
     gap: 10,
     alignItems: "flex-start",
-    backgroundColor: "#FEF3C7",
-    borderRadius: 12,
-    padding: 14,
+    backgroundColor: P.warningBg,
+    borderRadius: 18,
+    padding: 16,
     marginBottom: 18,
+    borderWidth: 1,
+    borderColor: "#F0D7AA",
   },
   lockedBannerText: {
     flex: 1,
     fontSize: 13,
-    color: "#92400E",
+    color: P.warningText,
     lineHeight: 18,
   },
   formContainer: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 18,
-    padding: 18,
+    backgroundColor: P.surface,
+    borderRadius: 28,
+    padding: 20,
     marginBottom: 32,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: P.border,
+    shadowColor: "#2B3437",
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 3,
+  },
+  formHeader: {
+    marginBottom: 18,
+  },
+  formTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: P.text,
+    marginBottom: 4,
+  },
+  formSubtitle: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: P.muted,
   },
   inputGroup: {
     marginBottom: 16,
   },
   label: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "600",
-    color: "#111827",
-    marginBottom: 8,
+    color: P.text,
+    marginBottom: 9,
+    letterSpacing: 0.2,
   },
   textInput: {
-    backgroundColor: "#F9FAFB",
-    borderRadius: 12,
+    backgroundColor: P.surfaceLow,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#D1D5DB",
+    borderColor: P.border,
     paddingHorizontal: 14,
     paddingVertical: 13,
     fontSize: 15,
-    color: "#111827",
+    color: P.text,
   },
   textArea: {
-    backgroundColor: "#F9FAFB",
-    borderRadius: 12,
+    backgroundColor: P.surfaceLow,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#D1D5DB",
+    borderColor: P.border,
     paddingHorizontal: 14,
     paddingVertical: 13,
     fontSize: 15,
-    color: "#111827",
+    color: P.text,
     minHeight: 110,
   },
   pickerContainer: {
-    backgroundColor: "#F9FAFB",
-    borderRadius: 12,
+    backgroundColor: P.surfaceLow,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#D1D5DB",
+    borderColor: P.border,
     overflow: "hidden",
   },
   picker: {
-    color: "#111827",
+    color: P.text,
   },
   datePickerButton: {
-    backgroundColor: "#F9FAFB",
-    borderRadius: 12,
+    backgroundColor: P.surfaceLow,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#D1D5DB",
+    borderColor: P.border,
     paddingHorizontal: 14,
     paddingVertical: 14,
     flexDirection: "row",
@@ -677,7 +843,7 @@ const styles = StyleSheet.create({
   datePickerText: {
     marginLeft: 10,
     fontSize: 15,
-    color: "#111827",
+    color: P.text,
   },
   clearDateButton: {
     marginTop: 8,
@@ -686,17 +852,22 @@ const styles = StyleSheet.create({
   clearDateText: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#1D4ED8",
+    color: P.primary,
   },
   submitButton: {
-    marginTop: 8,
-    backgroundColor: "#336BE3",
-    borderRadius: 14,
+    marginTop: 10,
+    backgroundColor: P.primary,
+    borderRadius: 18,
     paddingVertical: 16,
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
     gap: 8,
+    shadowColor: P.primaryDark,
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 4,
   },
   submitButtonDisabled: {
     opacity: 0.6,
@@ -707,12 +878,12 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   errorInput: {
-    borderColor: "#DC2626",
+    borderColor: P.danger,
   },
   errorText: {
     marginTop: 6,
     fontSize: 12,
-    color: "#DC2626",
+    color: P.danger,
   },
   disabledInput: {
     opacity: 0.65,
@@ -726,6 +897,6 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 14,
-    color: "#6B7280",
+    color: P.muted,
   },
 });

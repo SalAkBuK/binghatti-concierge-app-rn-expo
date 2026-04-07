@@ -6,6 +6,8 @@ import type {
   ConversationDetail,
   ConversationMessage,
   CreateConversationDTO,
+  CreateResidentConversationDTO,
+  ResidentManagementContact,
   SendMessageDTO,
 } from "../../types";
 
@@ -25,9 +27,39 @@ export class ConversationsApiService extends BaseApiService {
     );
   }
 
+  async createResidentManagementConversation(
+    data: CreateResidentConversationDTO,
+  ): Promise<ApiResponse<Conversation>> {
+    return this.post<ApiResponse<Conversation>>(
+      API_ENDPOINTS.conversations.createResidentManagement,
+      data,
+    );
+  }
+
+  async getResidentManagementContacts(): Promise<ApiResponse<ResidentManagementContact[]>> {
+    return this.get<ApiResponse<ResidentManagementContact[]>>(
+      API_ENDPOINTS.conversations.residentManagementContacts,
+    );
+  }
+
+  async createResidentOwnerConversation(
+    data: CreateResidentConversationDTO,
+  ): Promise<ApiResponse<Conversation>> {
+    return this.post<ApiResponse<Conversation>>(
+      API_ENDPOINTS.conversations.createResidentOwner,
+      data,
+    );
+  }
+
   async getConversation(id: string): Promise<ApiResponse<ConversationDetail>> {
     return this.get<ApiResponse<ConversationDetail>>(
       API_ENDPOINTS.conversations.detail(id),
+    );
+  }
+
+  async getUnreadCount(): Promise<ApiResponse<{ unreadCount: number }>> {
+    return this.get<ApiResponse<{ unreadCount: number }>>(
+      API_ENDPOINTS.conversations.unreadCount,
     );
   }
 

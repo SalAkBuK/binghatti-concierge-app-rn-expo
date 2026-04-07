@@ -149,7 +149,7 @@ export const isChatNotificationType = (type: Notification["type"]): boolean => {
 export const shouldShowNotificationInInbox = (
   notification: Notification,
 ): boolean => {
-  return !isChatNotificationType(notification.type);
+  return Boolean(notification);
 };
 
 export const normalizeNotification = (
@@ -405,7 +405,8 @@ export const createSystemNotification = (
   userId: string,
   title: string,
   message: string,
-  type: NotificationType = "info",
+  type: Notification["type"] = "info",
+  data?: Record<string, any>,
 ): Notification => {
   return {
     id: (Date.now() + Math.random()).toString(),
@@ -414,6 +415,7 @@ export const createSystemNotification = (
     message,
     body: message,
     type,
+    data,
     read: false,
     readAt: null,
     dismissedAt: null,

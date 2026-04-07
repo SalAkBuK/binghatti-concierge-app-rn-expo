@@ -45,13 +45,14 @@ interface NotificationsActions {
     userId: string,
     title: string,
     message: string,
-    type?: NotificationType,
+    type?: Notification["type"],
+    data?: Record<string, any>,
   ) => Notification;
   broadcastNotificationToRole: (
     role: User["role"],
     title: string,
     message: string,
-    type?: NotificationType,
+    type?: Notification["type"],
     users?: Record<string, User>,
   ) => void;
   refreshNotifications: (options?: {
@@ -670,13 +671,15 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
       userId: string,
       title: string,
       message: string,
-      type: NotificationType = "info",
+      type: Notification["type"] = "info",
+      data?: Record<string, any>,
     ): Notification => {
       const newNotification = createSystemNotification(
         userId,
         title,
         message,
         type,
+        data,
       );
       dispatch({
         type: NOTIFICATIONS_ACTIONS.CREATE_NOTIFICATION,

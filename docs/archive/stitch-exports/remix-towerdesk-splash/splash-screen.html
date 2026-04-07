@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Towerdesk | Excellence in Structure</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "primary-container": "#d0e6ef",
+                        "on-tertiary": "#f3fafd",
+                        "on-background": "#2a3437",
+                        "secondary-dim": "#42565e",
+                        "primary": "#4d6169",
+                        "tertiary-fixed-dim": "#e0e6ea",
+                        "secondary": "#4e626a",
+                        "on-primary-container": "#41555d",
+                        "primary-dim": "#42555d",
+                        "inverse-surface": "#0b0f10",
+                        "tertiary-dim": "#4d5457",
+                        "inverse-primary": "#d9eff8",
+                        "secondary-fixed": "#d0e6f0",
+                        "primary-fixed": "#d0e6ef",
+                        "on-secondary": "#f1faff",
+                        "tertiary": "#596063",
+                        "surface-container-low": "#f0f4f6",
+                        "surface-container-lowest": "#ffffff",
+                        "tertiary-container": "#eef5f8",
+                        "surface-dim": "#cfdce0",
+                        "on-secondary-container": "#41555d",
+                        "on-surface-variant": "#566164",
+                        "surface-container-highest": "#d9e4e8",
+                        "on-primary-fixed": "#2f424a",
+                        "secondary-container": "#d0e6f0",
+                        "surface-bright": "#f8fafb",
+                        "on-primary": "#eef9ff",
+                        "on-surface": "#2a3437",
+                        "error": "#9f403d",
+                        "on-secondary-fixed": "#2e424a",
+                        "error-container": "#fe8983",
+                        "surface-tint": "#4d6169",
+                        "on-secondary-fixed-variant": "#4a5f67",
+                        "on-primary-fixed-variant": "#4b5f66",
+                        "on-tertiary-fixed": "#444b4e",
+                        "inverse-on-surface": "#9a9d9e",
+                        "surface-container": "#e9eff1",
+                        "on-tertiary-container": "#565d60",
+                        "surface-container-high": "#e1eaec",
+                        "on-tertiary-fixed-variant": "#60676a",
+                        "on-error": "#fff7f6",
+                        "outline-variant": "#a9b4b7",
+                        "outline": "#727c80",
+                        "primary-fixed-dim": "#c2d8e1",
+                        "secondary-fixed-dim": "#c2d8e1",
+                        "surface-variant": "#d9e4e8",
+                        "background": "#f8fafb"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                    "fontFamily": {
+                        "headline": ["Manrope"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 200, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            background-color: #f8fafb;
+            color: #2a3437;
+            overflow: hidden;
+        }
+        .architectural-gradient {
+            background: linear-gradient(135deg, #4d6169 0%, #41555d 100%);
+        }
+        .loader-track {
+            background-color: #f0f4f6;
+        }
+        .loader-fill {
+            background-color: #4d6169;
+            width: 35%;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="font-body antialiased">
+<!-- Splash Screen Container -->
+<main class="relative h-screen w-full flex flex-col items-center justify-between py-16 bg-surface overflow-hidden">
+<!-- Background Tonal Layers (Architectural Lens) -->
+<div class="absolute inset-0 pointer-events-none">
+<div class="absolute top-0 right-0 w-[40vw] h-full bg-surface-container-low/50"></div>
+<div class="absolute bottom-0 left-0 w-[60vw] h-[265px] bg-surface-container-low/30"></div>
+</div>
+<!-- Top Branding / Identity Header (Asymmetric Layout) -->
+<header class="w-full max-w-7xl px-8 md:px-16 flex justify-between items-start z-10">
+<div class="flex flex-col gap-1">
+<span class="font-label text-[10px] uppercase tracking-[0.2em] text-on-surface-variant/60">Digital Curator v2.4</span>
+<div class="w-8 h-0.5 bg-primary/20"></div>
+</div>
+<div class="text-right">
+<span class="font-label text-[10px] uppercase tracking-[0.2em] text-on-surface-variant/60">Established MMXXIV</span>
+</div>
+</header>
+<!-- Central Feature: Architectural Monogram & Brand -->
+<section class="flex flex-col items-center justify-center z-10 transition-all duration-700">
+<!-- Monogram Logo Container -->
+<div class="relative mb-8 group">
+<!-- Outer Glass Ring -->
+<div class="absolute -inset-8 rounded-full border-[0.5px] border-outline-variant/10 bg-surface-container-lowest/40 backdrop-blur-xl scale-95 opacity-0 group-hover:opacity-100 transition-all duration-1000"></div>
+<!-- The Core Logo "T" -->
+<div class="relative w-32 h-32 md:w-40 md:h-40 flex items-center justify-center bg-surface-container-lowest rounded-xl shadow-[0_20px_40px_rgba(42,52,55,0.06)] overflow-hidden">
+<!-- Subtle background texture/image for depth -->
+<div class="absolute inset-0 opacity-5 mix-blend-overlay">
+<img class="w-full h-full object-cover" data-alt="Abstract black and white architectural photography of a skyscraper facade with clean geometric lines and strong shadows" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAoIx827kcNz6C7uizFIvPWS5gyOawmRhG933i5jn4cWGlmbRIYXS4RU9ru735t3hFtjTubuwJwO91OfG27oyA5jiuKaqc-MHEEo84HcGDJr2jfExksynoq6uQfFnfoZMt1xe-xTVvYeDqci-mC9VXoMLs6PYB-IAtALaCjDgFutDPg8cODonVIJoMiwpTCiriJ2KP1NossLk92tT9EMRvxACLPkD2azqAEHA1u1h8yrYtlZi7F8hg_qnkvaNIajcVKZW9Wqn9WhZg"/>
+</div>
+<!-- Architectural Monogram (Iconography) -->
+<div class="relative flex flex-col items-center">
+<span class="material-symbols-outlined text-6xl md:text-7xl text-primary font-extralight" style="font-variation-settings: 'wght' 100;">
+                            architecture
+                        </span>
+<div class="absolute inset-0 flex items-center justify-center">
+<span class="font-headline font-extrabold text-5xl md:text-6xl text-primary/10 tracking-tighter select-none">T</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Typography -->
+<div class="text-center">
+<h1 class="font-headline font-extrabold text-4xl md:text-5xl tracking-tighter text-on-surface mb-2">
+                    Towerdesk
+                </h1>
+<p class="font-label text-sm uppercase tracking-[0.3em] text-on-surface-variant/70">
+                    Architectural Intelligence
+                </p>
+</div>
+</section>
+<!-- Footer Area: Minimal Progress Indicator -->
+<footer class="w-full max-w-lg px-12 md:px-0 z-10 flex flex-col items-center gap-8">
+<!-- Loading Message -->
+<p class="font-label text-[10px] uppercase tracking-[0.15em] text-on-surface-variant/40 animate-pulse">
+                Building Workspace Environment...
+            </p>
+<!-- Minimal Horizontal Loading Bar -->
+<div class="w-full h-[2px] loader-track rounded-full overflow-hidden">
+<div class="h-full loader-fill transition-all duration-1000 ease-in-out"></div>
+</div>
+<!-- System Status (Editorial Details) -->
+<div class="flex justify-between w-full opacity-30">
+<span class="font-label text-[9px] tracking-widest">ENCRYPTION: ACTIVE</span>
+<span class="font-label text-[9px] tracking-widest">ASSETS: OPTIMIZED</span>
+</div>
+</footer>
+<!-- Decorative Elements for "The Architectural Lens" -->
+<div class="absolute bottom-24 right-[-5%] w-64 h-64 bg-primary-container/10 rounded-full blur-[100px] pointer-events-none"></div>
+<div class="absolute top-12 left-[-5%] w-48 h-48 bg-secondary-container/10 rounded-full blur-[80px] pointer-events-none"></div>
+<!-- Background Image for subtle texture context (Bottom Corner) -->
+<div class="absolute bottom-0 right-0 w-1/3 h-1/2 opacity-[0.03] pointer-events-none">
+<img class="w-full h-full object-cover grayscale" data-alt="Minimalist modern office interior with large windows and clean white surfaces at dawn with soft natural light" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBYA4MMs-ye1LkADWSsBe0iaeMP8MSG-6i0903TGwaCaMJRyYq_LwEB6dUoBp0kRghIUobrdWzM3ht_tlVKR_nbnqZJ53GRXe9knVDaIAHhEsN8jEY015OMt1pg4WTQP5ngsj4dIEln9Fi6rhtn-kRBq3YG1GsAsxuX9NRGxx1VX0IG9FiSde36AejK_nk4KDGUsXLlsiLcD4KWQLlwXF1MYRUHODrG9Ul_HKUrArStsW17r87qYudv6jZqlhIUT01OOD4NyG0FxVU"/>
+</div>
+</main>
+<!-- Content Script Placeholder (Logic simulation for splash transition) -->
+<!-- Note: As per instructions, no JavaScript code is added. The design stands alone as a premium static state. -->
+</body></html>

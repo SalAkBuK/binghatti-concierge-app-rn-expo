@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Towerdesk - Login</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200;400;600;700;800&amp;family=Inter:wght@300;400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-primary-fixed-variant": "#4b5f66",
+                    "primary-fixed-dim": "#c2d8e1",
+                    "on-primary-container": "#41555d",
+                    "surface-container-high": "#e1eaec",
+                    "outline-variant": "#a9b4b7",
+                    "error-dim": "#4e0309",
+                    "on-secondary-container": "#41555d",
+                    "primary": "#4d6169",
+                    "on-tertiary": "#f3fafd",
+                    "on-tertiary-fixed": "#444b4e",
+                    "secondary": "#4e626a",
+                    "surface-container-highest": "#d9e4e8",
+                    "tertiary-fixed": "#eef5f8",
+                    "primary-fixed": "#d0e6ef",
+                    "surface-bright": "#f8fafb",
+                    "surface-tint": "#4d6169",
+                    "error-container": "#fe8983",
+                    "primary-container": "#d0e6ef",
+                    "inverse-surface": "#0b0f10",
+                    "secondary-fixed-dim": "#c2d8e1",
+                    "secondary-container": "#d0e6f0",
+                    "surface-container-low": "#f0f4f6",
+                    "on-tertiary-container": "#565d60",
+                    "surface-container-lowest": "#ffffff",
+                    "primary-dim": "#42555d",
+                    "on-error": "#fff7f6",
+                    "tertiary-dim": "#4d5457",
+                    "on-secondary": "#f1faff",
+                    "inverse-on-surface": "#9a9d9e",
+                    "on-secondary-fixed": "#2e424a",
+                    "secondary-dim": "#42565e",
+                    "tertiary-fixed-dim": "#e0e6ea",
+                    "on-primary": "#eef9ff",
+                    "inverse-primary": "#d9eff8",
+                    "on-primary-fixed": "#2f424a",
+                    "surface-dim": "#cfdce0",
+                    "secondary-fixed": "#d0e6f0",
+                    "on-secondary-fixed-variant": "#4a5f67",
+                    "error": "#9f403d",
+                    "tertiary": "#596063",
+                    "background": "#f8fafb",
+                    "outline": "#727c80",
+                    "surface-container": "#e9eff1",
+                    "on-surface": "#2a3437",
+                    "on-background": "#2a3437",
+                    "tertiary-container": "#eef5f8",
+                    "surface-variant": "#d9e4e8",
+                    "on-error-container": "#752121",
+                    "on-surface-variant": "#566164",
+                    "surface": "#f8fafb",
+                    "on-tertiary-fixed-variant": "#60676a"
+            },
+            "borderRadius": {
+                    "DEFAULT": "1rem",
+                    "lg": "2rem",
+                    "xl": "3rem",
+                    "full": "9999px"
+            },
+            "fontFamily": {
+                    "headline": ["Manrope"],
+                    "body": ["Inter"],
+                    "label": ["Inter"]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        .font-headline { font-family: 'Manrope', sans-serif; }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+        }
+        .cta-gradient {
+            background: linear-gradient(135deg, #4d6169 0%, #41555d 100%);
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface min-h-screen flex flex-col">
+<!-- TopAppBar (Suppressed Shell logic applied - only branding shown for transactional) -->
+<header class="fixed top-0 w-full z-50 flex items-center justify-between px-8 py-8 w-full">
+<div class="text-xl font-bold tracking-tighter text-slate-800 font-headline">
+            Towerdesk
+        </div>
+</header>
+<main class="flex-grow flex flex-col md:flex-row items-center justify-center pt-24 pb-12 px-6 md:px-12 lg:px-24 gap-12 md:gap-24 max-w-[1600px] mx-auto w-full">
+<!-- Left Column: Editorial Content (Asymmetric Placement) -->
+<div class="w-full md:w-1/2 flex flex-col items-start space-y-6">
+<div class="space-y-2">
+<span class="font-label text-[0.75rem] uppercase tracking-[0.15em] text-on-surface-variant font-medium">Access Management</span>
+<h1 class="font-headline text-5xl md:text-7xl font-extrabold tracking-tighter leading-none text-on-surface">
+                    Welcome to <br/>Towerdesk
+                </h1>
+</div>
+<p class="font-label text-[0.875rem] md:text-base tracking-widest uppercase text-on-surface-variant max-w-sm">
+                The architectural hub for your property operations.
+            </p>
+<!-- Architectural overlap decorative element -->
+<div class="hidden lg:block relative w-full h-32 mt-12 overflow-hidden rounded-xl bg-surface-container-low">
+<div class="absolute -bottom-4 -left-4 w-64 h-64 bg-primary/5 rounded-full blur-3xl"></div>
+<div class="absolute top-0 right-0 p-8">
+<span class="material-symbols-outlined text-surface-container-highest text-6xl" style="font-variation-settings: 'wght' 100;">architecture</span>
+</div>
+</div>
+</div>
+<!-- Right Column: Login Card (High-lift Glassmorphism) -->
+<div class="w-full md:w-5/12 max-w-lg">
+<div class="bg-surface-container-lowest glass-panel rounded-xl p-10 md:p-14 shadow-[0_20px_40px_rgba(42,52,55,0.06)] relative overflow-hidden">
+<!-- Visual highlight gradient corner -->
+<div class="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-bl-full"></div>
+<form class="space-y-8 relative z-10">
+<div class="space-y-6">
+<!-- Input Group: Work Email -->
+<div class="space-y-2">
+<label class="font-label text-[0.7rem] uppercase tracking-wider text-on-surface-variant font-semibold px-1">Work Email</label>
+<div class="relative group">
+<input class="w-full bg-surface-container-highest border-none focus:ring-0 rounded-t-lg rounded-b-sm px-4 py-4 text-on-surface placeholder:text-outline-variant transition-all focus:border-b-2 focus:border-primary" placeholder="name@company.com" type="email"/>
+</div>
+</div>
+<!-- Input Group: Password -->
+<div class="space-y-2">
+<div class="flex justify-between items-center px-1">
+<label class="font-label text-[0.7rem] uppercase tracking-wider text-on-surface-variant font-semibold">Password</label>
+<a class="text-[0.7rem] uppercase tracking-wider text-primary hover:text-primary-dim transition-colors font-bold" href="#">Forgot Password?</a>
+</div>
+<div class="relative group">
+<input class="w-full bg-surface-container-highest border-none focus:ring-0 rounded-t-lg rounded-b-sm px-4 py-4 text-on-surface placeholder:text-outline-variant transition-all focus:border-b-2 focus:border-primary" placeholder="••••••••" type="password"/>
+</div>
+</div>
+</div>
+<!-- Primary CTA -->
+<button class="cta-gradient w-full py-5 rounded-full text-on-primary font-body font-semibold text-sm tracking-wide shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200" type="submit">
+                        Sign In
+                    </button>
+<!-- Divider -->
+<div class="flex items-center gap-4 py-2">
+<div class="h-[1px] flex-grow bg-surface-container-high"></div>
+<span class="font-label text-[0.65rem] uppercase tracking-widest text-outline-variant">Or continue with</span>
+<div class="h-[1px] flex-grow bg-surface-container-high"></div>
+</div>
+<!-- Social Login -->
+<div class="grid grid-cols-2 gap-4">
+<button class="flex items-center justify-center gap-3 py-4 rounded-full bg-surface-container hover:bg-surface-container-high transition-colors text-on-surface text-xs font-semibold uppercase tracking-wider" type="button">
+<img alt="" class="w-4 h-4 opacity-70" data-alt="minimalist google logo icon on white background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCbjFVeWjhvuPsfv0XTLicCog6zj2ma4nmH0JMKpR07hBnLCbkgH-nM8d_CtTr-wbNcCsSgphITQ2BywqHoRAtZjlHIc8dcebIuoINUm2zBnsKU4wVF3viyPZn2rZK8B9KmuEp2EkP7xD7i18KXjQtkHP7VTF0tkrT3c6E89o9CVFvS5CBTt1pQy79NSsSs0QYnbDcGOsOMYNJFCDpbR__bfGptemav7jwko9CHQlXWsX9HUSxDjWUS8Bk4VFYY6XC0FtdxsMonV6I"/>
+                            Google
+                        </button>
+<button class="flex items-center justify-center gap-3 py-4 rounded-full bg-surface-container hover:bg-surface-container-high transition-colors text-on-surface text-xs font-semibold uppercase tracking-wider" type="button">
+<span class="material-symbols-outlined text-lg" style="font-variation-settings: 'FILL' 1;">ios</span>
+                            Apple
+                        </button>
+</div>
+</form>
+<div class="mt-12 text-center">
+<p class="font-label text-[0.75rem] text-on-surface-variant">
+                        Don't have an account? <a class="text-primary font-bold hover:underline" href="#">Contact Management</a>
+</p>
+</div>
+</div>
+<!-- Ambient shadow element behind card -->
+<div class="absolute -z-10 bottom-0 right-0 w-full h-full transform translate-x-4 translate-y-4 rounded-xl bg-surface-container-low opacity-50"></div>
+</div>
+</main>
+<!-- Background Decoration (Architectural Lens) -->
+<div class="fixed inset-0 -z-50 pointer-events-none overflow-hidden">
+<div class="absolute top-[-10%] right-[-5%] w-[40%] h-[60%] bg-surface-container-low rounded-full blur-[120px] opacity-40"></div>
+<div class="absolute bottom-[-10%] left-[-5%] w-[30%] h-[50%] bg-primary/5 rounded-full blur-[100px] opacity-30"></div>
+<!-- Grid pattern texture -->
+<div class="absolute inset-0 opacity-[0.03]" style="background-image: radial-gradient(#4d6169 0.5px, transparent 0.5px); background-size: 40px 40px;"></div>
+</div>
+<!-- Footer -->
+<footer class="w-full py-12 bg-slate-100 dark:bg-slate-900 mt-auto">
+<div class="flex flex-col md:flex-row items-center justify-between px-12 max-w-7xl mx-auto space-y-4 md:space-y-0">
+<p class="font-['Inter'] text-xs tracking-widest uppercase text-slate-500 dark:text-slate-400">
+                © 2024 Towerdesk. All rights reserved.
+            </p>
+<div class="flex gap-8">
+<a class="font-['Inter'] text-xs tracking-widest uppercase text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors" href="#">Privacy Policy</a>
+<a class="font-['Inter'] text-xs tracking-widest uppercase text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors" href="#">Terms of Service</a>
+<a class="font-['Inter'] text-xs tracking-widest uppercase text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors" href="#">Contact Support</a>
+</div>
+</div>
+</footer>
+</body></html>

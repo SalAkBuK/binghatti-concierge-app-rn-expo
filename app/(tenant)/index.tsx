@@ -17,6 +17,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { HomeScreenSkeleton } from "../../components/ui/HomeScreenSkeleton";
+import { ScreenEntrance } from "../../components/ui/ScreenEntrance";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useAuth } from "../../lib/context/auth-context";
 import { useNotifications } from "../../lib/context/notifications-context";
@@ -353,7 +354,8 @@ export default function TenantHomeScreen() {
   if (!currentUser || isTenancyLoading) return <HomeScreenSkeleton />;
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenEntrance>
+      <SafeAreaView style={styles.container}>
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[styles.content, { paddingBottom: tabBarHeight + 32 }]}
@@ -662,7 +664,8 @@ export default function TenantHomeScreen() {
       </ScrollView>
 
       <SideMenu isVisible={showSideMenu} onClose={() => setShowSideMenu(false)} />
-    </SafeAreaView>
+      </SafeAreaView>
+    </ScreenEntrance>
   );
 }
 

@@ -1,9 +1,9 @@
 import type { UserRole } from "../types";
 
 export type MountedPortalConfig = {
-  role: "tenant" | "management" | "building_employee";
-  segment: "(tenant)" | "(management)" | "(buildingEmployee)";
-  rootHref: "/(tenant)" | "/(management)" | "/(buildingEmployee)";
+  role: "tenant" | "owner" | "management" | "building_employee";
+  segment: "(tenant)" | "(owner)" | "(management)" | "(buildingEmployee)";
+  rootHref: "/(tenant)" | "/(owner)" | "/(management)" | "/(buildingEmployee)";
 };
 
 export const MOUNTED_PORTAL_CONFIGS: readonly MountedPortalConfig[] = [
@@ -11,6 +11,11 @@ export const MOUNTED_PORTAL_CONFIGS: readonly MountedPortalConfig[] = [
     role: "tenant",
     segment: "(tenant)",
     rootHref: "/(tenant)",
+  },
+  {
+    role: "owner",
+    segment: "(owner)",
+    rootHref: "/(owner)",
   },
   {
     role: "management",

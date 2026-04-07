@@ -20,6 +20,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 
 import { ManagementTile } from "../../components/management/ManagementTile";
 import { HeaderBar } from "../../components/ui/HeaderBar";
+import { ScreenEntrance } from "../../components/ui/ScreenEntrance";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useAuth } from "../../lib/context/auth-context";
 import { useAppDomain } from "../../lib/context/connected-app-provider";
@@ -960,7 +961,8 @@ export default function ManagementDashboard() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenEntrance>
+      <SafeAreaView style={styles.container}>
       <ScrollView
         style={[styles.scrollView, { paddingHorizontal: pagePadding }]}
         refreshControl={
@@ -1225,7 +1227,8 @@ export default function ManagementDashboard() {
         isVisible={showSideMenu}
         onClose={() => setShowSideMenu(false)}
       />
-    </SafeAreaView>
+      </SafeAreaView>
+    </ScreenEntrance>
   );
 }
 

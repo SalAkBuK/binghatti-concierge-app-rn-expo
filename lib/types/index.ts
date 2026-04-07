@@ -9,6 +9,7 @@ export interface User {
   fullName?: string;
   role:
     | "tenant"
+    | "owner"
     | "management"
     | "building_employee"
     | "admin"
@@ -2172,6 +2173,172 @@ export interface CreateConversationDTO {
   participantIds: string[];
   buildingId?: string;
   initialMessage?: string;
+}
+
+export type ResidentConversationTarget = "management" | "owner";
+
+export interface ResidentManagementContact {
+  managementUserId: string;
+  name: string;
+  avatarUrl?: string | null;
+  role?: string | null;
+}
+
+export interface CreateResidentConversationDTO {
+  subject?: string;
+  message: string;
+  managementUserId?: string;
+}
+
+export interface OwnerPortfolioSummary {
+  unitCount: number;
+  orgCount: number;
+  buildingCount: number;
+}
+
+export interface OwnerPortfolioUnit {
+  orgId: string;
+  orgName: string;
+  ownerId: string;
+  unitId: string;
+  buildingId: string;
+  buildingName: string;
+  unitLabel: string;
+}
+
+export interface OwnerUnitTenant {
+  occupancyId: string;
+  tenantUserId: string;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+}
+
+export interface OwnerPortfolioRequestActor {
+  id: string;
+  name: string;
+  email?: string | null;
+}
+
+export interface OwnerPortfolioRequestUnitRef {
+  id: string;
+  label: string;
+}
+
+export type OwnerApprovalStatus =
+  | "NOT_REQUIRED"
+  | "PENDING"
+  | "APPROVED"
+  | "REJECTED";
+
+export type OwnerApprovalDecisionSource =
+  | "OWNER"
+  | "MANAGEMENT_OVERRIDE"
+  | "EMERGENCY_OVERRIDE";
+
+export interface OwnerApprovalSnapshot {
+  status: OwnerApprovalStatus;
+  requestedAt?: string | null;
+  requestedByUserId?: string | null;
+  deadlineAt?: string | null;
+  decidedAt?: string | null;
+  decidedByOwnerUserId?: string | null;
+  reason?: string | null;
+  requiredReason?: string | null;
+  estimatedAmount?: string | null;
+  estimatedCurrency?: string | null;
+  decisionSource?: OwnerApprovalDecisionSource | null;
+  overrideReason?: string | null;
+  overriddenByUserId?: string | null;
+}
+
+export interface OwnerPortfolioRequest {
+  id: string;
+  orgId: string;
+  orgName: string;
+  ownerId: string;
+  buildingId: string;
+  buildingName: string;
+  unit: OwnerPortfolioRequestUnitRef;
+  createdBy?: OwnerPortfolioRequestActor | null;
+  assignedTo?: OwnerPortfolioRequestActor | null;
+  title: string;
+  description: string;
+  status: string;
+  priority: string;
+  type: string;
+  attachments: (string | { url?: string; fileUrl?: string; uri?: string })[];
+  ownerApproval?: OwnerApprovalSnapshot | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type OwnerRequestCommentAuthorType =
+  | "OWNER"
+  | "TENANT"
+  | "STAFF"
+  | "SYSTEM";
+
+export interface OwnerRequestCommentAuthor {
+  id: string;
+  name: string;
+  email?: string | null;
+  type: OwnerRequestCommentAuthorType;
+  ownerId?: string | null;
+}
+
+export interface OwnerRequestComment {
+  id: string;
+  requestId: string;
+  author: OwnerRequestCommentAuthor;
+  message: string;
+  visibility: "SHARED" | "INTERNAL";
+  createdAt: string;
+}
+
+export interface OwnerConversation extends Conversation {
+  orgId?: string | null;
+  orgName?: string | null;
+  buildingName?: string | null;
+}
+
+export interface OwnerConversationDetail extends OwnerConversation {
+  messages: ConversationMessage[];
+}
+
+export interface OwnerConversationListResponse {
+  items: OwnerConversation[];
+  nextCursor: string | null;
+}
+
+export interface OwnerNotification extends Notification {
+  orgId?: string | null;
+}
+
+export interface OwnerNotificationListResponse {
+  items: OwnerNotification[];
+  nextCursor: string | null;
+}
+
+export interface CreateOwnerManagementConversationDTO {
+  unitId: string;
+  subject?: string;
+  message: string;
+}
+
+export interface CreateOwnerTenantConversationDTO {
+  unitId: string;
+  tenantUserId: string;
+  subject?: string;
+  message: string;
+}
+
+export interface OwnerNotificationsListParams {
+  unreadOnly?: boolean;
+  includeDismissed?: boolean;
+  type?: string;
+  limit?: number;
+  cursor?: string | null;
 }
 
 export interface SendMessageDTO {

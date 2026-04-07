@@ -98,17 +98,31 @@ export default function NotificationsHubScreen() {
 
   const handleNotificationPress = (notification: Notification) => {
     const data = notification.data as Record<string, any> | undefined;
+    const conversationId =
+      data?.conversationId ?? data?.conversation_id ?? data?.conversationID ?? null;
     const requestId =
       data?.requestId ?? data?.request_id ?? data?.requestID ?? null;
+
+    if (isNotificationUnread(notification)) {
+      notificationActions.markNotificationAsRead(notification.id);
+    }
+
+    if (conversationId) {
+      router.back();
+      setTimeout(() => {
+        router.push({
+          pathname: "/(modals)/conversation-detail" as any,
+          params: { conversationId: String(conversationId) },
+        });
+      }, 120);
+      return;
+    }
+
     if (!requestId) return;
 
     const normalizedRequestId = String(requestId);
     const buildingId =
       data?.buildingId ?? data?.building_id ?? data?.buildingID ?? null;
-
-    if (isNotificationUnread(notification)) {
-      notificationActions.markNotificationAsRead(notification.id);
-    }
 
     if (userRole === "tenant") {
       const request = requests.find((item) => item.id === normalizedRequestId);

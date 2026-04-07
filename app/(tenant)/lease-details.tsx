@@ -254,6 +254,7 @@ export default function TenantContractScreen() {
     uploadSignedContract,
   } = useResidentContract({
     enabled: Boolean(currentUser?.id && isAuthenticated),
+    loadActiveLeaseDocumentsOnMount: true,
     onUnauthorized: handleUnauthorized,
   });
 
