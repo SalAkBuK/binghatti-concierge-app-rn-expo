@@ -1,0 +1,14 @@
+diff --git a/node_modules/@react-native/gradle-plugin/settings.gradle.kts b/node_modules/@react-native/gradle-plugin/settings.gradle.kts
+index b3c46a3..054619c 100644
+--- a/node_modules/@react-native/gradle-plugin/settings.gradle.kts
++++ b/node_modules/@react-native/gradle-plugin/settings.gradle.kts
+@@ -13,7 +13,8 @@ pluginManagement {
+   }
+ }
+ 
+-plugins { id("org.gradle.toolchains.foojay-resolver-convention").version("0.5.0") }
++// EAS already provides a JDK. Skipping Foojay toolchain resolution avoids transient
++// Maven Central failures while this included build is being configured.
+ 
+ include(
+     ":react-native-gradle-plugin",
