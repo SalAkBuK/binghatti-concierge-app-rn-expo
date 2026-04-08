@@ -11,9 +11,8 @@ import {
 import Animated, { FadeInDown } from "react-native-reanimated";
 import type { Notification, UserRole } from "../../lib/types";
 import {
-  isNotificationDismissed,
+  filterNotificationsByUser,
   isNotificationUnread,
-  shouldShowNotificationInInbox,
 } from "../../lib/utils/helpers";
 import { AnimatedButton } from "../ui/AnimatedButton";
 import { SkeletonCard } from "../ui/SkeletonCard";
@@ -43,16 +42,12 @@ export function NotificationsList({
   loading = false,
 }: NotificationsListProps) {
   const [refreshing, setRefreshing] = useState(false);
-  // Filter notifications for current user
   const userNotifications = useMemo(() => {
-    return notifications
-      .filter(shouldShowNotificationInInbox)
-      .filter((notif) => !isNotificationDismissed(notif))
-      .sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      );
-  }, [notifications]);
+    return filterNotificationsByUser(notifications, userId).sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+  }, [notifications, userId]);
 
   const unreadCount = useMemo(() => {
     return userNotifications.filter(isNotificationUnread).length;

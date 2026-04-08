@@ -5,6 +5,7 @@ import React, {
   ReactNode,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
 } from "react";
 import { AppState } from "react-native";
@@ -21,6 +22,7 @@ import {
   createSystemNotification,
   extractNotificationMetadata,
   getUnreadNotificationsCount,
+  isNotificationForUser,
   normalizeNotification,
   normalizeNotifications,
 } from "../utils";
@@ -78,6 +80,7 @@ export interface NotificationsContextType extends NotificationsState {
 // Action Types
 const NOTIFICATIONS_ACTIONS = {
   CREATE_NOTIFICATION: "CREATE_NOTIFICATION",
+  REPLACE_NOTIFICATIONS: "REPLACE_NOTIFICATIONS",
   UPSERT_NOTIFICATIONS: "UPSERT_NOTIFICATIONS",
   MARK_NOTIFICATION_READ: "MARK_NOTIFICATION_READ",
   MARK_ALL_NOTIFICATIONS_READ: "MARK_ALL_NOTIFICATIONS_READ",
@@ -125,6 +128,17 @@ const mergeNotifications = (
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
 };
+
+const haveSameNotificationSequence = (
+  left: Notification[],
+  right: Notification[],
+): boolean =>
+  left.length === right.length &&
+  left.every(
+    (notification, index) =>
+      notification.id === right[index]?.id &&
+      notification.userId === right[index]?.userId,
+  );
 
 const coerceNotificationPayload = (
   payload: any,
@@ -175,6 +189,15 @@ const notificationsReducer = (
         notifications: newNotifications,
         unreadCount: getUnreadCount(newNotifications),
       };
+
+    case NOTIFICATIONS_ACTIONS.REPLACE_NOTIFICATIONS: {
+      const nextNotifications = mergeNotifications([], action.payload ?? []);
+      return {
+        ...state,
+        notifications: nextNotifications,
+        unreadCount: getUnreadCount(nextNotifications),
+      };
+    }
 
     case NOTIFICATIONS_ACTIONS.UPSERT_NOTIFICATIONS: {
       const incoming = Array.isArray(action.payload) ? action.payload : [];
@@ -336,6 +359,38 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
     }
   }, [state.notifications, setNotifications]);
 
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser?.id || isOwnerRuntime) {
+      if (state.notifications.length === 0) {
+        return;
+      }
+
+      dispatch({
+        type: NOTIFICATIONS_ACTIONS.REPLACE_NOTIFICATIONS,
+        payload: [],
+      });
+      return;
+    }
+
+    const scopedNotifications = state.notifications.filter((notification) =>
+      isNotificationForUser(notification, currentUser.id),
+    );
+
+    if (haveSameNotificationSequence(state.notifications, scopedNotifications)) {
+      return;
+    }
+
+    dispatch({
+      type: NOTIFICATIONS_ACTIONS.REPLACE_NOTIFICATIONS,
+      payload: scopedNotifications,
+    });
+  }, [
+    currentUser?.id,
+    isAuthenticated,
+    isOwnerRuntime,
+    state.notifications,
+  ]);
+
   const refreshNotifications = useCallback(async (options?: {
     unreadOnly?: boolean;
     read?: boolean;
@@ -397,7 +452,7 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
     } finally {
       dispatch({ type: NOTIFICATIONS_ACTIONS.SET_LOADING, payload: false });
     }
-  }, [currentUser?.role]);
+  }, [currentUser?.id, currentUser?.role]);
 
   const refreshNotificationsAutomatically = useCallback(
     (reason: "initial" | "foreground" | "socket-connect" | "socket-hello") => {
@@ -515,7 +570,7 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
   }, [currentUser?.id, isAuthenticated, isOwnerRuntime]);
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!isAuthenticated || isOwnerRuntime) {
       disconnectNotifications();
       return;
     }
@@ -670,7 +725,14 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
       subscription.remove();
       disconnectNotifications();
     };
-  }, [appState, isAuthenticated, refreshNotificationsAutomatically]);
+  }, [
+    appState,
+    currentUser?.id,
+    currentUser?.orgId,
+    isAuthenticated,
+    isOwnerRuntime,
+    refreshNotificationsAutomatically,
+  ]);
 
   // Action Creators
   const actions: NotificationsActions = {
@@ -773,8 +835,14 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
     },
   };
 
+  const scopedUnreadCount = useMemo(
+    () => getUnreadNotificationsCount(state.notifications, currentUser?.id),
+    [currentUser?.id, state.notifications],
+  );
+
   const value: NotificationsContextType = {
     ...state,
+    unreadCount: scopedUnreadCount,
     actions,
   };
 

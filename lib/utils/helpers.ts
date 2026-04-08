@@ -174,6 +174,14 @@ export const normalizeNotifications = (
   return notifications.map(normalizeNotification);
 };
 
+export const isNotificationForUser = (
+  notification: Notification,
+  userId?: string,
+): boolean => {
+  if (!userId) return true;
+  return normalizeNotification(notification).userId === String(userId);
+};
+
 // Filter notifications by user
 export const filterNotificationsByUser = (
   notifications: Notification[],
@@ -181,6 +189,7 @@ export const filterNotificationsByUser = (
 ): Notification[] => {
   if (!notifications || !Array.isArray(notifications)) return [];
   return notifications.filter((notification) => {
+    if (!isNotificationForUser(notification, userId)) return false;
     if (isNotificationDismissed(notification)) return false;
     if (!shouldShowNotificationInInbox(notification)) return false;
     return true;
@@ -195,6 +204,7 @@ export const getUnreadNotificationsCount = (
   if (!notifications || !Array.isArray(notifications)) return 0;
   return notifications.filter(
     (notification) =>
+      isNotificationForUser(notification, userId) &&
       shouldShowNotificationInInbox(notification) &&
       !isNotificationDismissed(notification) &&
       isNotificationUnread(notification),
