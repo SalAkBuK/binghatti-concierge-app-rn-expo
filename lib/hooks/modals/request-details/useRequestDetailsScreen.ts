@@ -31,6 +31,7 @@ import {
   normalizeStatus,
   normalizeRequestType,
 } from "./request-details-helpers";
+import { normalizeOwnerApprovalSnapshot } from "../../../utils/resident-request-approval";
 
 export type RequestDetailsComment = {
   id: string;
@@ -236,6 +237,10 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
         const response = await residentRequestsApi.getRequest(selectedRequest.id);
         if (response.success && response.data) {
           const apiRequest = response.data;
+          const ownerApproval =
+            normalizeOwnerApprovalSnapshot(apiRequest) ??
+            selectedRequest.ownerApproval ??
+            null;
           const assignedUserId =
             apiRequest.assignedTo?.id != null
               ? String(apiRequest.assignedTo.id)
@@ -277,6 +282,9 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
                 : typeof apiRequest.policy?.isEmergency === "boolean"
                   ? apiRequest.policy.isEmergency
                   : selectedRequest.isEmergency,
+            ownerApproval,
+            ownerApprovalStatus:
+              ownerApproval?.status ?? selectedRequest.ownerApprovalStatus ?? null,
             emergencySignals: Array.isArray(apiRequest.emergencySignals)
               ? normalizeResidentEmergencySignals(apiRequest.emergencySignals)
               : selectedRequest.emergencySignals,
@@ -685,6 +693,10 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
               : response && typeof response === "object"
               ? response
               : {};
+        const ownerApproval =
+          normalizeOwnerApprovalSnapshot(apiRequest) ??
+          selectedRequest.ownerApproval ??
+          null;
         const updatedRequest: Request = {
           ...selectedRequest,
           title: apiRequest.title ?? payload.title ?? selectedRequest.title,
@@ -706,6 +718,9 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
               : typeof payload.isEmergency === "boolean"
                 ? payload.isEmergency
                 : selectedRequest.isEmergency,
+          ownerApproval,
+          ownerApprovalStatus:
+            ownerApproval?.status ?? selectedRequest.ownerApprovalStatus ?? null,
           emergencySignals: Array.isArray(apiRequest.emergencySignals)
             ? normalizeResidentEmergencySignals(apiRequest.emergencySignals)
             : payload.emergencySignals ?? selectedRequest.emergencySignals ?? [],

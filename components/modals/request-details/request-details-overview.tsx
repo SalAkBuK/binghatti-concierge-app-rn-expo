@@ -90,6 +90,8 @@ type RequestDetailsOverviewProps = {
   canProvideFeedback: boolean;
   normalizedStatus: RequestStatus;
   statusDisplayLabel: string;
+  ownerRejected: boolean;
+  ownerRejectionReason: string | null;
   normalizedPriority: string;
   normalizedAttachments: string[];
   statusColors: BadgeColors;
@@ -148,6 +150,8 @@ export function RequestDetailsOverview({
   canProvideFeedback,
   normalizedStatus,
   statusDisplayLabel,
+  ownerRejected,
+  ownerRejectionReason,
   normalizedPriority,
   normalizedAttachments,
   statusColors,
@@ -576,6 +580,17 @@ export function RequestDetailsOverview({
           <Text style={styles.requestMetaLine}>
             Submitted {formatShortDateTime(selectedRequest.createdAt)}
           </Text>
+
+          {isTenantUser && ownerRejected ? (
+            <View style={styles.rejectionNotice}>
+              <Ionicons name="alert-circle-outline" size={18} color={P.dangerText} />
+              <Text style={styles.rejectionNoticeText}>
+                {ownerRejectionReason
+                  ? `Owner rejected this request. Reason: ${ownerRejectionReason}`
+                  : "Owner rejected this request. Management will review the next step with you."}
+              </Text>
+            </View>
+          ) : null}
 
           <View style={styles.badges}>
             <View

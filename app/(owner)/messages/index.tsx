@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -107,9 +108,11 @@ export default function OwnerMessagesScreen() {
     [handleUnauthorized, refreshUnreadSummary],
   );
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
 
   useEffect(() => {
     if (!showComposeModal || composeTarget !== 'tenant' || !composeUnitId) {
@@ -183,6 +186,27 @@ export default function OwnerMessagesScreen() {
     });
   }, [activeFilter, conversations, currentUser?.id, searchQuery]);
 
+  const handleOpenConversation = useCallback((conversationId: string) => {
+    setConversations((current) =>
+      current.map((conversation) =>
+        conversation.id === conversationId
+          ? {
+              ...conversation,
+              unreadCount: 0,
+            }
+          : conversation,
+      ),
+    );
+
+    router.push({
+      pathname: '/(owner)/messages/[conversationId]',
+      params: {
+        conversationId,
+        returnTo: '/(owner)/messages',
+      },
+    });
+  }, []);
+
   const handleCreateConversation = useCallback(async () => {
     if (!composeUnitId) {
       setErrorMessage('Select a unit before composing a new conversation.');
@@ -231,7 +255,10 @@ export default function OwnerMessagesScreen() {
       await load(true);
       router.push({
         pathname: '/(owner)/messages/[conversationId]',
-        params: { conversationId: conversation.id },
+        params: {
+          conversationId: conversation.id,
+          returnTo: '/(owner)/messages',
+        },
       });
     } catch (error) {
       if (await handleUnauthorized(error)) {
@@ -283,8 +310,11 @@ export default function OwnerMessagesScreen() {
             messagingUnreadCount={conversationUnreadCount}
             showSideMenu={showSideMenu}
             onSideMenuToggle={setShowSideMenu}
-            notificationRoute="/(owner)/notifications"
+            notificationRoute="/(modals)/owner-alerts"
             textColor={P.text}
+            horizontalPadding={0}
+            menuMargin={0}
+            notificationMargin={0}
           />
 
           <View style={styles.actionCard}>
@@ -357,12 +387,7 @@ export default function OwnerMessagesScreen() {
                 key={conversation.id}
                 style={styles.conversationCard}
                 activeOpacity={0.9}
-                onPress={() =>
-                  router.push({
-                    pathname: '/(owner)/messages/[conversationId]',
-                    params: { conversationId: conversation.id },
-                  })
-                }
+                onPress={() => handleOpenConversation(conversation.id)}
               >
                 <View style={styles.avatarWrap}>
                   <Ionicons name="chatbubble-ellipses-outline" size={20} color={P.primaryDark} />
@@ -454,58 +479,60 @@ export default function OwnerMessagesScreen() {
                 </TouchableOpacity>
               </View>
 
-              <Text style={styles.modalLabel}>Accessible Unit</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.unitRow}>
-                {units.map((unit) => {
-                  const active = composeUnitId === unit.unitId;
-                  return (
-                    <TouchableOpacity
-                      key={unit.unitId}
-                      style={[styles.unitChip, active && styles.unitChipActive]}
-                      onPress={() => setComposeUnitId(unit.unitId)}
-                    >
-                      <Text style={[styles.unitChipText, active && styles.unitChipTextActive]}>
-                        {unit.unitLabel} • {unit.buildingName}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-
               {composeTarget === 'tenant' ? (
-                <View style={styles.tenantLookupCard}>
-                  <Text style={styles.tenantLookupTitle}>Selected unit tenant</Text>
-                  {composeTenantLookup.isLoading ? (
-                    <View style={styles.tenantLookupRow}>
-                      <ActivityIndicator size="small" color={P.primary} />
-                      <Text style={styles.tenantLookupText}>Checking current active resident...</Text>
-                    </View>
-                  ) : composeTenantLookup.errorType === 'outside_scope' ? (
-                    <Text style={styles.tenantLookupText}>
-                      This unit is outside the current owner scope.
-                    </Text>
-                  ) : composeTenantLookup.errorType === 'unknown' ? (
-                    <Text style={styles.tenantLookupText}>
-                      Unable to load the current tenant right now.
-                    </Text>
-                  ) : composeTenantLookup.tenant ? (
-                    <View style={styles.tenantLookupMeta}>
-                      <Text style={styles.tenantLookupName}>
-                        {composeTenantLookup.tenant.name}
+                <>
+                  <Text style={styles.modalLabel}>Accessible Unit</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.unitRow}>
+                    {units.map((unit) => {
+                      const active = composeUnitId === unit.unitId;
+                      return (
+                        <TouchableOpacity
+                          key={unit.unitId}
+                          style={[styles.unitChip, active && styles.unitChipActive]}
+                          onPress={() => setComposeUnitId(unit.unitId)}
+                        >
+                          <Text style={[styles.unitChipText, active && styles.unitChipTextActive]}>
+                            {unit.unitLabel} • {unit.buildingName}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+
+                  <View style={styles.tenantLookupCard}>
+                    <Text style={styles.tenantLookupTitle}>Selected unit tenant</Text>
+                    {composeTenantLookup.isLoading ? (
+                      <View style={styles.tenantLookupRow}>
+                        <ActivityIndicator size="small" color={P.primary} />
+                        <Text style={styles.tenantLookupText}>Checking current active resident...</Text>
+                      </View>
+                    ) : composeTenantLookup.errorType === 'outside_scope' ? (
+                      <Text style={styles.tenantLookupText}>
+                        This unit is outside the current owner scope.
                       </Text>
-                      <Text style={styles.tenantLookupDetail}>
-                        {composeTenantLookup.tenant.email || 'No email provided'}
+                    ) : composeTenantLookup.errorType === 'unknown' ? (
+                      <Text style={styles.tenantLookupText}>
+                        Unable to load the current tenant right now.
                       </Text>
-                      <Text style={styles.tenantLookupDetail}>
-                        {composeTenantLookup.tenant.phone || 'No phone provided'}
+                    ) : composeTenantLookup.tenant ? (
+                      <View style={styles.tenantLookupMeta}>
+                        <Text style={styles.tenantLookupName}>
+                          {composeTenantLookup.tenant.name}
+                        </Text>
+                        <Text style={styles.tenantLookupDetail}>
+                          {composeTenantLookup.tenant.email || 'No email provided'}
+                        </Text>
+                        <Text style={styles.tenantLookupDetail}>
+                          {composeTenantLookup.tenant.phone || 'No phone provided'}
+                        </Text>
+                      </View>
+                    ) : (
+                      <Text style={styles.tenantLookupText}>
+                        This unit is currently vacant. Tenant compose is disabled.
                       </Text>
-                    </View>
-                  ) : (
-                    <Text style={styles.tenantLookupText}>
-                      This unit is currently vacant. Tenant compose is disabled.
-                    </Text>
-                  )}
-                </View>
+                    )}
+                  </View>
+                </>
               ) : null}
 
               <Text style={styles.modalLabel}>Subject</Text>

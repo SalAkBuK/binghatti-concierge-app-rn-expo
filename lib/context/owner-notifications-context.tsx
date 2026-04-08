@@ -68,16 +68,28 @@ const buildPushPayload = (registration: PushDeviceRegistration) => ({
 const navigateFromNotificationPayload = (payload: unknown) => {
   const target = getOwnerNotificationTarget(payload);
   if (target?.kind === 'conversation') {
-    router.push(`/(owner)/messages/${target.id}` as any);
+    router.push({
+      pathname: '/(owner)/messages/[conversationId]',
+      params: {
+        conversationId: target.id,
+        returnTo: '/(modals)/owner-alerts',
+      },
+    });
     return;
   }
 
   if (target?.kind === 'request') {
-    router.push(`/(owner)/requests/${target.id}` as any);
+    router.push({
+      pathname: '/(owner)/requests/[requestId]',
+      params: {
+        requestId: target.id,
+        returnTo: '/(modals)/owner-alerts',
+      },
+    });
     return;
   }
 
-  router.push('/(owner)/notifications' as any);
+  router.push('/(modals)/owner-alerts' as any);
 };
 
 export function OwnerNotificationsProvider({

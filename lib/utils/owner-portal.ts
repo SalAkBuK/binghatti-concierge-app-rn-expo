@@ -66,6 +66,39 @@ const getFirstString = (...values: unknown[]): string | null => {
   return null;
 };
 
+const collectOwnerNotificationCandidates = (
+  payload: unknown,
+): Record<string, unknown>[] => {
+  const root = asRecord(payload);
+  if (!root) {
+    return [];
+  }
+
+  const queue: Record<string, unknown>[] = [root];
+  const visited = new Set<Record<string, unknown>>();
+  const records: Record<string, unknown>[] = [];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || visited.has(current)) {
+      continue;
+    }
+
+    visited.add(current);
+    records.push(current);
+
+    const nestedKeys = ['data', 'notification', 'payload', 'meta', 'target', 'request', 'conversation'];
+    for (const key of nestedKeys) {
+      const nestedRecord = asRecord(current[key]);
+      if (nestedRecord && !visited.has(nestedRecord)) {
+        queue.push(nestedRecord);
+      }
+    }
+  }
+
+  return records;
+};
+
 export const formatOwnerLabel = (value?: string | null): string => {
   if (!value) return 'Not provided';
 
@@ -184,21 +217,17 @@ export const resolveOwnerRequestApprovalStatus = (
 export const getOwnerNotificationTarget = (
   payload: unknown,
 ): OwnerNotificationTarget | null => {
-  const root = asRecord(payload);
-  if (!root) {
+  const candidates = collectOwnerNotificationCandidates(payload);
+  if (candidates.length === 0) {
     return null;
   }
-
-  const data = asRecord(root.data);
-  const nestedData = asRecord(data?.data);
-  const candidates = [root, data, nestedData].filter(
-    (candidate): candidate is Record<string, unknown> => candidate != null,
-  );
 
   const conversationId = getFirstString(
     ...candidates.flatMap((candidate) => [
       candidate.conversationId,
       candidate.conversation_id,
+      candidate.chatId,
+      candidate.chat_id,
     ]),
   );
   if (conversationId) {
@@ -209,9 +238,24 @@ export const getOwnerNotificationTarget = (
   }
 
   const requestId = getFirstString(
-    ...candidates.flatMap((candidate) => [candidate.requestId, candidate.request_id]),
+    ...candidates.flatMap((candidate) => [
+      candidate.requestId,
+      candidate.request_id,
+      candidate.maintenanceRequestId,
+      candidate.maintenance_request_id,
+    ]),
   );
-  if (requestId) {
+  if (
+    requestId &&
+    candidates.some((candidate) =>
+      [
+        candidate.requestId,
+        candidate.request_id,
+        candidate.maintenanceRequestId,
+        candidate.maintenance_request_id,
+      ].some((value) => asString(value) === requestId),
+    )
+  ) {
     return {
       kind: 'request',
       id: requestId,

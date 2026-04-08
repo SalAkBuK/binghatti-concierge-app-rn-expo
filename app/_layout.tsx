@@ -161,6 +161,14 @@ export default function RootLayout() {
             }}
           />
           <Stack.Screen
+            name="(modals)/owner-alerts"
+            options={{
+              presentation: "modal",
+              headerShown: false,
+              animation: "fade",
+            }}
+          />
+          <Stack.Screen
             name="(modals)/request-details"
             options={{
               presentation: "modal",

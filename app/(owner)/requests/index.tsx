@@ -174,7 +174,7 @@ export default function OwnerRequestsScreen() {
             messagingUnreadCount={conversationUnreadCount}
             showSideMenu={showSideMenu}
             onSideMenuToggle={setShowSideMenu}
-            notificationRoute="/(owner)/notifications"
+            notificationRoute="/(modals)/owner-alerts"
             textColor={P.text}
           />
 
@@ -255,7 +255,10 @@ export default function OwnerRequestsScreen() {
                   onPress={() =>
                     router.push({
                       pathname: '/(owner)/requests/[requestId]',
-                      params: { requestId: request.id },
+                      params: {
+                        requestId: request.id,
+                        returnTo: '/(owner)/requests',
+                      },
                     })
                   }
                 >
@@ -305,7 +308,10 @@ export default function OwnerRequestsScreen() {
                         onPress={() =>
                           router.push({
                             pathname: '/(owner)/requests/[requestId]',
-                            params: { requestId: request.id },
+                            params: {
+                              requestId: request.id,
+                              returnTo: '/(owner)/requests',
+                            },
                           })
                         }
                       >

@@ -1,5 +1,4 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -11,11 +10,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HeaderBar } from '../../components/ui/HeaderBar';
 import { ScreenEntrance } from '../../components/ui/ScreenEntrance';
-import { SideMenu } from '../../components/ui/SideMenu';
 import { useAuth } from '../../lib/context/auth-context';
 import { useOwnerUnreadSummary } from '../../lib/hooks/owner/useOwnerUnreadSummary';
 import { useOwnerUnauthorized } from '../../lib/hooks/owner/useOwnerUnauthorized';
@@ -30,8 +28,8 @@ import {
 } from '../../lib/utils/owner-portal';
 
 export default function OwnerNotificationsScreen() {
-  const tabBarHeight = useBottomTabBarHeight();
   const { currentUser } = useAuth();
+  const insets = useSafeAreaInsets();
   const handleUnauthorized = useOwnerUnauthorized();
   const {
     conversationUnreadCount,
@@ -41,7 +39,6 @@ export default function OwnerNotificationsScreen() {
   } = useOwnerUnreadSummary({
     enabled: currentUser?.role === 'owner',
   });
-  const [showSideMenu, setShowSideMenu] = useState(false);
   const [notifications, setNotifications] = useState<OwnerNotification[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -139,7 +136,7 @@ export default function OwnerNotificationsScreen() {
 
   const handleOpenNotification = useCallback(
     async (notification: OwnerNotification) => {
-      const target = getOwnerNotificationTarget(notification.data);
+      const target = getOwnerNotificationTarget(notification);
       if (!target) {
         return;
       }
@@ -168,14 +165,20 @@ export default function OwnerNotificationsScreen() {
       if (target.kind === 'request') {
         router.push({
           pathname: '/(owner)/requests/[requestId]',
-          params: { requestId: target.id },
+          params: {
+            requestId: target.id,
+            returnTo: '/(modals)/owner-alerts',
+          },
         });
         return;
       }
 
       router.push({
         pathname: '/(owner)/messages/[conversationId]',
-        params: { conversationId: target.id },
+        params: {
+          conversationId: target.id,
+          returnTo: '/(modals)/owner-alerts',
+        },
       });
     },
     [refreshUnreadSummary],
@@ -197,21 +200,24 @@ export default function OwnerNotificationsScreen() {
       <SafeAreaView style={styles.container}>
         <ScrollView
           style={styles.scrollView}
-          contentContainerStyle={{ paddingBottom: tabBarHeight + 34 }}
+          contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 34 }}
           refreshControl={
             <RefreshControl refreshing={isRefreshing} onRefresh={() => void load(true)} />
           }
           showsVerticalScrollIndicator={false}
         >
           <HeaderBar
-            title="Notifications"
+            title="Alerts"
             subtitle={`${notificationUnreadCount} unread alerts`}
+            showMenu={false}
+            showBackButton
             showNotifications={false}
             hasUnreadNotifications={notificationUnreadCount > 0}
             messagingUnreadCount={conversationUnreadCount}
-            showSideMenu={showSideMenu}
-            onSideMenuToggle={setShowSideMenu}
             textColor={P.text}
+            horizontalPadding={0}
+            menuMargin={0}
+            onBackPress={() => router.back()}
           />
 
           <View style={styles.controlsCard}>
@@ -269,7 +275,7 @@ export default function OwnerNotificationsScreen() {
             visibleNotifications.map((notification) => {
               const tone = getOwnerNotificationTone(notification);
               const unread = !notification.readAt;
-              const target = getOwnerNotificationTarget(notification.data);
+              const target = getOwnerNotificationTarget(notification);
 
               return (
                 <View key={notification.id} style={styles.notificationCard}>
@@ -339,8 +345,6 @@ export default function OwnerNotificationsScreen() {
             })
           )}
         </ScrollView>
-
-        <SideMenu isVisible={showSideMenu} onClose={() => setShowSideMenu(false)} />
       </SafeAreaView>
     </ScreenEntrance>
   );

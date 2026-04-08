@@ -1,8 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  BackHandler,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -20,7 +22,7 @@ import { useAuth } from '../../../lib/context/auth-context';
 import { useOwnerUnreadSummary } from '../../../lib/hooks/owner/useOwnerUnreadSummary';
 import { useOwnerUnauthorized } from '../../../lib/hooks/owner/useOwnerUnauthorized';
 import { ownerPortalApi } from '../../../lib/services/api/owner-portal';
-import type { OwnerConversationDetail } from '../../../lib/types';
+import type { ConversationMessage, OwnerConversationDetail } from '../../../lib/types';
 import {
   formatOwnerDateTime,
   getOwnerConversationDisplayName,
@@ -28,7 +30,10 @@ import {
 } from '../../../lib/utils/owner-portal';
 
 export default function OwnerConversationDetailScreen() {
-  const { conversationId } = useLocalSearchParams<{ conversationId?: string }>();
+  const { conversationId, returnTo } = useLocalSearchParams<{
+    conversationId?: string;
+    returnTo?: string;
+  }>();
   const { currentUser } = useAuth();
   const insets = useSafeAreaInsets();
   const handleUnauthorized = useOwnerUnauthorized();
@@ -46,6 +51,32 @@ export default function OwnerConversationDetailScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const scrollViewRef = useRef<ScrollView | null>(null);
 
+  const scrollToBottom = useCallback(() => {
+    requestAnimationFrame(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    });
+  }, []);
+
+  const applyMessageToConversation = useCallback(
+    (
+      currentConversation: OwnerConversationDetail | null,
+      message: ConversationMessage,
+    ): OwnerConversationDetail | null => {
+      if (!currentConversation) {
+        return currentConversation;
+      }
+
+      return {
+        ...currentConversation,
+        unreadCount: 0,
+        updatedAt: message.createdAt,
+        lastMessage: message,
+        messages: [...currentConversation.messages, message],
+      };
+    },
+    [],
+  );
+
   const load = useCallback(async () => {
     if (!conversationId) {
       setErrorMessage('Conversation not found.');
@@ -60,6 +91,14 @@ export default function OwnerConversationDetailScreen() {
       setErrorMessage(null);
 
       await ownerPortalApi.markConversationRead(conversationId);
+      setConversation((currentConversation) =>
+        currentConversation
+          ? {
+              ...currentConversation,
+              unreadCount: 0,
+            }
+          : currentConversation,
+      );
       await refreshUnreadSummary();
     } catch (error) {
       if (await handleUnauthorized(error)) {
@@ -92,20 +131,60 @@ export default function OwnerConversationDetailScreen() {
       return;
     }
 
-    requestAnimationFrame(() => {
-      scrollViewRef.current?.scrollToEnd({ animated: true });
-    });
-  }, [conversation]);
+    scrollToBottom();
+  }, [conversation, scrollToBottom]);
 
   const handleSend = useCallback(async () => {
-    if (!conversationId || !messageDraft.trim()) return;
+    const trimmedMessage = messageDraft.trim();
+    if (!conversationId || !trimmedMessage || !conversation) return;
+
+    const previousConversation = conversation;
+    const optimisticMessage: ConversationMessage = {
+      id: `owner-optimistic-${Date.now()}`,
+      content: trimmedMessage,
+      sender: {
+        id: currentUser?.id ?? '',
+        name: currentUser?.name ?? currentUser?.fullName ?? 'You',
+        avatarUrl: null,
+      },
+      createdAt: new Date().toISOString(),
+    };
 
     setIsSending(true);
+    setErrorMessage(null);
+    setMessageDraft('');
+    setConversation((currentConversation) =>
+      applyMessageToConversation(currentConversation, optimisticMessage),
+    );
+    scrollToBottom();
+
     try {
-      await ownerPortalApi.sendConversationMessage(conversationId, messageDraft.trim());
-      setMessageDraft('');
-      await load();
+      const serverMessage = await ownerPortalApi.sendConversationMessage(
+        conversationId,
+        trimmedMessage,
+      );
+
+      if (serverMessage) {
+        setConversation((currentConversation) => {
+          if (!currentConversation) {
+            return currentConversation;
+          }
+
+          return {
+            ...currentConversation,
+            unreadCount: 0,
+            updatedAt: serverMessage.createdAt,
+            lastMessage: serverMessage,
+            messages: currentConversation.messages.map((message) =>
+              message.id === optimisticMessage.id ? serverMessage : message,
+            ),
+          };
+        });
+      }
     } catch (error) {
+      setConversation(previousConversation);
+      setMessageDraft(trimmedMessage);
+
       if (await handleUnauthorized(error)) {
         return;
       }
@@ -125,7 +204,17 @@ export default function OwnerConversationDetailScreen() {
     } finally {
       setIsSending(false);
     }
-  }, [conversationId, handleUnauthorized, load, messageDraft]);
+  }, [
+    applyMessageToConversation,
+    conversation,
+    conversationId,
+    currentUser?.fullName,
+    currentUser?.id,
+    currentUser?.name,
+    handleUnauthorized,
+    messageDraft,
+    scrollToBottom,
+  ]);
 
   const participantsLabel = useMemo(() => {
     if (!conversation) return '';
@@ -134,6 +223,32 @@ export default function OwnerConversationDetailScreen() {
       .map((participant) => participant.name)
       .join(', ');
   }, [conversation]);
+
+  const handleBackNavigation = useCallback(() => {
+    const fallbackRoute = '/(owner)/messages';
+    const destination =
+      typeof returnTo === 'string' && returnTo.trim().length > 0
+        ? returnTo
+        : fallbackRoute;
+
+    router.replace(destination as any);
+  }, [returnTo]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const subscription = BackHandler.addEventListener(
+        'hardwareBackPress',
+        () => {
+          handleBackNavigation();
+          return true;
+        },
+      );
+
+      return () => {
+        subscription.remove();
+      };
+    }, [handleBackNavigation]),
+  );
 
   if (isLoading) {
     return (
@@ -169,9 +284,12 @@ export default function OwnerConversationDetailScreen() {
             showBackButton
             hasUnreadNotifications={notificationUnreadCount > 0}
             messagingUnreadCount={conversationUnreadCount}
-            notificationRoute="/(owner)/notifications"
+            notificationRoute="/(modals)/owner-alerts"
             textColor={P.text}
-            onBackPress={() => router.back()}
+            horizontalPadding={20}
+            menuMargin={0}
+            notificationMargin={0}
+            onBackPress={handleBackNavigation}
           />
 
           <View style={styles.metaCard}>

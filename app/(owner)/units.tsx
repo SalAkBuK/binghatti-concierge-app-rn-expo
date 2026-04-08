@@ -159,7 +159,7 @@ export default function OwnerUnitsScreen() {
             messagingUnreadCount={conversationUnreadCount}
             showSideMenu={showSideMenu}
             onSideMenuToggle={setShowSideMenu}
-            notificationRoute="/(owner)/notifications"
+            notificationRoute="/(modals)/owner-alerts"
             textColor={P.text}
           />
 
@@ -214,8 +214,6 @@ export default function OwnerUnitsScreen() {
                 <View style={styles.metaGrid}>
                   <MetaField label="Organization" value={unit.orgName} />
                   <MetaField label="Building" value={unit.buildingName} />
-                  <MetaField label="Owner ID" value={unit.ownerId} mono />
-                  <MetaField label="Unit ID" value={unit.unitId} mono />
                 </View>
 
                 <UnitTenantCard
@@ -276,7 +274,6 @@ function UnitTenantCard({
           <MetaField label="Name" value={tenantState.tenant.name} />
           <MetaField label="Email" value={tenantState.tenant.email || 'Not provided'} />
           <MetaField label="Phone" value={tenantState.tenant.phone || 'Not provided'} />
-          <MetaField label="Tenant User ID" value={tenantState.tenant.tenantUserId} mono />
         </View>
       ) : (
         <Text style={styles.tenantMutedText}>

@@ -12,7 +12,7 @@ Allow a provider worker to:
 - open provider request detail
 - submit an estimate when assigned
 - add shared comments
-- add attachments
+- add attachmentsw
 - move an assigned request to `IN_PROGRESS` or `COMPLETED`
 
 This is not a separate backend product. The worker app uses the existing

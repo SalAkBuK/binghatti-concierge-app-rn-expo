@@ -27,6 +27,10 @@ import { useResidentContract } from "../../lib/hooks/useResidentSelfService";
 import { useResidentRequests } from "../../lib/hooks/useResidentRequests";
 import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
 import {
+  getResidentRequestOwnerRejectionReason,
+  isResidentRequestOwnerRejected,
+} from "../../lib/utils/resident-request-approval";
+import {
   filterNotificationsByUser,
   getNotificationBody,
   getUnreadNotificationsCount,
@@ -82,7 +86,12 @@ const initials = (name?: string | null) =>
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("") || "R";
 
-const requestStatusMeta = (status?: string | null) => {
+const requestStatusMeta = (request: { status?: string | null; ownerApproval?: unknown; ownerApprovalStatus?: unknown }) => {
+  if (isResidentRequestOwnerRejected(request)) {
+    return { label: "Owner Rejected", bg: P.dangerBg, text: P.dangerText };
+  }
+
+  const status = request.status;
   switch (status) {
     case "completed":
       return { label: "Completed", bg: P.successBg, text: P.successText };
@@ -355,7 +364,9 @@ export default function TenantHomeScreen() {
 
           {recentRequests.length > 0 ? (
             recentRequests.map((request) => {
-              const status = requestStatusMeta(request.status);
+              const status = requestStatusMeta(request);
+              const ownerRejected = isResidentRequestOwnerRejected(request);
+              const ownerRejectionReason = getResidentRequestOwnerRejectionReason(request);
 
               return (
                 <TouchableOpacity
@@ -385,9 +396,18 @@ export default function TenantHomeScreen() {
                   </View>
 
                   <View style={styles.requestBottom}>
-                    <Text style={styles.requestDescription} numberOfLines={1}>
-                      {request.description || "Tap to review request details and latest updates."}
-                    </Text>
+                    <View style={styles.requestBottomCopy}>
+                      <Text style={styles.requestDescription} numberOfLines={1}>
+                        {request.description || "Tap to review request details and latest updates."}
+                      </Text>
+                      {ownerRejected ? (
+                        <Text style={styles.requestRejectionText} numberOfLines={2}>
+                          {ownerRejectionReason
+                            ? `Owner rejected this request: ${ownerRejectionReason}`
+                            : "Owner rejected this request."}
+                        </Text>
+                      ) : null}
+                    </View>
                     {request.isEmergency ? (
                       <View style={styles.requestEmergencyBadge}>
                         <Ionicons name="warning-outline" size={12} color={P.dangerText} />
@@ -643,14 +663,24 @@ const styles = StyleSheet.create({
   requestBadgeText: { fontSize: 11, fontWeight: "700" },
   requestBottom: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
     gap: 12,
     borderTopWidth: 1,
     borderTopColor: P.border,
     paddingTop: 12,
   },
-  requestDescription: { flex: 1, fontSize: 13, lineHeight: 20, color: P.muted },
+  requestBottomCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  requestDescription: { fontSize: 13, lineHeight: 20, color: P.muted },
+  requestRejectionText: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: P.dangerText,
+    fontWeight: "600",
+  },
   requestEmergencyBadge: {
     flexDirection: "row",
     alignItems: "center",

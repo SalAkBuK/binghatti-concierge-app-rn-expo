@@ -201,6 +201,9 @@ export const API_ENDPOINTS = {
     createResidentOwner: "/resident/messages/owner",
   },
   owner: {
+    me: "/owner/me",
+    meProfile: "/owner/me/profile",
+    profile: (ownerId: string) => `/owner/profiles/${ownerId}`,
     summary: "/owner/portfolio/summary",
     units: "/owner/portfolio/units",
     unitTenant: (unitId: string) => `/owner/portfolio/units/${unitId}/tenant`,

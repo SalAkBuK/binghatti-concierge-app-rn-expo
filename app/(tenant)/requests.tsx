@@ -25,6 +25,10 @@ import { useRequests } from "../../lib/context/requests-context";
 import { useResidentRequests } from "../../lib/hooks/useResidentRequests";
 import type { Request, RequestPriority, RequestStatus } from "../../lib/types";
 import {
+  getResidentRequestOwnerRejectionReason,
+  isResidentRequestOwnerRejected,
+} from "../../lib/utils/resident-request-approval";
+import {
   filterNotificationsByUser,
   getUnreadNotificationsCount,
 } from "../../lib/utils/helpers";
@@ -76,7 +80,17 @@ const formatDate = (value?: string | null) => {
 
 const formatCount = (value: number) => String(value).padStart(2, "0");
 
-const getStatusMeta = (status: RequestStatus) => {
+const getStatusMeta = (request: Request) => {
+  if (isResidentRequestOwnerRejected(request)) {
+    return {
+      label: "Owner Rejected",
+      bg: P.dangerBg,
+      text: P.dangerText,
+      icon: "alert-circle-outline" as const,
+    };
+  }
+
+  const status = request.status;
   switch (status) {
     case "completed":
       return {
@@ -300,7 +314,9 @@ export default function RequestsScreen() {
   const hasUnreadNotifications = getUnreadNotificationsCount(userNotifications) > 0;
 
   const renderRequestCard = ({ item: request }: { item: Request }) => {
-    const statusMeta = getStatusMeta(request.status);
+    const ownerRejected = isResidentRequestOwnerRejected(request);
+    const ownerRejectionReason = getResidentRequestOwnerRejectionReason(request);
+    const statusMeta = getStatusMeta(request);
     const priorityMeta = getPriorityMeta(request.priority);
     const typeMeta = getRequestTypeMeta(request.type);
 
@@ -348,11 +364,27 @@ export default function RequestsScreen() {
         <Text style={styles.requestDescription} numberOfLines={2}>
           {request.description}
         </Text>
+        {ownerRejected ? (
+          <Text style={styles.requestAlertText} numberOfLines={2}>
+            {ownerRejectionReason
+              ? `Owner rejected this request: ${ownerRejectionReason}`
+              : "Owner rejected this request. Management will review the next step."}
+          </Text>
+        ) : null}
 
         <View style={styles.requestInfoRow}>
           <Text style={styles.requestInfoText}>{formatDate(request.createdAt)}</Text>
-          <Text style={styles.requestInfoText}>
-            {request.assignedTo ? `Assigned to ${request.assignedTo}` : "Awaiting assignment"}
+          <Text
+            style={[
+              styles.requestInfoText,
+              ownerRejected && styles.requestInfoTextAlert,
+            ]}
+          >
+            {ownerRejected
+              ? "Execution blocked"
+              : request.assignedTo
+                ? `Assigned to ${request.assignedTo}`
+                : "Awaiting assignment"}
           </Text>
         </View>
       </AnimatedButton>
@@ -443,7 +475,7 @@ export default function RequestsScreen() {
         </View>
         <Text style={styles.spotlightText}>
           {latestRequest
-            ? `${getStatusMeta(latestRequest.status).label} - Updated ${formatDate(latestRequest.updatedAt)}`
+            ? `${getStatusMeta(latestRequest).label} - Updated ${formatDate(latestRequest.updatedAt)}`
             : "Once you create a request, its latest status will appear here."}
         </Text>
       </View>
@@ -852,6 +884,14 @@ const styles = StyleSheet.create({
     color: P.muted,
     marginBottom: 12,
   },
+  requestAlertText: {
+    marginTop: -2,
+    marginBottom: 12,
+    fontSize: 12,
+    lineHeight: 18,
+    color: P.dangerText,
+    fontWeight: "600",
+  },
   requestInfoRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -865,6 +905,10 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 12,
     color: P.soft,
+  },
+  requestInfoTextAlert: {
+    color: P.dangerText,
+    fontWeight: "700",
   },
   loadMoreContainer: {
     alignItems: "center",

@@ -33,6 +33,10 @@ import {
   normalizeStatus,
 } from "../../lib/hooks/modals/request-details/request-details-helpers";
 import { useRequestDetailsScreen } from "../../lib/hooks/modals/request-details/useRequestDetailsScreen";
+import {
+  getResidentRequestOwnerRejectionReason,
+  isResidentRequestOwnerRejected,
+} from "../../lib/utils/resident-request-approval";
 import { requestToResidentRequestForm } from "../../lib/utils/resident-request-form";
 
 export default function RequestDetailsScreen() {
@@ -117,9 +121,17 @@ export default function RequestDetailsScreen() {
   const canProvideFeedback = false;
   const canReviewJobEstimate = Boolean(reviewJobEstimateAsTenant);
   const canApproveTenantJobCompletion = Boolean(approveTenantJobCompletion);
-  const statusColors = getStatusColor(normalizedStatus);
+  const ownerRejected = isTenantUser && isResidentRequestOwnerRejected(selectedRequest);
+  const ownerRejectionReason = ownerRejected
+    ? getResidentRequestOwnerRejectionReason(selectedRequest)
+    : null;
+  const statusColors = ownerRejected
+    ? { bg: P.dangerBg, text: P.dangerText, border: "#E9B7B0" }
+    : getStatusColor(normalizedStatus);
   const priorityColors = getPriorityColor(normalizedPriority);
-  const statusIcon = getStatusIcon(normalizedStatus);
+  const statusIcon = ownerRejected
+    ? "alert-circle-outline"
+    : getStatusIcon(normalizedStatus);
   const jobStatusMeta = job ? getJobStatusMeta(job.status) : null;
   const estimate = job?.estimate;
   const additionalCosts = job?.additionalCosts ?? [];
@@ -308,7 +320,11 @@ export default function RequestDetailsScreen() {
     job?.assignedToEmployeeName || job?.assignedToName
       ? "Lead Technician"
       : "Support Team";
-  const tenantNextStep = getTenantRequestNextStep(normalizedStatus);
+  const tenantNextStep = ownerRejected
+    ? ownerRejectionReason
+      ? `Owner declined this request. Reason: ${ownerRejectionReason}. Management will need to review the next step before work can continue.`
+      : "Owner declined this request. Management will need to review the next step before work can continue."
+    : getTenantRequestNextStep(normalizedStatus);
   const hasExistingRating = canProvideFeedback
     ? Boolean(getRatingByRequestId(selectedRequest.id))
     : false;
@@ -407,9 +423,13 @@ export default function RequestDetailsScreen() {
               normalizedStatus={normalizedStatus}
               statusDisplayLabel={
                 isTenantUser
-                  ? getTenantRequestStatusLabel(normalizedStatus)
+                  ? ownerRejected
+                    ? "Owner Rejected"
+                    : getTenantRequestStatusLabel(normalizedStatus)
                   : normalizedStatus.replace("-", " ")
               }
+              ownerRejected={ownerRejected}
+              ownerRejectionReason={ownerRejectionReason}
               normalizedPriority={normalizedPriority}
               normalizedAttachments={normalizedAttachments}
               statusColors={statusColors}

@@ -39,4 +39,19 @@ describe('owner portal helpers', () => {
       id: 'conv-1',
     });
   });
+
+  it('extracts a request target from a notification wrapper object', () => {
+    expect(
+      getOwnerNotificationTarget({
+        id: 'notification-1',
+        type: 'REQUEST_COMMENTED',
+        data: {
+          requestId: 'req-3',
+        },
+      }),
+    ).toEqual({
+      kind: 'request',
+      id: 'req-3',
+    });
+  });
 });

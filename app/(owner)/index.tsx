@@ -171,8 +171,11 @@ export default function OwnerHomeScreen() {
             messagingUnreadCount={conversationUnreadCount}
             showSideMenu={showSideMenu}
             onSideMenuToggle={setShowSideMenu}
-            notificationRoute="/(owner)/notifications"
+            notificationRoute="/(modals)/owner-alerts"
             textColor={P.text}
+            horizontalPadding={0}
+            menuMargin={0}
+            notificationMargin={0}
           />
 
           <View style={styles.heroCard}>
@@ -296,7 +299,10 @@ export default function OwnerHomeScreen() {
                   onPress={() =>
                     router.push({
                       pathname: '/(owner)/requests/[requestId]',
-                      params: { requestId: request.id },
+                      params: {
+                        requestId: request.id,
+                        returnTo: '/(owner)',
+                      },
                     })
                   }
                 >
@@ -363,7 +369,10 @@ export default function OwnerHomeScreen() {
                 onPress={() =>
                   router.push({
                     pathname: '/(owner)/messages/[conversationId]',
-                    params: { conversationId: conversation.id },
+                    params: {
+                      conversationId: conversation.id,
+                      returnTo: '/(owner)',
+                    },
                   })
                 }
               >

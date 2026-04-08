@@ -79,6 +79,7 @@ export interface User {
 export interface UserProfile {
   name?: string;
   phone?: string;
+  avatarUrl?: string;
   apartment?: string;
   tower?: string;
   floor?: string;
@@ -2395,6 +2396,43 @@ export interface OwnerConversationDetail extends OwnerConversation {
 export interface OwnerConversationListResponse {
   items: OwnerConversation[];
   nextCursor: string | null;
+}
+
+export interface OwnerSelfServiceUser {
+  id: string;
+  email: string;
+  name: string;
+  avatarUrl?: string | null;
+  phone?: string | null;
+}
+
+export interface OwnerSelfServiceProfile {
+  ownerId: string;
+  orgId: string;
+  orgName: string;
+  name: string;
+  email: string;
+  phone?: string | null;
+  address?: string | null;
+  isActive: boolean;
+}
+
+export interface OwnerSelfServiceRuntime {
+  user: OwnerSelfServiceUser;
+  owners: OwnerSelfServiceProfile[];
+}
+
+export interface UpdateOwnerSelfProfileDTO {
+  name?: string;
+  avatarUrl?: string;
+  phone?: string;
+}
+
+export interface UpdateOwnerProfileDTO {
+  name?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
 }
 
 export interface ProviderPortalActor {

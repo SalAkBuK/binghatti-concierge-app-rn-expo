@@ -1267,11 +1267,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               }
               break;
 
+            case "owner":
+              if (Object.keys(updatePayload).length > 0) {
+                response = await ownerPortalApi.updateMeProfile(updatePayload);
+              } else {
+                response = await ownerPortalApi.getMe();
+              }
+              apiCallSuccess = true;
+              break;
+
             default:
               throw new Error(`Profile update not supported for role: ${role}`);
           }
 
-          if (response && response.success) {
+          if (response && (response.success || role === "owner")) {
             apiCallSuccess = true;
           }
           console.log("[Auth] Profile update response:", response);
@@ -1303,12 +1312,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
         if (profileData.avatar) {
           mergedProfile.avatar = profileData.avatar;
+          mergedProfile.avatarUrl = profileData.avatar;
         } else if (resolvedAvatarUrl) {
           mergedProfile.avatar = resolvedAvatarUrl;
+          mergedProfile.avatarUrl = resolvedAvatarUrl;
         }
 
         const responseProfile =
-          response?.data?.profile ?? response?.data;
+          role === "owner"
+            ? response?.user ?? response?.data?.user ?? null
+            : response?.data?.profile ?? response?.data;
         const residentProfile = residentProfileResponse ?? null;
 
         const mergedResponseProfile = {
@@ -1317,6 +1330,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             ? responseProfile
             : {}),
         } as any;
+
+        if (role === "owner" && responseProfile && typeof responseProfile === "object") {
+          mergedResponseProfile.name =
+            responseProfile.name ?? mergedResponseProfile.name;
+          mergedResponseProfile.phone =
+            responseProfile.phone ?? mergedResponseProfile.phone;
+          if (responseProfile.avatarUrl) {
+            mergedResponseProfile.avatar = responseProfile.avatarUrl;
+            mergedResponseProfile.avatarUrl = responseProfile.avatarUrl;
+          }
+        }
 
         if (residentProfile && typeof residentProfile === "object") {
           mergedResponseProfile.currentAddress =
@@ -1350,10 +1374,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const updatedUser = {
           ...state.currentUser,
           name:
+            (role === "owner"
+              ? response?.user?.name ?? response?.data?.user?.name
+              : null) ||
             resolvedName ||
             residentProfile?.user?.name ||
             state.currentUser.name,
           phone:
+            (role === "owner"
+              ? response?.user?.phone ?? response?.data?.user?.phone
+              : null) ||
             resolvedPhone ||
             residentProfile?.user?.phone ||
             state.currentUser.phone,

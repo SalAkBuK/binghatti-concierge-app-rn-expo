@@ -5,6 +5,7 @@ import { useAsyncStorage } from "./useAsyncStorage";
 import { residentRequestsApi } from "../services/api/resident-requests";
 import { STORAGE_KEYS } from "../utils/constants";
 import { filterNotificationsByUser } from "../utils/helpers";
+import { normalizeOwnerApprovalSnapshot } from "../utils/resident-request-approval";
 import type {
   Notification,
   Request,
@@ -291,6 +292,8 @@ export const mapResidentRequestFromBackend = (
 ): Request | null => {
   if (!currentUser?.id) return null;
 
+  const ownerApproval = normalizeOwnerApprovalSnapshot(item);
+
   return ensureResidentRequestShape({
     id: String(item.id),
     tenantId: currentUser.id,
@@ -328,6 +331,8 @@ export const mapResidentRequestFromBackend = (
         : typeof item.policy?.isEmergency === "boolean"
           ? item.policy.isEmergency
           : undefined,
+    ownerApproval,
+    ownerApprovalStatus: ownerApproval?.status ?? null,
     emergencySignals: normalizeEmergencySignals(item.emergencySignals),
     comments: [],
     messages: [],

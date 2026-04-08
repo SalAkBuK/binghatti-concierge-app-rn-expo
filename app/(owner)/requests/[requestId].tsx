@@ -1,9 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  BackHandler,
   KeyboardAvoidingView,
   Linking,
   Platform,
@@ -15,7 +18,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HeaderBar } from '../../../components/ui/HeaderBar';
 import { ScreenEntrance } from '../../../components/ui/ScreenEntrance';
@@ -95,12 +98,49 @@ const formatActorSummary = (
     return 'Not provided';
   }
 
-  return actor.name || actor.email || actor.id || 'Not provided';
+  return actor.name || actor.email || 'Not provided';
+};
+
+const resolveKnownUserLabel = ({
+  userId,
+  currentUserId,
+  currentUserName,
+  createdBy,
+  assignedTo,
+}: {
+  userId?: string | null;
+  currentUserId?: string | null;
+  currentUserName?: string | null;
+  createdBy?: OwnerPortfolioRequest['createdBy'] | null;
+  assignedTo?: OwnerPortfolioRequest['assignedTo'] | null;
+}): string | null => {
+  if (!userId) {
+    return null;
+  }
+
+  if (currentUserId && userId === currentUserId && currentUserName?.trim()) {
+    return currentUserName.trim();
+  }
+
+  if (createdBy?.id === userId) {
+    return createdBy.name || createdBy.email || null;
+  }
+
+  if (assignedTo?.id === userId) {
+    return assignedTo.name || assignedTo.email || null;
+  }
+
+  return null;
 };
 
 export default function OwnerRequestDetailScreen() {
-  const { requestId } = useLocalSearchParams<{ requestId?: string }>();
+  const { requestId, returnTo } = useLocalSearchParams<{
+    requestId?: string;
+    returnTo?: string;
+  }>();
   const { currentUser } = useAuth();
+  const insets = useSafeAreaInsets();
+  const tabBarHeight = useBottomTabBarHeight();
   const handleUnauthorized = useOwnerUnauthorized();
   const {
     conversationUnreadCount,
@@ -192,6 +232,60 @@ export default function OwnerRequestDetailScreen() {
     () => resolveOwnerRequestApprovalStatus(request),
     [request],
   );
+  const requestedByLabel = useMemo(
+    () =>
+      resolveKnownUserLabel({
+        userId: request?.ownerApproval?.requestedByUserId,
+        currentUserId: currentUser?.id,
+        currentUserName: currentUser?.name ?? currentUser?.fullName,
+        createdBy: request?.createdBy,
+        assignedTo: request?.assignedTo,
+      }),
+    [
+      currentUser?.fullName,
+      currentUser?.id,
+      currentUser?.name,
+      request?.assignedTo,
+      request?.createdBy,
+      request?.ownerApproval?.requestedByUserId,
+    ],
+  );
+  const decidedByOwnerLabel = useMemo(
+    () =>
+      resolveKnownUserLabel({
+        userId: request?.ownerApproval?.decidedByOwnerUserId,
+        currentUserId: currentUser?.id,
+        currentUserName: currentUser?.name ?? currentUser?.fullName,
+        createdBy: request?.createdBy,
+        assignedTo: request?.assignedTo,
+      }),
+    [
+      currentUser?.fullName,
+      currentUser?.id,
+      currentUser?.name,
+      request?.assignedTo,
+      request?.createdBy,
+      request?.ownerApproval?.decidedByOwnerUserId,
+    ],
+  );
+  const overriddenByLabel = useMemo(
+    () =>
+      resolveKnownUserLabel({
+        userId: request?.ownerApproval?.overriddenByUserId,
+        currentUserId: currentUser?.id,
+        currentUserName: currentUser?.name ?? currentUser?.fullName,
+        createdBy: request?.createdBy,
+        assignedTo: request?.assignedTo,
+      }),
+    [
+      currentUser?.fullName,
+      currentUser?.id,
+      currentUser?.name,
+      request?.assignedTo,
+      request?.createdBy,
+      request?.ownerApproval?.overriddenByUserId,
+    ],
+  );
   const attachmentItems = useMemo(
     () =>
       (request?.attachments ?? [])
@@ -211,6 +305,32 @@ export default function OwnerRequestDetailScreen() {
           attachment != null,
         ),
     [request?.attachments],
+  );
+
+  const handleBackNavigation = useCallback(() => {
+    const fallbackRoute = '/(owner)/requests';
+    const destination =
+      typeof returnTo === 'string' && returnTo.trim().length > 0
+        ? returnTo
+        : fallbackRoute;
+
+    router.replace(destination as any);
+  }, [returnTo]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const subscription = BackHandler.addEventListener(
+        'hardwareBackPress',
+        () => {
+          handleBackNavigation();
+          return true;
+        },
+      );
+
+      return () => {
+        subscription.remove();
+      };
+    }, [handleBackNavigation]),
   );
 
   const handleOpenAttachment = useCallback(async (url: string) => {
@@ -330,7 +450,12 @@ export default function OwnerRequestDetailScreen() {
             refreshControl={
               <RefreshControl refreshing={isRefreshing} onRefresh={() => void load(true)} />
             }
-            contentContainerStyle={styles.scrollContent}
+            contentContainerStyle={[
+              styles.scrollContent,
+              {
+                paddingBottom: 48 + Math.max(insets.bottom, 16) + tabBarHeight,
+              },
+            ]}
             showsVerticalScrollIndicator={false}
           >
             <HeaderBar
@@ -339,9 +464,9 @@ export default function OwnerRequestDetailScreen() {
               showBackButton
               hasUnreadNotifications={notificationUnreadCount > 0}
               messagingUnreadCount={conversationUnreadCount}
-              notificationRoute="/(owner)/notifications"
+              notificationRoute="/(modals)/owner-alerts"
               textColor={P.text}
-              onBackPress={() => router.back()}
+              onBackPress={handleBackNavigation}
             />
 
             <View style={styles.unavailableCard}>
@@ -392,9 +517,9 @@ export default function OwnerRequestDetailScreen() {
               showBackButton
               hasUnreadNotifications={notificationUnreadCount > 0}
               messagingUnreadCount={conversationUnreadCount}
-              notificationRoute="/(owner)/notifications"
+              notificationRoute="/(modals)/owner-alerts"
               textColor={P.text}
-              onBackPress={() => router.back()}
+              onBackPress={handleBackNavigation}
             />
 
             <View style={styles.heroCard}>
@@ -523,11 +648,9 @@ export default function OwnerRequestDetailScreen() {
                   label="Requested At"
                   value={formatOwnerDateTime(request.ownerApproval?.requestedAt)}
                 />
-                <MetaField
-                  label="Requested By User ID"
-                  value={request.ownerApproval?.requestedByUserId || 'Not provided'}
-                  mono
-                />
+                {requestedByLabel ? (
+                  <MetaField label="Requested By" value={requestedByLabel} />
+                ) : null}
                 <MetaField
                   label="Deadline"
                   value={formatOwnerDateTime(request.ownerApproval?.deadlineAt)}
@@ -536,11 +659,9 @@ export default function OwnerRequestDetailScreen() {
                   label="Decided At"
                   value={formatOwnerDateTime(request.ownerApproval?.decidedAt)}
                 />
-                <MetaField
-                  label="Decided By Owner User ID"
-                  value={request.ownerApproval?.decidedByOwnerUserId || 'Not provided'}
-                  mono
-                />
+                {decidedByOwnerLabel ? (
+                  <MetaField label="Decided By" value={decidedByOwnerLabel} />
+                ) : null}
                 <MetaField
                   label="Decision Note"
                   value={request.ownerApproval?.reason || 'No decision note yet'}
@@ -553,11 +674,9 @@ export default function OwnerRequestDetailScreen() {
                   label="Override Reason"
                   value={request.ownerApproval?.overrideReason || 'Not provided'}
                 />
-                <MetaField
-                  label="Overridden By User ID"
-                  value={request.ownerApproval?.overriddenByUserId || 'Not provided'}
-                  mono
-                />
+                {overriddenByLabel ? (
+                  <MetaField label="Overridden By" value={overriddenByLabel} />
+                ) : null}
               </View>
 
               {approvalStatus === 'PENDING' ? (
@@ -705,9 +824,6 @@ function ActorField({
       <Text style={styles.metaLabel}>{label}</Text>
       <Text style={styles.metaValue}>{actor ? formatActorSummary(actor) : emptyValue}</Text>
       {actor?.email ? <Text style={styles.metaSubValue}>{actor.email}</Text> : null}
-      {actor?.id ? (
-        <Text style={[styles.metaSubValue, styles.metaValueMono]}>{actor.id}</Text>
-      ) : null}
     </View>
   );
 }
@@ -954,6 +1070,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flex: 1,
     paddingHorizontal: 16,
+    marginTop: 14,
   },
   primaryButton: {
     backgroundColor: P.primary,
@@ -977,6 +1094,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: P.border,
     padding: 18,
+    marginBottom: 8,
   },
   commentCountText: {
     fontSize: 12,

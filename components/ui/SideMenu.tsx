@@ -1,10 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { router, usePathname } from "expo-router";
 import React, { useEffect, useState } from "react";
 import type { TextStyle, ViewStyle } from "react-native";
 import {
   Alert,
   Dimensions,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -30,7 +32,7 @@ import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
 import type { User } from "../../lib/types";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const MENU_WIDTH = SCREEN_WIDTH * 0.8; // 80% of screen width
+const MENU_WIDTH = Math.min(324, SCREEN_WIDTH * 0.78);
 
 interface SideMenuProps {
   isVisible: boolean;
@@ -61,8 +63,10 @@ type RouterPushInput = Parameters<typeof router.push>[0];
 
 const P = {
   bg: "#F8F9FA",
+  panel: "#EEF2F4",
   surface: "#FFFFFF",
   surfaceLow: "#F1F4F6",
+  surfaceHigh: "#DCE5E8",
   border: "#D9E0E4",
   text: "#2B3437",
   muted: "#667176",
@@ -72,6 +76,10 @@ const P = {
   primarySoft: "#D0E6EF",
   accent: "#F8EFE4",
   accentText: "#7A5A2B",
+  inverse: "#0C0F10",
+  inverseSoft: "#172126",
+  onInverse: "#EEF7FB",
+  success: "#1E9B63",
   dangerBg: "#FCE3E0",
   dangerText: "#B24A41",
 };
@@ -89,6 +97,22 @@ const matchesRoutePattern = (pathname: string, pattern: string) =>
   pathname === `${pattern}/index` ||
   pathname.startsWith(`${pattern}/`);
 
+const getPortalAccessLabel = (role?: User["role"], unitLabel?: string) => {
+  if (unitLabel && unitLabel.trim().length > 0) {
+    return unitLabel.trim().toUpperCase();
+  }
+
+  const label = formatRoleLabel(role);
+  const initials = label
+    .split(" ")
+    .map((part) => part.charAt(0))
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
+  return initials || "TD";
+};
+
 export function SideMenu({ isVisible, onClose, userRole }: SideMenuProps) {
   const { currentUser, actions } = useAuth();
   const { totalUnreadCount: messagingUnreadCount } = useMessaging();
@@ -102,6 +126,28 @@ export function SideMenu({ isVisible, onClose, userRole }: SideMenuProps) {
   const [isRendered, setIsRendered] = useState(isVisible);
   const roleHomeHref = getRoleHomeHref(effectiveRole);
   const roleHasMountedPortal = hasMountedPortal(effectiveRole);
+  const resolvedUnitLabel =
+    currentUser?.resident?.unitLabel ||
+    currentUser?.resident?.unit?.label ||
+    currentUser?.resident?.unitNumber ||
+    currentUser?.resident?.unit?.number ||
+    currentUser?.resident?.unit?.unitNumber ||
+    currentUser?.profile?.apartment;
+  const portalAccessLabel = getPortalAccessLabel(
+    effectiveRole,
+    resolvedUnitLabel,
+  );
+  const displayName = currentUser?.name || "User";
+  const avatarLetter = displayName.charAt(0).toUpperCase() || "U";
+  const avatarUri =
+    currentUser?.profile?.avatarUrl ||
+    currentUser?.profile?.avatar ||
+    null;
+  const hasBottomTabBar =
+    effectiveRole === "tenant" ||
+    effectiveRole === "owner" ||
+    effectiveRole === "building_employee";
+  const footerBottomPadding = Math.max(insets.bottom, 20) + (hasBottomTabBar ? 104 : 24);
 
   // Animation values
   const translateX = useSharedValue(-MENU_WIDTH - 20);
@@ -202,7 +248,7 @@ export function SideMenu({ isVisible, onClose, userRole }: SideMenuProps) {
   const ownerMenu: MenuItem[] = [
     {
       id: "owner-dashboard",
-      title: "Portfolio Home",
+      title: "Dashboard",
       icon: "grid-outline",
       routePatterns: ["/(owner)", "/(owner)/index"],
       action: () => navigateAndClose("/(owner)", true),
@@ -230,10 +276,17 @@ export function SideMenu({ isVisible, onClose, userRole }: SideMenuProps) {
     },
     {
       id: "owner-notifications",
-      title: "Notifications",
+      title: "Alerts",
       icon: "notifications-outline",
-      routePatterns: ["/(owner)/notifications"],
-      action: () => navigateAndClose("/(owner)/notifications"),
+      routePatterns: ["/(owner)/notifications", "/(modals)/owner-alerts"],
+      action: () => navigateAndClose("/(modals)/owner-alerts"),
+    },
+    {
+      id: "owner-profile",
+      title: "Profile & Settings",
+      icon: "person-outline",
+      routePatterns: ["/(owner)/profile"],
+      action: () => navigateAndClose("/(owner)/profile"),
     },
     {
       id: "logout",
@@ -429,6 +482,8 @@ export function SideMenu({ isVisible, onClose, userRole }: SideMenuProps) {
         : effectiveRole === "tenant"
           ? tenantMenu
           : unsupportedPortalMenu;
+  const primaryMenuItems = menuItems.filter((item) => item.id !== "logout");
+  const footerMenuItems = menuItems.filter((item) => item.id === "logout");
 
   // Animation effects
   useEffect(() => {
@@ -499,6 +554,107 @@ export function SideMenu({ isVisible, onClose, userRole }: SideMenuProps) {
     return null;
   }
 
+  const renderMenuItem = (item: MenuItem) => {
+    if (item.id.startsWith("divider")) {
+      return <View key={item.id} style={styles.sectionSpacer} />;
+    }
+
+    const isExpanded = expandedItem === item.id;
+    const isActive = Boolean(
+      item.routePatterns?.some((pattern) =>
+        matchesRoutePattern(pathname, pattern),
+      ),
+    );
+
+    return (
+      <View key={item.id}>
+        <TouchableOpacity
+          style={[
+            styles.menuItem,
+            isActive ? styles.menuItemActive : null,
+            item.color ? styles.menuItemDanger : null,
+          ]}
+          onPress={() => {
+            if (item.expandable) {
+              setExpandedItem(isExpanded ? null : item.id);
+            } else if (item.action) {
+              item.action();
+            }
+          }}
+          activeOpacity={0.8}
+        >
+          <View
+            style={[
+              styles.menuIconShell,
+              isActive ? styles.menuIconShellActive : null,
+              item.color ? styles.menuIconShellDanger : null,
+            ]}
+          >
+            <Ionicons
+              name={item.icon}
+              size={18}
+              color={item.color || (isActive ? P.primary : P.muted)}
+            />
+          </View>
+          <Text
+            style={[
+              styles.menuItemText,
+              isActive ? styles.menuItemTextActive : null,
+              item.color ? ({ color: item.color } as TextStyle) : null,
+            ]}
+          >
+            {item.title}
+          </Text>
+          {item.badge != null && item.badge > 0 ? (
+            <View
+              style={[
+                styles.menuBadge,
+                isActive ? styles.menuBadgeActive : null,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.menuBadgeText,
+                  isActive ? styles.menuBadgeTextActive : null,
+                ]}
+              >
+                {item.badge > 99 ? "99+" : item.badge}
+              </Text>
+            </View>
+          ) : null}
+          {item.expandable ? (
+            <Ionicons
+              name={isExpanded ? "chevron-up" : "chevron-down"}
+              size={16}
+              color={isActive ? P.primary : P.soft}
+              style={styles.expandIcon}
+            />
+          ) : null}
+        </TouchableOpacity>
+
+        {item.expandable && isExpanded && item.subItems ? (
+          <View style={styles.subItemsContainer}>
+            {item.subItems.map((subItem) => (
+              <TouchableOpacity
+                key={subItem.id}
+                style={styles.subMenuItem}
+                onPress={subItem.action}
+                activeOpacity={0.75}
+              >
+                <Ionicons
+                  name={subItem.icon}
+                  size={16}
+                  color={P.muted}
+                />
+                <Text style={styles.subMenuItemText}>{subItem.title}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : null}
+      </View>
+    );
+  };
+
   return (
     <View style={styles.container}>
       {/* Overlay */}
@@ -514,158 +670,90 @@ export function SideMenu({ isVisible, onClose, userRole }: SideMenuProps) {
 
       {/* Menu Panel */}
       <Animated.View style={[styles.menuPanel, menuAnimatedStyle]}>
-        {/* Header */}
         <View style={[styles.menuHeader, { paddingTop: insets.top + 18 }]}>
           <View style={styles.menuHeaderTopRow}>
-            {/* <Text style={styles.menuEyebrow}>Concierge Menu</Text> */}
+            <Text style={styles.menuHeading}>Portal Navigation</Text>
             <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-              <Ionicons name="close" size={20} color={P.muted} />
+              <Ionicons name="close" size={20} color={P.onInverse} />
             </TouchableOpacity>
           </View>
 
-          <View style={styles.profileCard}>
-            <View style={styles.userInfo}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>
-                  {(currentUser?.name || "U").charAt(0).toUpperCase()}
+          <View style={styles.profileHero}>
+            <View style={styles.profileHeroTopRow}>
+              <LinearGradient
+                colors={[P.primary, P.primaryDark]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.avatarRing}
+              >
+                {avatarUri ? (
+                  <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
+                ) : (
+                  <View style={styles.avatar}>
+                    <Text style={styles.avatarText}>{avatarLetter}</Text>
+                  </View>
+                )}
+              </LinearGradient>
+
+              <LinearGradient
+                colors={[P.primary, P.primaryDark]}
+                start={{ x: 0.15, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.heroPillar}
+              >
+                <Text style={styles.heroPillarEyebrow}>Access</Text>
+                <Text style={styles.heroPillarValue} numberOfLines={2}>
+                  {portalAccessLabel}
+                </Text>
+                <Ionicons
+                  name="sparkles-outline"
+                  size={14}
+                  color="rgba(238, 247, 251, 0.8)"
+                />
+              </LinearGradient>
+            </View>
+
+            <View style={styles.userDetails}>
+              <View style={styles.roleChip}>
+                <Ionicons
+                  name="sparkles-outline"
+                  size={12}
+                  color={P.onInverse}
+                />
+                <Text style={styles.roleChipText}>
+                  {formatRoleLabel(effectiveRole)}
                 </Text>
               </View>
-              <View style={styles.userDetails}>
-                <Text style={styles.userName} numberOfLines={1}>
-                  {currentUser?.name || "User"}
-                </Text>
-                <Text style={styles.userEmail} numberOfLines={1}>
-                  {currentUser?.email || "user@example.com"}
-                </Text>
-                <View style={styles.profileMetaRow}>
+              <Text style={styles.userName} numberOfLines={2}>
+                {displayName}
+              </Text>
+              <Text style={styles.userEmail} numberOfLines={1}>
+                {currentUser?.email || "user@example.com"}
+              </Text>
+              <View style={styles.profileMetaRow}>
+                {messagingUnreadCount > 0 ? (
                   <View style={styles.profileMetaPill}>
-                    <Ionicons name="sparkles-outline" size={14} color={P.primaryDark} />
                     <Text style={styles.profileMetaPillText}>
-                      {formatRoleLabel(effectiveRole)}
+                      {messagingUnreadCount > 99 ? "99+" : messagingUnreadCount} unread
                     </Text>
                   </View>
-                  {messagingUnreadCount > 0 ? (
-                    <View style={[styles.profileMetaPill, styles.profileMetaPillWarm]}>
-                      <Text style={styles.profileMetaPillWarmText}>
-                        {messagingUnreadCount > 99 ? "99+" : messagingUnreadCount} unread
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
+                ) : null}
               </View>
             </View>
           </View>
         </View>
 
-        {/* Menu Items */}
         <ScrollView
           style={styles.menuItems}
           contentContainerStyle={styles.menuItemsContent}
           showsVerticalScrollIndicator={false}
           bounces={false}
         >
-          {menuItems.map((item) => {
-            if (item.id.startsWith("divider")) {
-              return <View key={item.id} style={styles.divider} />;
-            }
-
-            const isExpanded = expandedItem === item.id;
-            const isActive = Boolean(
-              item.routePatterns?.some((pattern) =>
-                matchesRoutePattern(pathname, pattern),
-              ),
-            );
-
-            return (
-              <View key={item.id}>
-                <TouchableOpacity
-                  style={[
-                    styles.menuItem,
-                    isActive ? styles.menuItemActive : null,
-                    item.color ? styles.menuItemDanger : null,
-                  ]}
-                  onPress={() => {
-                    if (item.expandable) {
-                      setExpandedItem(isExpanded ? null : item.id);
-                    } else if (item.action) {
-                      item.action();
-                    }
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <View
-                    style={[
-                      styles.menuIconShell,
-                      isActive ? styles.menuIconShellActive : null,
-                      item.color ? styles.menuIconShellDanger : null,
-                    ]}
-                  >
-                    <Ionicons
-                      name={item.icon}
-                      size={20}
-                      color={item.color || (isActive ? P.surface : P.primary)}
-                    />
-                  </View>
-                  <Text
-                    style={[
-                      styles.menuItemText,
-                      isActive ? styles.menuItemTextActive : null,
-                      item.color
-                        ? ({ color: item.color } as TextStyle)
-                        : null,
-                    ]}
-                  >
-                    {item.title}
-                  </Text>
-                  {item.badge != null && item.badge > 0 && (
-                    <View style={[styles.menuBadge, isActive ? styles.menuBadgeActive : null]}>
-                      <Text style={[styles.menuBadgeText, isActive ? styles.menuBadgeTextActive : null]}>
-                        {item.badge > 99 ? "99+" : item.badge}
-                      </Text>
-                    </View>
-                  )}
-                  {item.expandable && (
-                    <Ionicons
-                      name={isExpanded ? "chevron-up" : "chevron-down"}
-                      size={18}
-                      color={isActive ? P.surface : P.muted}
-                      style={styles.expandIcon}
-                    />
-                  )}
-                </TouchableOpacity>
-
-                {/* Sub-items */}
-                {item.expandable && isExpanded && item.subItems && (
-                  <View style={styles.subItemsContainer}>
-                    {item.subItems.map((subItem) => (
-                      <TouchableOpacity
-                        key={subItem.id}
-                        style={styles.subMenuItem}
-                        onPress={subItem.action}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons
-                          name={subItem.icon}
-                          size={18}
-                          color={P.muted}
-                        />
-                        <Text style={styles.subMenuItemText}>
-                          {subItem.title}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-              </View>
-            );
-          })}
+          {primaryMenuItems.map(renderMenuItem)}
         </ScrollView>
 
-        {/* Footer */}
-        <View style={styles.menuFooter}>
-          <Text style={styles.appVersion}>
-            Binghatti Concierge v1.0.0
-          </Text>
+        <View style={[styles.menuFooter, { paddingBottom: footerBottomPadding }]}>
+          {footerMenuItems.map(renderMenuItem)}
         </View>
       </Animated.View>
     </View>
@@ -695,237 +783,255 @@ const styles = StyleSheet.create({
     left: 0,
     bottom: 0,
     width: MENU_WIDTH,
-    backgroundColor: P.bg,
+    backgroundColor: P.panel,
+    borderTopRightRadius: 42,
+    borderBottomRightRadius: 42,
     shadowColor: "#0C0F10",
     shadowOffset: { width: 2, height: 0 },
-    shadowOpacity: 0.18,
-    shadowRadius: 24,
+    shadowOpacity: 0.12,
+    shadowRadius: 30,
     elevation: 18,
   },
   menuHeader: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingHorizontal: 22,
+    paddingBottom: 18,
   },
   menuHeaderTopRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 12,
+    marginBottom: 16,
   },
-  menuEyebrow: {
-    fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 1.4,
-    textTransform: "uppercase",
-    color: P.primary,
+  menuHeading: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: P.text,
+    lineHeight: 32,
   },
-  profileCard: {
-    backgroundColor: P.surface,
-    borderRadius: 28,
-    borderWidth: 1,
-    borderColor: P.border,
-    paddingHorizontal: 18,
-    paddingVertical: 18,
-    shadowColor: "#2B3437",
-    shadowOpacity: 0.08,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 4,
+  profileHero: {
+    gap: 18,
   },
-  userInfo: {
+  profileHeroTopRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    minWidth: 0,
+    justifyContent: "space-between",
   },
-  avatar: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: P.primarySoft,
+  avatarRing: {
+    width: 86,
+    height: 86,
+    borderRadius: 43,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 12,
-    flexShrink: 0,
   },
-  avatarText: {
+  avatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: P.surfaceLow,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: P.surfaceLow,
+  },
+  heroPillar: {
+    width: 102,
+    height: 156,
+    borderRadius: 32,
+    paddingVertical: 18,
+    paddingHorizontal: 10,
+    alignItems: "center",
+    justifyContent: "space-between",
+    shadowColor: P.primaryDark,
+    shadowOpacity: 0.18,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 6,
+  },
+  heroPillarEyebrow: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "rgba(238, 247, 251, 0.72)",
+    textTransform: "uppercase",
+    letterSpacing: 1.3,
+  },
+  heroPillarValue: {
     fontSize: 20,
-    fontWeight: "bold",
-    color: P.primaryDark,
+    fontWeight: "800",
+    color: P.onInverse,
+    letterSpacing: 0.2,
+    lineHeight: 22,
+    textAlign: "center",
+    width: "100%",
   },
   userDetails: {
-    flex: 1,
     minWidth: 0,
+    paddingRight: 10,
   },
   userName: {
-    fontSize: 18,
-    fontWeight: "700",
+    fontSize: 31,
+    fontWeight: "800",
     color: P.text,
-    marginBottom: 4,
+    lineHeight: 34,
+    marginTop: 10,
+    marginBottom: 6,
   },
   userEmail: {
-    fontSize: 14,
+    fontSize: 13,
     color: P.muted,
+  },
+  avatarText: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: P.primaryDark,
+  },
+  roleChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: P.inverseSoft,
+  },
+  roleChipText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: P.onInverse,
+    textTransform: "uppercase",
+    letterSpacing: 1.1,
   },
   profileMetaRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
-    marginTop: 12,
-    maxWidth: "100%",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 14,
   },
   profileMetaPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 7,
     borderRadius: 999,
-    backgroundColor: P.primarySoft,
-    maxWidth: "100%",
-    flexShrink: 1,
-    alignSelf: "flex-start",
-  },
-  profileMetaPillWarm: {
-    backgroundColor: P.accent,
+    backgroundColor: "rgba(255,255,255,0.74)",
   },
   profileMetaPillText: {
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: "700",
-    color: P.primaryDark,
-    flexShrink: 1,
-  },
-  profileMetaPillWarmText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: P.accentText,
-    flexShrink: 1,
+    color: P.primary,
+    textTransform: "uppercase",
+    letterSpacing: 0.9,
   },
   closeButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: P.surface,
-    borderWidth: 1,
-    borderColor: P.border,
-  },
-  menuItems: {
-    flex: 1,
-    paddingTop: 8,
-  },
-  menuItemsContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 100,
-  },
-  menuItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: P.surface,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: P.border,
-    paddingHorizontal: 14,
-    paddingVertical: 16,
-    marginBottom: 10,
-  },
-  menuItemActive: {
-    backgroundColor: P.primary,
-    borderColor: P.primary,
-    shadowColor: P.primaryDark,
-    shadowOpacity: 0.16,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 4,
-  },
-  menuItemDanger: {
-    backgroundColor: P.dangerBg,
-    borderColor: "#F2CBC5",
-  },
-  menuIconShell: {
     width: 42,
     height: 42,
     borderRadius: 21,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: P.primarySoft,
+    backgroundColor: P.inverse,
+  },
+  menuItems: {
+    flex: 1,
+    paddingTop: 4,
+  },
+  menuItemsContent: {
+    paddingHorizontal: 12,
+    paddingBottom: 32,
+  },
+  menuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    marginBottom: 6,
+  },
+  menuItemActive: {
+    backgroundColor: "rgba(255,255,255,0.74)",
+  },
+  menuItemDanger: {
+    backgroundColor: "rgba(252, 227, 224, 0.7)",
+  },
+  menuIconShell: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
     marginRight: 14,
   },
   menuIconShellActive: {
-    backgroundColor: "rgba(255,255,255,0.16)",
+    backgroundColor: P.surfaceHigh,
   },
   menuIconShellDanger: {
     backgroundColor: "#F8D8D3",
   },
   menuItemText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: P.text,
+    fontSize: 12,
+    fontWeight: "700",
+    color: P.soft,
     flex: 1,
+    textTransform: "uppercase",
+    letterSpacing: 1.1,
   },
   menuItemTextActive: {
-    color: P.surface,
+    color: P.text,
   },
   expandIcon: {
     marginLeft: "auto",
   },
   menuBadge: {
-    backgroundColor: P.primary,
+    backgroundColor: P.inverse,
     borderRadius: 999,
     minWidth: 24,
-    height: 24,
-    paddingHorizontal: 8,
+    height: 22,
+    paddingHorizontal: 7,
     alignItems: "center" as const,
     justifyContent: "center" as const,
     marginLeft: 8,
   },
   menuBadgeActive: {
-    backgroundColor: "rgba(255,255,255,0.16)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
+    backgroundColor: P.primary,
   },
   menuBadgeText: {
-    color: "#FFFFFF",
-    fontSize: 11,
+    color: P.onInverse,
+    fontSize: 10,
     fontWeight: "700" as const,
   },
   menuBadgeTextActive: {
-    color: P.surface,
+    color: P.onInverse,
   },
   subItemsContainer: {
-    backgroundColor: P.surfaceLow,
-    borderRadius: 18,
-    marginTop: -2,
-    marginBottom: 10,
-    marginHorizontal: 8,
+    backgroundColor: "rgba(255,255,255,0.56)",
+    borderRadius: 24,
+    marginTop: 2,
+    marginBottom: 8,
+    marginHorizontal: 12,
     paddingVertical: 8,
   },
   subMenuItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 22,
+    paddingHorizontal: 18,
     paddingVertical: 12,
   },
   subMenuItemText: {
-    fontSize: 14,
-    fontWeight: "500",
+    fontSize: 12,
+    fontWeight: "600",
     color: P.muted,
     marginLeft: 12,
+    textTransform: "uppercase",
+    letterSpacing: 0.9,
   },
-  divider: {
-    height: 1,
-    backgroundColor: P.border,
-    marginHorizontal: 6,
-    marginVertical: 8,
+  sectionSpacer: {
+    height: 18,
   },
   menuFooter: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 12,
     paddingTop: 8,
-    paddingBottom: 18,
-  },
-  appVersion: {
-    fontSize: 12,
-    color: P.soft,
-    textAlign: "center",
+    paddingBottom: 24,
   },
 });

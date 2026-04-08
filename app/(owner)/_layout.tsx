@@ -54,6 +54,7 @@ export default function OwnerLayout() {
 
   const shouldHideTabBar = useMemo(
     () =>
+      pathname.startsWith('/(owner)/notifications') ||
       pathname.startsWith('/(owner)/requests/') ||
       pathname.startsWith('/(owner)/messages/'),
     [pathname],
@@ -171,15 +172,15 @@ export default function OwnerLayout() {
           }}
         />
         <Tabs.Screen
-          name="notifications"
+          name="profile"
           options={{
-            title: 'Alerts',
+            title: 'Profile',
             tabBarIcon: ({ color, focused }) => (
               <OwnerTabIcon
                 color={color}
                 focused={focused}
-                name="notifications-outline"
-                activeName="notifications"
+                name="person-outline"
+                activeName="person"
               />
             ),
           }}
@@ -188,12 +189,21 @@ export default function OwnerLayout() {
           name="requests/[requestId]"
           options={{
             href: null,
+            tabBarStyle: { display: 'none' },
           }}
         />
         <Tabs.Screen
           name="messages/[conversationId]"
           options={{
             href: null,
+            tabBarStyle: { display: 'none' },
+          }}
+        />
+        <Tabs.Screen
+          name="notifications"
+          options={{
+            href: null,
+            tabBarStyle: { display: 'none' },
           }}
         />
       </Tabs>
