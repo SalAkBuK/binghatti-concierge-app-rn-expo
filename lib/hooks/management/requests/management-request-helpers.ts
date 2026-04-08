@@ -4,6 +4,7 @@ import type {
   RequestPriority,
   RequestStatus,
 } from '../../../types';
+import { mapRequestContractFields } from '../../../utils/request-contract';
 
 export const mapStatusFromApi = (status: any): RequestStatus => {
   if (typeof status === 'number') {
@@ -127,6 +128,7 @@ export const mapOrgBuildingRequestSummary = (
   fallback: { buildingId: string; buildingName?: string },
 ): Request => {
   const unit = item.unit || item.unitDetails;
+  const contractFields = mapRequestContractFields(item);
 
   return {
     id: String(item.id),
@@ -178,6 +180,7 @@ export const mapOrgBuildingRequestSummary = (
           )
           .filter(Boolean)
       : [],
+    ...contractFields,
     comments: [],
     messages: [],
     notes: [],

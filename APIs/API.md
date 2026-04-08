@@ -1057,7 +1057,7 @@ GET `/resident/requests/:requestId`
 
 PATCH `/resident/requests/:requestId`
 
-- Body: `{ title?, description? }`
+- Body: `{ title?, description?, type?, priority?, isEmergency?, emergencySignals? }`
 - Only allowed while status is OPEN
 
 POST `/resident/requests/:requestId/cancel`

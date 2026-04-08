@@ -177,6 +177,34 @@ export interface RequestTimelineEvent {
   createdAt: string;
 }
 
+export type RequestRecommendation =
+  | "PROCEED_NOW"
+  | "REQUEST_OWNER_APPROVAL"
+  | "PROCEED_AND_NOTIFY";
+
+export type ResidentEmergencySignal =
+  | "ACTIVE_LEAK"
+  | "NO_POWER"
+  | "SAFETY_RISK"
+  | "NO_COOLING";
+
+export type RequestQueue =
+  | "NEW"
+  | "AWAITING_OWNER"
+  | "READY_TO_ASSIGN"
+  | "ASSIGNED"
+  | "IN_PROGRESS"
+  | "OVERDUE";
+
+export interface RequestPolicy {
+  isEmergency?: boolean;
+  isLikeForLike?: boolean;
+  isUpgrade?: boolean;
+  isMajorReplacement?: boolean;
+  isResponsibilityDisputed?: boolean;
+  recommendation?: RequestRecommendation | null;
+}
+
 export interface Request {
   id: string;
   title: string;
@@ -211,6 +239,17 @@ export interface Request {
   attachments: string[]; // URIs to attachments (kept as string[] for backward compatibility)
   slaDueAt?: string;
   lastEscalatedAt?: string;
+  ownerApproval?: OwnerApprovalSnapshot | null;
+  ownerApprovalStatus?: OwnerApprovalStatus | null;
+  policy?: RequestPolicy | null;
+  isEmergency?: boolean;
+  emergencySignals?: ResidentEmergencySignal[];
+  isLikeForLike?: boolean;
+  isUpgrade?: boolean;
+  isMajorReplacement?: boolean;
+  isResponsibilityDisputed?: boolean;
+  recommendation?: RequestRecommendation | null;
+  queue?: RequestQueue | null;
   comments: RequestComment[];
   messages: RequestMessage[];
   notes: RequestNote[];
@@ -266,6 +305,8 @@ export interface Notification {
   body?: string;
   data?: Record<string, any>;
   type: NotificationEventType;
+  ownerApprovalStatus?: OwnerApprovalStatus | null;
+  isEmergency?: boolean;
   read?: boolean;
   readAt?: string | null;
   dismissedAt?: string | null;
@@ -2313,6 +2354,7 @@ export interface OwnerPortfolioRequest {
   type: string;
   attachments: (string | { url?: string; fileUrl?: string; uri?: string })[];
   ownerApproval?: OwnerApprovalSnapshot | null;
+  ownerApprovalStatus?: OwnerApprovalStatus | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -2353,6 +2395,124 @@ export interface OwnerConversationDetail extends OwnerConversation {
 export interface OwnerConversationListResponse {
   items: OwnerConversation[];
   nextCursor: string | null;
+}
+
+export interface ProviderPortalActor {
+  id: string | null;
+  name: string | null;
+  email?: string | null;
+  phone?: string | null;
+}
+
+export interface ProviderPortalMembership {
+  id: string;
+  name: string;
+  orgId?: string | null;
+  orgName?: string | null;
+  isActive?: boolean;
+}
+
+export interface ProviderPortalRuntime {
+  user: ProviderPortalActor | null;
+  providers: ProviderPortalMembership[];
+}
+
+export interface ProviderPortalUnitRef {
+  id: string | null;
+  label: string | null;
+  floor?: string | number | null;
+}
+
+export interface ProviderPortalRequestAttachment {
+  id?: string | null;
+  name?: string | null;
+  fileName?: string | null;
+  mimeType?: string | null;
+  sizeBytes?: number | null;
+  url?: string | null;
+  fileUrl?: string | null;
+  uri?: string | null;
+}
+
+export interface ProviderPortalEstimateSnapshot {
+  estimatedAmount?: number | string | null;
+  estimatedCurrency?: string | null;
+  approvalRequiredReason?: string | null;
+  isEmergency?: boolean | null;
+  isLikeForLike?: boolean | null;
+  isUpgrade?: boolean | null;
+  submittedAt?: string | null;
+}
+
+export interface ProviderPortalRequest {
+  id: string;
+  orgId?: string | null;
+  orgName?: string | null;
+  buildingId?: string | null;
+  buildingName: string;
+  unit: ProviderPortalUnitRef;
+  createdBy?: ProviderPortalActor | null;
+  serviceProvider?: ProviderPortalActor | null;
+  serviceProviderAssignedTo?: ProviderPortalActor | null;
+  title: string;
+  description: string;
+  status: string;
+  priority: string;
+  type: string;
+  attachments: ProviderPortalRequestAttachment[];
+  ownerApproval?: OwnerApprovalSnapshot | null;
+  ownerApprovalStatus?: OwnerApprovalStatus | null;
+  policy?: RequestPolicy | null;
+  isEmergency?: boolean;
+  isLikeForLike?: boolean;
+  isUpgrade?: boolean;
+  isMajorReplacement?: boolean;
+  isResponsibilityDisputed?: boolean;
+  recommendation?: RequestRecommendation | null;
+  queue?: RequestQueue | null;
+  estimate?: ProviderPortalEstimateSnapshot | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProviderPortalCommentAuthor extends ProviderPortalActor {
+  type?: string | null;
+  role?: string | null;
+}
+
+export interface ProviderPortalRequestComment {
+  id: string;
+  requestId: string;
+  author: ProviderPortalCommentAuthor | null;
+  message: string;
+  visibility: 'SHARED' | 'INTERNAL' | (string & {});
+  createdAt: string;
+  attachments?: ProviderPortalRequestAttachment[];
+}
+
+export type ProviderPortalRequestStatus =
+  | 'OPEN'
+  | 'ASSIGNED'
+  | 'IN_PROGRESS'
+  | 'COMPLETED'
+  | 'CANCELED';
+
+export type ProviderPortalWorkerStatusAction = 'IN_PROGRESS' | 'COMPLETED';
+
+export interface ProviderPortalEstimateInput {
+  estimatedAmount: number;
+  estimatedCurrency: string;
+  approvalRequiredReason: string;
+  isEmergency: boolean;
+  isLikeForLike: boolean;
+  isUpgrade: boolean;
+}
+
+export interface ProviderPortalAttachmentInput {
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  url: string;
 }
 
 export interface OwnerNotification extends Notification {

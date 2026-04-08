@@ -19,6 +19,7 @@ import {
   STORAGE_KEYS,
   DEFAULT_NOTIFICATIONS,
   createSystemNotification,
+  extractNotificationMetadata,
   getUnreadNotificationsCount,
   normalizeNotification,
   normalizeNotifications,
@@ -150,12 +151,12 @@ const coerceNotificationPayload = (
     title: payload?.title || "Notification",
     message,
     body: payload?.body ?? message,
-    data: payload?.data,
     type: payload?.type ?? "info",
     read: Boolean(payload?.readAt) || Boolean(payload?.read),
     readAt: payload?.readAt ?? null,
     dismissedAt: payload?.dismissedAt ?? null,
     createdAt: payload?.createdAt ?? new Date().toISOString(),
+    ...extractNotificationMetadata(payload),
   });
 };
 
@@ -307,6 +308,7 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
   children,
 }) => {
   const { isAuthenticated, currentUser } = useAuth();
+  const isOwnerRuntime = currentUser?.role === "owner";
   const appState = useRef(AppState.currentState);
   const canPlaySoundRef = useRef(false);
   const fallbackAttemptedRef = useRef(false);
@@ -339,6 +341,11 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
     read?: boolean;
     limit?: number;
   }) => {
+    if (currentUser?.role === "owner") {
+      dispatch({ type: NOTIFICATIONS_ACTIONS.SET_LOADING, payload: false });
+      return;
+    }
+
     const requestOptions = {
       ...(options?.unreadOnly === true ? { unreadOnly: true } : {}),
       read: options?.read,
@@ -390,7 +397,7 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
     } finally {
       dispatch({ type: NOTIFICATIONS_ACTIONS.SET_LOADING, payload: false });
     }
-  }, []);
+  }, [currentUser?.role]);
 
   const refreshNotificationsAutomatically = useCallback(
     (reason: "initial" | "foreground" | "socket-connect" | "socket-hello") => {
@@ -444,7 +451,7 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
   useEffect(() => {
     let cancelled = false;
 
-    if (!isAuthenticated || !currentUser?.id) {
+    if (!isAuthenticated || !currentUser?.id || isOwnerRuntime) {
       registeredPushTokenRef.current = null;
       registeredPushUserIdRef.current = null;
       return () => {
@@ -505,7 +512,7 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, currentUser?.id]);
+  }, [currentUser?.id, isAuthenticated, isOwnerRuntime]);
 
   useEffect(() => {
     if (!isAuthenticated) {

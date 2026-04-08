@@ -159,6 +159,7 @@ export default function OwnerUnitsScreen() {
             messagingUnreadCount={conversationUnreadCount}
             showSideMenu={showSideMenu}
             onSideMenuToggle={setShowSideMenu}
+            notificationRoute="/(owner)/notifications"
             textColor={P.text}
           />
 

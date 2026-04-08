@@ -221,6 +221,7 @@ export { TenantsApiService } from "./tenants";
 export { ConversationsApiService } from "./conversations";
 export { ResidentSelfServiceApiService, residentSelfServiceApi } from "./resident-self-service";
 export { OwnerPortalApiService, ownerPortalApi } from "./owner-portal";
+export { ProviderPortalApiService, providerPortalApi } from "./provider-portal";
 export { BaseApiService } from "./base";
 
 // Default export

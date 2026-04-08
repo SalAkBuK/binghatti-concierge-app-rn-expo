@@ -17,8 +17,10 @@
 The router currently mounts these live route groups:
 
 - `app/(tenant)/`
+- `app/(owner)/`
 - `app/(management)/`
 - `app/(buildingEmployee)/`
+- `app/(serviceProvider)/`
 - `app/(modals)/`
 
 Other roles may appear in docs, types, or navigation helpers, but they are not fully mounted portals unless the router explicitly registers them.

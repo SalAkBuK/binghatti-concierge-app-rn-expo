@@ -1,16 +1,40 @@
 import {
   hasCanonicalAccessAxes,
+  resolveAccessDerivedUserRole,
+  resolveClaimedUserRole,
   resolveExplicitUserRole,
+  resolveProviderRoleClaim,
   resolveUserRole,
   shouldFetchAssignmentsForAuthRole,
+  shouldProbeProviderRuntimeForAuthRole,
   shouldProbeOwnerRuntimeForAuthRole,
 } from '../auth-role';
 
 describe('auth role helpers', () => {
   it('maps owner aliases without defaulting through tenant', () => {
+    expect(resolveClaimedUserRole({ role: 'owner' })).toBe('owner');
     expect(resolveExplicitUserRole({ role: 'owner' })).toBe('owner');
     expect(resolveExplicitUserRole({ roleKey: 'property_owner' })).toBe('owner');
     expect(resolveExplicitUserRole({ roleName: 'landlord' })).toBe('owner');
+  });
+
+  it('separates explicit role claims from access-derived roles', () => {
+    expect(resolveClaimedUserRole({ role: 'service_provider' })).toBe(
+      'service_provider',
+    );
+    expect(
+      resolveProviderRoleClaim({ roleName: 'provider' }),
+    ).toBe('service_provider');
+    expect(
+      resolveClaimedUserRole({
+        buildingAccess: [{ roleTemplateKey: 'building_staff' }],
+      }),
+    ).toBeNull();
+    expect(
+      resolveAccessDerivedUserRole({
+        buildingAccess: [{ roleTemplateKey: 'building_staff' }],
+      }),
+    ).toBe('building_employee');
   });
 
   it('returns null when the payload has no explicit role signal', () => {
@@ -77,5 +101,14 @@ describe('auth role helpers', () => {
     expect(shouldProbeOwnerRuntimeForAuthRole('tenant')).toBe(true);
     expect(shouldProbeOwnerRuntimeForAuthRole('owner')).toBe(true);
     expect(shouldProbeOwnerRuntimeForAuthRole('management')).toBe(false);
+  });
+
+  it('probes provider runtime before collapsing non-resident users', () => {
+    expect(shouldProbeProviderRuntimeForAuthRole(null)).toBe(true);
+    expect(shouldProbeProviderRuntimeForAuthRole('service_provider')).toBe(true);
+    expect(shouldProbeProviderRuntimeForAuthRole('building_employee')).toBe(true);
+    expect(shouldProbeProviderRuntimeForAuthRole('management')).toBe(true);
+    expect(shouldProbeProviderRuntimeForAuthRole('tenant')).toBe(false);
+    expect(shouldProbeProviderRuntimeForAuthRole('owner')).toBe(false);
   });
 });

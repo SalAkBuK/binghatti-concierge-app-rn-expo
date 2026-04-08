@@ -50,7 +50,11 @@ export class OrgBuildingsApiService extends BaseApiService {
 
   async getBuildingRequests(
     buildingId: string | number,
-    params?: { status?: string },
+    params?: {
+      status?: string;
+      ownerApprovalStatus?: string;
+      queue?: string;
+    },
   ): Promise<ApiResponse<any[]>> {
     return this.get<ApiResponse<any[]>>(
       API_ENDPOINTS.orgBuildings.requests(buildingId),

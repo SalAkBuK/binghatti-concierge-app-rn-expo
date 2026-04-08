@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   RefreshControl,
   ScrollView,
@@ -28,10 +29,74 @@ import {
   formatOwnerLabel,
   formatOwnerMoney,
   getOwnerApprovalTone,
-  normalizeOwnerApprovalStatus,
   getOwnerRequestStatusTone,
+  resolveOwnerRequestApprovalStatus,
   OWNER_PALETTE as P,
 } from '../../../lib/utils/owner-portal';
+
+type RequestErrorType = 'outside_scope' | 'unknown' | null;
+
+const REQUEST_SCOPE_UNAVAILABLE_MESSAGE =
+  'This request is no longer available or is outside the current owner scope.';
+
+const getStatusCode = (error: unknown): number | undefined => {
+  if (!error || typeof error !== 'object' || !('status' in error)) {
+    return undefined;
+  }
+
+  const status = (error as { status?: unknown }).status;
+  return typeof status === 'number' ? status : undefined;
+};
+
+const getRequestAttachmentUrl = (
+  attachment: OwnerPortfolioRequest['attachments'][number],
+): string | null => {
+  if (typeof attachment === 'string') {
+    const trimmed = attachment.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  if (!attachment || typeof attachment !== 'object') {
+    return null;
+  }
+
+  const candidate = attachment.url ?? attachment.fileUrl ?? attachment.uri ?? null;
+  return typeof candidate === 'string' && candidate.trim().length > 0
+    ? candidate.trim()
+    : null;
+};
+
+const getRequestAttachmentLabel = (
+  attachment: OwnerPortfolioRequest['attachments'][number],
+  index: number,
+): string => {
+  if (attachment && typeof attachment === 'object' && 'name' in attachment) {
+    const name = attachment.name;
+    if (typeof name === 'string' && name.trim().length > 0) {
+      return name.trim();
+    }
+  }
+
+  const url = getRequestAttachmentUrl(attachment);
+  if (!url) {
+    return `Attachment ${index + 1}`;
+  }
+
+  const segments = url.split('/');
+  const rawFileName = segments[segments.length - 1]?.split('?')[0] ?? '';
+  const decodedFileName = rawFileName ? decodeURIComponent(rawFileName) : '';
+  return decodedFileName || `Attachment ${index + 1}`;
+};
+
+const formatActorSummary = (
+  actor?: OwnerPortfolioRequest['createdBy'] | OwnerPortfolioRequest['assignedTo'],
+): string => {
+  if (!actor) {
+    return 'Not provided';
+  }
+
+  return actor.name || actor.email || actor.id || 'Not provided';
+};
 
 export default function OwnerRequestDetailScreen() {
   const { requestId } = useLocalSearchParams<{ requestId?: string }>();
@@ -53,13 +118,18 @@ export default function OwnerRequestDetailScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [isDeciding, setIsDeciding] = useState(false);
+  const [errorType, setErrorType] = useState<RequestErrorType>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const load = useCallback(
     async (asRefresh = false) => {
       if (!requestId) {
+        setRequest(null);
+        setComments([]);
+        setErrorType('unknown');
         setErrorMessage('Request not found.');
         setIsLoading(false);
+        setIsRefreshing(false);
         return;
       }
 
@@ -77,6 +147,7 @@ export default function OwnerRequestDetailScreen() {
 
         setRequest(requestDetail);
         setComments(requestComments);
+        setErrorType(null);
         setErrorMessage(null);
         await refreshUnreadSummary();
       } catch (error) {
@@ -84,14 +155,15 @@ export default function OwnerRequestDetailScreen() {
           return;
         }
 
-        const status =
-          error && typeof error === 'object' && 'status' in error
-            ? (error as { status?: unknown }).status
-            : undefined;
+        const status = getStatusCode(error);
+        const outsideScope = status === 404;
 
+        setRequest(null);
+        setComments([]);
+        setErrorType(outsideScope ? 'outside_scope' : 'unknown');
         setErrorMessage(
-          status === 404
-            ? 'This request is outside the current owner scope.'
+          outsideScope
+            ? REQUEST_SCOPE_UNAVAILABLE_MESSAGE
             : error instanceof Error
               ? error.message
               : 'Unable to load request details.',
@@ -109,21 +181,54 @@ export default function OwnerRequestDetailScreen() {
   }, [load]);
 
   const approvalTone = useMemo(
-    () => getOwnerApprovalTone(normalizeOwnerApprovalStatus(request?.ownerApproval?.status)),
-    [request?.ownerApproval?.status],
+    () => getOwnerApprovalTone(resolveOwnerRequestApprovalStatus(request)),
+    [request],
   );
   const statusTone = useMemo(
     () => getOwnerRequestStatusTone(request?.status),
     [request?.status],
   );
   const approvalStatus = useMemo(
-    () => normalizeOwnerApprovalStatus(request?.ownerApproval?.status),
-    [request?.ownerApproval?.status],
+    () => resolveOwnerRequestApprovalStatus(request),
+    [request],
   );
+  const attachmentItems = useMemo(
+    () =>
+      (request?.attachments ?? [])
+        .map((attachment, index) => {
+          const url = getRequestAttachmentUrl(attachment);
+          if (!url) {
+            return null;
+          }
+
+          return {
+            key: `${index}-${url}`,
+            label: getRequestAttachmentLabel(attachment, index),
+            url,
+          };
+        })
+        .filter((attachment): attachment is { key: string; label: string; url: string } =>
+          attachment != null,
+        ),
+    [request?.attachments],
+  );
+
+  const handleOpenAttachment = useCallback(async (url: string) => {
+    try {
+      await Linking.openURL(url);
+    } catch (error) {
+      Alert.alert(
+        'Unable to open attachment',
+        error instanceof Error ? error.message : 'Please try again.',
+      );
+    }
+  }, []);
 
   const handleDecision = useCallback(
     async (decision: 'approve' | 'reject') => {
-      if (!requestId || !request) return;
+      if (!requestId || !request) {
+        return;
+      }
 
       if (decision === 'reject' && !approvalReasonDraft.trim()) {
         Alert.alert('Rejection reason required', 'Add a reason before rejecting this request.');
@@ -154,18 +259,17 @@ export default function OwnerRequestDetailScreen() {
           return;
         }
 
-        const status =
-          error && typeof error === 'object' && 'status' in error
-            ? (error as { status?: unknown }).status
-            : undefined;
+        if (getStatusCode(error) === 404) {
+          setRequest(null);
+          setComments([]);
+          setErrorType('outside_scope');
+          setErrorMessage(REQUEST_SCOPE_UNAVAILABLE_MESSAGE);
+          return;
+        }
 
         Alert.alert(
           'Unable to submit decision',
-          status === 404
-            ? 'This request is outside the current owner scope.'
-            : error instanceof Error
-              ? error.message
-              : 'Please try again.',
+          error instanceof Error ? error.message : 'Please try again.',
         );
       } finally {
         setIsDeciding(false);
@@ -175,7 +279,9 @@ export default function OwnerRequestDetailScreen() {
   );
 
   const handleSubmitComment = useCallback(async () => {
-    if (!requestId || !commentDraft.trim()) return;
+    if (!requestId || !commentDraft.trim()) {
+      return;
+    }
 
     setIsSubmittingComment(true);
     try {
@@ -187,18 +293,17 @@ export default function OwnerRequestDetailScreen() {
         return;
       }
 
-      const status =
-        error && typeof error === 'object' && 'status' in error
-          ? (error as { status?: unknown }).status
-          : undefined;
+      if (getStatusCode(error) === 404) {
+        setRequest(null);
+        setComments([]);
+        setErrorType('outside_scope');
+        setErrorMessage(REQUEST_SCOPE_UNAVAILABLE_MESSAGE);
+        return;
+      }
 
       Alert.alert(
         'Unable to post comment',
-        status === 404
-          ? 'This request is outside the current owner scope.'
-          : error instanceof Error
-            ? error.message
-            : 'Please try again.',
+        error instanceof Error ? error.message : 'Please try again.',
       );
     } finally {
       setIsSubmittingComment(false);
@@ -218,11 +323,51 @@ export default function OwnerRequestDetailScreen() {
 
   if (!request) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingWrap}>
-          <Text style={styles.loadingText}>{errorMessage || 'Request not found.'}</Text>
-        </View>
-      </SafeAreaView>
+      <ScreenEntrance>
+        <SafeAreaView style={styles.container}>
+          <ScrollView
+            style={styles.scrollView}
+            refreshControl={
+              <RefreshControl refreshing={isRefreshing} onRefresh={() => void load(true)} />
+            }
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <HeaderBar
+              title="Request Detail"
+              subtitle={`${requestCommentUnreadCount} unread shared comments`}
+              showBackButton
+              hasUnreadNotifications={notificationUnreadCount > 0}
+              messagingUnreadCount={conversationUnreadCount}
+              notificationRoute="/(owner)/notifications"
+              textColor={P.text}
+              onBackPress={() => router.back()}
+            />
+
+            <View style={styles.unavailableCard}>
+              <View style={styles.unavailableIconWrap}>
+                <Ionicons
+                  name={
+                    errorType === 'outside_scope'
+                      ? 'alert-circle-outline'
+                      : 'document-text-outline'
+                  }
+                  size={24}
+                  color={errorType === 'outside_scope' ? P.warningText : P.primary}
+                />
+              </View>
+              <Text style={styles.unavailableTitle}>
+                {errorType === 'outside_scope'
+                  ? 'Request no longer available'
+                  : 'Request not found'}
+              </Text>
+              <Text style={styles.unavailableText}>
+                {errorMessage || 'Unable to load this owner request.'}
+              </Text>
+            </View>
+          </ScrollView>
+        </SafeAreaView>
+      </ScreenEntrance>
     );
   }
 
@@ -247,6 +392,7 @@ export default function OwnerRequestDetailScreen() {
               showBackButton
               hasUnreadNotifications={notificationUnreadCount > 0}
               messagingUnreadCount={conversationUnreadCount}
+              notificationRoute="/(owner)/notifications"
               textColor={P.text}
               onBackPress={() => router.back()}
             />
@@ -255,9 +401,10 @@ export default function OwnerRequestDetailScreen() {
               <View style={styles.heroTopRow}>
                 <View style={styles.heroCopy}>
                   <Text style={styles.eyebrow}>Maintenance Request</Text>
-                  <Text style={styles.title}>{request.title}</Text>
+                  <Text style={styles.title}>{request.title || 'Maintenance request'}</Text>
                   <Text style={styles.subtitle}>
-                    {request.buildingName} • Unit {request.unit.label} • {request.orgName}
+                    {request.buildingName || 'Unknown building'} | Unit{' '}
+                    {request.unit?.label || 'Not provided'} | {request.orgName || 'Owner scope'}
                   </Text>
                 </View>
                 <View style={[styles.pill, { backgroundColor: statusTone.bg }]}>
@@ -267,20 +414,79 @@ export default function OwnerRequestDetailScreen() {
                 </View>
               </View>
 
-              <Text style={styles.description}>{request.description}</Text>
+              <Text style={styles.description}>
+                {request.description || 'No description provided.'}
+              </Text>
 
               <View style={styles.metaGrid}>
+                <MetaField label="Building" value={request.buildingName || 'Not provided'} />
+                <MetaField label="Unit" value={request.unit?.label || 'Not provided'} />
+                <MetaField label="Status" value={formatOwnerLabel(request.status)} />
                 <MetaField label="Priority" value={formatOwnerLabel(request.priority)} />
                 <MetaField label="Type" value={formatOwnerLabel(request.type)} />
-                <MetaField
-                  label="Created"
-                  value={formatOwnerDateTime(request.createdAt)}
+                <MetaField label="Created" value={formatOwnerDateTime(request.createdAt)} />
+                <MetaField label="Updated" value={formatOwnerDateTime(request.updatedAt)} />
+              </View>
+            </View>
+
+            <View style={styles.infoCard}>
+              <View style={styles.approvalHeader}>
+                <View>
+                  <Text style={styles.sectionEyebrow}>Request Actors</Text>
+                  <Text style={styles.sectionTitle}>People on this request</Text>
+                </View>
+              </View>
+
+              <View style={styles.metaGrid}>
+                <ActorField
+                  label="Created By"
+                  actor={request.createdBy}
+                  emptyValue="Not provided"
                 />
-                <MetaField
-                  label="Updated"
-                  value={formatOwnerDateTime(request.updatedAt)}
+                <ActorField
+                  label="Assigned To"
+                  actor={request.assignedTo}
+                  emptyValue="Not assigned"
                 />
               </View>
+            </View>
+
+            <View style={styles.infoCard}>
+              <View style={styles.approvalHeader}>
+                <View>
+                  <Text style={styles.sectionEyebrow}>Attachments</Text>
+                  <Text style={styles.sectionTitle}>Request files</Text>
+                </View>
+                <Text style={styles.commentCountText}>{attachmentItems.length} available</Text>
+              </View>
+
+              {attachmentItems.length === 0 ? (
+                <Text style={styles.emptyInlineText}>
+                  No attachments were shared with this request.
+                </Text>
+              ) : (
+                attachmentItems.map((attachment) => (
+                  <TouchableOpacity
+                    key={attachment.key}
+                    style={styles.attachmentRow}
+                    activeOpacity={0.88}
+                    onPress={() => void handleOpenAttachment(attachment.url)}
+                  >
+                    <View style={styles.attachmentIconWrap}>
+                      <Ionicons name="document-outline" size={18} color={P.primary} />
+                    </View>
+                    <View style={styles.attachmentCopy}>
+                      <Text style={styles.attachmentTitle} numberOfLines={1}>
+                        {attachment.label}
+                      </Text>
+                      <Text style={styles.attachmentUrl} numberOfLines={1}>
+                        {attachment.url}
+                      </Text>
+                    </View>
+                    <Ionicons name="open-outline" size={18} color={P.soft} />
+                  </TouchableOpacity>
+                ))
+              )}
             </View>
 
             <View style={styles.approvalCard}>
@@ -297,12 +503,17 @@ export default function OwnerRequestDetailScreen() {
               </View>
 
               <View style={styles.metaGrid}>
+                <MetaField label="Status" value={formatOwnerLabel(approvalStatus)} />
                 <MetaField
                   label="Estimated Amount"
                   value={formatOwnerMoney(
                     request.ownerApproval?.estimatedAmount,
                     request.ownerApproval?.estimatedCurrency,
                   )}
+                />
+                <MetaField
+                  label="Estimated Currency"
+                  value={request.ownerApproval?.estimatedCurrency || 'Not provided'}
                 />
                 <MetaField
                   label="Required Reason"
@@ -313,8 +524,39 @@ export default function OwnerRequestDetailScreen() {
                   value={formatOwnerDateTime(request.ownerApproval?.requestedAt)}
                 />
                 <MetaField
-                  label="Decision"
+                  label="Requested By User ID"
+                  value={request.ownerApproval?.requestedByUserId || 'Not provided'}
+                  mono
+                />
+                <MetaField
+                  label="Deadline"
+                  value={formatOwnerDateTime(request.ownerApproval?.deadlineAt)}
+                />
+                <MetaField
+                  label="Decided At"
+                  value={formatOwnerDateTime(request.ownerApproval?.decidedAt)}
+                />
+                <MetaField
+                  label="Decided By Owner User ID"
+                  value={request.ownerApproval?.decidedByOwnerUserId || 'Not provided'}
+                  mono
+                />
+                <MetaField
+                  label="Decision Note"
                   value={request.ownerApproval?.reason || 'No decision note yet'}
+                />
+                <MetaField
+                  label="Decision Source"
+                  value={formatOwnerLabel(request.ownerApproval?.decisionSource)}
+                />
+                <MetaField
+                  label="Override Reason"
+                  value={request.ownerApproval?.overrideReason || 'Not provided'}
+                />
+                <MetaField
+                  label="Overridden By User ID"
+                  value={request.ownerApproval?.overriddenByUserId || 'Not provided'}
+                  mono
                 />
               </View>
 
@@ -358,7 +600,11 @@ export default function OwnerRequestDetailScreen() {
                     </TouchableOpacity>
                   </View>
                 </>
-              ) : null}
+              ) : (
+                <Text style={styles.emptyInlineText}>
+                  This approval is no longer actionable from the owner portal.
+                </Text>
+              )}
             </View>
 
             <View style={styles.commentsCard}>
@@ -375,7 +621,7 @@ export default function OwnerRequestDetailScreen() {
                   <Ionicons name="chatbubble-outline" size={24} color={P.soft} />
                   <Text style={styles.emptyStateTitle}>No shared comments yet</Text>
                   <Text style={styles.emptyStateText}>
-                    Owners can read and post only SHARED comments on in-scope requests.
+                    Owners can read and post only shared comments on in-scope requests.
                   </Text>
                 </View>
               ) : (
@@ -383,12 +629,16 @@ export default function OwnerRequestDetailScreen() {
                   <View key={comment.id} style={styles.commentCard}>
                     <View style={styles.commentTopRow}>
                       <View style={styles.commentAuthorWrap}>
-                        <Text style={styles.commentAuthor}>{comment.author.name}</Text>
+                        <Text style={styles.commentAuthor}>
+                          {comment.author?.name || 'Unknown author'}
+                        </Text>
                         <Text style={styles.commentAuthorMeta}>
-                          {formatOwnerLabel(comment.author.type)}
+                          {formatOwnerLabel(comment.author?.type)}
                         </Text>
                       </View>
-                      <Text style={styles.commentDate}>{formatOwnerDateTime(comment.createdAt)}</Text>
+                      <Text style={styles.commentDate}>
+                        {formatOwnerDateTime(comment.createdAt)}
+                      </Text>
                     </View>
                     <Text style={styles.commentBody}>{comment.message}</Text>
                   </View>
@@ -427,14 +677,37 @@ export default function OwnerRequestDetailScreen() {
 function MetaField({
   label,
   value,
+  mono = false,
 }: {
   label: string;
   value: string;
+  mono?: boolean;
 }) {
   return (
     <View style={styles.metaField}>
       <Text style={styles.metaLabel}>{label}</Text>
-      <Text style={styles.metaValue}>{value}</Text>
+      <Text style={[styles.metaValue, mono && styles.metaValueMono]}>{value}</Text>
+    </View>
+  );
+}
+
+function ActorField({
+  label,
+  actor,
+  emptyValue,
+}: {
+  label: string;
+  actor?: OwnerPortfolioRequest['createdBy'] | OwnerPortfolioRequest['assignedTo'] | null;
+  emptyValue: string;
+}) {
+  return (
+    <View style={styles.metaField}>
+      <Text style={styles.metaLabel}>{label}</Text>
+      <Text style={styles.metaValue}>{actor ? formatActorSummary(actor) : emptyValue}</Text>
+      {actor?.email ? <Text style={styles.metaSubValue}>{actor.email}</Text> : null}
+      {actor?.id ? (
+        <Text style={[styles.metaSubValue, styles.metaValueMono]}>{actor.id}</Text>
+      ) : null}
     </View>
   );
 }
@@ -464,7 +737,45 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: P.muted,
   },
+  unavailableCard: {
+    backgroundColor: P.surface,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: P.border,
+    paddingHorizontal: 22,
+    paddingVertical: 28,
+    alignItems: 'center',
+  },
+  unavailableIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    backgroundColor: P.warningBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unavailableTitle: {
+    marginTop: 16,
+    fontSize: 20,
+    fontWeight: '800',
+    color: P.text,
+  },
+  unavailableText: {
+    marginTop: 10,
+    fontSize: 14,
+    lineHeight: 22,
+    color: P.muted,
+    textAlign: 'center',
+  },
   heroCard: {
+    backgroundColor: P.surface,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: P.border,
+    padding: 18,
+    marginBottom: 14,
+  },
+  infoCard: {
     backgroundColor: P.surface,
     borderRadius: 24,
     borderWidth: 1,
@@ -530,6 +841,16 @@ const styles = StyleSheet.create({
     color: P.text,
     fontWeight: '600',
   },
+  metaSubValue: {
+    marginTop: 4,
+    fontSize: 12,
+    lineHeight: 18,
+    color: P.muted,
+  },
+  metaValueMono: {
+    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }),
+    fontSize: 12,
+  },
   approvalCard: {
     backgroundColor: P.surface,
     borderRadius: 24,
@@ -566,6 +887,41 @@ const styles = StyleSheet.create({
   pillText: {
     fontSize: 11,
     fontWeight: '800',
+  },
+  emptyInlineText: {
+    marginTop: 8,
+    fontSize: 13,
+    lineHeight: 20,
+    color: P.muted,
+  },
+  attachmentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: P.border,
+  },
+  attachmentIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: P.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  attachmentCopy: {
+    flex: 1,
+  },
+  attachmentTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: P.text,
+  },
+  attachmentUrl: {
+    marginTop: 4,
+    fontSize: 12,
+    color: P.muted,
   },
   textArea: {
     minHeight: 110,

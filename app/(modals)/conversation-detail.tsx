@@ -23,6 +23,11 @@ import type {
   ConversationMessage,
   ConversationParticipant,
 } from "../../lib/types";
+import {
+  getTenantConversationDisplayName,
+  getTenantMessageSenderName,
+  shouldHideTenantParticipantDetails,
+} from "../../lib/utils/tenant-messaging-privacy";
 
 const P = {
   bg: "#F8F9FA",
@@ -130,40 +135,59 @@ export default function ConversationDetailModal() {
     () => activeConversation?.participants ?? [],
     [activeConversation?.participants],
   );
+  const isTenantUser = currentUser?.role === "tenant";
   const others = useMemo(
     () => threadParticipants.filter((participant) => participant.id !== currentUser?.id),
     [currentUser?.id, threadParticipants],
   );
-  const participantSummary =
-    others.length > 0 ? others.map((p) => p.name).join(", ") : "No participants yet";
+  const hideParticipantDetails =
+    Boolean(
+      isTenantUser &&
+        activeConversation &&
+        shouldHideTenantParticipantDetails(activeConversation, currentUser?.id),
+    );
+  const participantSummary = hideParticipantDetails
+    ? "Management team"
+    : others.length > 0
+      ? others.map((p) => p.name).join(", ")
+      : "No participants yet";
   const conversationTitle = activeConversation?.subject?.trim() || "";
   const isGroupConversation = others.length > 1;
   const participantCount = threadParticipants.length;
   const primaryParticipant = isGroupConversation ? null : others[0] ?? null;
   const primaryParticipantName =
-    primaryParticipant?.name?.trim() || conversationTitle || "Conversation";
-  const primaryParticipantAvatar = primaryParticipant?.avatarUrl?.trim() || null;
-  const headerTitle = conversationTitle
-    ? conversationTitle
-    : isGroupConversation
-      ? `${participantCount} people`
-      : primaryParticipantName;
-  const headerSubtitle = conversationTitle
-    ? participantSummary
-    : isGroupConversation
+    hideParticipantDetails && activeConversation
+      ? getTenantConversationDisplayName(activeConversation, currentUser?.id)
+      : primaryParticipant?.name?.trim() || conversationTitle || "Conversation";
+  const primaryParticipantAvatar =
+    hideParticipantDetails ? null : primaryParticipant?.avatarUrl?.trim() || null;
+  const headerTitle = hideParticipantDetails
+    ? "Management"
+    : conversationTitle
+      ? conversationTitle
+      : isGroupConversation
+        ? `${participantCount} people`
+        : primaryParticipantName;
+  const headerSubtitle = hideParticipantDetails
+    ? conversationTitle || "Management team"
+    : conversationTitle
       ? participantSummary
-      : messages.length > 0
-        ? "In conversation"
-        : "Online";
+      : isGroupConversation
+        ? participantSummary
+        : messages.length > 0
+          ? "In conversation"
+          : "Online";
   const onlineLabel = messages.length > 0 ? "In conversation" : "Online";
 
   const renderParticipantRow = useCallback(
     (participant: ConversationParticipant) => {
       const isCurrentUser = participant.id === currentUser?.id;
+      const participantName =
+        !isCurrentUser && hideParticipantDetails ? "Management" : participant.name;
 
       return (
         <View key={participant.id} style={styles.participantRow}>
-          {participant.avatarUrl ? (
+          {!hideParticipantDetails && participant.avatarUrl ? (
             <Image
               source={{ uri: participant.avatarUrl }}
               style={styles.participantAvatarImage}
@@ -171,17 +195,17 @@ export default function ConversationDetailModal() {
           ) : (
             <View style={styles.participantAvatarFallback}>
               <Text style={styles.participantAvatarFallbackText}>
-                {getInitials(participant.name)}
+                {getInitials(participantName)}
               </Text>
             </View>
           )}
 
           <View style={styles.participantCopy}>
             <Text style={styles.participantName}>
-              {participant.name}
+              {participantName}
             </Text>
             <Text style={styles.participantMeta}>
-              {isCurrentUser ? "You" : "Participant"}
+              {isCurrentUser ? "You" : hideParticipantDetails ? "Management" : "Participant"}
             </Text>
           </View>
 
@@ -193,7 +217,7 @@ export default function ConversationDetailModal() {
         </View>
       );
     },
-    [currentUser?.id],
+    [currentUser?.id, hideParticipantDetails],
   );
 
   const renderMessage = useCallback(
@@ -201,6 +225,10 @@ export default function ConversationDetailModal() {
       const isMe = item.sender.id === currentUser?.id;
       const showDate = shouldShowDateSeparator(messages, index);
       const isOptimistic = item.id.startsWith("optimistic-");
+      const senderName =
+        activeConversation && isTenantUser
+          ? getTenantMessageSenderName(activeConversation, item, currentUser?.id)
+          : item.sender.name;
 
       return (
         <>
@@ -215,7 +243,7 @@ export default function ConversationDetailModal() {
             style={[styles.messageBubbleRow, isMe ? styles.myRow : styles.otherRow]}
           >
             {!isMe && (
-              item.sender.avatarUrl ? (
+              !hideParticipantDetails && item.sender.avatarUrl ? (
                 <Image
                   source={{ uri: item.sender.avatarUrl }}
                   style={styles.senderAvatarImage}
@@ -223,13 +251,13 @@ export default function ConversationDetailModal() {
               ) : (
                 <View style={styles.senderAvatar}>
                   <Text style={styles.senderAvatarText}>
-                    {getInitials(item.sender.name)}
+                    {getInitials(senderName)}
                   </Text>
                 </View>
               )
             )}
             <View style={styles.bubbleWrapper}>
-              {!isMe ? <Text style={styles.senderName}>{item.sender.name}</Text> : null}
+              {!isMe ? <Text style={styles.senderName}>{senderName}</Text> : null}
               {isMe ? (
                 <LinearGradient
                   colors={[P.primary, P.primaryDark]}
@@ -279,7 +307,7 @@ export default function ConversationDetailModal() {
         </>
       );
     },
-    [currentUser?.id, messages],
+    [activeConversation, currentUser?.id, hideParticipantDetails, isTenantUser, messages],
   );
 
   const keyExtractor = useCallback(
@@ -349,7 +377,7 @@ export default function ConversationDetailModal() {
                 style={styles.headerIconButton}
                 activeOpacity={0.85}
                 onPress={() => setShowParticipantsModal(true)}
-                disabled={threadParticipants.length === 0}
+                disabled={threadParticipants.length === 0 || hideParticipantDetails}
               >
                 <Ionicons name="information-circle-outline" size={18} color={P.text} />
               </TouchableOpacity>
@@ -441,7 +469,7 @@ export default function ConversationDetailModal() {
         <Modal
           animationType="fade"
           transparent
-          visible={showParticipantsModal}
+          visible={showParticipantsModal && !hideParticipantDetails}
           onRequestClose={() => setShowParticipantsModal(false)}
         >
           <View style={styles.modalOverlay}>

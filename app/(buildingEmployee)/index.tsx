@@ -1,25 +1,27 @@
-import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
-import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { router } from 'expo-router';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
-} from "react-native";
-import Animated, { FadeInDown } from "react-native-reanimated";
-import { SafeAreaView } from "react-native-safe-area-context";
+} from 'react-native';
+import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { HeaderBar } from "../../components/ui/HeaderBar";
-import { ScreenEntrance } from "../../components/ui/ScreenEntrance";
-import { SideMenu } from "../../components/ui/SideMenu";
-import { useAuth } from "../../lib/context/auth-context";
-import { useNotifications } from "../../lib/context/notifications-context";
-import { orgBuildingsApi } from "../../lib/services/api/org-buildings";
-import { getUnreadNotificationsCount } from "../../lib/utils/helpers";
+import { HeaderBar } from '../../components/ui/HeaderBar';
+import { ScreenEntrance } from '../../components/ui/ScreenEntrance';
+import { SideMenu } from '../../components/ui/SideMenu';
+import { useAuth } from '../../lib/context/auth-context';
+import { useNotifications } from '../../lib/context/notifications-context';
+import { orgBuildingsApi } from '../../lib/services/api/org-buildings';
+import { getUnreadNotificationsCount } from '../../lib/utils/helpers';
 
 type MaintenanceRequest = {
   id: string;
@@ -39,211 +41,149 @@ type BuildingAssignment = {
   address?: string;
 };
 
+const P = {
+  bg: '#F8F9FA',
+  surface: '#FFFFFF',
+  surfaceLow: '#F1F4F6',
+  border: '#D9E0E4',
+  text: '#2B3437',
+  muted: '#667176',
+  soft: '#7A8488',
+  primary: '#4D6169',
+  primaryDark: '#34474D',
+  primarySoft: '#D6E4E8',
+  accent: '#F7EEDF',
+  accentBorder: '#EBD8BB',
+  successBg: '#E4F4EA',
+  successText: '#25674A',
+  warningBg: '#FDF1DB',
+  warningText: '#9A5B00',
+  dangerBg: '#FCE3E0',
+  dangerText: '#B24A41',
+  infoBg: '#E7EEF9',
+  infoText: '#3C5A8C',
+  shadow: 'rgba(43, 52, 55, 0.08)',
+};
+
+const STATUS_LABELS: Record<number, string> = {
+  1: 'New',
+  2: 'Assigned',
+  3: 'In Progress',
+  4: 'On Hold',
+  5: 'Completed',
+  6: 'Cancelled',
+};
+
+const PRIORITY_LABELS: Record<number, string> = {
+  1: 'Low',
+  2: 'Medium',
+  3: 'High',
+  4: 'Urgent',
+};
+
+const normalizeStatus = (status: unknown): number => {
+  if (typeof status === 'number') return status;
+  const normalized = String(status || '').toUpperCase();
+  if (['OPEN', 'NEW', 'PENDING'].includes(normalized)) return 1;
+  if (['ASSIGNED'].includes(normalized)) return 2;
+  if (['IN_PROGRESS', 'INPROGRESS'].includes(normalized)) return 3;
+  if (['ON_HOLD', 'ON-HOLD', 'HOLD'].includes(normalized)) return 4;
+  if (['COMPLETED', 'DONE'].includes(normalized)) return 5;
+  if (['CANCELLED', 'CANCELED'].includes(normalized)) return 6;
+  return 1;
+};
+
+const normalizePriority = (priority: unknown): number => {
+  if (typeof priority === 'number') return priority;
+  const normalized = String(priority || '').toUpperCase();
+  if (['LOW', '1'].includes(normalized)) return 1;
+  if (['MEDIUM', '2'].includes(normalized)) return 2;
+  if (['HIGH', '3'].includes(normalized)) return 3;
+  if (['URGENT', '4'].includes(normalized)) return 4;
+  return 2;
+};
+
+const formatDate = (value?: string | null) => {
+  if (!value) return 'Date unavailable';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return 'Date unavailable';
+  return parsed.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+};
+
+const firstName = (name?: string | null) => name?.trim().split(/\s+/)[0] || 'Staff';
+
+const initials = (name?: string | null) =>
+  name?.trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('') || 'BE';
+
+const priorityMeta = (priority: number) => {
+  switch (priority) {
+    case 4:
+      return { label: 'Urgent', bg: P.dangerBg, text: P.dangerText };
+    case 3:
+      return { label: 'High', bg: '#FFEDD5', text: '#B45309' };
+    case 2:
+      return { label: 'Medium', bg: P.warningBg, text: P.warningText };
+    default:
+      return { label: 'Low', bg: P.successBg, text: P.successText };
+  }
+};
+
 export default function BuildingEmployeeDashboard() {
   const { isAuthenticated, currentUser } = useAuth();
   const { notifications } = useNotifications();
   const tabBarHeight = useBottomTabBarHeight();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [assignedBuildings, setAssignedBuildings] = useState<BuildingAssignment[]>([]);
   const [maintenanceRequests, setMaintenanceRequests] = useState<MaintenanceRequest[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     if (!isAuthenticated) {
-      router.replace("/auth" as any);
+      router.replace('/auth' as any);
     }
   }, [isAuthenticated]);
 
-  // Fetch assigned buildings and maintenance requests
-  const normalizeStatus = (status: any): number => {
-    if (typeof status === "number") return status;
-    const normalized = String(status || "").toUpperCase();
-    if (["OPEN", "NEW", "PENDING"].includes(normalized)) return 1;
-    if (["ASSIGNED"].includes(normalized)) return 2;
-    if (["IN_PROGRESS", "INPROGRESS"].includes(normalized)) return 3;
-    if (["ON_HOLD", "ON-HOLD", "HOLD"].includes(normalized)) return 4;
-    if (["COMPLETED", "DONE"].includes(normalized)) return 5;
-    if (["CANCELLED", "CANCELED"].includes(normalized)) return 6;
-    return 1;
-  };
-
-  const normalizePriority = (priority: any): number => {
-    if (typeof priority === "number") return priority;
-    const normalized = String(priority || "").toUpperCase();
-    if (["LOW", "1"].includes(normalized)) return 1;
-    if (["MEDIUM", "2"].includes(normalized)) return 2;
-    if (["HIGH", "3"].includes(normalized)) return 3;
-    if (["URGENT", "4"].includes(normalized)) return 4;
-    return 2;
-  };
-
-  useEffect(() => {
-    const fetchData = async () => {
-      console.log("[BuildingEmployee] fetchData useEffect triggered");
-
-      if (!currentUser?.id) {
-        console.log("[BuildingEmployee] No currentUser.id, skipping fetch");
-        setIsLoading(false);
-        return;
-      }
-
-      console.log("[BuildingEmployee] Starting data fetch for user:", currentUser.id);
-      setIsLoading(true);
-      try {
-        console.log("[BuildingEmployee] Fetching assigned buildings for staff:", currentUser.id);
-
-        const buildingsResponse = await orgBuildingsApi.getAssignedBuildings();
-        const buildingsPayload = Array.isArray(buildingsResponse)
-          ? buildingsResponse
-          : Array.isArray(buildingsResponse?.data)
-            ? buildingsResponse.data
-            : [];
-        const mappedBuildings = buildingsPayload.map((building: any) => ({
-          id: String(building?.id ?? building?.buildingId ?? ""),
-          name:
-            building?.name ||
-            building?.buildingName ||
-            building?.title ||
-            "Building",
-          address: building?.address,
-        }));
-
-        if (mappedBuildings.length > 0) {
-          console.log("[BuildingEmployee] Assigned buildings fetched:", mappedBuildings.length);
-          setAssignedBuildings(mappedBuildings);
-
-          console.log(
-            "[BuildingEmployee] Fetching requests for",
-            mappedBuildings.length,
-            "buildings",
-          );
-          const requestPromises = mappedBuildings.map(async (building) => {
-            try {
-              const response = await orgBuildingsApi.getBuildingRequests(building.id);
-              const payload = Array.isArray(response)
-                ? response
-                : Array.isArray(response?.data)
-                  ? response.data
-                  : [];
-              return payload.map((request: any) => ({
-                id: String(request?.id ?? request?.requestId ?? ""),
-                title: request?.title || "Maintenance request",
-                description: request?.description || "",
-                priority: normalizePriority(request?.priority),
-                status: normalizeStatus(request?.status),
-                createdAt: request?.createdAt || new Date().toISOString(),
-                updatedAt: request?.updatedAt,
-                buildingId: String(
-                  request?.buildingId ?? request?.building?.id ?? building.id,
-                ),
-                buildingName:
-                  request?.buildingName ??
-                  request?.building?.name ??
-                  building.name,
-              }));
-            } catch (error) {
-              console.error(
-                `[BuildingEmployee] Failed to fetch requests for building ${building.id}:`,
-                error,
-              );
-              return [];
-            }
-          });
-
-          const requestArrays = await Promise.all(requestPromises);
-          const allRequests = requestArrays.flat();
-          console.log("[BuildingEmployee] All building requests fetched:", allRequests.length);
-          setMaintenanceRequests(allRequests);
-        } else {
-          console.log("[BuildingEmployee] No buildings assigned to this staff");
-          setAssignedBuildings([]);
-          setMaintenanceRequests([]);
-        }
-      } catch (error) {
-        console.error("[BuildingEmployee] Failed to fetch dashboard data:", error);
-        setAssignedBuildings([]);
-        setMaintenanceRequests([]);
-      } finally {
-        console.log("[BuildingEmployee] Data fetch completed, setIsLoading(false)");
-        setIsLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [currentUser?.id]);
-
-  const openRequests = useMemo(
-    () =>
-      maintenanceRequests.filter((request) =>
-        request.status === 1 || request.status === 2 || request.status === 3 // New, Assigned, In Progress
-      ),
-    [maintenanceRequests],
-  );
-
-  const priorityRequests = useMemo(() => {
-    return [...maintenanceRequests]
-      .sort((a, b) => {
-        const aTime = new Date(a.createdAt || a.updatedAt || 0).getTime();
-        const bTime = new Date(b.createdAt || b.updatedAt || 0).getTime();
-        return bTime - aTime;
-      })
-      .slice(0, 3);
-  }, [maintenanceRequests]);
-
-  const totalJobsInProgress = useMemo(
-    () => maintenanceRequests.filter((request) => request.status === 3).length, // In Progress
-    [maintenanceRequests],
-  );
-
-  const pendingJobs = useMemo(
-    () => maintenanceRequests.filter((request) => request.status === 1).length, // Open only
-    [maintenanceRequests],
-  );
-
-  const completedJobs = useMemo(
-    () => maintenanceRequests.filter((request) => request.status === 5).length, // Completed
-    [maintenanceRequests],
-  );
-
-  const buildingName = assignedBuildings.length > 0 ? assignedBuildings[0].name : "Building";
-
-  const hasUnreadNotifications =
-    getUnreadNotificationsCount(notifications || [], currentUser?.id) > 0;
-
-  const onRefresh = async () => {
-    console.log('[BuildingEmployee] Refresh triggered');
-
+  const fetchDashboardData = useCallback(async () => {
     if (!currentUser?.id) {
-      console.log('[BuildingEmployee] No currentUser.id, skipping refresh');
+      setAssignedBuildings([]);
+      setMaintenanceRequests([]);
+      setIsLoading(false);
       return;
     }
 
-    setRefreshing(true);
+    setIsLoading(true);
     try {
-      // Refetch buildings and building-level requests
-      console.log('[BuildingEmployee] Refresh - fetching buildings');
       const buildingsResponse = await orgBuildingsApi.getAssignedBuildings();
       const buildingsPayload = Array.isArray(buildingsResponse)
         ? buildingsResponse
         : Array.isArray(buildingsResponse?.data)
           ? buildingsResponse.data
           : [];
-      const mappedBuildings = buildingsPayload.map((building: any) => ({
-        id: String(building?.id ?? building?.buildingId ?? ""),
-        name:
-          building?.name ||
-          building?.buildingName ||
-          building?.title ||
-          "Building",
+
+      const mappedBuildings: BuildingAssignment[] = buildingsPayload.map((building: any) => ({
+        id: String(building?.id ?? building?.buildingId ?? ''),
+        name: building?.name || building?.buildingName || building?.title || 'Building',
         address: building?.address,
       }));
 
-      if (mappedBuildings.length > 0) {
-        console.log('[BuildingEmployee] Refresh - buildings fetched:', mappedBuildings.length);
-        setAssignedBuildings(mappedBuildings);
+      setAssignedBuildings(mappedBuildings);
 
-        const requestPromises = mappedBuildings.map(async (building) => {
+      if (mappedBuildings.length === 0) {
+        setMaintenanceRequests([]);
+        return;
+      }
+
+      const requestArrays = await Promise.all(
+        mappedBuildings.map(async (building) => {
           try {
             const response = await orgBuildingsApi.getBuildingRequests(building.id);
             const payload = Array.isArray(response)
@@ -251,79 +191,137 @@ export default function BuildingEmployeeDashboard() {
               : Array.isArray(response?.data)
                 ? response.data
                 : [];
+
             return payload.map((request: any) => ({
-              id: String(request?.id ?? request?.requestId ?? ""),
-              title: request?.title || "Maintenance request",
-              description: request?.description || "",
+              id: String(request?.id ?? request?.requestId ?? ''),
+              title: request?.title || 'Maintenance request',
+              description: request?.description || '',
               priority: normalizePriority(request?.priority),
               status: normalizeStatus(request?.status),
               createdAt: request?.createdAt || new Date().toISOString(),
               updatedAt: request?.updatedAt,
-              buildingId: String(
-                request?.buildingId ?? request?.building?.id ?? building.id,
-              ),
-              buildingName:
-                request?.buildingName ??
-                request?.building?.name ??
-                building.name,
+              buildingId: String(request?.buildingId ?? request?.building?.id ?? building.id),
+              buildingName: request?.buildingName ?? request?.building?.name ?? building.name,
             }));
           } catch (error) {
-            console.error(`Failed to fetch requests for building ${building.id}:`, error);
+            console.error(
+              `[BuildingEmployeeDashboard] Failed to fetch requests for building ${building.id}`,
+              error,
+            );
             return [];
           }
-        });
+        }),
+      );
 
-        const requestArrays = await Promise.all(requestPromises);
-        const allRequests = requestArrays.flat();
-        console.log('[BuildingEmployee] Refresh - building requests fetched:', allRequests.length);
-        setMaintenanceRequests(allRequests);
-      } else {
-        setAssignedBuildings([]);
-        setMaintenanceRequests([]);
-      }
+      setMaintenanceRequests(requestArrays.flat());
     } catch (error) {
-      console.error('[BuildingEmployee] Failed to refresh:', error);
+      console.error('[BuildingEmployeeDashboard] Failed to fetch dashboard data', error);
+      setAssignedBuildings([]);
+      setMaintenanceRequests([]);
     } finally {
-      console.log('[BuildingEmployee] Refresh completed, setRefreshing(false)');
-      setRefreshing(false);
+      setIsLoading(false);
     }
-  };
+  }, [currentUser?.id]);
 
-  // Helper to get priority label
-  const getPriorityLabel = (priority: number): string => {
-    const priorityMap: Record<number, string> = {
-      1: 'Low',
-      2: 'Medium',
-      3: 'High',
-      4: 'Urgent',
-    };
-    return priorityMap[priority] || 'Unknown';
-  };
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
 
-  // Helper to get status label
-  const getStatusLabel = (status: number): string => {
-    const statusMap: Record<number, string> = {
-      1: 'New',
-      2: 'Assigned',
-      3: 'In Progress',
-      4: 'On Hold',
-      5: 'Completed',
-      6: 'Cancelled',
-    };
-    return statusMap[status] || 'Unknown';
-  };
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchDashboardData();
+    setRefreshing(false);
+  }, [fetchDashboardData]);
+
+  const openRequests = useMemo(
+    () => maintenanceRequests.filter((request) => [1, 2, 3, 4].includes(request.status)),
+    [maintenanceRequests],
+  );
+
+  const urgentRequests = useMemo(
+    () =>
+      [...maintenanceRequests]
+        .filter((request) => request.status !== 5 && request.status !== 6 && request.priority >= 3)
+        .sort((a, b) => {
+          if (b.priority !== a.priority) return b.priority - a.priority;
+          return (
+            new Date(b.updatedAt || b.createdAt).getTime() -
+            new Date(a.updatedAt || a.createdAt).getTime()
+          );
+        })
+        .slice(0, 3),
+    [maintenanceRequests],
+  );
+
+  const latestCompleted = useMemo(
+    () =>
+      [...maintenanceRequests]
+        .filter((request) => request.status === 5)
+        .sort(
+          (a, b) =>
+            new Date(b.updatedAt || b.createdAt).getTime() -
+            new Date(a.updatedAt || a.createdAt).getTime(),
+        )
+        .slice(0, 3),
+    [maintenanceRequests],
+  );
+
+  const stats = useMemo(
+    () => ({
+      total: maintenanceRequests.length,
+      open: openRequests.length,
+      assigned: maintenanceRequests.filter((request) => request.status === 2).length,
+      inProgress: maintenanceRequests.filter((request) => request.status === 3).length,
+      completed: maintenanceRequests.filter((request) => request.status === 5).length,
+    }),
+    [maintenanceRequests, openRequests.length],
+  );
+
+  const buildingName = assignedBuildings[0]?.name || 'Building Operations';
+  const hasUnreadNotifications =
+    getUnreadNotificationsCount(notifications || [], currentUser?.id) > 0;
+
+  const quickActions = useMemo(
+    () => [
+      {
+        key: 'jobs',
+        label: 'Job Queue',
+        icon: 'construct-outline' as const,
+        onPress: () => router.push('/(buildingEmployee)/jobs'),
+      },
+      {
+        key: 'messages',
+        label: 'Messages',
+        icon: 'chatbubble-ellipses-outline' as const,
+        onPress: () => router.push('/(buildingEmployee)/messages'),
+      },
+      {
+        key: 'profile',
+        label: 'Profile',
+        icon: 'person-outline' as const,
+        onPress: () => router.push('/(buildingEmployee)/profile'),
+      },
+      {
+        key: 'shifts',
+        label: 'Shifts',
+        icon: 'calendar-outline' as const,
+        onPress: () => router.push('/(buildingEmployee)/shifts'),
+      },
+    ],
+    [],
+  );
 
   if (!isAuthenticated || !currentUser) {
     return null;
   }
 
-  if (currentUser.role !== "building_employee") {
+  if (currentUser.role !== 'building_employee') {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.emptyState}>
-          <Ionicons name="lock-closed-outline" size={48} color="#94A3B8" />
-          <Text style={styles.emptyTitle}>Access Restricted</Text>
-          <Text style={styles.emptySubtitle}>
+      <SafeAreaView style={styles.restrictedContainer}>
+        <View style={styles.restrictedState}>
+          <Ionicons name="lock-closed-outline" size={48} color={P.soft} />
+          <Text style={styles.restrictedTitle}>Access Restricted</Text>
+          <Text style={styles.restrictedSubtitle}>
             This workspace is only available to building employees.
           </Text>
         </View>
@@ -333,373 +331,556 @@ export default function BuildingEmployeeDashboard() {
 
   return (
     <ScreenEntrance>
-      <SafeAreaView style={styles.container} edges={["top"]}>
-      <ScrollView
-        style={styles.scrollView}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingBottom: tabBarHeight + 32 },
-        ]}
-      >
-        <HeaderBar
-          title={`${buildingName} Ops`}
-          subtitle="Building employee workspace"
-          hasUnreadNotifications={hasUnreadNotifications}
-          showSideMenu={showSideMenu}
-          onSideMenuToggle={setShowSideMenu}
-        />
-
-        <Animated.View
-          entering={FadeInDown.duration(400)}
-          style={styles.welcomeCard}
+      <SafeAreaView style={styles.container}>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={[styles.content, { paddingBottom: tabBarHeight + 32 }]}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={P.primary} />
+          }
+          showsVerticalScrollIndicator={false}
         >
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
-              {currentUser.name.charAt(0).toUpperCase()}
-            </Text>
-          </View>
-          <View style={styles.welcomeContent}>
-            <Text style={styles.welcomeTitle}>Good day, {currentUser.name}</Text>
-            <Text style={styles.welcomeSubtitle}>
-              {assignedBuildings.length > 0
-                ? `Assigned to ${assignedBuildings.length} building${assignedBuildings.length > 1 ? 's' : ''}. Stay ahead by reviewing the urgent tasks below.`
-                : 'Loading your assignments...'}
-            </Text>
-          </View>
-        </Animated.View>
+          <Animated.View entering={FadeIn.duration(400)}>
+            <HeaderBar
+              showTitle={false}
+              hasUnreadNotifications={hasUnreadNotifications}
+              showSideMenu={showSideMenu}
+              onSideMenuToggle={setShowSideMenu}
+              textColor={P.text}
+            />
+          </Animated.View>
 
-        {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>Loading dashboard data...</Text>
-          </View>
-        ) : (
-          <>
-            <Animated.View
-              entering={FadeInDown.delay(80).duration(400)}
-              style={styles.statsGrid}
+          <Animated.View entering={FadeInDown.delay(40).duration(400)} style={styles.hero}>
+            <View style={styles.heroCopy}>
+              <Text style={styles.heroEyebrow}>{buildingName}</Text>
+              <Text style={styles.heroTitle}>
+                Welcome back,{'\n'}
+                {firstName(currentUser.name)}
+              </Text>
+              <Text style={styles.heroSubtitle}>
+                Review assigned buildings, triage incoming requests, and keep active work moving.
+              </Text>
+            </View>
+            <LinearGradient
+              colors={[P.primary, P.primaryDark]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.avatar}
             >
-              <View style={[styles.statCard, styles.statPrimary]}>
-                <Ionicons name="alert-circle-outline" size={24} color="#1D4ED8" />
-                <Text style={styles.statValue}>{openRequests.length}</Text>
-                <Text style={styles.statLabel}>Open Requests</Text>
-              </View>
-              <View style={[styles.statCard, styles.statSecondary]}>
-                <Ionicons name="construct-outline" size={24} color="#047857" />
-                <Text style={styles.statValue}>{totalJobsInProgress}</Text>
-                <Text style={styles.statLabel}>Jobs in Progress</Text>
-              </View>
-              <View style={[styles.statCard, styles.statQuaternary]}>
-                <Ionicons name="calendar-outline" size={24} color="#9333EA" />
-                <Text style={styles.statValue}>{completedJobs}</Text>
-                <Text style={styles.statLabel}>Completed Jobs</Text>
-              </View>
-            </Animated.View>
+              <Text style={styles.avatarText}>{initials(currentUser.name)}</Text>
+            </LinearGradient>
+          </Animated.View>
 
-            <Animated.View
-              entering={FadeInDown.delay(120).duration(400)}
-              style={styles.sectionCard}
-            >
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Priority Requests</Text>
-                <TouchableOpacity
-                  onPress={() => router.push("/(buildingEmployee)/jobs")}
-                >
-                  <Text style={styles.sectionAction}>View all</Text>
-                </TouchableOpacity>
-              </View>
+          <Animated.View entering={FadeInDown.delay(80).duration(400)} style={styles.profileStrip}>
+            <View style={styles.profilePill}>
+              <Ionicons name="business-outline" size={16} color={P.primary} />
+              <Text style={styles.profilePillText} numberOfLines={1}>
+                {assignedBuildings.length === 0
+                  ? 'No assigned buildings'
+                  : `${assignedBuildings.length} assigned building${assignedBuildings.length === 1 ? '' : 's'}`}
+              </Text>
+            </View>
+            <View style={styles.profilePill}>
+              <Ionicons name="construct-outline" size={16} color={P.primary} />
+              <Text style={styles.profilePillText} numberOfLines={1}>
+                {stats.open} active requests
+              </Text>
+            </View>
+          </Animated.View>
 
-              {priorityRequests.length === 0 ? (
-                <View style={styles.emptyCard}>
-                  <Ionicons name="checkmark-circle-outline" size={32} color="#A5B4FC" />
-                  <Text style={styles.emptyCardText}>No recent requests</Text>
+          {isLoading ? (
+            <View style={styles.loadingCard}>
+              <ActivityIndicator size="large" color={P.primary} />
+              <Text style={styles.emptyTitle}>Loading operations</Text>
+              <Text style={styles.emptyText}>Pulling assigned buildings and request activity.</Text>
+            </View>
+          ) : (
+            <>
+              <Animated.View entering={FadeInDown.delay(120).duration(400)} style={styles.summaryRow}>
+                <View style={[styles.summaryCard, styles.summaryCardPrimary]}>
+                  <Text style={[styles.summaryValue, styles.summaryValuePrimary]}>
+                    {String(stats.open).padStart(2, '0')}
+                  </Text>
+                  <Text style={[styles.summaryLabel, styles.summaryLabelPrimary]}>Open Requests</Text>
                 </View>
-              ) : (
-                priorityRequests.map((request) => (
-                  <TouchableOpacity
-                    key={request.id}
-                    style={styles.listItem}
-                    onPress={() =>
-                      router.push({
-                        pathname: "/(buildingEmployee)/jobs",
-                        params: { focusId: request.id },
-                      })
-                    }
-                  >
-                    <View style={styles.listItemIcon}>
-                      <Ionicons
-                        name="warning-outline"
-                        size={20}
-                        color="#DC2626"
-                      />
-                    </View>
-                    <View style={styles.listItemContent}>
-                      <Text style={styles.listItemTitle} numberOfLines={1}>
-                        {request.title}
-                      </Text>
-                      <Text style={styles.listItemSubtitle} numberOfLines={1}>
-                        {getStatusLabel(request.status)} · {getPriorityLabel(request.priority)}
-                      </Text>
-                    </View>
-                    <Ionicons
-                      name="chevron-forward"
-                      size={18}
-                      color="#94A3B8"
-                    />
+                <View style={styles.summaryCard}>
+                  <Text style={styles.summaryValue}>{String(stats.inProgress).padStart(2, '0')}</Text>
+                  <Text style={styles.summaryLabel}>In Progress</Text>
+                </View>
+                <View style={[styles.summaryCard, styles.summaryCardAccent]}>
+                  <Text style={styles.summaryValue}>{String(stats.completed).padStart(2, '0')}</Text>
+                  <Text style={styles.summaryLabel}>Completed</Text>
+                </View>
+              </Animated.View>
+
+              <Animated.View entering={FadeInDown.delay(160).duration(400)} style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <View>
+                    <Text style={styles.sectionTitle}>Priority Requests</Text>
+                    <Text style={styles.sectionSubtitle}>Tackle urgent work across your assigned buildings</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => router.push('/(buildingEmployee)/jobs')}>
+                    <Text style={styles.linkText}>View all</Text>
                   </TouchableOpacity>
-                ))
-              )}
-            </Animated.View>
+                </View>
 
-            <Animated.View
-              entering={FadeInDown.delay(200).duration(400)}
-              style={styles.sectionCard}
-            >
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Job Queue Snapshot</Text>
-                <TouchableOpacity
-                  onPress={() => router.push("/(buildingEmployee)/jobs")}
-                >
-                  <Text style={styles.sectionAction}>Open jobs</Text>
+                {urgentRequests.length > 0 ? (
+                  urgentRequests.map((request) => {
+                    const priority = priorityMeta(request.priority);
+                    return (
+                      <TouchableOpacity
+                        key={request.id}
+                        style={styles.requestCard}
+                        activeOpacity={0.85}
+                        onPress={() =>
+                          router.push({
+                            pathname: '/(buildingEmployee)/jobs',
+                            params: { focusId: request.id },
+                          })
+                        }
+                      >
+                        <View style={styles.requestTop}>
+                          <View style={styles.requestIconWrap}>
+                            <Ionicons name="construct-outline" size={18} color={P.primary} />
+                          </View>
+                          <View style={styles.requestCopy}>
+                            <Text style={styles.requestTitle} numberOfLines={1}>
+                              {request.title}
+                            </Text>
+                            <Text style={styles.requestMeta}>
+                              {request.buildingName || 'Assigned building'} · {STATUS_LABELS[request.status]}
+                            </Text>
+                          </View>
+                          <View style={[styles.requestBadge, { backgroundColor: priority.bg }]}>
+                            <Text style={[styles.requestBadgeText, { color: priority.text }]}>
+                              {PRIORITY_LABELS[request.priority]}
+                            </Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.requestBottom}>
+                          <Text style={styles.requestDescription} numberOfLines={1}>
+                            {request.description || 'Open the job queue to review the full request.'}
+                          </Text>
+                          <Text style={styles.requestDate}>{formatDate(request.updatedAt || request.createdAt)}</Text>
+                          <Ionicons name="chevron-forward" size={16} color={P.soft} />
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })
+                ) : (
+                  <View style={styles.emptyCard}>
+                    <Ionicons name="checkmark-circle-outline" size={26} color={P.soft} />
+                    <Text style={styles.emptyTitle}>No urgent requests</Text>
+                    <Text style={styles.emptyText}>High-priority work will surface here automatically.</Text>
+                  </View>
+                )}
+              </Animated.View>
+
+              <Animated.View entering={FadeInDown.delay(200).duration(400)} style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <View>
+                    <Text style={styles.sectionTitle}>Quick Actions</Text>
+                    <Text style={styles.sectionSubtitle}>Move into the most-used employee tools</Text>
+                  </View>
+                </View>
+
+                <View style={styles.quickGrid}>
+                  {quickActions.map((action) => (
+                    <TouchableOpacity
+                      key={action.key}
+                      style={styles.quickCard}
+                      activeOpacity={0.88}
+                      onPress={action.onPress}
+                    >
+                      <View style={styles.quickIconWrap}>
+                        <Ionicons name={action.icon} size={20} color={P.primary} />
+                      </View>
+                      <Text style={styles.quickLabel}>{action.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </Animated.View>
+
+              <Animated.View entering={FadeInDown.delay(240).duration(400)} style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <View>
+                    <Text style={styles.sectionTitle}>Assigned Buildings</Text>
+                    <Text style={styles.sectionSubtitle}>Current building coverage linked to your staff account</Text>
+                  </View>
+                </View>
+
+                {assignedBuildings.length > 0 ? (
+                  assignedBuildings.map((building) => (
+                    <View key={building.id} style={styles.buildingRow}>
+                      <View style={styles.buildingIconWrap}>
+                        <Ionicons name="business-outline" size={18} color={P.primary} />
+                      </View>
+                      <View style={styles.buildingCopy}>
+                        <Text style={styles.buildingTitle}>{building.name}</Text>
+                        <Text style={styles.buildingSubtitle} numberOfLines={1}>
+                          {building.address || 'Building assignment active'}
+                        </Text>
+                      </View>
+                    </View>
+                  ))
+                ) : (
+                  <View style={styles.emptyCard}>
+                    <Ionicons name="business-outline" size={26} color={P.soft} />
+                    <Text style={styles.emptyTitle}>No assignments returned</Text>
+                    <Text style={styles.emptyText}>Assigned buildings will appear here once linked by operations.</Text>
+                  </View>
+                )}
+              </Animated.View>
+
+              <Animated.View entering={FadeInDown.delay(280).duration(400)} style={styles.footerCard}>
+                <View style={styles.footerIcon}>
+                  <Ionicons name="checkmark-done-outline" size={18} color={P.surface} />
+                </View>
+                <View style={styles.footerCopy}>
+                  <Text style={styles.footerTitle}>Recent Closures</Text>
+                  <Text style={styles.footerText}>
+                    {latestCompleted[0]
+                      ? `${latestCompleted[0].title} completed on ${formatDate(
+                          latestCompleted[0].updatedAt || latestCompleted[0].createdAt,
+                        )}.`
+                      : 'Completed requests will appear here once work is closed out.'}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => router.push('/(buildingEmployee)/jobs')}>
+                  <Text style={styles.footerLink}>Open</Text>
                 </TouchableOpacity>
-              </View>
+              </Animated.View>
+            </>
+          )}
+        </ScrollView>
 
-              <View style={styles.jobSummaryRow}>
-                <View style={styles.jobSummaryCard}>
-                  <Text style={styles.jobSummaryValue}>{pendingJobs}</Text>
-                  <Text style={styles.jobSummaryLabel}>Waiting Assignment</Text>
-                </View>
-                <View style={styles.jobSummaryCard}>
-                  <Text style={styles.jobSummaryValue}>{totalJobsInProgress}</Text>
-                  <Text style={styles.jobSummaryLabel}>In Progress</Text>
-                </View>
-                <View style={styles.jobSummaryCard}>
-                  <Text style={styles.jobSummaryValue}>{completedJobs}</Text>
-                  <Text style={styles.jobSummaryLabel}>Completed</Text>
-                </View>
-              </View>
-            </Animated.View>
-          </>
-        )}
-      </ScrollView>
-
-      <SideMenu
-        isVisible={showSideMenu}
-        onClose={() => setShowSideMenu(false)}
-        userRole={currentUser.role}
-      />
+        <SideMenu
+          isVisible={showSideMenu}
+          onClose={() => setShowSideMenu(false)}
+          userRole={currentUser.role}
+        />
       </SafeAreaView>
     </ScreenEntrance>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  container: { flex: 1, backgroundColor: P.bg },
+  scrollView: { flex: 1 },
+  content: { paddingHorizontal: 20 },
+  restrictedContainer: { flex: 1, backgroundColor: P.bg },
+  restrictedState: {
     flex: 1,
-    backgroundColor: "#F3F4F6",
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: 20,
-  },
-  welcomeCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 20,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 16,
-    marginBottom: 16,
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 4,
-  },
-  avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#2563EB",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarText: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#ffffff",
-  },
-  welcomeContent: {
-    flex: 1,
-    gap: 6,
-  },
-  welcomeTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#111827",
-  },
-  welcomeSubtitle: {
-    fontSize: 14,
-    color: "#4B5563",
-    lineHeight: 20,
-  },
-  statsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 12,
-    marginBottom: 20,
-  },
-  statCard: {
-    flex: 1,
-    minWidth: 150,
-    borderRadius: 14,
-    paddingVertical: 18,
-    paddingHorizontal: 16,
-    backgroundColor: "#ffffff",
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 14,
-    elevation: 3,
-    gap: 6,
-  },
-  statPrimary: {
-    borderLeftWidth: 4,
-    borderLeftColor: "#2563EB",
-  },
-  statSecondary: {
-    borderLeftWidth: 4,
-    borderLeftColor: "#047857",
-  },
-  statQuaternary: {
-    borderLeftWidth: 4,
-    borderLeftColor: "#9333EA",
-  },
-  statValue: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#111827",
-  },
-  statLabel: {
-    fontSize: 13,
-    color: "#6B7280",
-  },
-  sectionCard: {
-    backgroundColor: "#ffffff",
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 20,
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 14,
-    elevation: 3,
-  },
-  sectionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#111827",
-  },
-  sectionAction: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#2563EB",
-  },
-  emptyCard: {
-    paddingVertical: 24,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 12,
-  },
-  emptyCardText: {
-    fontSize: 13,
-    color: "#6B7280",
-  },
-  listItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#E5E7EB",
-  },
-  listItemIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#F3F4F6",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  listItemContent: {
-    flex: 1,
-    gap: 4,
-  },
-  listItemTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#111827",
-  },
-  listItemSubtitle: {
-    fontSize: 12,
-    color: "#6B7280",
-  },
-  jobSummaryRow: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  jobSummaryCard: {
-    flex: 1,
-    backgroundColor: "#F9FAFB",
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: "center",
-    gap: 6,
-  },
-  jobSummaryValue: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#111827",
-  },
-  jobSummaryLabel: {
-    fontSize: 12,
-    color: "#6B7280",
-  },
-  emptyState: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: 12,
     paddingHorizontal: 32,
   },
-  emptyTitle: {
+  restrictedTitle: {
     fontSize: 18,
-    fontWeight: "700",
-    color: "#111827",
+    fontWeight: '700',
+    color: P.text,
   },
-  emptySubtitle: {
+  restrictedSubtitle: {
     fontSize: 14,
-    color: "#6B7280",
-    textAlign: "center",
+    color: P.muted,
+    textAlign: 'center',
   },
-  loadingContainer: {
-    paddingVertical: 40,
-    alignItems: "center",
-    justifyContent: "center",
+  hero: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 16,
+    marginBottom: 18,
   },
-  loadingText: {
+  heroCopy: { flex: 1, gap: 8 },
+  heroEyebrow: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: P.soft,
+    textTransform: 'uppercase',
+    letterSpacing: 1.1,
+  },
+  heroTitle: { fontSize: 31, lineHeight: 36, fontWeight: '800', color: P.text },
+  heroSubtitle: { fontSize: 14, lineHeight: 22, color: P.muted, maxWidth: 280 },
+  avatar: {
+    width: 58,
+    height: 58,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: P.shadow,
+    shadowOpacity: 1,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 4,
+  },
+  avatarText: { color: P.surface, fontSize: 18, fontWeight: '800' },
+  profileStrip: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 18 },
+  profilePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: P.surface,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: P.border,
+  },
+  profilePillText: {
+    flexShrink: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    color: P.text,
+  },
+  loadingCard: {
+    backgroundColor: P.surface,
+    borderRadius: 24,
+    paddingVertical: 36,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: P.border,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 18,
+  },
+  summaryCard: {
+    flex: 1,
+    backgroundColor: P.surface,
+    borderRadius: 22,
+    paddingVertical: 18,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: P.border,
+    gap: 6,
+  },
+  summaryCardPrimary: {
+    backgroundColor: P.primary,
+    borderColor: P.primary,
+  },
+  summaryCardAccent: {
+    backgroundColor: P.accent,
+    borderColor: P.accentBorder,
+  },
+  summaryValue: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: P.text,
+  },
+  summaryValuePrimary: {
+    color: P.surface,
+  },
+  summaryLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: P.muted,
+  },
+  summaryLabelPrimary: {
+    color: P.surface,
+  },
+  section: {
+    backgroundColor: P.surface,
+    borderRadius: 24,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: P.border,
+    marginBottom: 18,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 14,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: P.text,
+  },
+  sectionSubtitle: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: P.muted,
+    marginTop: 3,
+  },
+  linkText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: P.primary,
+  },
+  requestCard: {
+    backgroundColor: P.surfaceLow,
+    borderRadius: 18,
+    padding: 14,
+    gap: 10,
+    marginBottom: 12,
+  },
+  requestTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  requestIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    backgroundColor: P.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  requestCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  requestTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: P.text,
+  },
+  requestMeta: {
+    fontSize: 12,
+    color: P.muted,
+  },
+  requestBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  requestBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  requestBottom: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  requestDescription: {
+    flex: 1,
+    fontSize: 13,
+    color: P.muted,
+  },
+  requestDate: {
+    fontSize: 12,
+    color: P.soft,
+  },
+  emptyCard: {
+    backgroundColor: P.surfaceLow,
+    borderRadius: 18,
+    paddingVertical: 28,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    gap: 8,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: P.text,
+  },
+  emptyText: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: P.muted,
+    textAlign: 'center',
+  },
+  quickGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  quickCard: {
+    width: '47%',
+    backgroundColor: P.surfaceLow,
+    borderRadius: 18,
+    padding: 16,
+    gap: 10,
+  },
+  quickIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: P.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickLabel: {
     fontSize: 14,
-    color: "#6B7280",
+    fontWeight: '700',
+    color: P.text,
+  },
+  buildingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: P.surfaceLow,
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 10,
+  },
+  buildingIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: P.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buildingCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  buildingTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: P.text,
+  },
+  buildingSubtitle: {
+    fontSize: 12,
+    color: P.muted,
+  },
+  footerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    backgroundColor: P.surface,
+    borderRadius: 22,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: P.border,
+    marginBottom: 12,
+  },
+  footerIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: P.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  footerCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  footerTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: P.text,
+  },
+  footerText: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: P.muted,
+  },
+  footerLink: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: P.primary,
   },
 });

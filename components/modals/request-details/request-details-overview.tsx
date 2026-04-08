@@ -1,8 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import React from "react";
 import {
   ActivityIndicator,
   Image,
+  ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
@@ -16,16 +18,26 @@ import type {
   JobEstimate,
   Request,
   RequestStatus,
+  ResidentEmergencySignal,
   User,
 } from "../../../lib/types";
 import {
   REQUEST_DETAILS_PALETTE as P,
+  formatRequestTypeLabel,
   formatCurrency,
   formatDate,
   formatShortDateTime,
   getProgressPercentage,
 } from "../../../lib/hooks/modals/request-details/request-details-helpers";
-import type { RequestDetailsEditForm } from "../../../lib/hooks/modals/request-details/useRequestDetailsScreen";
+import type {
+  RequestDetailsEditForm,
+  RequestDetailsEditValidationErrors,
+} from "../../../lib/hooks/modals/request-details/useRequestDetailsScreen";
+import {
+  RESIDENT_REQUEST_CATEGORY_OPTIONS,
+  RESIDENT_REQUEST_EMERGENCY_SIGNAL_OPTIONS,
+  RESIDENT_REQUEST_PRIORITY_OPTIONS,
+} from "../../../lib/utils/resident-request-form";
 
 type BadgeColors = {
   bg: string;
@@ -68,9 +80,8 @@ type RequestDetailsOverviewProps = {
   job?: Job;
   resolvedBuildingName: string | null;
   showEditMode: boolean;
-  setShowEditMode: (value: boolean) => void;
   editForm: RequestDetailsEditForm;
-  setEditForm: React.Dispatch<React.SetStateAction<RequestDetailsEditForm>>;
+  editValidationErrors: RequestDetailsEditValidationErrors;
   loading: boolean;
   isTenantUser: boolean;
   canEdit: boolean;
@@ -78,11 +89,13 @@ type RequestDetailsOverviewProps = {
   canCancel: boolean;
   canProvideFeedback: boolean;
   normalizedStatus: RequestStatus;
+  statusDisplayLabel: string;
   normalizedPriority: string;
   normalizedAttachments: string[];
   statusColors: BadgeColors;
   priorityColors: BadgeColors;
   statusIcon: keyof typeof Ionicons.glyphMap;
+  tenantNextStep: string;
   timelineSteps: TimelineStep[];
   technicianName: string;
   technicianRole: string;
@@ -102,8 +115,14 @@ type RequestDetailsOverviewProps = {
   canReviewJobEstimate: boolean;
   canApproveTenantJobCompletion: boolean;
   hasExistingRating: boolean;
+  onChangeEditField: (
+    field: keyof RequestDetailsEditForm,
+    value: RequestDetailsEditForm[keyof RequestDetailsEditForm],
+  ) => void;
+  onToggleEmergencySignal: (signal: ResidentEmergencySignal) => void;
   onStartEdit: () => void;
   onRequestDelete: () => void;
+  onCancelEdit: () => void;
   onSaveEdit: () => void;
   onOpenAttachment: (index: number) => void;
   onReviewCompletion: (jobId: string) => void;
@@ -119,9 +138,8 @@ export function RequestDetailsOverview({
   job,
   resolvedBuildingName,
   showEditMode,
-  setShowEditMode,
   editForm,
-  setEditForm,
+  editValidationErrors,
   loading,
   isTenantUser,
   canEdit,
@@ -129,11 +147,13 @@ export function RequestDetailsOverview({
   canCancel,
   canProvideFeedback,
   normalizedStatus,
+  statusDisplayLabel,
   normalizedPriority,
   normalizedAttachments,
   statusColors,
   priorityColors,
   statusIcon,
+  tenantNextStep,
   timelineSteps,
   technicianName,
   technicianRole,
@@ -153,8 +173,11 @@ export function RequestDetailsOverview({
   canReviewJobEstimate,
   canApproveTenantJobCompletion,
   hasExistingRating,
+  onChangeEditField,
+  onToggleEmergencySignal,
   onStartEdit,
   onRequestDelete,
+  onCancelEdit,
   onSaveEdit,
   onOpenAttachment,
   onReviewCompletion,
@@ -164,84 +187,359 @@ export function RequestDetailsOverview({
   styles,
 }: RequestDetailsOverviewProps) {
   const progressPercentage = getProgressPercentage(normalizedStatus);
+  const editDisabled = isTenantUser && !canEdit;
   const requestHeaderCard = (
     <Animated.View entering={FadeIn.duration(400)} style={styles.card}>
       {showEditMode ? (
         <View style={styles.editForm}>
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Title</Text>
-            <TextInput
-              style={styles.input}
-              value={editForm.title}
-              onChangeText={(text) =>
-                setEditForm((prev) => ({ ...prev, title: text }))
-              }
-              placeholder="Request title"
-            />
+          <View style={styles.editHero}>
+            <View style={styles.editHeroIconWrap}>
+              <Ionicons
+                name={editDisabled ? "lock-closed-outline" : "create-outline"}
+                size={18}
+                color={P.primary}
+              />
+            </View>
+            <View style={styles.editHeroCopy}>
+              <Text style={styles.editHeroTitle}>
+                {editDisabled
+                  ? "Request details are locked"
+                  : isTenantUser
+                    ? "Update your request details"
+                    : "Update pending request"}
+              </Text>
+              <Text style={styles.editHeroText}>
+                {editDisabled
+                  ? "Request details can only be updated while the status is Submitted."
+                  : isTenantUser
+                    ? "Refine the category, urgency, summary, and emergency details before the team starts work."
+                    : "You can refine the issue summary and description before the team starts work."}
+              </Text>
+            </View>
           </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Description</Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              value={editForm.description}
-              onChangeText={(text) =>
-                setEditForm((prev) => ({ ...prev, description: text }))
-              }
-              placeholder="Describe your request"
-              multiline
-              numberOfLines={4}
-              textAlignVertical="top"
-            />
-          </View>
+          {!canEdit ? (
+            <View style={styles.readOnlyNotice}>
+              <Ionicons name="information-circle-outline" size={16} color={P.warningText} />
+              <Text style={styles.readOnlyNoticeText}>
+                This request is currently {statusDisplayLabel.toLowerCase()}, so the detail fields below are read-only.
+              </Text>
+            </View>
+          ) : null}
 
-          {!isTenantUser && (
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Priority</Text>
-              <View style={styles.priorityButtons}>
-                {(["low", "medium", "high", "urgent"] as const).map((priority) => (
-                  <TouchableOpacity
-                    key={priority}
-                    onPress={() => setEditForm((prev) => ({ ...prev, priority }))}
-                    style={[
-                      styles.priorityButton,
-                      editForm.priority === priority &&
-                        styles.priorityButtonActive,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.priorityButtonText,
-                        editForm.priority === priority &&
-                          styles.priorityButtonTextActive,
-                      ]}
-                    >
-                      {priority.charAt(0).toUpperCase() + priority.slice(1)}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+          {isTenantUser ? (
+            <>
+              <View style={styles.sectionBlock}>
+                <Text style={styles.sectionLabel}>Category</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.editCategoryRail}
+                >
+                  {RESIDENT_REQUEST_CATEGORY_OPTIONS.map((option) => {
+                    const selected = option.value === editForm.type;
+                    return (
+                      <TouchableOpacity
+                        key={option.value}
+                        style={[
+                          styles.editCategoryChip,
+                          selected && styles.editCategoryChipSelected,
+                          editDisabled && styles.editChoiceDisabled,
+                        ]}
+                        activeOpacity={0.9}
+                        disabled={editDisabled}
+                        onPress={() => onChangeEditField("type", option.value)}
+                      >
+                        <Ionicons
+                          name={option.icon}
+                          size={15}
+                          color={selected ? P.surface : P.primary}
+                        />
+                        <Text
+                          style={[
+                            styles.editCategoryChipText,
+                            selected && styles.editCategoryChipTextSelected,
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+                {editValidationErrors.type ? (
+                  <Text style={styles.editErrorText}>{editValidationErrors.type}</Text>
+                ) : null}
+              </View>
+
+              <View style={styles.sectionBlock}>
+                <Text style={styles.sectionLabel}>Urgency</Text>
+                <View style={styles.editSegmentedControl}>
+                  {RESIDENT_REQUEST_PRIORITY_OPTIONS.map((option) => {
+                    const selected = option.value === editForm.priority;
+                    return (
+                      <TouchableOpacity
+                        key={option.value}
+                        style={[
+                          styles.editSegmentItem,
+                          selected && styles.editSegmentItemSelected,
+                          editDisabled && styles.editChoiceDisabled,
+                        ]}
+                        activeOpacity={0.9}
+                        disabled={editDisabled}
+                        onPress={() => onChangeEditField("priority", option.value)}
+                      >
+                        <Text
+                          style={[
+                            styles.editSegmentItemText,
+                            selected && styles.editSegmentItemTextSelected,
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                {editValidationErrors.priority ? (
+                  <Text style={styles.editErrorText}>{editValidationErrors.priority}</Text>
+                ) : null}
+              </View>
+            </>
+          ) : (
+            <View style={styles.editContextRail}>
+              <View style={styles.editContextChip}>
+                <Ionicons name="apps-outline" size={14} color={P.primary} />
+                <Text style={styles.editContextChipText}>
+                  {formatRequestTypeLabel(selectedRequest.type)}
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.editContextChip,
+                  {
+                    backgroundColor: priorityColors.bg,
+                    borderColor: priorityColors.border,
+                  },
+                ]}
+              >
+                <Text style={[styles.editContextChipText, { color: priorityColors.text }]}>
+                  {normalizedPriority}
+                </Text>
               </View>
             </View>
           )}
 
+          <View style={styles.sectionBlock}>
+            <Text style={styles.sectionLabel}>Issue Summary</Text>
+            <TextInput
+              style={[styles.softInput, editDisabled && styles.editInputDisabled]}
+              value={editForm.title}
+              onChangeText={(text) => onChangeEditField("title", text)}
+              placeholder="AC not cooling"
+              placeholderTextColor={P.soft}
+              maxLength={100}
+              editable={!editDisabled}
+            />
+            {editValidationErrors.title ? (
+              <Text style={styles.editErrorText}>{editValidationErrors.title}</Text>
+            ) : null}
+          </View>
+
+          <View style={styles.sectionBlock}>
+            <Text style={styles.sectionLabel}>Description</Text>
+            <TextInput
+              style={[
+                styles.descriptionInput,
+                editDisabled && styles.editInputDisabled,
+              ]}
+              value={editForm.description}
+              onChangeText={(text) => onChangeEditField("description", text)}
+              placeholder="What happened, where is it happening, and when did it start?"
+              placeholderTextColor={P.soft}
+              multiline
+              numberOfLines={6}
+              textAlignVertical="top"
+              maxLength={500}
+              editable={!editDisabled}
+            />
+            {editValidationErrors.description ? (
+              <Text style={styles.editErrorText}>{editValidationErrors.description}</Text>
+            ) : null}
+          </View>
+
+          {isTenantUser ? (
+            <View style={styles.sectionBlock}>
+              <Text style={styles.sectionLabel}>Emergency</Text>
+              <View style={styles.editSegmentedControl}>
+                {[
+                  { label: "No", value: false },
+                  { label: "Yes", value: true },
+                ].map((option) => {
+                  const selected = option.value === editForm.isEmergency;
+                  return (
+                    <TouchableOpacity
+                      key={option.label}
+                      style={[
+                        styles.editSegmentItem,
+                        selected && styles.editSegmentItemSelected,
+                        editDisabled && styles.editChoiceDisabled,
+                      ]}
+                      activeOpacity={0.9}
+                      disabled={editDisabled}
+                      onPress={() => {
+                        onChangeEditField("isEmergency", option.value);
+                        if (!option.value) {
+                          onChangeEditField("emergencySignals", []);
+                        }
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.editSegmentItemText,
+                          selected && styles.editSegmentItemTextSelected,
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              <Text style={styles.helperText}>
+                Use emergency only for active leaks, no power, safety risks, or urgent cooling failures.
+              </Text>
+              {editForm.isEmergency ? (
+                <View style={styles.editEmergencySignalGrid}>
+                  {RESIDENT_REQUEST_EMERGENCY_SIGNAL_OPTIONS.map((option) => {
+                    const selected = editForm.emergencySignals.includes(option.value);
+                    return (
+                      <TouchableOpacity
+                        key={option.value}
+                        style={[
+                          styles.editEmergencySignalChip,
+                          selected && styles.editEmergencySignalChipSelected,
+                          editDisabled && styles.editChoiceDisabled,
+                        ]}
+                        activeOpacity={0.88}
+                        disabled={editDisabled}
+                        onPress={() => onToggleEmergencySignal(option.value)}
+                      >
+                        <Ionicons
+                          name={option.icon}
+                          size={15}
+                          color={selected ? P.surface : P.dangerText}
+                        />
+                        <Text
+                          style={[
+                            styles.editEmergencySignalText,
+                            selected && styles.editEmergencySignalTextSelected,
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ) : null}
+              {editValidationErrors.emergencySignals ? (
+                <Text style={styles.editErrorText}>
+                  {editValidationErrors.emergencySignals}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
+
+          <View style={styles.sectionBlock}>
+            <Text style={styles.sectionLabel}>Request Details</Text>
+            <View style={styles.editDetailsCard}>
+              <View style={styles.editDetailRow}>
+                <Text style={styles.editDetailLabel}>Status</Text>
+                <Text style={styles.editDetailValue}>{statusDisplayLabel}</Text>
+              </View>
+              <View style={styles.editDetailRow}>
+                <Text style={styles.editDetailLabel}>Submitted</Text>
+                <Text style={styles.editDetailValue}>
+                  {formatShortDateTime(selectedRequest.createdAt)}
+                </Text>
+              </View>
+              <View style={styles.editDetailRow}>
+                <Text style={styles.editDetailLabel}>Location</Text>
+                <Text style={styles.editDetailValue}>
+                  {resolvedBuildingName || selectedRequest.buildingName || "Assigned building"}
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.helperText}>
+              {canEdit
+                ? "You can update these details while the request is still submitted."
+                : "Request details stay read-only after the request moves beyond the submitted stage."}
+            </Text>
+          </View>
+
+          {normalizedAttachments.length > 0 ? (
+            <View style={styles.sectionBlock}>
+              <Text style={styles.sectionLabel}>Photos</Text>
+              <View style={styles.editAttachmentRow}>
+                {normalizedAttachments.map((attachment, index) => (
+                  <TouchableOpacity
+                    key={`${attachment}-${index}`}
+                    style={styles.editAttachmentTile}
+                    activeOpacity={0.88}
+                    onPress={() => onOpenAttachment(index)}
+                  >
+                    <Image
+                      source={{ uri: attachment }}
+                      style={styles.editAttachmentImage}
+                      resizeMode="cover"
+                    />
+                    <View style={styles.editAttachmentOverlay}>
+                      <Ionicons name="expand-outline" size={14} color="#FFFFFF" />
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={styles.helperText}>
+                Existing photos stay attached for reference. This update screen does not add or remove attachments.
+              </Text>
+            </View>
+          ) : null}
+
           <View style={styles.editActions}>
             <TouchableOpacity
-              style={styles.cancelButton}
-              onPress={() => setShowEditMode(false)}
+              style={styles.cancelButtonModern}
+              onPress={onCancelEdit}
               disabled={loading}
             >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
+              <Text style={styles.cancelButtonTextModern}>
+                {editDisabled ? "Close" : "Discard"}
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.saveButton}
+              style={[
+                styles.saveButtonModern,
+                (loading || editDisabled) && styles.saveButtonModernDisabled,
+              ]}
               onPress={onSaveEdit}
-              disabled={loading}
+              disabled={loading || editDisabled}
+              activeOpacity={0.9}
             >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.saveButtonText}>Save Changes</Text>
-              )}
+              <LinearGradient
+                colors={[P.primary, P.primaryDark]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.saveButtonGradient}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="save-outline" size={16} color="#FFFFFF" />
+                    <Text style={styles.saveButtonTextModern}>Save Changes</Text>
+                  </>
+                )}
+              </LinearGradient>
             </TouchableOpacity>
           </View>
         </View>
@@ -265,7 +563,7 @@ export function RequestDetailsOverview({
                     style={styles.requestActionButton}
                   >
                     <Ionicons
-                      name="trash-outline"
+                      name={canDelete ? "trash-outline" : "close-circle-outline"}
                       size={18}
                       color={P.dangerText}
                     />
@@ -291,7 +589,7 @@ export function RequestDetailsOverview({
             >
               <Ionicons name={statusIcon} size={14} color={statusColors.text} />
               <Text style={[styles.badgeText, { color: statusColors.text }]}>
-                {normalizedStatus.replace("-", " ")}
+                {statusDisplayLabel}
               </Text>
             </View>
 
@@ -316,10 +614,33 @@ export function RequestDetailsOverview({
               ]}
             >
               <Text style={[styles.badgeText, { color: "#1F2937" }]}>
-                {selectedRequest.type}
+                {formatRequestTypeLabel(selectedRequest.type)}
               </Text>
             </View>
+
+            {selectedRequest.isEmergency ? (
+              <View
+                style={[
+                  styles.badge,
+                  { backgroundColor: "#FCE3E0", borderColor: "#E9B7B0" },
+                ]}
+              >
+                <Ionicons name="warning-outline" size={14} color="#B24A41" />
+                <Text style={[styles.badgeText, { color: "#B24A41" }]}>
+                  Emergency
+                </Text>
+              </View>
+            ) : null}
           </View>
+
+          {isTenantUser && !canEdit ? (
+            <View style={styles.readOnlyNotice}>
+              <Ionicons name="lock-closed-outline" size={16} color={P.warningText} />
+              <Text style={styles.readOnlyNoticeText}>
+                You can update request details only while the status is Submitted. This request is now read-only.
+              </Text>
+            </View>
+          ) : null}
 
           {selectedRequest.assignedTo && (
             <View style={styles.assignedRow}>
@@ -364,6 +685,30 @@ export function RequestDetailsOverview({
               </Text>
             </View>
           </View>
+
+          {Array.isArray(selectedRequest.emergencySignals) &&
+          selectedRequest.emergencySignals.length > 0 ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Emergency details</Text>
+              <View style={styles.emergencySignalWrap}>
+                {selectedRequest.emergencySignals.map((signal) => (
+                  <View key={signal} style={styles.emergencySignalChip}>
+                    <Ionicons
+                      name="warning-outline"
+                      size={14}
+                      color={P.dangerText}
+                    />
+                    <Text style={styles.emergencySignalChipText}>
+                      {signal
+                        .toLowerCase()
+                        .replace(/_/g, " ")
+                        .replace(/\b\w/g, (char) => char.toUpperCase())}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
 
           {selectedRequest.additionalNotes && (
             <View style={styles.section}>
@@ -493,6 +838,18 @@ export function RequestDetailsOverview({
     </Animated.View>
   );
 
+  const nextStepCard = isTenantUser ? (
+    <Animated.View entering={FadeInDown.delay(108).duration(400)} style={styles.card}>
+      <View style={styles.cardHeader}>
+        <Ionicons name="sparkles-outline" size={20} color="#6B7280" />
+        <Text style={styles.cardTitle}>Next Step</Text>
+      </View>
+      <View style={styles.notesBox}>
+        <Text style={styles.notesText}>{tenantNextStep}</Text>
+      </View>
+    </Animated.View>
+  ) : null;
+
   const supportCard = (
     <Animated.View entering={FadeInDown.delay(115).duration(400)} style={styles.card}>
       <View style={styles.cardHeader}>
@@ -514,8 +871,12 @@ export function RequestDetailsOverview({
           <Text style={styles.supportRole}>{technicianRole}</Text>
           <Text style={styles.supportNote}>
             {hasAssignment
-              ? "Track updates here as the service team progresses through the job."
-              : "Your request is waiting for assignment. New updates will appear here."}
+              ? isTenantUser
+                ? "Management has assigned a team for this issue. Progress updates will appear here."
+                : "Track updates here as the service team progresses through the job."
+              : isTenantUser
+                ? "Management is reviewing your issue and will assign the right team next."
+                : "Your request is waiting for assignment. New updates will appear here."}
           </Text>
         </View>
       </View>
@@ -555,7 +916,7 @@ export function RequestDetailsOverview({
       )}
     </Animated.View>
   );
-  const jobCard = job ? (
+  const jobCard = !isTenantUser && job ? (
     <Animated.View entering={FadeInDown.delay(130).duration(400)} style={styles.card}>
       <View style={styles.cardHeader}>
         <Ionicons name="briefcase-outline" size={20} color="#6B7280" />
@@ -685,7 +1046,7 @@ export function RequestDetailsOverview({
     </Animated.View>
   ) : null;
 
-  const estimateCard = job && estimate ? (
+  const estimateCard = !isTenantUser && job && estimate ? (
     <Animated.View entering={FadeInDown.delay(160).duration(400)} style={styles.card}>
       <View style={styles.cardHeader}>
         <Ionicons name="receipt-outline" size={20} color="#6B7280" />
@@ -757,7 +1118,7 @@ export function RequestDetailsOverview({
       ) : null}
     </Animated.View>
   ) : null;
-  const additionalCostsCard = job && hasAdditionalCosts ? (
+  const additionalCostsCard = !isTenantUser && job && hasAdditionalCosts ? (
     <Animated.View entering={FadeInDown.delay(190).duration(400)} style={styles.card}>
       <View style={styles.cardHeader}>
         <Ionicons name="cash-outline" size={20} color="#6B7280" />
@@ -836,7 +1197,7 @@ export function RequestDetailsOverview({
     </Animated.View>
   ) : null;
 
-  const ratingCard = canProvideFeedback ? (
+  const ratingCard = !isTenantUser && canProvideFeedback ? (
     <Animated.View entering={FadeInDown.delay(260).duration(400)} style={styles.card}>
       <View style={styles.ratingSection}>
         <Text style={styles.sectionTitle}>Rate This Service</Text>
@@ -858,6 +1219,7 @@ export function RequestDetailsOverview({
       {requestHeaderCard}
       {locationCard}
       {timelineCard}
+      {nextStepCard}
       {supportCard}
       {activityCard}
       {jobCard}

@@ -199,8 +199,8 @@ describe('BuildingEmployeeLayout', () => {
       expect.objectContaining({
         screenOptions: expect.objectContaining({
           tabBarStyle: expect.objectContaining({
-            paddingBottom: 10,
-            height: 84,
+            paddingBottom: 12,
+            height: 72,
           }),
         }),
       }),

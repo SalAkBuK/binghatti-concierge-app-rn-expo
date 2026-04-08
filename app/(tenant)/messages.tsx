@@ -21,6 +21,13 @@ import { useNotifications } from "../../lib/context/notifications-context";
 import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
 import type { Conversation } from "../../lib/types";
 import { filterNotificationsByUser, getUnreadNotificationsCount } from "../../lib/utils/helpers";
+import {
+  getTenantConversationAvatarLetter,
+  getTenantConversationContextLabel,
+  getTenantConversationDisplayName,
+  getTenantLastSenderLabel,
+  isTenantManagementConversation,
+} from "../../lib/utils/tenant-messaging-privacy";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 
@@ -141,26 +148,21 @@ function getConversationCategoryMeta(category: ConversationCategory) {
 
 function getConversationMeta(conversation: Conversation, currentUserId?: string) {
   const others = getOtherParticipants(conversation, currentUserId);
-  const displayName =
-    others.length > 0
-      ? others.map((participant) => participant.name).join(", ")
-      : conversation.subject || "Conversation";
+  const isManagement = isTenantManagementConversation(conversation, currentUserId);
+  const displayName = getTenantConversationDisplayName(conversation, currentUserId);
   const preview = conversation.lastMessage?.content || conversation.subject || "No messages yet";
   const time = conversation.lastMessage?.createdAt || conversation.updatedAt;
   const unread = conversation.unreadCount > 0;
-  const avatarLetter = (others[0]?.name || displayName || "?").charAt(0).toUpperCase();
-  const category = inferConversationCategory(conversation, displayName, preview);
+  const avatarLetter = getTenantConversationAvatarLetter(conversation, currentUserId);
+  const category = isManagement
+    ? "management"
+    : inferConversationCategory(conversation, displayName, preview);
   const categoryLabel = getConversationCategoryMeta(category).label;
-  const lastSenderLabel = conversation.lastMessage?.sender
-    ? conversation.lastMessage.sender.id === currentUserId
-      ? "You"
-      : conversation.lastMessage.sender.name
-    : null;
-  const contextLabel =
-    conversation.subject?.trim() ||
-    (category === "management"
-      ? "Management desk"
-      : category === "staff"
+  const lastSenderLabel = getTenantLastSenderLabel(conversation, currentUserId);
+  const contextLabel = isManagement
+    ? getTenantConversationContextLabel(conversation, currentUserId)
+    : conversation.subject?.trim() ||
+      (category === "staff"
         ? "Support team"
         : others.length > 1
           ? `${others.length} participants`

@@ -14,6 +14,7 @@ export type PushDeviceRegistration = {
   token: string;
   provider: PushDeviceProvider;
   platform: PushDevicePlatform;
+  appId?: string;
 };
 
 let initialized = false;
@@ -24,6 +25,8 @@ const isExpoGo = (): boolean => {
   const executionEnvironment = (Constants as any)?.executionEnvironment;
   return ownership === "expo" || executionEnvironment === "storeClient";
 };
+
+export const isExpoNotificationsSupported = (): boolean => !isExpoGo();
 
 const getNotificationsModule = async (): Promise<NotificationsModule | null> => {
   if (isExpoGo()) return null;
@@ -48,6 +51,28 @@ const resolvePushPlatform = (): PushDevicePlatform => {
   if (Platform.OS === "ios") return "IOS";
   if (Platform.OS === "android") return "ANDROID";
   return "WEB";
+};
+
+const resolveAppId = (): string | undefined => {
+  const bundleIdentifier =
+    (Constants as any)?.expoConfig?.ios?.bundleIdentifier ??
+    (Constants as any)?.manifest2?.extra?.expoClient?.ios?.bundleIdentifier ??
+    (Constants as any)?.manifest?.ios?.bundleIdentifier ??
+    null;
+  if (typeof bundleIdentifier === "string" && bundleIdentifier.trim().length > 0) {
+    return bundleIdentifier.trim();
+  }
+
+  const androidPackage =
+    (Constants as any)?.expoConfig?.android?.package ??
+    (Constants as any)?.manifest2?.extra?.expoClient?.android?.package ??
+    (Constants as any)?.manifest?.android?.package ??
+    null;
+  if (typeof androidPackage === "string" && androidPackage.trim().length > 0) {
+    return androidPackage.trim();
+  }
+
+  return undefined;
 };
 
 export const configureLocalNotifications = async (): Promise<void> => {
@@ -172,5 +197,6 @@ export const getPushDeviceRegistration =
       token,
       provider: "EXPO",
       platform: resolvePushPlatform(),
+      appId: resolveAppId(),
     };
   };

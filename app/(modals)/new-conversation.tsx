@@ -1,8 +1,7 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Image,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -20,11 +19,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { useAuth } from "../../lib/context/auth-context";
 import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
 import { useMessaging } from "../../lib/context/messaging-context";
-import type {
-  ResidentConversationTarget,
-  ResidentManagementContact,
-} from "../../lib/types";
-
+import type { ResidentConversationTarget } from "../../lib/types";
 const P = {
   bg: "#F8F9FA",
   surface: "#FFFFFF",
@@ -43,18 +38,6 @@ const P = {
   shadow: "rgba(43, 52, 55, 0.08)",
 };
 
-function getInitials(name?: string | null): string {
-  if (!name) return "?";
-  const parts = name
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2);
-
-  if (parts.length === 0) return "?";
-  return parts.map((part) => part.charAt(0).toUpperCase()).join("");
-}
-
 export default function NewConversationModal() {
   const insets = useSafeAreaInsets();
   const { currentUser } = useAuth();
@@ -71,17 +54,8 @@ export default function NewConversationModal() {
   const [submitting, setSubmitting] = useState(false);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const [target, setTarget] = useState<ResidentConversationTarget>("management");
-  const [managementContacts, setManagementContacts] = useState<ResidentManagementContact[]>([]);
-  const [selectedManagementUserId, setSelectedManagementUserId] = useState<string | null>(null);
-  const [contactsLoading, setContactsLoading] = useState(false);
-  const [contactsError, setContactsError] = useState<string | null>(null);
-  const [hasFetchedManagementContacts, setHasFetchedManagementContacts] = useState(false);
   const isTenant = currentUser?.role === "tenant";
-  const requiresManagementSelection = isTenant && target === "management";
-  const isSubmitDisabled =
-    submitting ||
-    !canComposeConversation ||
-    (requiresManagementSelection && (!selectedManagementUserId || contactsLoading));
+  const isSubmitDisabled = submitting || !canComposeConversation;
 
   useEffect(() => {
     const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
@@ -100,52 +74,9 @@ export default function NewConversationModal() {
     };
   }, []);
 
-  const loadManagementContacts = useCallback(async () => {
-    setContactsLoading(true);
-    setContactsError(null);
-
-    try {
-      const contacts = await actions.fetchResidentManagementContacts();
-      setManagementContacts(contacts);
-      setSelectedManagementUserId((currentValue) => {
-        if (currentValue && contacts.some((contact) => contact.managementUserId === currentValue)) {
-          return currentValue;
-        }
-        return contacts[0]?.managementUserId ?? null;
-      });
-    } catch (error) {
-      const errorMessage =
-        error && typeof error === "object" && "message" in error
-          ? (error as { message?: string }).message
-          : undefined;
-      setContactsError(errorMessage || "Unable to load management contacts right now.");
-    } finally {
-      setContactsLoading(false);
-      setHasFetchedManagementContacts(true);
-    }
-  }, [actions]);
-
-  useEffect(() => {
-    if (!requiresManagementSelection || !canComposeConversation || hasFetchedManagementContacts) {
-      return;
-    }
-
-    void loadManagementContacts();
-  }, [
-    canComposeConversation,
-    hasFetchedManagementContacts,
-    loadManagementContacts,
-    requiresManagementSelection,
-  ]);
-
   const handleSubmit = async () => {
     if (!canComposeConversation) {
       Alert.alert("Messaging Unavailable", statusMessage);
-      return;
-    }
-
-    if (requiresManagementSelection && !selectedManagementUserId) {
-      Alert.alert("Select Management", "Choose one management contact before sending your message.");
       return;
     }
 
@@ -169,8 +100,6 @@ export default function NewConversationModal() {
         ? await actions.createResidentConversation(target, {
             subject: subject.trim() || undefined,
             message: message.trim(),
-            managementUserId:
-              target === "management" ? selectedManagementUserId ?? undefined : undefined,
           })
         : await actions.createConversation({
             subject: subject.trim() || undefined,
@@ -243,30 +172,6 @@ export default function NewConversationModal() {
             <View style={styles.headerActionSlot} />
           </View>
 
-          <View style={styles.heroCard}>
-            <View style={styles.heroGlowPrimary} />
-            <View style={styles.heroGlowSecondary} />
-
-            <Text style={styles.heroEyebrow}>Conversation overview</Text>
-            <Text style={styles.heroTitle}>Start a polished conversation from the same inbox flow.</Text>
-            <Text style={styles.heroSubtitle}>
-              {isTenant
-                ? "Choose management or owner, add context, and send without manually entering participant IDs."
-                : "Add recipients, frame the topic clearly, and send a message that matches the current resident messaging experience."}
-            </Text>
-
-            <View style={styles.heroPillRow}>
-              <View style={styles.heroPill}>
-                <Ionicons name="create-outline" size={14} color={P.primary} />
-                <Text style={styles.heroPillText}>Draft message</Text>
-              </View>
-              <View style={styles.heroPill}>
-                <Ionicons name="paper-plane-outline" size={14} color={P.primary} />
-                <Text style={styles.heroPillText}>Send instantly</Text>
-              </View>
-            </View>
-          </View>
-
           {!isTenancyLoading && !canComposeConversation ? (
             <View style={styles.lockedBanner}>
               <Ionicons name="information-circle-outline" size={18} color={P.warningText} />
@@ -281,20 +186,6 @@ export default function NewConversationModal() {
             </View>
 
             <View style={styles.field}>
-              <Text style={styles.label}>Subject</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="What is this about?"
-                placeholderTextColor="#8A969B"
-                value={subject}
-                onChangeText={setSubject}
-                maxLength={200}
-                editable={canComposeConversation}
-              />
-              <Text style={styles.hint}>Optional, but useful when the thread needs quick context.</Text>
-            </View>
-
-            <View style={styles.fieldLast}>
               <Text style={styles.label}>{isTenant ? "Message route" : "Recipients"}</Text>
               {isTenant ? (
                 <>
@@ -354,123 +245,11 @@ export default function NewConversationModal() {
                     </TouchableOpacity>
                   </View>
 
-                  {target === "management" ? (
-                    <View style={styles.managementContactsSection}>
-                      <View style={styles.managementContactsHeader}>
-                        <Text style={styles.managementContactsTitle}>Choose a contact</Text>
-                        {contactsLoading ? <ActivityIndicator size="small" color={P.primary} /> : null}
-                      </View>
-
-                      {contactsLoading && managementContacts.length === 0 ? (
-                        <View style={styles.managementStateCard}>
-                          <Text style={styles.managementStateTitle}>Loading contacts</Text>
-                          <Text style={styles.managementStateText}>
-                            Fetching the management contacts assigned to your current building.
-                          </Text>
-                        </View>
-                      ) : null}
-
-                      {!contactsLoading && contactsError ? (
-                        <View style={styles.managementStateCard}>
-                          <Text style={styles.managementStateTitle}>Contacts unavailable</Text>
-                          <Text style={styles.managementStateText}>{contactsError}</Text>
-                          <TouchableOpacity
-                            style={styles.retryButton}
-                            onPress={() => void loadManagementContacts()}
-                            activeOpacity={0.85}
-                          >
-                            <Text style={styles.retryButtonText}>Retry</Text>
-                          </TouchableOpacity>
-                        </View>
-                      ) : null}
-
-                      {!contactsLoading && !contactsError && managementContacts.length === 0 ? (
-                        <View style={styles.managementStateCard}>
-                          <Text style={styles.managementStateTitle}>No contacts available</Text>
-                          <Text style={styles.managementStateText}>
-                            There are no management contacts available for your active occupancy right now.
-                          </Text>
-                        </View>
-                      ) : null}
-
-                      {managementContacts.map((contact) => {
-                        const isSelected = contact.managementUserId === selectedManagementUserId;
-
-                        return (
-                          <TouchableOpacity
-                            key={contact.managementUserId}
-                            activeOpacity={0.9}
-                            style={[
-                              styles.contactCard,
-                              isSelected && styles.contactCardSelected,
-                            ]}
-                            onPress={() => setSelectedManagementUserId(contact.managementUserId)}
-                          >
-                            {contact.avatarUrl ? (
-                              <Image
-                                source={{ uri: contact.avatarUrl }}
-                                style={styles.contactAvatarImage}
-                              />
-                            ) : (
-                              <View
-                                style={[
-                                  styles.contactAvatarFallback,
-                                  isSelected && styles.contactAvatarFallbackSelected,
-                                ]}
-                              >
-                                <Text
-                                  style={[
-                                    styles.contactAvatarFallbackText,
-                                    isSelected && styles.contactAvatarFallbackTextSelected,
-                                  ]}
-                                >
-                                  {getInitials(contact.name)}
-                                </Text>
-                              </View>
-                            )}
-
-                            <View style={styles.contactCopy}>
-                              <Text
-                                style={[
-                                  styles.contactName,
-                                  isSelected && styles.contactNameSelected,
-                                ]}
-                              >
-                                {contact.name}
-                              </Text>
-                              <Text
-                                style={[
-                                  styles.contactRole,
-                                  isSelected && styles.contactRoleSelected,
-                                ]}
-                              >
-                                {contact.role?.trim() || "Management team"}
-                              </Text>
-                            </View>
-
-                            <View
-                              style={[
-                                styles.contactRadio,
-                                isSelected && styles.contactRadioSelected,
-                              ]}
-                            >
-                              {isSelected ? (
-                                <Ionicons name="checkmark" size={14} color="#EEF7FB" />
-                              ) : null}
-                            </View>
-                          </TouchableOpacity>
-                        );
-                      })}
-
-                      <Text style={styles.hint}>
-                        Residents can only start management conversations with the contacts returned for the active building.
-                      </Text>
-                    </View>
-                  ) : (
-                    <Text style={styles.hint}>
-                      Owner messaging still resolves the recipient from your active occupancy.
-                    </Text>
-                  )}
+                  <Text style={styles.hint}>
+                    {target === "management"
+                      ? "Your message will be routed through the resident management channel for your active occupancy."
+                      : "Owner messaging still resolves the recipient from your active occupancy."}
+                  </Text>
                 </>
               ) : (
                 <>
@@ -486,6 +265,20 @@ export default function NewConversationModal() {
                   <Text style={styles.hint}>Use the target user ID values for the people who should receive this thread.</Text>
                 </>
               )}
+            </View>
+
+            <View style={styles.fieldLast}>
+              <Text style={styles.label}>Subject</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="What is this about?"
+                placeholderTextColor="#8A969B"
+                value={subject}
+                onChangeText={setSubject}
+                maxLength={200}
+                editable={canComposeConversation}
+              />
+              <Text style={styles.hint}>Optional, but useful when the thread needs quick context.</Text>
             </View>
           </View>
 
@@ -602,81 +395,6 @@ const styles = StyleSheet.create({
   },
   headerActionSlot: {
     width: 42,
-  },
-  heroCard: {
-    position: "relative",
-    overflow: "hidden",
-    backgroundColor: P.surface,
-    borderRadius: 28,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: P.border,
-    shadowColor: P.shadow,
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 1,
-    shadowRadius: 24,
-    elevation: 4,
-    marginBottom: 16,
-  },
-  heroGlowPrimary: {
-    position: "absolute",
-    right: -30,
-    top: -26,
-    width: 132,
-    height: 132,
-    borderRadius: 66,
-    backgroundColor: "#ECF3F6",
-  },
-  heroGlowSecondary: {
-    position: "absolute",
-    right: 44,
-    bottom: -36,
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: "#F3EADF",
-  },
-  heroEyebrow: {
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 0.4,
-    textTransform: "uppercase",
-    color: P.primary,
-  },
-  heroTitle: {
-    marginTop: 8,
-    fontSize: 24,
-    lineHeight: 30,
-    fontWeight: "800",
-    color: P.text,
-  },
-  heroSubtitle: {
-    marginTop: 8,
-    fontSize: 14,
-    lineHeight: 21,
-    color: P.muted,
-  },
-  heroPillRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-    marginTop: 16,
-  },
-  heroPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 999,
-    backgroundColor: P.surfaceLow,
-    borderWidth: 1,
-    borderColor: P.border,
-  },
-  heroPillText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: P.primary,
   },
   lockedBanner: {
     flexDirection: "row",

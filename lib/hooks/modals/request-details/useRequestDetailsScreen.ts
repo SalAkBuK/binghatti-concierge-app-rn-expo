@@ -12,11 +12,24 @@ import { upsertResidentRequestSnapshot } from "../../useResidentRequests";
 import { apiService } from "../../../services/api";
 import { maintenanceApi } from "../../../services/api/maintenance";
 import { residentRequestsApi } from "../../../services/api/resident-requests";
-import type { Request, RequestPriority } from "../../../types";
+import type {
+  Request,
+  ResidentEmergencySignal,
+} from "../../../types";
+import {
+  buildResidentUpdatePayload,
+  createResidentRequestFormDefaults,
+  normalizeResidentEmergencySignals,
+  requestToResidentRequestForm,
+  type ResidentRequestFormValues,
+  type ResidentRequestValidationErrors,
+  validateResidentRequestForm,
+} from "../../../utils/resident-request-form";
 import {
   normalizeAttachments,
   normalizePriority,
   normalizeStatus,
+  normalizeRequestType,
 } from "./request-details-helpers";
 
 export type RequestDetailsComment = {
@@ -27,11 +40,9 @@ export type RequestDetailsComment = {
   attachments?: string[];
 };
 
-export type RequestDetailsEditForm = {
-  title: string;
-  description: string;
-  priority: RequestPriority;
-};
+export type RequestDetailsEditForm = ResidentRequestFormValues;
+export type RequestDetailsEditValidationErrors =
+  ResidentRequestValidationErrors;
 
 const mapCommentAttachments = (comment: any): string[] | undefined => {
   if (!Array.isArray(comment.attachments) || comment.attachments.length === 0) {
@@ -78,11 +89,13 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
   const [resolvedBuildingName, setResolvedBuildingName] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showEditMode, setShowEditMode] = useState(false);
-  const [editForm, setEditForm] = useState<RequestDetailsEditForm>({
-    title: selectedRequest?.title || "",
-    description: selectedRequest?.description || "",
-    priority: selectedRequest?.priority || ("medium" as const),
-  });
+  const [editForm, setEditForm] = useState<RequestDetailsEditForm>(
+    selectedRequest
+      ? requestToResidentRequestForm(selectedRequest)
+      : createResidentRequestFormDefaults(),
+  );
+  const [editValidationErrors, setEditValidationErrors] =
+    useState<RequestDetailsEditValidationErrors>({});
   const [loading, setLoading] = useState(false);
   const [showImageViewer, setShowImageViewer] = useState(false);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
@@ -242,6 +255,7 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
             id: String(apiRequest.id ?? selectedRequest.id),
             title: apiRequest.title ?? selectedRequest.title,
             description: apiRequest.description ?? selectedRequest.description,
+            type: normalizeRequestType(apiRequest.type ?? selectedRequest.type),
             status: normalizeStatus(apiRequest.status ?? selectedRequest.status),
             priority: normalizePriority(apiRequest.priority ?? selectedRequest.priority),
             attachments: normalizeAttachments(
@@ -257,6 +271,15 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
                 ? String(apiRequest.floorNumber)
                 : selectedRequest.floor,
             buildingName: apiRequest.buildingName ?? selectedRequest.buildingName,
+            isEmergency:
+              typeof apiRequest.isEmergency === "boolean"
+                ? apiRequest.isEmergency
+                : typeof apiRequest.policy?.isEmergency === "boolean"
+                  ? apiRequest.policy.isEmergency
+                  : selectedRequest.isEmergency,
+            emergencySignals: Array.isArray(apiRequest.emergencySignals)
+              ? normalizeResidentEmergencySignals(apiRequest.emergencySignals)
+              : selectedRequest.emergencySignals,
             createdAt: apiRequest.createdAt ?? selectedRequest.createdAt,
             updatedAt: apiRequest.updatedAt ?? selectedRequest.updatedAt,
           };
@@ -299,6 +322,7 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
             id: String(apiRequest.id ?? selectedRequest.id),
             title: apiRequest.title ?? selectedRequest.title,
             description: apiRequest.description ?? selectedRequest.description,
+            type: normalizeRequestType(apiRequest.type ?? selectedRequest.type),
             status: normalizeStatus(apiRequest.status ?? selectedRequest.status),
             priority: normalizePriority(apiRequest.priority ?? selectedRequest.priority),
             attachments: normalizeAttachments(
@@ -366,20 +390,75 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
     setDetailTab("overview");
     setNewComment("");
     setShowEditMode(false);
-    setEditForm({
-      title: selectedRequest?.title || "",
-      description: selectedRequest?.description || "",
-      priority: selectedRequest?.priority || ("medium" as const),
-    });
+    setEditForm(
+      selectedRequest
+        ? requestToResidentRequestForm(selectedRequest)
+        : createResidentRequestFormDefaults(),
+    );
+    setEditValidationErrors({});
     assignedUserIdRef.current = null;
     assignedUserNameRef.current = null;
     managerNamesRef.current = {};
   }, [
     selectedRequest?.description,
     selectedRequest?.id,
+    selectedRequest?.isEmergency,
     selectedRequest?.priority,
     selectedRequest?.title,
+    selectedRequest?.type,
+    Array.isArray(selectedRequest?.emergencySignals)
+      ? selectedRequest.emergencySignals.join(",")
+      : "",
   ]);
+
+  const updateEditFormField = useCallback(
+    <K extends keyof RequestDetailsEditForm>(
+      field: K,
+      value: RequestDetailsEditForm[K],
+    ) => {
+      setEditForm((prev) => ({ ...prev, [field]: value }));
+      setEditValidationErrors((prev) => {
+        if (!prev[field as keyof RequestDetailsEditValidationErrors]) {
+          return prev;
+        }
+        const next = { ...prev };
+        delete next[field as keyof RequestDetailsEditValidationErrors];
+        return next;
+      });
+    },
+    [],
+  );
+
+  const toggleEditEmergencySignal = useCallback(
+    (signal: ResidentEmergencySignal) => {
+      setEditForm((prev) => {
+        const hasSignal = prev.emergencySignals.includes(signal);
+        return {
+          ...prev,
+          emergencySignals: hasSignal
+            ? prev.emergencySignals.filter((item) => item !== signal)
+            : [...prev.emergencySignals, signal],
+        };
+      });
+      setEditValidationErrors((prev) => {
+        if (!prev.emergencySignals) return prev;
+        const next = { ...prev };
+        delete next.emergencySignals;
+        return next;
+      });
+    },
+    [],
+  );
+
+  const handleCancelEdit = useCallback(() => {
+    setEditValidationErrors({});
+    setEditForm(
+      selectedRequest
+        ? requestToResidentRequestForm(selectedRequest)
+        : createResidentRequestFormDefaults(),
+    );
+    setShowEditMode(false);
+  }, [selectedRequest]);
 
   useEffect(() => {
     if (requestedInitialTab === "comments") {
@@ -562,10 +641,28 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
     setLoading(true);
     try {
       if (isTenantUser) {
-        const payload = {
-          title: editForm.title,
-          description: editForm.description,
-        };
+        const requestStatus = normalizeStatus(selectedRequest.status);
+        if (requestStatus !== "pending") {
+          throw new Error(
+            "You can update request details only while the request is still submitted.",
+          );
+        }
+
+        const errors = validateResidentRequestForm(editForm);
+        if (Object.keys(errors).length > 0) {
+          setEditValidationErrors(errors);
+          return;
+        }
+
+        const payload = buildResidentUpdatePayload(editForm, selectedRequest);
+        if (Object.keys(payload).length === 0) {
+          Alert.alert(
+            "No changes to save",
+            "Update at least one request detail before saving.",
+          );
+          return;
+        }
+
         const response = await residentRequestsApi.updateRequest(selectedRequest.id, payload);
 
         const responseHasSuccess =
@@ -574,10 +671,18 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
           throw new Error((response as any)?.message || "Failed to update request");
         }
 
+        const refreshedResponse = await residentRequestsApi
+          .getRequest(selectedRequest.id)
+          .catch(() => response);
         const apiRequest =
-          response && typeof response === "object" && "data" in response && response.data
-            ? response.data
-            : response && typeof response === "object"
+          refreshedResponse &&
+          typeof refreshedResponse === "object" &&
+          "data" in refreshedResponse &&
+          refreshedResponse.data
+            ? refreshedResponse.data
+            : response && typeof response === "object" && "data" in response && response.data
+              ? response.data
+              : response && typeof response === "object"
               ? response
               : {};
         const updatedRequest: Request = {
@@ -587,11 +692,23 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
             apiRequest.description ??
             payload.description ??
             selectedRequest.description,
+          type: normalizeRequestType(apiRequest.type ?? payload.type ?? selectedRequest.type),
           status: normalizeStatus(apiRequest.status ?? selectedRequest.status),
-          priority: normalizePriority(apiRequest.priority ?? selectedRequest.priority),
+          priority: normalizePriority(
+            apiRequest.priority ?? payload.priority ?? selectedRequest.priority,
+          ),
           attachments: normalizeAttachments(
             apiRequest.attachments ?? selectedRequest.attachments,
           ),
+          isEmergency:
+            typeof apiRequest.isEmergency === "boolean"
+              ? apiRequest.isEmergency
+              : typeof payload.isEmergency === "boolean"
+                ? payload.isEmergency
+                : selectedRequest.isEmergency,
+          emergencySignals: Array.isArray(apiRequest.emergencySignals)
+            ? normalizeResidentEmergencySignals(apiRequest.emergencySignals)
+            : payload.emergencySignals ?? selectedRequest.emergencySignals ?? [],
           updatedAt: apiRequest.updatedAt ?? selectedRequest.updatedAt,
         };
 
@@ -599,16 +716,24 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
         if (currentUser?.id) {
           upsertResidentRequestSnapshot(currentUser.id, updatedRequest);
         }
+        setEditValidationErrors({});
         setShowEditMode(false);
         Alert.alert("Success", "Request updated successfully");
         return;
       }
 
-      await updateRequest(selectedRequest.id, editForm);
+      await updateRequest(selectedRequest.id, {
+        title: editForm.title,
+        description: editForm.description,
+        priority: normalizePriority(editForm.priority),
+      });
       setShowEditMode(false);
       Alert.alert("Success", "Request updated successfully");
-    } catch (error) {
-      Alert.alert("Error", "Failed to update request");
+    } catch (error: any) {
+      Alert.alert(
+        "Error",
+        error?.message || "Failed to update request",
+      );
       console.error("Error updating request:", error);
     } finally {
       setLoading(false);
@@ -728,6 +853,7 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
     setShowEditMode,
     editForm,
     setEditForm,
+    editValidationErrors,
     loading,
     showImageViewer,
     setShowImageViewer,
@@ -740,7 +866,10 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
     handleDeclineEstimate,
     handleReviewCompletion,
     handleDeleteRequest,
+    handleCancelEdit,
     handleUpdateRequest,
+    updateEditFormField,
+    toggleEditEmergencySignal,
     handleSubmitComment,
   };
 };

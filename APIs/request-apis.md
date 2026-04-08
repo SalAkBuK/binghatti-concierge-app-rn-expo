@@ -16,7 +16,7 @@ GET /api/resident/requests/:requestId
 Update request (only while OPEN):
 
 PATCH /api/resident/requests/:requestId
-Body: { title?, description? }
+- Body: `{ title?, description?, type?, priority?, isEmergency?, emergencySignals? }`
 Cancel request:
 
 POST /api/resident/requests/:requestId/cancel

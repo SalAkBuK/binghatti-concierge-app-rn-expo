@@ -30,7 +30,9 @@ import {
   formatOwnerLabel,
   formatOwnerRelativeTime,
   getOwnerConversationDisplayName,
+  getOwnerApprovalTone,
   getOwnerRequestStatusTone,
+  resolveOwnerRequestApprovalStatus,
   OWNER_PALETTE as P,
 } from '../../lib/utils/owner-portal';
 
@@ -169,6 +171,7 @@ export default function OwnerHomeScreen() {
             messagingUnreadCount={conversationUnreadCount}
             showSideMenu={showSideMenu}
             onSideMenuToggle={setShowSideMenu}
+            notificationRoute="/(owner)/notifications"
             textColor={P.text}
           />
 
@@ -282,9 +285,8 @@ export default function OwnerHomeScreen() {
           ) : (
             recentRequests.map((request) => {
               const statusTone = getOwnerRequestStatusTone(request.status);
-              const approvalTone = getOwnerRequestStatusTone(
-                request.ownerApproval?.status,
-              );
+              const approvalStatus = resolveOwnerRequestApprovalStatus(request);
+              const approvalTone = getOwnerApprovalTone(approvalStatus);
 
               return (
                 <TouchableOpacity
@@ -326,7 +328,8 @@ export default function OwnerHomeScreen() {
                       ]}
                     >
                       <Text style={[styles.subtlePillText, { color: approvalTone.text }]}>
-                        Approval {formatOwnerLabel(request.ownerApproval?.status || 'Not Required')}
+                        Approval{' '}
+                        {formatOwnerLabel(approvalStatus)}
                       </Text>
                     </View>
                     <Text style={styles.requestFooterText}>

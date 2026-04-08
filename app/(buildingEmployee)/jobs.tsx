@@ -1,5 +1,6 @@
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system/legacy";
@@ -34,6 +35,13 @@ import { uploadFileToServer } from "../../lib/utils/fileUpload";
 import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
 import { getUnreadNotificationsCount } from "../../lib/utils/helpers";
 import { hasEffectivePermission } from "../../lib/utils/permissions";
+import { mapRequestContractFields } from "../../lib/utils/request-contract";
+import type {
+  OwnerApprovalStatus,
+  RequestPolicy,
+  RequestQueue,
+  RequestRecommendation,
+} from "../../lib/types";
 
 type StaffRequestStatus =
   | "pending"
@@ -53,6 +61,11 @@ type StaffJob = {
   buildingId?: string;
   buildingName?: string;
   unitNumber?: string;
+  ownerApprovalStatus?: OwnerApprovalStatus | null;
+  queue?: RequestQueue | null;
+  recommendation?: RequestRecommendation | null;
+  policy?: RequestPolicy | null;
+  isEmergency?: boolean;
 };
 
 type AssignedBuilding = {
@@ -62,6 +75,30 @@ type AssignedBuilding = {
 };
 
 type JobStatusFilter = "all" | StaffRequestStatus;
+
+const P = {
+  bg: "#F8F9FA",
+  surface: "#FFFFFF",
+  surfaceLow: "#F1F4F6",
+  border: "#D9E0E4",
+  text: "#2B3437",
+  muted: "#667176",
+  soft: "#7A8488",
+  primary: "#4D6169",
+  primaryDark: "#34474D",
+  primarySoft: "#D6E4E8",
+  accent: "#F7EEDF",
+  accentBorder: "#EBD8BB",
+  successBg: "#E4F4EA",
+  successText: "#25674A",
+  warningBg: "#FDF1DB",
+  warningText: "#9A5B00",
+  dangerBg: "#FCE3E0",
+  dangerText: "#B24A41",
+  infoBg: "#E7EEF9",
+  infoText: "#3C5A8C",
+  shadow: "rgba(43, 52, 55, 0.08)",
+};
 
 const mapStatusFromBackend = (status: any): StaffRequestStatus => {
   if (typeof status === "number") {
@@ -123,6 +160,45 @@ const normalizeId = (value: number | string | null | undefined): number | undefi
   return Number.isFinite(num) ? num : undefined;
 };
 
+const formatQueueLabel = (queue?: RequestQueue | null): string => {
+  if (!queue) return "Active";
+  return queue
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+};
+
+const formatRecommendationLabel = (
+  recommendation?: RequestRecommendation | null,
+): string | null => {
+  if (!recommendation) return null;
+  return recommendation
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+};
+
+const isExecutionBlocked = (job?: StaffJob | null): boolean =>
+  job?.ownerApprovalStatus === "PENDING" ||
+  job?.ownerApprovalStatus === "REJECTED" ||
+  job?.queue === "AWAITING_OWNER";
+
+const getPriorityAccent = (priority: StaffJob["priority"]) => {
+  switch (priority) {
+    case "urgent":
+      return P.dangerText;
+    case "high":
+      return "#B45309";
+    case "medium":
+      return P.infoText;
+    case "low":
+    default:
+      return P.soft;
+  }
+};
+
 export default function BuildingEmployeeJobsScreen() {
   const { isAuthenticated, currentUser } = useAuth();
   const { notifications } = useNotifications();
@@ -161,6 +237,7 @@ export default function BuildingEmployeeJobsScreen() {
   const tenantNamesRef = useRef<Record<string, string>>({});
   const isJobClosed =
     selectedJob?.status === "completed" || selectedJob?.status === "cancelled";
+  const isSelectedJobExecutionBlocked = isExecutionBlocked(selectedJob);
   const canReadRequests = hasEffectivePermission(currentUser, "requests.read");
   const canUpdateRequestStatus = hasEffectivePermission(
     currentUser,
@@ -231,6 +308,7 @@ export default function BuildingEmployeeJobsScreen() {
                 : [];
             return payload.map((item: any) => {
               const unit = item?.unit || item?.unitDetails;
+              const contractFields = mapRequestContractFields(item);
               return {
                 id: String(item?.id ?? item?.requestId ?? ""),
                 title: item?.title || "Maintenance request",
@@ -249,6 +327,7 @@ export default function BuildingEmployeeJobsScreen() {
                   item?.unitNumber ||
                   item?.apartment ||
                   "",
+                ...contractFields,
               } as StaffJob;
             });
           } catch (error) {
@@ -304,6 +383,25 @@ export default function BuildingEmployeeJobsScreen() {
     [assignedJobs],
   );
 
+  const coverageLabel = useMemo(() => {
+    if (assignedBuildings.length === 0) return "No active building assignments";
+    if (assignedBuildings.length === 1) return assignedBuildings[0].name;
+    return `${assignedBuildings[0].name} +${assignedBuildings.length - 1} more`;
+  }, [assignedBuildings]);
+
+  const queueHeadline = useMemo(() => {
+    if (stats.inProgress > 0) {
+      return `${stats.inProgress} job${stats.inProgress === 1 ? "" : "s"} currently in motion`;
+    }
+    if (stats.assigned > 0) {
+      return `${stats.assigned} job${stats.assigned === 1 ? "" : "s"} ready to start`;
+    }
+    if (stats.total > 0) {
+      return `${stats.total} total job${stats.total === 1 ? "" : "s"} in your queue`;
+    }
+    return "No active jobs in your queue";
+  }, [stats.assigned, stats.inProgress, stats.total]);
+
   const onRefresh = async () => {
     setRefreshing(true);
     await fetchAssignedJobs();
@@ -322,17 +420,17 @@ export default function BuildingEmployeeJobsScreen() {
     switch (status) {
       case "pending":
       case "assigned":
-        return { bg: "#FEF3C7", color: "#92400E", label: "Assigned" };
+        return { bg: P.warningBg, color: P.warningText, label: "Assigned" };
       case "in-progress":
-        return { bg: "#DBEAFE", color: "#1D4ED8", label: "In Progress" };
+        return { bg: P.infoBg, color: P.infoText, label: "In Progress" };
       case "on-hold":
-        return { bg: "#FFE4E6", color: "#BE123C", label: "On Hold" };
+        return { bg: P.accent, color: P.warningText, label: "On Hold" };
       case "completed":
-        return { bg: "#DCFCE7", color: "#047857", label: "Completed" };
+        return { bg: P.successBg, color: P.successText, label: "Completed" };
       case "cancelled":
-        return { bg: "#FEE2E2", color: "#B91C1C", label: "Cancelled" };
+        return { bg: P.dangerBg, color: P.dangerText, label: "Cancelled" };
       default:
-        return { bg: "#E5E7EB", color: "#374151", label: status };
+        return { bg: P.surfaceLow, color: P.text, label: status };
     }
   };
 
@@ -534,6 +632,7 @@ export default function BuildingEmployeeJobsScreen() {
       );
 
       const unit = apiRequest?.unit || apiRequest?.unitDetails;
+      const contractFields = mapRequestContractFields(apiRequest);
       const mappedJob: StaffJob = {
         id: String(apiRequest?.id ?? job.id),
         title: apiRequest?.title || job.title,
@@ -551,6 +650,7 @@ export default function BuildingEmployeeJobsScreen() {
           apiRequest?.unitLabel ||
           apiRequest?.unitNumber ||
           job.unitNumber,
+        ...contractFields,
       };
 
       setSelectedJob(mappedJob);
@@ -587,7 +687,9 @@ export default function BuildingEmployeeJobsScreen() {
     apiStatus: "IN_PROGRESS" | "COMPLETED",
     nextStatus: StaffRequestStatus,
   ) => {
-    if (!selectedJob || !canUpdateRequestStatus) return;
+    if (!selectedJob || !canUpdateRequestStatus || isExecutionBlocked(selectedJob)) {
+      return;
+    }
 
     // Show confirmation for marking as completed
     if (nextStatus === "completed") {
@@ -619,7 +721,9 @@ export default function BuildingEmployeeJobsScreen() {
     apiStatus: "IN_PROGRESS" | "COMPLETED",
     nextStatus: StaffRequestStatus,
   ) => {
-    if (!selectedJob || !canUpdateRequestStatus) return;
+    if (!selectedJob || !canUpdateRequestStatus || isExecutionBlocked(selectedJob)) {
+      return;
+    }
     setStatusUpdating(true);
     try {
       const buildingId =
@@ -877,7 +981,7 @@ export default function BuildingEmployeeJobsScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.emptyState}>
-          <Ionicons name="lock-closed-outline" size={48} color="#94A3B8" />
+          <Ionicons name="lock-closed-outline" size={48} color={P.soft} />
           <Text style={styles.emptyTitle}>Access Restricted</Text>
           <Text style={styles.emptySubtitle}>
             This workspace is only available to building employees.
@@ -893,7 +997,7 @@ export default function BuildingEmployeeJobsScreen() {
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={P.primary} />
         }
         contentContainerStyle={[
           styles.scrollContent,
@@ -901,16 +1005,65 @@ export default function BuildingEmployeeJobsScreen() {
         ]}
       >
         <HeaderBar
-          title="Maintenance Jobs"
-          subtitle={`${filteredJobs.length} ${filteredJobs.length === 1 ? "job" : "jobs"}`}
+          title="Field Queue"
+          subtitle={`${filteredJobs.length} ${filteredJobs.length === 1 ? "job" : "jobs"} in view`}
           hasUnreadNotifications={hasUnreadNotifications}
+          textColor={P.text}
           showSideMenu={showSideMenu}
           onSideMenuToggle={setShowSideMenu}
         />
 
+        <Animated.View entering={FadeInDown.duration(400)} style={styles.heroPanelShell}>
+          <LinearGradient
+            colors={[P.primary, P.primaryDark]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.heroPanel}
+          >
+            <View style={styles.heroPanelTop}>
+              <View style={styles.heroCoverageChip}>
+                <Ionicons name="business-outline" size={14} color={P.surface} />
+                <Text style={styles.heroCoverageText}>{coverageLabel}</Text>
+              </View>
+              <View style={styles.heroStatusPill}>
+                <View
+                  style={[
+                    styles.heroStatusDot,
+                    stats.inProgress > 0 ? styles.heroStatusDotBusy : styles.heroStatusDotIdle,
+                  ]}
+                />
+                <Text style={styles.heroStatusText}>
+                  {stats.inProgress > 0 ? "Live execution" : "Queue ready"}
+                </Text>
+              </View>
+            </View>
+
+            <Text style={styles.heroPanelTitle}>{queueHeadline}</Text>
+            <Text style={styles.heroPanelSubtitle}>
+              Use the status filters to work the queue quickly, then open any card for comments,
+              attachments, and completion updates.
+            </Text>
+
+            <View style={styles.heroPanelStats}>
+              <View style={styles.heroPanelStatCard}>
+                <Text style={styles.heroPanelStatValue}>{stats.assigned}</Text>
+                <Text style={styles.heroPanelStatLabel}>Ready</Text>
+              </View>
+              <View style={styles.heroPanelStatCard}>
+                <Text style={styles.heroPanelStatValue}>{stats.inProgress}</Text>
+                <Text style={styles.heroPanelStatLabel}>In Progress</Text>
+              </View>
+              <View style={styles.heroPanelStatCard}>
+                <Text style={styles.heroPanelStatValue}>{stats.completed}</Text>
+                <Text style={styles.heroPanelStatLabel}>Completed</Text>
+              </View>
+            </View>
+          </LinearGradient>
+        </Animated.View>
+
         {!staffId && (
           <View style={styles.emptyCard}>
-            <Ionicons name="alert-circle-outline" size={40} color="#F59E0B" />
+            <Ionicons name="alert-circle-outline" size={40} color={P.warningText} />
             <Text style={styles.emptyCardTitle}>No staff ID found</Text>
             <Text style={styles.emptyCardSubtitle}>
               We could not detect your maintenance staff ID. Please re-login or contact support.
@@ -920,7 +1073,7 @@ export default function BuildingEmployeeJobsScreen() {
 
         {!canReadRequests && (
           <View style={styles.emptyCard}>
-            <Ionicons name="lock-closed-outline" size={40} color="#F59E0B" />
+            <Ionicons name="lock-closed-outline" size={40} color={P.warningText} />
             <Text style={styles.emptyCardTitle}>Requests unavailable</Text>
             <Text style={styles.emptyCardSubtitle}>
               Your account does not currently include request access for this building.
@@ -928,10 +1081,7 @@ export default function BuildingEmployeeJobsScreen() {
           </View>
         )}
 
-        <Animated.View
-          entering={FadeInDown.duration(400)}
-          style={styles.filtersContainer}
-        >
+        <Animated.View entering={FadeInDown.delay(50).duration(400)} style={styles.filtersContainer}>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -962,23 +1112,20 @@ export default function BuildingEmployeeJobsScreen() {
           </ScrollView>
         </Animated.View>
 
-        <Animated.View
-          entering={FadeInDown.delay(80).duration(400)}
-          style={styles.summaryRow}
-        >
-          <View style={styles.summaryCard}>
+        <Animated.View entering={FadeInDown.delay(80).duration(400)} style={styles.summaryRow}>
+          <View style={[styles.summaryCard, styles.summaryCardAmber]}>
             <Text style={styles.summaryValue}>
               {stats.assigned}
             </Text>
             <Text style={styles.summaryLabel}>Assigned</Text>
           </View>
-          <View style={styles.summaryCard}>
+          <View style={[styles.summaryCard, styles.summaryCardBlue]}>
             <Text style={styles.summaryValue}>
               {stats.inProgress}
             </Text>
             <Text style={styles.summaryLabel}>In Progress</Text>
           </View>
-          <View style={styles.summaryCard}>
+          <View style={[styles.summaryCard, styles.summaryCardGreen]}>
             <Text style={styles.summaryValue}>
               {stats.completed}
             </Text>
@@ -992,12 +1139,12 @@ export default function BuildingEmployeeJobsScreen() {
         >
           {isLoading ? (
             <View style={styles.loadingCard}>
-              <ActivityIndicator size="large" color="#2563EB" />
+              <ActivityIndicator size="large" color={P.primary} />
               <Text style={styles.emptyCardSubtitle}>Loading assigned jobs...</Text>
             </View>
           ) : filteredJobs.length === 0 ? (
             <View style={styles.emptyCard}>
-              <Ionicons name="construct-outline" size={40} color="#CBD5E1" />
+              <Ionicons name="construct-outline" size={40} color={P.soft} />
               <Text style={styles.emptyCardTitle}>No jobs to show</Text>
               <Text style={styles.emptyCardSubtitle}>
                 Jobs assigned to you will appear here.
@@ -1009,7 +1156,10 @@ export default function BuildingEmployeeJobsScreen() {
               return (
                 <TouchableOpacity
                   key={job.id}
-                  style={styles.jobCard}
+                  style={[
+                    styles.jobCard,
+                    { borderLeftColor: getPriorityAccent(job.priority) },
+                  ]}
                   activeOpacity={0.9}
                   onPress={() => handleOpenJob(job)}
                 >
@@ -1037,6 +1187,20 @@ export default function BuildingEmployeeJobsScreen() {
                     </Text>
                   ) : null}
 
+                  <View style={styles.tagRow}>
+                    {job.queue ? (
+                      <View style={styles.queueChip}>
+                        <Text style={styles.queueChipText}>{formatQueueLabel(job.queue)}</Text>
+                      </View>
+                    ) : null}
+                    {job.isEmergency ? (
+                      <View style={styles.emergencyChip}>
+                        <Ionicons name="flash" size={12} color={P.dangerText} />
+                        <Text style={styles.emergencyChipText}>Emergency</Text>
+                      </View>
+                    ) : null}
+                  </View>
+
                   <View style={styles.metaRow}>
                     <Ionicons name="home-outline" size={16} color="#6B7280" />
                     <Text style={styles.metaText} numberOfLines={1}>
@@ -1052,6 +1216,12 @@ export default function BuildingEmployeeJobsScreen() {
                       </Text>
                     </View>
                   )}
+
+                  {job.ownerApprovalStatus === "PENDING" ? (
+                    <Text style={styles.blockedHint}>
+                      Waiting for owner approval before execution can start.
+                    </Text>
+                  ) : null}
                 </TouchableOpacity>
               );
             })
@@ -1076,7 +1246,7 @@ export default function BuildingEmployeeJobsScreen() {
               {/* Fixed Header */}
               <View style={styles.modalHeader}>
                 <View style={styles.modalTitleWrap}>
-                  <Ionicons name="construct-outline" size={24} color="#2563EB" />
+                  <Ionicons name="construct-outline" size={24} color={P.primary} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.modalTitle} numberOfLines={2}>
                       {selectedJob?.title}
@@ -1120,11 +1290,34 @@ export default function BuildingEmployeeJobsScreen() {
                       </Text>
                     </View>
                     <View style={styles.priorityBadge}>
-                      <Ionicons name="flag" size={14} color="#DC2626" />
+                      <Ionicons name="flag" size={14} color={P.dangerText} />
                       <Text style={styles.priorityBadgeText}>
                         {selectedJob.priority.toUpperCase()}
                       </Text>
                     </View>
+                  </View>
+
+                  <View style={styles.tagRow}>
+                    {selectedJob.queue ? (
+                      <View style={styles.queueChip}>
+                        <Text style={styles.queueChipText}>
+                          {formatQueueLabel(selectedJob.queue)}
+                        </Text>
+                      </View>
+                    ) : null}
+                    {selectedJob.isEmergency ? (
+                      <View style={styles.emergencyChip}>
+                        <Ionicons name="flash" size={12} color={P.dangerText} />
+                        <Text style={styles.emergencyChipText}>Emergency</Text>
+                      </View>
+                    ) : null}
+                    {selectedJob.recommendation ? (
+                      <View style={styles.recommendationChip}>
+                        <Text style={styles.recommendationChipText}>
+                          {formatRecommendationLabel(selectedJob.recommendation)}
+                        </Text>
+                      </View>
+                    ) : null}
                   </View>
 
                   {selectedJob.createdAt && (
@@ -1138,7 +1331,7 @@ export default function BuildingEmployeeJobsScreen() {
 
                   {detailLoading ? (
                     <View style={styles.loadingInline}>
-                      <ActivityIndicator size="small" color="#2563EB" />
+                      <ActivityIndicator size="small" color={P.primary} />
                       <Text style={styles.loadingText}>Loading details...</Text>
                     </View>
                   ) : selectedJob.description ? (
@@ -1147,15 +1340,26 @@ export default function BuildingEmployeeJobsScreen() {
                       <Text style={styles.descriptionText}>{selectedJob.description}</Text>
                     </View>
                   ) : null}
+
+                  {isSelectedJobExecutionBlocked ? (
+                    <View style={styles.blockedBanner}>
+                      <Ionicons name="shield-outline" size={18} color="#92400E" />
+                      <Text style={styles.blockedBannerText}>
+                        {selectedJob.ownerApprovalStatus === "REJECTED"
+                          ? "Owner approval was rejected. Execution is blocked."
+                          : "Owner approval is still pending. Execution is blocked until approval resolves."}
+                      </Text>
+                    </View>
+                  ) : null}
                 </View>
 
                 {/* Action Buttons */}
-                {!isJobClosed && canUpdateRequestStatus && (
+                {!isJobClosed && canUpdateRequestStatus && !isSelectedJobExecutionBlocked && (
                   <View style={styles.actionsCard}>
                     {selectedJob.status === "assigned" && (
                       <TouchableOpacity
                         style={[styles.actionButton, styles.startButton, statusUpdating && styles.disabledButton]}
-                        disabled={statusUpdating}
+                        disabled={statusUpdating || isSelectedJobExecutionBlocked}
                         onPress={() => updateStatus("IN_PROGRESS", "in-progress")}
                       >
                         <Ionicons name="play-circle" size={20} color="#FFFFFF" />
@@ -1166,7 +1370,7 @@ export default function BuildingEmployeeJobsScreen() {
                     {selectedJob.status === "in-progress" && (
                       <TouchableOpacity
                         style={[styles.actionButton, styles.completeButton, statusUpdating && styles.disabledButton]}
-                        disabled={statusUpdating}
+                        disabled={statusUpdating || isSelectedJobExecutionBlocked}
                         onPress={() => updateStatus("COMPLETED", "completed")}
                       >
                         <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
@@ -1181,9 +1385,9 @@ export default function BuildingEmployeeJobsScreen() {
                     <Ionicons
                       name={selectedJob.status === "cancelled" ? "close-circle" : "checkmark-done-circle"}
                       size={20}
-                      color={selectedJob.status === "cancelled" ? "#DC2626" : "#047857"}
+                      color={selectedJob.status === "cancelled" ? P.dangerText : P.successText}
                     />
-                    <Text style={[styles.closedBannerText, selectedJob.status === "cancelled" && { color: "#DC2626" }]}>
+                    <Text style={[styles.closedBannerText, selectedJob.status === "cancelled" && { color: P.dangerText }]}>
                       {selectedJob.status === "cancelled"
                         ? "This request has been cancelled"
                         : "This request has been completed"}
@@ -1194,7 +1398,7 @@ export default function BuildingEmployeeJobsScreen() {
                 {/* Comments Section */}
                 <View style={styles.sectionCard}>
                   <View style={styles.sectionHeader}>
-                    <Ionicons name="chatbubbles" size={20} color="#2563EB" />
+                    <Ionicons name="chatbubbles" size={20} color={P.primary} />
                     <Text style={styles.sectionTitle}>
                       Comments {jobComments.length > 0 ? `(${jobComments.length})` : ""}
                     </Text>
@@ -1260,7 +1464,7 @@ export default function BuildingEmployeeJobsScreen() {
                     </View>
                   ) : (
                     <View style={styles.emptySection}>
-                      <Ionicons name="chatbubbles-outline" size={32} color="#CBD5E1" />
+                      <Ionicons name="chatbubbles-outline" size={32} color={P.soft} />
                       <Text style={styles.emptyText}>No comments yet</Text>
                     </View>
                   )}
@@ -1269,7 +1473,7 @@ export default function BuildingEmployeeJobsScreen() {
                 {/* Attachments Section */}
                 <View style={styles.sectionCard}>
                   <View style={styles.sectionHeader}>
-                    <Ionicons name="attach" size={20} color="#2563EB" />
+                    <Ionicons name="attach" size={20} color={P.primary} />
                     <Text style={styles.sectionTitle}>
                       Attachments {jobAttachments.length > 0 ? `(${jobAttachments.length})` : ""}
                     </Text>
@@ -1285,10 +1489,10 @@ export default function BuildingEmployeeJobsScreen() {
                       disabled={isUploadingAttachment}
                     >
                       {isUploadingAttachment ? (
-                        <ActivityIndicator size="small" color="#2563EB" />
+                        <ActivityIndicator size="small" color={P.primary} />
                       ) : (
                         <>
-                          <Ionicons name="cloud-upload-outline" size={20} color="#2563EB" />
+                          <Ionicons name="cloud-upload-outline" size={20} color={P.primary} />
                           <Text style={styles.uploadButtonText}>Upload Photo or Document</Text>
                         </>
                       )}
@@ -1317,7 +1521,7 @@ export default function BuildingEmployeeJobsScreen() {
                               />
                             ) : (
                               <View style={styles.documentPreview}>
-                                <Ionicons name="document-text" size={32} color="#2563EB" />
+                                <Ionicons name="document-text" size={32} color={P.primary} />
                               </View>
                             )}
                             <Text style={styles.attachmentLabel} numberOfLines={2}>
@@ -1329,7 +1533,7 @@ export default function BuildingEmployeeJobsScreen() {
                     </ScrollView>
                   ) : (
                     <View style={styles.emptySection}>
-                      <Ionicons name="document-attach-outline" size={32} color="#CBD5E1" />
+                      <Ionicons name="document-attach-outline" size={32} color={P.soft} />
                       <Text style={styles.emptyText}>No attachments yet</Text>
                     </View>
                   )}
@@ -1354,7 +1558,13 @@ export default function BuildingEmployeeJobsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F3F4F6",
+    backgroundColor: P.bg,
+  },
+  backgroundGlowTop: {
+    display: "none",
+  },
+  backgroundGlowBottom: {
+    display: "none",
   },
   scrollView: {
     flex: 1,
@@ -1362,10 +1572,99 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 20,
     paddingBottom: 32,
+    gap: 16,
+  },
+  heroPanelShell: {
+    marginTop: -6,
+  },
+  heroPanel: {
+    borderRadius: 28,
+    padding: 20,
+    gap: 16,
+    shadowColor: P.shadow,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 1,
+    shadowRadius: 24,
+    elevation: 4,
+  },
+  heroPanelTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+  },
+  heroCoverageChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  heroCoverageText: {
+    color: P.surface,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  heroStatusPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  heroStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  heroStatusDotBusy: {
+    backgroundColor: "#F7C873",
+  },
+  heroStatusDotIdle: {
+    backgroundColor: "#D6E4E8",
+  },
+  heroStatusText: {
+    color: "#ECF1F3",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  heroPanelTitle: {
+    color: P.surface,
+    fontSize: 28,
+    fontWeight: "800",
+    lineHeight: 32,
+  },
+  heroPanelSubtitle: {
+    color: "#E6ECEF",
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  heroPanelStats: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  heroPanelStatCard: {
+    flex: 1,
+    borderRadius: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.14)",
+    gap: 4,
+  },
+  heroPanelStatValue: {
+    color: P.surface,
+    fontSize: 22,
+    fontWeight: "800",
+  },
+  heroPanelStatLabel: {
+    color: "#E6ECEF",
+    fontSize: 12,
+    fontWeight: "600",
   },
   filtersContainer: {
-    marginTop: 12,
-    marginBottom: 16,
+    marginBottom: 2,
   },
   filtersScrollContent: {
     flexDirection: "row",
@@ -1373,20 +1672,23 @@ const styles = StyleSheet.create({
   },
   filterChip: {
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 9,
     borderRadius: 999,
-    backgroundColor: "#E5E7EB",
+    backgroundColor: P.surface,
+    borderWidth: 1,
+    borderColor: P.border,
   },
   filterChipActive: {
-    backgroundColor: "#2563EB",
+    backgroundColor: P.primary,
+    borderColor: P.primary,
   },
   filterChipText: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#1F2937",
+    color: P.text,
   },
   filterChipTextActive: {
-    color: "#FFFFFF",
+    color: P.surface,
   },
   summaryRow: {
     flexDirection: "row",
@@ -1396,67 +1698,85 @@ const styles = StyleSheet.create({
   },
   summaryCard: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 14,
+    backgroundColor: P.surface,
+    borderRadius: 20,
     paddingVertical: 16,
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    shadowColor: "#0F172A",
+    borderWidth: 1,
+    shadowColor: P.shadow,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
+    shadowOpacity: 1,
+    shadowRadius: 16,
     elevation: 3,
+  },
+  summaryCardAmber: {
+    backgroundColor: P.warningBg,
+    borderColor: "#F0D7A4",
+  },
+  summaryCardBlue: {
+    backgroundColor: P.infoBg,
+    borderColor: "#CBD7EA",
+  },
+  summaryCardGreen: {
+    backgroundColor: P.successBg,
+    borderColor: "#C5E3D0",
   },
   summaryValue: {
     fontSize: 20,
     fontWeight: "700",
-    color: "#111827",
+    color: P.text,
   },
   summaryLabel: {
     fontSize: 12,
     fontWeight: "500",
-    color: "#6B7280",
+    color: P.muted,
   },
   listContainer: {
     gap: 16,
     width: '100%',
   },
   emptyCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
+    backgroundColor: P.surface,
+    borderRadius: 18,
     paddingVertical: 48,
     alignItems: "center",
     gap: 12,
+    borderWidth: 1,
+    borderColor: P.border,
   },
   emptyCardTitle: {
     fontSize: 18,
     fontWeight: "600",
-    color: "#1F2937",
+    color: P.text,
   },
   emptyCardSubtitle: {
     fontSize: 14,
-    color: "#6B7280",
+    color: P.muted,
     paddingHorizontal: 24,
     textAlign: "center",
   },
   loadingCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
+    backgroundColor: P.surface,
+    borderRadius: 18,
     paddingVertical: 32,
     alignItems: "center",
     gap: 12,
+    borderWidth: 1,
+    borderColor: P.border,
   },
   jobCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
+    backgroundColor: P.surface,
+    borderRadius: 20,
     padding: 24,
     gap: 16,
-    shadowColor: "#000",
+    shadowColor: P.shadow,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
+    shadowOpacity: 1,
+    shadowRadius: 12,
     elevation: 2,
+    borderLeftWidth: 4,
   },
   jobHeader: {
     flexDirection: "row",
@@ -1476,18 +1796,59 @@ const styles = StyleSheet.create({
   priorityText: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#6B7280",
+    color: P.soft,
   },
   jobTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#111827",
+    color: P.text,
     marginBottom: 4,
   },
   jobDescription: {
     fontSize: 15,
-    color: "#4B5563",
+    color: P.muted,
     lineHeight: 22,
+  },
+  tagRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  queueChip: {
+    borderRadius: 999,
+    backgroundColor: P.primarySoft,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  queueChipText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: P.primaryDark,
+  },
+  emergencyChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    borderRadius: 999,
+    backgroundColor: P.dangerBg,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  emergencyChipText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: P.dangerText,
+  },
+  recommendationChip: {
+    borderRadius: 999,
+    backgroundColor: P.accent,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  recommendationChipText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: P.warningText,
   },
   metaRow: {
     flexDirection: "row",
@@ -1496,8 +1857,13 @@ const styles = StyleSheet.create({
   },
   metaText: {
     fontSize: 12,
-    color: "#6B7280",
+    color: P.muted,
     flexShrink: 1,
+  },
+  blockedHint: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: P.warningText,
   },
   emptyState: {
     flex: 1,
@@ -1509,11 +1875,11 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#111827",
+    color: P.text,
   },
   emptySubtitle: {
     fontSize: 14,
-    color: "#6B7280",
+    color: P.muted,
     textAlign: "center",
   },
   modalBackdrop: {
@@ -1614,15 +1980,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    backgroundColor: "#EFF6FF",
+    backgroundColor: P.surfaceLow,
     borderWidth: 1,
-    borderColor: "#BFDBFE",
+    borderColor: P.border,
     borderStyle: "dashed",
     paddingVertical: 16,
     borderRadius: 10,
   },
   attachmentButtonText: {
-    color: "#2563EB",
+    color: P.primary,
     fontSize: 14,
     fontWeight: "600",
   },
@@ -1635,7 +2001,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    backgroundColor: "#2563EB",
+    backgroundColor: P.primary,
     paddingVertical: 12,
     borderRadius: 10,
   },
@@ -1663,22 +2029,22 @@ const styles = StyleSheet.create({
   },
   completedHint: {
     fontSize: 13,
-    color: "#6B7280",
+    color: P.muted,
     textAlign: "center",
   },
   completedBanner: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "#ECFDF3",
-    borderColor: "#BBF7D0",
+    backgroundColor: P.successBg,
+    borderColor: "#C5E3D0",
     borderWidth: 1,
     padding: 12,
     borderRadius: 10,
   },
   completedBannerText: {
     flex: 1,
-    color: "#047857",
+    color: P.successText,
     fontSize: 13,
     fontWeight: "600",
   },
@@ -1689,7 +2055,7 @@ const styles = StyleSheet.create({
   },
   // New redesigned modal styles
   detailsCard: {
-    backgroundColor: "#F9FAFB",
+    backgroundColor: P.surfaceLow,
     borderRadius: 16,
     padding: 16,
     gap: 12,
@@ -1706,13 +2072,13 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    backgroundColor: "#FEF2F2",
+    backgroundColor: P.dangerBg,
     borderRadius: 999,
   },
   priorityBadgeText: {
     fontSize: 11,
     fontWeight: "700",
-    color: "#DC2626",
+    color: P.dangerText,
     letterSpacing: 0.5,
   },
   infoRow: {
@@ -1722,11 +2088,11 @@ const styles = StyleSheet.create({
   },
   infoText: {
     fontSize: 13,
-    color: "#6B7280",
+    color: P.muted,
   },
   loadingText: {
     fontSize: 13,
-    color: "#6B7280",
+    color: P.muted,
   },
   descriptionSection: {
     gap: 6,
@@ -1735,14 +2101,30 @@ const styles = StyleSheet.create({
   descriptionLabel: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#6B7280",
+    color: P.soft,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   descriptionText: {
     fontSize: 14,
-    color: "#374151",
+    color: P.text,
     lineHeight: 20,
+  },
+  blockedBanner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    backgroundColor: P.warningBg,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  blockedBannerText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 19,
+    color: P.warningText,
+    fontWeight: "600",
   },
   actionsCard: {
     gap: 10,
@@ -1761,10 +2143,10 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   startButton: {
-    backgroundColor: "#2563EB",
+    backgroundColor: P.primary,
   },
   completeButton: {
-    backgroundColor: "#16A34A",
+    backgroundColor: P.successText,
   },
   actionButtonText: {
     fontSize: 15,
@@ -1776,9 +2158,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    backgroundColor: "#F0FDF4",
+    backgroundColor: P.successBg,
     borderWidth: 1,
-    borderColor: "#BBF7D0",
+    borderColor: "#C5E3D0",
     borderRadius: 12,
     padding: 14,
   },
@@ -1786,13 +2168,13 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     fontWeight: "600",
-    color: "#047857",
+    color: P.successText,
   },
   sectionCard: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: P.surface,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: P.border,
     padding: 16,
     gap: 14,
   },
@@ -1802,12 +2184,12 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#F3F4F6",
+    borderBottomColor: P.border,
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#111827",
+    color: P.text,
   },
   inputSection: {
     flexDirection: "row",
@@ -1816,14 +2198,14 @@ const styles = StyleSheet.create({
   },
   commentInput: {
     flex: 1,
-    backgroundColor: "#F9FAFB",
+    backgroundColor: P.surfaceLow,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: P.border,
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
-    color: "#111827",
+    color: P.text,
     maxHeight: 100,
     minHeight: 44,
     textAlignVertical: "top",
@@ -1832,10 +2214,10 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 12,
-    backgroundColor: "#2563EB",
+    backgroundColor: P.primary,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#2563EB",
+    shadowColor: P.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
@@ -1845,7 +2227,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   commentBubble: {
-    backgroundColor: "#F9FAFB",
+    backgroundColor: P.surfaceLow,
     borderRadius: 12,
     padding: 12,
     gap: 10,
@@ -1859,7 +2241,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "#2563EB",
+    backgroundColor: P.primary,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1875,15 +2257,15 @@ const styles = StyleSheet.create({
   commentAuthor: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#111827",
+    color: P.text,
   },
   commentDate: {
     fontSize: 11,
-    color: "#9CA3AF",
+    color: P.soft,
   },
   commentText: {
     fontSize: 14,
-    color: "#374151",
+    color: P.text,
     lineHeight: 20,
     marginLeft: 42,
   },
@@ -1895,16 +2277,16 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 13,
-    color: "#9CA3AF",
+    color: P.soft,
   },
   uploadButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    backgroundColor: "#EFF6FF",
+    backgroundColor: P.surfaceLow,
     borderWidth: 2,
-    borderColor: "#BFDBFE",
+    borderColor: P.border,
     borderStyle: "dashed",
     borderRadius: 12,
     paddingVertical: 16,
@@ -1912,7 +2294,7 @@ const styles = StyleSheet.create({
   uploadButtonText: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#2563EB",
+    color: P.primary,
   },
   attachmentsScroll: {
     gap: 12,
@@ -1926,15 +2308,15 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 12,
-    backgroundColor: "#F3F4F6",
+    backgroundColor: P.surfaceLow,
   },
   documentPreview: {
     width: 100,
     height: 100,
     borderRadius: 12,
-    backgroundColor: "#EFF6FF",
+    backgroundColor: P.surfaceLow,
     borderWidth: 1,
-    borderColor: "#BFDBFE",
+    borderColor: P.border,
     alignItems: "center",
     justifyContent: "center",
   },

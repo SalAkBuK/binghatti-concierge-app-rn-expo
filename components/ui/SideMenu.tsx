@@ -354,6 +354,30 @@ export function SideMenu({ isVisible, onClose, userRole }: SideMenuProps) {
     },
   ];
 
+  const providerWorkerMenu: MenuItem[] = [
+    {
+      id: "provider-queue",
+      title: "Request Queue",
+      icon: "clipboard-outline",
+      routePatterns: [
+        "/(serviceProvider)",
+        "/(serviceProvider)/index",
+        "/(serviceProvider)/requests",
+      ],
+      action: () => navigateAndClose("/(serviceProvider)", true),
+    },
+    {
+      id: "logout",
+      title: "Sign Out",
+      icon: "log-out-outline",
+      color: "#ef4444",
+      action: () => {
+        closeMenu();
+        handleLogout();
+      },
+    },
+  ];
+
   const unsupportedPortalMenu: MenuItem[] = [
     {
       id: "portal-status",
@@ -400,6 +424,8 @@ export function SideMenu({ isVisible, onClose, userRole }: SideMenuProps) {
         ? ownerMenu
       : effectiveRole === "building_employee"
         ? buildingEmployeeMenu
+        : effectiveRole === "service_provider"
+          ? providerWorkerMenu
         : effectiveRole === "tenant"
           ? tenantMenu
           : unsupportedPortalMenu;

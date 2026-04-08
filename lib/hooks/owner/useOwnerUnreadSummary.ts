@@ -1,6 +1,7 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useState } from 'react';
 
+import { useOptionalOwnerNotifications } from '../../context/owner-notifications-context';
 import { ownerPortalApi } from '../../services/api/owner-portal';
 
 type UseOwnerUnreadSummaryOptions = {
@@ -11,10 +12,17 @@ export const useOwnerUnreadSummary = (
   options?: UseOwnerUnreadSummaryOptions,
 ) => {
   const enabled = options?.enabled ?? true;
+  const context = useOptionalOwnerNotifications();
+
+  if (enabled && context) {
+    return context;
+  }
+
   const [conversationUnreadCount, setConversationUnreadCount] = useState(0);
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
   const [requestCommentUnreadCount, setRequestCommentUnreadCount] = useState(0);
   const [isLoading, setIsLoading] = useState(enabled);
+  const [notificationsRefreshKey] = useState(0);
 
   const refresh = useCallback(async () => {
     if (!enabled) {
@@ -56,6 +64,7 @@ export const useOwnerUnreadSummary = (
       notificationUnreadCount +
       requestCommentUnreadCount,
     isLoading,
+    notificationsRefreshKey,
     refresh,
   };
 };

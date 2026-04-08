@@ -5,7 +5,13 @@ import { useAsyncStorage } from "./useAsyncStorage";
 import { residentRequestsApi } from "../services/api/resident-requests";
 import { STORAGE_KEYS } from "../utils/constants";
 import { filterNotificationsByUser } from "../utils/helpers";
-import type { Notification, Request, RequestStatus, User } from "../types";
+import type {
+  Notification,
+  Request,
+  RequestStatus,
+  ResidentEmergencySignal,
+  User,
+} from "../types";
 
 type ResidentRequestsCache = {
   items: Request[];
@@ -50,6 +56,7 @@ const mapStatusFromBackend = (status: any): RequestStatus => {
       case 1:
         return "pending";
       case 2:
+        return "assigned";
       case 3:
         return "in-progress";
       case 4:
@@ -68,9 +75,8 @@ const mapStatusFromBackend = (status: any): RequestStatus => {
     .replace(/[\s-]/g, "_");
 
   if (normalized === "OPEN") return "pending";
-  if (normalized === "ASSIGNED" || normalized === "IN_PROGRESS") {
-    return "in-progress";
-  }
+  if (normalized === "ASSIGNED") return "assigned";
+  if (normalized === "IN_PROGRESS") return "in-progress";
   if (normalized === "COMPLETED") return "completed";
   if (normalized === "CANCELED" || normalized === "CANCELLED") return "cancelled";
   return "pending";
@@ -119,6 +125,24 @@ const mapTypeFromBackend = (type: any): Request["type"] => {
   }
 };
 
+const normalizeEmergencySignals = (
+  signals: unknown,
+): ResidentEmergencySignal[] => {
+  if (!Array.isArray(signals)) return [];
+
+  return signals
+    .map((signal) =>
+      typeof signal === "string" ? signal.trim().toUpperCase() : null,
+    )
+    .filter(
+      (signal): signal is ResidentEmergencySignal =>
+        signal === "ACTIVE_LEAK" ||
+        signal === "NO_POWER" ||
+        signal === "SAFETY_RISK" ||
+        signal === "NO_COOLING",
+    );
+};
+
 const isRequestNotification = (notification: Notification) => {
   const type = String(notification.type || "").toUpperCase();
   return type === "REQUEST_STATUS_CHANGED" || type === "REQUEST_COMMENTED";
@@ -163,6 +187,9 @@ const ensureResidentRequestShape = (request: Request): Request => ({
   messages: Array.isArray(request.messages) ? request.messages : [],
   notes: Array.isArray(request.notes) ? request.notes : [],
   timeline: Array.isArray(request.timeline) ? request.timeline : [],
+  emergencySignals: Array.isArray(request.emergencySignals)
+    ? request.emergencySignals
+    : [],
 });
 
 const normalizeResidentRequests = (items: Request[]): Request[] =>
@@ -295,6 +322,13 @@ export const mapResidentRequestFromBackend = (
           .map((att: any) => att?.url || att?.fileUrl || att?.uri || null)
           .filter(Boolean)
       : [],
+    isEmergency:
+      typeof item.isEmergency === "boolean"
+        ? item.isEmergency
+        : typeof item.policy?.isEmergency === "boolean"
+          ? item.policy.isEmergency
+          : undefined,
+    emergencySignals: normalizeEmergencySignals(item.emergencySignals),
     comments: [],
     messages: [],
     notes: [],

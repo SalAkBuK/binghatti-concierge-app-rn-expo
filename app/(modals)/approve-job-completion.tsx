@@ -17,8 +17,10 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAppDomain } from "../../lib/context/connected-app-provider";
+import { useAuth } from "../../lib/context/auth-context";
 
 export default function ApproveJobCompletionScreen() {
+  const { currentUser } = useAuth();
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const {
     operations: {
@@ -35,6 +37,23 @@ export default function ApproveJobCompletionScreen() {
   const job = useMemo(() => {
     return jobs.find((j) => j.id === jobId);
   }, [jobs, jobId]);
+
+  if (currentUser?.role === "tenant") {
+    return (
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <View style={styles.errorContainer}>
+          <Ionicons name="lock-closed-outline" size={64} color="#64748B" />
+          <Text style={styles.errorText}>This screen is no longer available</Text>
+          <Text style={styles.errorSubtext}>
+            Maintenance requests can be tracked from the request detail screen.
+          </Text>
+          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+            <Text style={styles.backButtonText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (!job) {
     return (
@@ -445,6 +464,14 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#1E293B",
     marginTop: 16,
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  errorSubtext: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: "#64748B",
+    textAlign: "center",
     marginBottom: 24,
   },
   backButton: {

@@ -9,6 +9,10 @@ export default function BuildingEmployeeLayout() {
   const { isAuthenticated, currentUser } = useAuth();
   const insets = useSafeAreaInsets();
   const isBuildingEmployee = currentUser?.role === "building_employee";
+  const hasBottomGestureInset = insets.bottom > 0;
+  const tabBarBottomOffset = hasBottomGestureInset ? 14 : 10;
+  const tabBarPaddingBottom = hasBottomGestureInset ? 12 : 10;
+  const tabBarHeight = 60 + tabBarPaddingBottom;
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -34,29 +38,44 @@ export default function BuildingEmployeeLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: "#2563EB",
-        tabBarInactiveTintColor: "#94A3B8",
+        tabBarActiveTintColor: "#2B3437",
+        tabBarInactiveTintColor: "#8A969B",
+        lazy: true,
+        freezeOnBlur: true,
+        animation: "fade",
+        tabBarHideOnKeyboard: true,
         tabBarStyle: {
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          width: '100%',
+          position: "absolute",
+          bottom: tabBarBottomOffset,
+          left: 16,
+          right: 16,
+          width: undefined,
           backgroundColor: "#FFFFFF",
           borderTopWidth: 0,
-          paddingBottom: Math.max(insets.bottom, 8),
-          paddingTop: 12,
-          height: 74 + Math.max(insets.bottom, 8),
-          shadowColor: "#0F172A",
-          shadowOffset: { width: 0, height: -4 },
-          shadowOpacity: 0.08,
-          shadowRadius: 18,
-          elevation: 20,
+          borderRadius: 28,
+          paddingBottom: tabBarPaddingBottom,
+          paddingTop: 8,
+          paddingHorizontal: 10,
+          minHeight: tabBarHeight,
+          height: tabBarHeight,
+          shadowColor: "rgba(43, 52, 55, 0.18)",
+          shadowOffset: { width: 0, height: -6 },
+          shadowOpacity: 1,
+          shadowRadius: 24,
+          elevation: 18,
+          opacity: 1,
         },
         tabBarLabelStyle: {
-          fontSize: 12,
+          fontSize: 11,
           fontWeight: "700",
-          letterSpacing: 0.15,
+          letterSpacing: 0.2,
+          marginTop: 0,
+        },
+        tabBarItemStyle: {
+          paddingTop: 0,
+        },
+        tabBarIconStyle: {
+          marginBottom: 7,
         },
       }}
     >

@@ -72,6 +72,8 @@ export const STORAGE_KEYS = {
   user_role: "binghatti_user_role",
   conversations: "binghatti_conversations",
   push_device_token: "binghatti_push_device_token",
+  owner_push_device_id: "binghatti_owner_push_device_id",
+  owner_push_device_token: "binghatti_owner_push_device_token",
 } as const;
 
 // API endpoints
@@ -223,6 +225,16 @@ export const API_ENDPOINTS = {
     notificationUndismiss: (notificationId: string) => `/owner/notifications/${notificationId}/undismiss`,
     notificationDevices: "/owner/notifications/devices",
     notificationDevice: (deviceId: string) => `/owner/notifications/devices/${deviceId}`,
+  },
+  provider: {
+    me: "/provider/me",
+    requests: "/provider/requests",
+    requestDetail: (requestId: string) => `/provider/requests/${requestId}`,
+    requestStatus: (requestId: string) => `/provider/requests/${requestId}/status`,
+    requestEstimate: (requestId: string) => `/provider/requests/${requestId}/estimate`,
+    requestComments: (requestId: string) => `/provider/requests/${requestId}/comments`,
+    requestAttachments: (requestId: string) => `/provider/requests/${requestId}/attachments`,
+    requestCommentsUnreadCount: "/provider/requests/comments/unread-count",
   },
   admin: {
     createUser: "/api/Admin/create",

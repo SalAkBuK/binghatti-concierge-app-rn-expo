@@ -199,6 +199,7 @@ export interface PushDevicePayload {
   provider?: PushDeviceProvider;
   platform?: PushDevicePlatform;
   deviceId?: string;
+  appId?: string;
 }
 
 export interface UserListParams {

@@ -1,9 +1,8 @@
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
-import DateTimePicker from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -31,9 +30,18 @@ import {
 import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
 import {
   residentRequestsApi,
-  type ResidentRequestPriority,
-  type ResidentRequestType,
 } from "../../lib/services/api/resident-requests";
+import type { ResidentEmergencySignal } from "../../lib/types";
+import {
+  buildResidentCreatePayload,
+  createResidentRequestFormDefaults,
+  RESIDENT_REQUEST_CATEGORY_OPTIONS,
+  RESIDENT_REQUEST_EMERGENCY_SIGNAL_OPTIONS,
+  RESIDENT_REQUEST_PRIORITY_OPTIONS,
+  type ResidentRequestFormValues,
+  type ResidentRequestValidationErrors,
+  validateResidentRequestForm,
+} from "../../lib/utils/resident-request-form";
 import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
 import * as FileSystem from "expo-file-system/legacy";
 import {
@@ -63,57 +71,9 @@ const P = {
   accent: "#F7EEDF",
   accentBorder: "#EBD8BB",
   error: "#B24A41",
+  dangerText: "#B24A41",
   errorSoft: "#FCE3E0",
 };
-
-type ValidationErrors = {
-  title?: string;
-  description?: string;
-  type?: string;
-  priority?: string;
-};
-
-type ResidentRequestForm = {
-  type: ResidentRequestType;
-  title: string;
-  description: string;
-  priority: ResidentRequestPriority;
-};
-
-type VisitWindow = "09:00 AM - 12:00 PM" | "12:00 PM - 03:00 PM" | "03:00 PM - 06:00 PM";
-
-const CATEGORY_OPTIONS: { label: string; value: ResidentRequestType; icon: keyof typeof Ionicons.glyphMap }[] = [
-  { label: "Plumbing", value: "PLUMBING_AC_HEATING", icon: "water-outline" },
-  { label: "Electrical", value: "ELECTRICAL", icon: "flash-outline" },
-  { label: "Maintenance", value: "MAINTENANCE", icon: "construct-outline" },
-  { label: "Cleaning", value: "CLEANING", icon: "sparkles-outline" },
-  { label: "Other", value: "OTHER", icon: "apps-outline" },
-];
-
-const PRIORITY_OPTIONS: { label: string; value: ResidentRequestPriority }[] = [
-  { label: "Low", value: "LOW" },
-  { label: "Normal", value: "MEDIUM" },
-  { label: "High", value: "HIGH" },
-];
-
-const VISIT_WINDOWS: VisitWindow[] = [
-  "09:00 AM - 12:00 PM",
-  "12:00 PM - 03:00 PM",
-  "03:00 PM - 06:00 PM",
-];
-
-const getTomorrow = () => {
-  const next = new Date();
-  next.setDate(next.getDate() + 1);
-  return next;
-};
-
-const formatVisitDate = (value: Date) =>
-  value.toLocaleDateString("en-US", {
-    month: "short",
-    day: "2-digit",
-    year: "numeric",
-  });
 
 const getFileNameFromUri = (uri: string): string => {
   const cleanUri = uri.split("?")[0];
@@ -166,21 +126,15 @@ export default function NewRequestScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const maxAttachments = IMAGE_CONFIG.MAX_ATTACHMENTS;
 
-  const [newRequest, setNewRequest] = useState<ResidentRequestForm>({
-    type: "PLUMBING_AC_HEATING",
-    title: "",
-    description: "",
-    priority: "MEDIUM",
-  });
+  const [newRequest, setNewRequest] = useState<ResidentRequestFormValues>(
+    createResidentRequestFormDefaults(),
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [validationErrors, setValidationErrors] = useState<ValidationErrors>({});
+  const [validationErrors, setValidationErrors] =
+    useState<ResidentRequestValidationErrors>({});
   const [attachments, setAttachments] = useState<string[]>([]);
   const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);
   const [isPickingAttachments, setIsPickingAttachments] = useState(false);
-  const [preferredVisitDate, setPreferredVisitDate] = useState<Date>(getTomorrow);
-  const [preferredVisitWindow, setPreferredVisitWindow] =
-    useState<VisitWindow>("09:00 AM - 12:00 PM");
-  const [showVisitDatePicker, setShowVisitDatePicker] = useState(false);
 
   const userNotifications = filterNotificationsByUser(
     notifications || [],
@@ -189,50 +143,53 @@ export default function NewRequestScreen() {
   const hasUnreadNotifications =
     getUnreadNotificationsCount(userNotifications) > 0;
 
-  const selectedCategory = useMemo(
-    () => CATEGORY_OPTIONS.find((item) => item.value === newRequest.type),
-    [newRequest.type],
-  );
-
-  const validateForm = (): ValidationErrors => {
-    const errors: ValidationErrors = {};
-
-    if (!newRequest.title.trim()) {
-      errors.title = "Title is required";
-    } else if (newRequest.title.trim().length < 5) {
-      errors.title = "Title must be at least 5 characters long";
-    }
-
-    if (!newRequest.description.trim()) {
-      errors.description = "Description is required";
-    } else if (newRequest.description.trim().length < 10) {
-      errors.description = "Description must be at least 10 characters long";
-    }
-
-    if (!newRequest.type) {
-      errors.type = "Category is required";
-    }
-
-    if (!newRequest.priority) {
-      errors.priority = "Priority is required";
-    }
-
-    return errors;
-  };
-
-  const handleInputChange = (
-    field: keyof ResidentRequestForm,
-    value: string,
+  const handleInputChange = <K extends keyof ResidentRequestFormValues>(
+    field: K,
+    value: ResidentRequestFormValues[K],
   ) => {
     setNewRequest((prev) => ({ ...prev, [field]: value }));
 
-    if (validationErrors[field as keyof ValidationErrors]) {
+    if (validationErrors[field as keyof ResidentRequestValidationErrors]) {
       setValidationErrors((prev) => {
         const next = { ...prev };
-        delete next[field as keyof ValidationErrors];
+        delete next[field as keyof ResidentRequestValidationErrors];
         return next;
       });
     }
+  };
+
+  const handleEmergencyToggle = (nextValue: boolean) => {
+    setNewRequest((prev) => ({
+      ...prev,
+      isEmergency: nextValue,
+      emergencySignals: nextValue ? prev.emergencySignals : [],
+    }));
+
+    setValidationErrors((prev) => {
+      if (!prev.emergencySignals) return prev;
+      const next = { ...prev };
+      delete next.emergencySignals;
+      return next;
+    });
+  };
+
+  const toggleEmergencySignal = (signal: ResidentEmergencySignal) => {
+    setNewRequest((prev) => {
+      const hasSignal = prev.emergencySignals.includes(signal);
+      return {
+        ...prev,
+        emergencySignals: hasSignal
+          ? prev.emergencySignals.filter((item) => item !== signal)
+          : [...prev.emergencySignals, signal],
+      };
+    });
+
+    setValidationErrors((prev) => {
+      if (!prev.emergencySignals) return prev;
+      const next = { ...prev };
+      delete next.emergencySignals;
+      return next;
+    });
   };
 
   const handleAddAttachment = () => {
@@ -321,7 +278,7 @@ export default function NewRequestScreen() {
       return;
     }
 
-    const errors = validateForm();
+    const errors = validateResidentRequestForm(newRequest);
     if (Object.keys(errors).length > 0) {
       setValidationErrors(errors);
       return;
@@ -342,15 +299,8 @@ export default function NewRequestScreen() {
         setIsUploadingAttachments(false);
       }
 
-      const visitPreferenceNote = `Preferred visit time: ${formatVisitDate(
-        preferredVisitDate,
-      )}, ${preferredVisitWindow}.`;
-
       const response = await residentRequestsApi.createRequest({
-        title: newRequest.title.trim(),
-        description: `${newRequest.description.trim()}\n\n${visitPreferenceNote}`,
-        type: newRequest.type,
-        priority: newRequest.priority,
+        ...buildResidentCreatePayload(newRequest),
         attachments: attachmentPayloads.length > 0 ? attachmentPayloads : undefined,
       });
       const responsePayload =
@@ -369,7 +319,7 @@ export default function NewRequestScreen() {
               ),
               tenantId: currentUser.id,
               title: newRequest.title.trim(),
-              description: `${newRequest.description.trim()}\n\n${visitPreferenceNote}`,
+              description: newRequest.description.trim(),
               type:
                 newRequest.type === "PLUMBING_AC_HEATING"
                   ? "hvac"
@@ -393,7 +343,8 @@ export default function NewRequestScreen() {
               apartment: currentUser.profile?.apartment || "",
               floor: currentUser.profile?.floor || "",
               contactPhone: currentUser.profile?.phone || "",
-              preferredTime: `${formatVisitDate(preferredVisitDate)}, ${preferredVisitWindow}`,
+              isEmergency: newRequest.isEmergency,
+              emergencySignals: newRequest.emergencySignals,
               additionalNotes: "",
               attachments: attachmentPayloads.map((item) => item.url),
               comments: [],
@@ -417,16 +368,11 @@ export default function NewRequestScreen() {
 
       console.log("[NewRequest] Request created successfully:", response);
 
-      showSuccessAlert("Your request has been submitted successfully!");
-      setNewRequest({
-        type: "PLUMBING_AC_HEATING",
-        title: "",
-        description: "",
-        priority: "MEDIUM",
-      });
+      showSuccessAlert(
+        "Your request has been submitted. Management will review it and update the next step.",
+      );
+      setNewRequest(createResidentRequestFormDefaults());
       setAttachments([]);
-      setPreferredVisitDate(getTomorrow());
-      setPreferredVisitWindow("09:00 AM - 12:00 PM");
       router.push("/(tenant)" as any);
     } catch (error) {
       console.error("[NewRequest] Error submitting request:", error);
@@ -445,7 +391,7 @@ export default function NewRequestScreen() {
           contentContainerStyle={{ paddingBottom: tabBarHeight + 32 }}
         >
           <HeaderBar
-            title="New Request"
+            title="Report a maintenance issue"
             showBackButton
             showMenu={false}
             hasUnreadNotifications={hasUnreadNotifications}
@@ -495,19 +441,17 @@ export default function NewRequestScreen() {
           showsVerticalScrollIndicator={false}
         >
           <HeaderBar
-            title="New Request"
+            title="Report a maintenance issue"
             showBackButton
             showMenu={false}
             hasUnreadNotifications={hasUnreadNotifications}
           />
 
           <View style={styles.heroBlock}>
-            <Text style={styles.heroEyebrow}>Service Care</Text>
-            <Text style={styles.heroTitle}>New Request</Text>
+            <Text style={styles.heroEyebrow}>Maintenance Support</Text>
+            <Text style={styles.heroTitle}>Report a maintenance issue</Text>
             <Text style={styles.heroSubtitle}>
-              {selectedCategory
-                ? `Describe the issue clearly and we will route it to the right ${selectedCategory.label.toLowerCase()} team.`
-                : "Describe the issue clearly and we will route it to the right team."}
+              Tell us what happened and add photos if you can.
             </Text>
           </View>
 
@@ -519,7 +463,7 @@ export default function NewRequestScreen() {
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.categoryRail}
               >
-                {CATEGORY_OPTIONS.map((option) => {
+                {RESIDENT_REQUEST_CATEGORY_OPTIONS.map((option) => {
                   const selected = option.value === newRequest.type;
                   return (
                     <TouchableOpacity
@@ -554,9 +498,9 @@ export default function NewRequestScreen() {
             </View>
 
             <View style={styles.sectionBlock}>
-              <Text style={styles.sectionLabel}>Priority Level</Text>
+              <Text style={styles.sectionLabel}>Urgency</Text>
               <View style={styles.segmentedControl}>
-                {PRIORITY_OPTIONS.map((option) => {
+                {RESIDENT_REQUEST_PRIORITY_OPTIONS.map((option) => {
                   const selected = option.value === newRequest.priority;
                   return (
                     <TouchableOpacity
@@ -586,13 +530,13 @@ export default function NewRequestScreen() {
             </View>
 
             <View style={styles.sectionBlock}>
-              <Text style={styles.sectionLabel}>Request Title</Text>
+              <Text style={styles.sectionLabel}>Issue Summary</Text>
               <TextInput
                 style={[
                   styles.softInput,
                   validationErrors.title && styles.softInputError,
                 ]}
-                placeholder="Short summary of the issue"
+                placeholder="AC not cooling"
                 placeholderTextColor={P.soft}
                 value={newRequest.title}
                 onChangeText={(text) => handleInputChange("title", text)}
@@ -610,7 +554,7 @@ export default function NewRequestScreen() {
                   styles.descriptionInput,
                   validationErrors.description && styles.softInputError,
                 ]}
-                placeholder="Describe the issue..."
+                placeholder="What happened, where is it happening, and when did it start?"
                 placeholderTextColor={P.soft}
                 value={newRequest.description}
                 onChangeText={(text) => handleInputChange("description", text)}
@@ -625,7 +569,77 @@ export default function NewRequestScreen() {
             </View>
 
             <View style={styles.sectionBlock}>
-              <Text style={styles.sectionLabel}>Attachment</Text>
+              <Text style={styles.sectionLabel}>Emergency</Text>
+              <View style={styles.segmentedControl}>
+                {[
+                  { label: "No", value: false },
+                  { label: "Yes", value: true },
+                ].map((option) => {
+                  const selected = option.value === newRequest.isEmergency;
+                  return (
+                    <TouchableOpacity
+                      key={option.label}
+                      style={[
+                        styles.segmentItem,
+                        selected && styles.segmentItemSelected,
+                      ]}
+                      activeOpacity={0.9}
+                      onPress={() => handleEmergencyToggle(option.value)}
+                    >
+                      <Text
+                        style={[
+                          styles.segmentItemText,
+                          selected && styles.segmentItemTextSelected,
+                        ]}
+                      >
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              <Text style={styles.helperText}>
+                Use emergency only for active leaks, no power, safety risks, or urgent cooling failures.
+              </Text>
+              {newRequest.isEmergency ? (
+                <View style={styles.emergencySignalGrid}>
+                  {RESIDENT_REQUEST_EMERGENCY_SIGNAL_OPTIONS.map((option) => {
+                    const selected = newRequest.emergencySignals.includes(option.value);
+                    return (
+                      <TouchableOpacity
+                        key={option.value}
+                        style={[
+                          styles.emergencySignalChip,
+                          selected && styles.emergencySignalChipSelected,
+                        ]}
+                        activeOpacity={0.88}
+                        onPress={() => toggleEmergencySignal(option.value)}
+                      >
+                        <Ionicons
+                          name={option.icon}
+                          size={15}
+                          color={selected ? P.surface : P.dangerText}
+                        />
+                        <Text
+                          style={[
+                            styles.emergencySignalText,
+                            selected && styles.emergencySignalTextSelected,
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ) : null}
+              {validationErrors.emergencySignals ? (
+                <Text style={styles.errorText}>{validationErrors.emergencySignals}</Text>
+              ) : null}
+            </View>
+
+            <View style={styles.sectionBlock}>
+              <Text style={styles.sectionLabel}>Attachments</Text>
               <View style={styles.attachmentRow}>
                 <TouchableOpacity
                   style={[
@@ -665,76 +679,6 @@ export default function NewRequestScreen() {
               </Text>
             </View>
 
-            <View style={styles.sectionBlock}>
-              <Text style={styles.sectionLabel}>Preferred Visit Time</Text>
-              <View style={styles.visitCards}>
-                <TouchableOpacity
-                  style={styles.visitCard}
-                  activeOpacity={0.88}
-                  onPress={() => setShowVisitDatePicker(true)}
-                >
-                  <View style={styles.visitCardIcon}>
-                    <Ionicons name="calendar-outline" size={16} color={P.primary} />
-                  </View>
-                  <View style={styles.visitCardCopy}>
-                    <Text style={styles.visitCardLabel}>Date</Text>
-                    <Text style={styles.visitCardValue}>{formatVisitDate(preferredVisitDate)}</Text>
-                  </View>
-                </TouchableOpacity>
-
-                <View style={styles.visitWindowGroup}>
-                  {VISIT_WINDOWS.map((window) => {
-                    const selected = preferredVisitWindow === window;
-                    return (
-                      <TouchableOpacity
-                        key={window}
-                        style={[
-                          styles.visitWindowChip,
-                          selected && styles.visitWindowChipSelected,
-                        ]}
-                        activeOpacity={0.88}
-                        onPress={() => setPreferredVisitWindow(window)}
-                      >
-                        <Ionicons
-                          name="time-outline"
-                          size={14}
-                          color={selected ? P.surface : P.primary}
-                        />
-                        <Text
-                          style={[
-                            styles.visitWindowText,
-                            selected && styles.visitWindowTextSelected,
-                          ]}
-                        >
-                          {window}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                <Text style={styles.helperText}>
-                  Your preferred visit slot is added to the request notes.
-                </Text>
-              </View>
-            </View>
-
-            {showVisitDatePicker ? (
-              <DateTimePicker
-                value={preferredVisitDate}
-                mode="date"
-                minimumDate={new Date()}
-                display={Platform.OS === "ios" ? "inline" : "default"}
-                onChange={(_, value) => {
-                  if (Platform.OS !== "ios") {
-                    setShowVisitDatePicker(false);
-                  }
-                  if (!value) return;
-                  setPreferredVisitDate(value);
-                }}
-              />
-            ) : null}
-
             <TouchableOpacity
               style={[
                 styles.submitButton,
@@ -761,7 +705,7 @@ export default function NewRequestScreen() {
                       color={P.surface}
                       style={styles.submitIcon}
                     />
-                    <Text style={styles.submitButtonText}>Submit Request</Text>
+                    <Text style={styles.submitButtonText}>Submit Issue</Text>
                   </>
                 )}
               </LinearGradient>
@@ -819,6 +763,34 @@ const styles = StyleSheet.create({
   categoryChipSelected: { backgroundColor: P.primary },
   categoryChipText: { fontSize: 13, fontWeight: "600", color: P.text },
   categoryChipTextSelected: { color: P.surface },
+  emergencySignalGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  emergencySignalChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: "#FFF6F3",
+    borderWidth: 1,
+    borderColor: "#F4C9C2",
+  },
+  emergencySignalChipSelected: {
+    backgroundColor: P.error,
+    borderColor: P.error,
+  },
+  emergencySignalText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: P.dangerText,
+  },
+  emergencySignalTextSelected: {
+    color: P.surface,
+  },
   segmentedControl: {
     flexDirection: "row",
     backgroundColor: P.surfaceLow,

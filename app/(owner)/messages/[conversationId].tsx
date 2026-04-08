@@ -169,6 +169,7 @@ export default function OwnerConversationDetailScreen() {
             showBackButton
             hasUnreadNotifications={notificationUnreadCount > 0}
             messagingUnreadCount={conversationUnreadCount}
+            notificationRoute="/(owner)/notifications"
             textColor={P.text}
             onBackPress={() => router.back()}
           />

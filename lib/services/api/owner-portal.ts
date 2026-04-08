@@ -1,5 +1,6 @@
 import { BaseApiService } from './base';
 import { API_ENDPOINTS } from '../../utils/constants';
+import { mapRequestContractFields } from '../../utils/request-contract';
 import type {
   CreateOwnerManagementConversationDTO,
   CreateOwnerTenantConversationDTO,
@@ -15,6 +16,7 @@ import type {
   OwnerUnitTenant,
   OwnerRequestComment,
 } from '../../types';
+import type { PushDevicePayload } from './types';
 
 type CursorList<T> = {
   items: T[];
@@ -78,6 +80,13 @@ const getUnreadCountCandidate = (response: any): number => {
   return typeof candidate === 'number' && Number.isFinite(candidate) ? candidate : 0;
 };
 
+const normalizeOwnerPortfolioRequest = (
+  request: OwnerPortfolioRequest,
+): OwnerPortfolioRequest => ({
+  ...request,
+  ...mapRequestContractFields(request),
+});
+
 export class OwnerPortalApiService extends BaseApiService {
   async getSummary(): Promise<OwnerPortfolioSummary> {
     const response = await this.get(API_ENDPOINTS.owner.summary);
@@ -107,12 +116,16 @@ export class OwnerPortalApiService extends BaseApiService {
 
   async getRequests(): Promise<OwnerPortfolioRequest[]> {
     const response = await this.get(API_ENDPOINTS.owner.requests);
-    return getArrayCandidate<OwnerPortfolioRequest>(response);
+    return getArrayCandidate<OwnerPortfolioRequest>(response).map(
+      normalizeOwnerPortfolioRequest,
+    );
   }
 
   async getRequest(requestId: string): Promise<OwnerPortfolioRequest> {
     const response = await this.get(API_ENDPOINTS.owner.requestDetail(requestId));
-    return getObjectCandidate<OwnerPortfolioRequest>(response);
+    return normalizeOwnerPortfolioRequest(
+      getObjectCandidate<OwnerPortfolioRequest>(response),
+    );
   }
 
   async getUnreadRequestCommentCount(): Promise<number> {
@@ -238,6 +251,28 @@ export class OwnerPortalApiService extends BaseApiService {
 
   async undismissNotification(notificationId: string): Promise<void> {
     await this.post(API_ENDPOINTS.owner.notificationUndismiss(notificationId));
+  }
+
+  async registerNotificationDevice(
+    payload: PushDevicePayload,
+  ): Promise<{ id?: string | null }> {
+    const response = await this.post(API_ENDPOINTS.owner.notificationDevices, payload);
+    return getObjectCandidate<{ id?: string | null }>(response);
+  }
+
+  async updateNotificationDevice(
+    deviceId: string,
+    payload: PushDevicePayload,
+  ): Promise<{ id?: string | null }> {
+    const response = await this.patch(
+      API_ENDPOINTS.owner.notificationDevice(deviceId),
+      payload,
+    );
+    return getObjectCandidate<{ id?: string | null }>(response);
+  }
+
+  async deleteNotificationDevice(deviceId: string): Promise<void> {
+    await this.delete(API_ENDPOINTS.owner.notificationDevice(deviceId));
   }
 }
 

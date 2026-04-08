@@ -27,6 +27,7 @@ import {
   mapPriorityFromApi,
   mapStatusFromApi,
 } from './management-request-helpers';
+import { mapRequestContractFields } from '../../../utils/request-contract';
 
 export type RequestDetailAttachment = {
   id: string;
@@ -297,6 +298,7 @@ export const useManagementRequestDetails = ({
           setRequestAttachments(attachmentsForRequest);
 
           const unit = data.unit || data.unitDetails;
+          const contractFields = mapRequestContractFields(data);
           const mappedRequest: Request = {
             id: String(data.id ?? baseRequest?.id ?? requestId),
             title: data.title || baseRequest?.title || 'Untitled Request',
@@ -330,6 +332,7 @@ export const useManagementRequestDetails = ({
                 : baseRequest?.attachments || [],
             slaDueAt: baseRequest?.slaDueAt,
             lastEscalatedAt: baseRequest?.lastEscalatedAt,
+            ...contractFields,
             comments: mappedComments,
             messages: baseRequest?.messages || [],
             notes: [],
@@ -366,6 +369,7 @@ export const useManagementRequestDetails = ({
                     status: mappedStatus,
                     priority: mappedPriority,
                     assignedTo: resolvedAssignedTo || request.assignedTo,
+                    ...contractFields,
                     updatedAt: mappedRequest.updatedAt || request.updatedAt,
                     createdAt: mappedRequest.createdAt || request.createdAt,
                     ...(completedAt ? { completedAt } : {}),

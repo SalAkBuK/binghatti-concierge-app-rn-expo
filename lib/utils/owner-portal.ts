@@ -5,6 +5,16 @@ import type {
   OwnerPortfolioRequest,
 } from '../types';
 
+export type OwnerNotificationTarget =
+  | {
+      kind: 'request';
+      id: string;
+    }
+  | {
+      kind: 'conversation';
+      id: string;
+    };
+
 export const OWNER_PALETTE = {
   bg: '#F8F9FA',
   surface: '#FFFFFF',
@@ -27,6 +37,34 @@ export const OWNER_PALETTE = {
   infoBg: '#E7EEF9',
   infoText: '#3C5A8C',
 } as const;
+
+const asRecord = (value: unknown): Record<string, unknown> | null => {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  return value as Record<string, unknown>;
+};
+
+const asString = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const getFirstString = (...values: unknown[]): string | null => {
+  for (const value of values) {
+    const candidate = asString(value);
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  return null;
+};
 
 export const formatOwnerLabel = (value?: string | null): string => {
   if (!value) return 'Not provided';
@@ -134,6 +172,53 @@ export const normalizeOwnerApprovalStatus = (
     default:
       return 'NOT_REQUIRED';
   }
+};
+
+export const resolveOwnerRequestApprovalStatus = (
+  request?: Pick<OwnerPortfolioRequest, 'ownerApproval' | 'ownerApprovalStatus'> | null,
+): OwnerApprovalStatus =>
+  normalizeOwnerApprovalStatus(
+    request?.ownerApproval?.status ?? request?.ownerApprovalStatus,
+  );
+
+export const getOwnerNotificationTarget = (
+  payload: unknown,
+): OwnerNotificationTarget | null => {
+  const root = asRecord(payload);
+  if (!root) {
+    return null;
+  }
+
+  const data = asRecord(root.data);
+  const nestedData = asRecord(data?.data);
+  const candidates = [root, data, nestedData].filter(
+    (candidate): candidate is Record<string, unknown> => candidate != null,
+  );
+
+  const conversationId = getFirstString(
+    ...candidates.flatMap((candidate) => [
+      candidate.conversationId,
+      candidate.conversation_id,
+    ]),
+  );
+  if (conversationId) {
+    return {
+      kind: 'conversation',
+      id: conversationId,
+    };
+  }
+
+  const requestId = getFirstString(
+    ...candidates.flatMap((candidate) => [candidate.requestId, candidate.request_id]),
+  );
+  if (requestId) {
+    return {
+      kind: 'request',
+      id: requestId,
+    };
+  }
+
+  return null;
 };
 
 export const getOwnerApprovalTone = (status?: OwnerApprovalStatus | null) => {

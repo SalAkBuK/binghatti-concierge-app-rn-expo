@@ -15,15 +15,16 @@ describe("portal registry", () => {
     expect(getMountedPortalConfig("building_employee")?.rootHref).toBe(
       "/(buildingEmployee)",
     );
+    expect(getMountedPortalConfig("service_provider")?.rootHref).toBe(
+      "/(serviceProvider)",
+    );
   });
 
   it("routes unsupported roles to the unavailable portal", () => {
     expect(hasMountedPortal("admin")).toBe(false);
-    expect(hasMountedPortal("service_provider")).toBe(false);
+    expect(hasMountedPortal("service_provider")).toBe(true);
     expect(getPostLoginHrefForRole("admin")).toBe("/portal-unavailable");
-    expect(getPostLoginHrefForRole("service_provider")).toBe(
-      "/portal-unavailable",
-    );
+    expect(getPostLoginHrefForRole("service_provider")).toBe("/(serviceProvider)");
   });
 
   it("detects mounted portal home segments", () => {

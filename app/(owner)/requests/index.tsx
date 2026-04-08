@@ -26,8 +26,8 @@ import {
   formatOwnerLabel,
   formatOwnerRelativeTime,
   getOwnerApprovalTone,
-  normalizeOwnerApprovalStatus,
   getOwnerRequestStatusTone,
+  resolveOwnerRequestApprovalStatus,
   OWNER_PALETTE as P,
 } from '../../../lib/utils/owner-portal';
 
@@ -109,9 +109,7 @@ export default function OwnerRequestsScreen() {
 
         if (!matchesSearch) return false;
 
-      const approvalStatus = normalizeOwnerApprovalStatus(
-        request.ownerApproval?.status,
-      );
+      const approvalStatus = resolveOwnerRequestApprovalStatus(request);
 
       switch (activeFilter) {
         case 'approval':
@@ -134,8 +132,7 @@ export default function OwnerRequestsScreen() {
     () => ({
       all: requests.length,
       approval: requests.filter(
-        (request) =>
-          normalizeOwnerApprovalStatus(request.ownerApproval?.status) === 'PENDING',
+        (request) => resolveOwnerRequestApprovalStatus(request) === 'PENDING',
       ).length,
       open: requests.filter(
         (request) =>
@@ -177,6 +174,7 @@ export default function OwnerRequestsScreen() {
             messagingUnreadCount={conversationUnreadCount}
             showSideMenu={showSideMenu}
             onSideMenuToggle={setShowSideMenu}
+            notificationRoute="/(owner)/notifications"
             textColor={P.text}
           />
 
@@ -246,9 +244,7 @@ export default function OwnerRequestsScreen() {
           ) : (
             filteredRequests.map((request) => {
               const statusTone = getOwnerRequestStatusTone(request.status);
-              const approvalStatus = normalizeOwnerApprovalStatus(
-                request.ownerApproval?.status,
-              );
+              const approvalStatus = resolveOwnerRequestApprovalStatus(request);
               const approvalTone = getOwnerApprovalTone(approvalStatus);
 
               return (

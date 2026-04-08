@@ -32,7 +32,8 @@ export const normalizeStatus = (status: any): Request["status"] => {
   const numeric = Number(status);
   if (!Number.isNaN(numeric)) {
     if (numeric === 1) return "pending";
-    if (numeric === 2 || numeric === 3) return "in-progress";
+    if (numeric === 2) return "assigned";
+    if (numeric === 3) return "in-progress";
     if (numeric === 4) return "on-hold";
     if (numeric === 5) return "completed";
     if (numeric === 6) return "cancelled";
@@ -40,12 +41,9 @@ export const normalizeStatus = (status: any): Request["status"] => {
 
   const normalized = String(status).toLowerCase().replace("_", "-");
   if (normalized === "pending" || normalized === "open") return "pending";
+  if (normalized === "assigned") return "assigned";
   if (normalized === "on-hold" || normalized === "onhold") return "on-hold";
-  if (
-    normalized === "in-progress" ||
-    normalized === "inprogress" ||
-    normalized === "assigned"
-  ) {
+  if (normalized === "in-progress" || normalized === "inprogress") {
     return "in-progress";
   }
   if (
@@ -94,6 +92,55 @@ export const normalizePriority = (priority: any): Request["priority"] => {
   return "medium";
 };
 
+export const normalizeRequestType = (type: any): Request["type"] => {
+  const normalized = String(type || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]/g, "_");
+
+  switch (normalized) {
+    case "CLEANING":
+      return "cleaning";
+    case "ELECTRICAL":
+      return "electrical";
+    case "PLUMBING":
+      return "plumbing";
+    case "HVAC":
+    case "PLUMBING_AC_HEATING":
+      return "hvac";
+    case "REPAIR":
+      return "repair";
+    case "OTHER":
+      return "other";
+    case "MAINTENANCE":
+    default:
+      return "maintenance";
+  }
+};
+
+export const formatRequestTypeLabel = (
+  type?: Request["type"] | string | null,
+): string => {
+  const normalized = normalizeRequestType(type);
+
+  switch (normalized) {
+    case "hvac":
+      return "Plumbing / AC / Heating";
+    case "electrical":
+      return "Electrical";
+    case "plumbing":
+      return "Plumbing";
+    case "cleaning":
+      return "Cleaning";
+    case "repair":
+      return "Repair";
+    case "other":
+      return "Other";
+    default:
+      return "Maintenance";
+  }
+};
+
 export const normalizeAttachments = (attachments: any): string[] => {
   if (!Array.isArray(attachments)) return [];
   return attachments
@@ -121,6 +168,7 @@ export const isImageUri = (uri: string) =>
 export const getStatusColor = (status: Request["status"]) => {
   const colors = {
     pending: { bg: P.warningBg, text: P.warningText, border: "#F4D9A7" },
+    assigned: { bg: P.infoBg, text: P.infoText, border: "#CADAF0" },
     "in-progress": { bg: P.infoBg, text: P.infoText, border: "#CADAF0" },
     "on-hold": { bg: P.accent, text: P.warningText, border: P.accentBorder },
     completed: { bg: P.successBg, text: P.successText, border: "#CBE7D5" },
@@ -142,6 +190,7 @@ export const getPriorityColor = (priority: Request["priority"]) => {
 export const getStatusIcon = (status: Request["status"]) => {
   const icons = {
     pending: "time-outline",
+    assigned: "person-outline",
     "in-progress": "sync-outline",
     "on-hold": "pause-circle-outline",
     completed: "checkmark-circle-outline",
@@ -182,12 +231,51 @@ export const formatShortDateTime = (dateString?: string | null) => {
 export const getProgressPercentage = (status: Request["status"]) => {
   const progress = {
     pending: 25,
+    assigned: 50,
     "in-progress": 75,
     "on-hold": 60,
     completed: 100,
     cancelled: 0,
   };
   return progress[status] || 0;
+};
+
+export const getTenantRequestStatusLabel = (status: Request["status"]) => {
+  switch (status) {
+    case "pending":
+      return "Submitted";
+    case "assigned":
+      return "Assigned";
+    case "in-progress":
+      return "In Progress";
+    case "completed":
+      return "Completed";
+    case "cancelled":
+      return "Canceled";
+    case "on-hold":
+      return "On Hold";
+    default:
+      return "Submitted";
+  }
+};
+
+export const getTenantRequestNextStep = (status: Request["status"]) => {
+  switch (status) {
+    case "pending":
+      return "Management will review your report and assign the right team.";
+    case "assigned":
+      return "Your issue has been assigned. Check back here for visit timing and service updates.";
+    case "in-progress":
+      return "Work is currently underway. Use comments if you need to share anything with management.";
+    case "completed":
+      return "This issue has been marked completed. If anything is still unresolved, submit a new request or contact management.";
+    case "cancelled":
+      return "This request has been canceled. Submit a new maintenance issue if you still need support.";
+    case "on-hold":
+      return "This request is temporarily on hold. Management will update you with the next step.";
+    default:
+      return "Management will review your report and update this timeline.";
+  }
 };
 
 export const getJobStatusMeta = (status: Job["status"]) => {

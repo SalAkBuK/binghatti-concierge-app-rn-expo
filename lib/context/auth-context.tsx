@@ -10,14 +10,19 @@ import * as SecureStore from "expo-secure-store";
 import { useAsyncStorage } from "../hooks/useAsyncStorage";
 import {
   hasCanonicalAccessAxes,
+  resolveAccessDerivedUserRole,
+  resolveClaimedUserRole,
   resolveExplicitUserRole,
+  resolveProviderRoleClaim,
   resolveUserRole,
   shouldFetchAssignmentsForAuthRole,
+  shouldProbeProviderRuntimeForAuthRole,
   shouldProbeOwnerRuntimeForAuthRole,
 } from "./auth-role";
 import { API_ENDPOINTS, STORAGE_KEYS } from "../utils";
 import apiService from "../services/api";
 import { ownerPortalApi } from "../services/api/owner-portal";
+import { providerPortalApi } from "../services/api/provider-portal";
 import type { ApiResponse, LoginDTO, User } from "../types";
 
 // Auth State Interface
@@ -310,6 +315,34 @@ const createOwnerAccessError = (): Error & { code: string } => {
   return error;
 };
 
+const getAssignmentsPayload = (response: any): any[] =>
+  Array.isArray(response)
+    ? response
+    : Array.isArray(response?.data)
+      ? response.data
+      : [];
+
+const buildProviderProfile = (providers: Array<{ id?: string; name?: string }>) => {
+  const providerIds = providers
+    .map((provider) => provider?.id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+  const providerNames = providers
+    .map((provider) => provider?.name)
+    .filter((name): name is string => typeof name === "string" && name.length > 0);
+  const providerProfile: Record<string, any> = {
+    providerMembershipCount: providers.length,
+    providerMembershipIds: providerIds,
+    providerMembershipNames: providerNames,
+  };
+
+  if (providers.length === 1) {
+    providerProfile.serviceProviderId = providers[0]?.id;
+    providerProfile.serviceProviderName = providers[0]?.name;
+  }
+
+  return providerProfile;
+};
+
 // Auth Provider Component
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [users, setUsers, isLoadingUsers] = useAsyncStorage(
@@ -357,6 +390,103 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         error,
       );
       return role;
+    }
+  };
+
+  const resolveProviderRuntimeRole = async (
+    role: User["role"] | null,
+    source: "login" | "restore",
+  ): Promise<{
+    role: User["role"] | null;
+    providerProfile: Record<string, any>;
+    providerRuntimePresent: boolean;
+  }> => {
+    if (!shouldProbeProviderRuntimeForAuthRole(role)) {
+      return {
+        role,
+        providerProfile: {},
+        providerRuntimePresent: false,
+      };
+    }
+
+    try {
+      const runtime = await providerPortalApi.getMe();
+      const providers = Array.isArray(runtime.providers) ? runtime.providers : [];
+
+      if (providers.length === 0) {
+        if (role === "service_provider") {
+          console.log(`[Auth] Provider runtime resolved no active memberships during ${source}`);
+          return {
+            role: "service_provider",
+            providerProfile: buildProviderProfile([]),
+            providerRuntimePresent: true,
+          };
+        }
+
+        return {
+          role,
+          providerProfile: {},
+          providerRuntimePresent: false,
+        };
+      }
+
+      console.log(
+        `[Auth] Provider runtime resolved ${providers.length} membership(s) during ${source}`,
+      );
+      return {
+        role: "service_provider",
+        providerProfile: buildProviderProfile(providers),
+        providerRuntimePresent: true,
+      };
+    } catch (error) {
+      const status = getStatusCode(error);
+
+      if (status === 401) {
+        throw error;
+      }
+
+      if (status === 403) {
+        if (role === "service_provider") {
+          console.log(`[Auth] Provider runtime denied access during ${source}`);
+          return {
+            role: "service_provider",
+            providerProfile: buildProviderProfile([]),
+            providerRuntimePresent: true,
+          };
+        }
+
+        console.log(
+          `[Auth] Provider runtime probe skipped provider routing during ${source}:`,
+          status,
+        );
+        return {
+          role,
+          providerProfile: {},
+          providerRuntimePresent: false,
+        };
+      }
+
+      if (status === 404) {
+        console.log(
+          `[Auth] Provider runtime probe endpoint unavailable during ${source}:`,
+          status,
+        );
+        return {
+          role,
+          providerProfile: {},
+          providerRuntimePresent: false,
+        };
+      }
+
+      console.warn(
+        `[Auth] Provider runtime probe failed during ${source}:`,
+        error,
+      );
+      return {
+        role,
+        providerProfile: {},
+        providerRuntimePresent: false,
+      };
     }
   };
 
@@ -478,43 +608,47 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             try {
               const userData = JSON.parse(savedUserData);
               let resolvedUser = userData;
-              let resolvedRole =
-                resolveExplicitUserRole(userData) ?? resolvedUser?.role ?? null;
-              resolvedRole = await resolveOwnerRuntimeRole(
-                resolvedRole,
+              const providerRoleClaim = resolveProviderRoleClaim(userData);
+              const claimedRole =
+                resolveClaimedUserRole(userData) ?? resolvedUser?.role ?? null;
+              const providerRuntime = await resolveProviderRuntimeRole(
+                providerRoleClaim ?? claimedRole,
                 "restore",
               );
+              let resolvedRole = providerRuntime.role;
+              if (!providerRuntime.providerRuntimePresent) {
+                resolvedRole = await resolveOwnerRuntimeRole(
+                  claimedRole,
+                  "restore",
+                );
+              }
               let assignmentsPayload: any[] = [];
               if (
+                !providerRuntime.providerRuntimePresent &&
                 shouldFetchAssignmentsForAuthRole(resolvedRole) &&
                 !hasCanonicalAccessAxes(resolvedUser)
               ) {
                 try {
                   const assignmentsResponse = await apiService.users.getMyAssignments();
-                  assignmentsPayload = Array.isArray(assignmentsResponse)
-                    ? assignmentsResponse
-                    : Array.isArray(assignmentsResponse?.data)
-                      ? assignmentsResponse.data
-                      : [];
+                  assignmentsPayload = getAssignmentsPayload(assignmentsResponse);
                   console.log("[AuthProvider] Assignments response:", assignmentsPayload);
                 } catch (assignmentError) {
                   console.warn("[AuthProvider] Failed to load assignments:", assignmentError);
                 }
               }
 
-              const assignmentRole = resolveRoleFromAssignments(assignmentsPayload);
-              if (assignmentRole) {
-                resolvedRole = assignmentRole;
-                resolvedUser = {
-                  ...resolvedUser,
-                  role: resolvedRole,
-                  profile: {
-                    ...(resolvedUser?.profile ?? {}),
-                    ...buildAccessProfile(resolvedUser, resolvedRole),
-                    ...buildAssignmentProfile(assignmentsPayload, resolvedRole),
-                  },
-                };
-              } else if (resolvedRole && resolvedUser?.role !== resolvedRole) {
+              const accessDerivedRole = resolveAccessDerivedUserRole(resolvedUser);
+              const assignmentRole = !providerRuntime.providerRuntimePresent
+                ? resolveRoleFromAssignments(assignmentsPayload)
+                : null;
+              resolvedRole =
+                resolvedRole ??
+                accessDerivedRole ??
+                assignmentRole ??
+                claimedRole ??
+                resolveUserRole(resolvedUser);
+
+              if (resolvedRole && resolvedUser?.role !== resolvedRole) {
                 resolvedUser = {
                   ...resolvedUser,
                   role: resolvedRole,
@@ -542,6 +676,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                   profile: {
                     ...(resolvedUser?.profile ?? {}),
                     ...restoredAccessProfile,
+                    ...providerRuntime.providerProfile,
+                    ...(!providerRuntime.providerRuntimePresent && assignmentRole
+                      ? buildAssignmentProfile(assignmentsPayload, assignmentRole)
+                      : {}),
+                  },
+                };
+              } else if (
+                Object.keys(providerRuntime.providerProfile).length > 0 ||
+                (!providerRuntime.providerRuntimePresent && assignmentRole)
+              ) {
+                resolvedUser = {
+                  ...resolvedUser,
+                  profile: {
+                    ...(resolvedUser?.profile ?? {}),
+                    ...providerRuntime.providerProfile,
+                    ...(!providerRuntime.providerRuntimePresent && assignmentRole
+                      ? buildAssignmentProfile(assignmentsPayload, assignmentRole)
+                      : {}),
                   },
                 };
               }
@@ -739,21 +891,27 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         await apiService.setAuthTokens({ accessToken, refreshToken });
 
+        const providerRoleClaim = resolveProviderRoleClaim(payloadUser);
+        const claimedUserRole = resolveClaimedUserRole(payloadUser);
         const explicitUserRole = resolveExplicitUserRole(payloadUser);
-        let userRole = await resolveOwnerRuntimeRole(explicitUserRole, "login");
+        const providerRuntime = await resolveProviderRuntimeRole(
+          providerRoleClaim ?? claimedUserRole,
+          "login",
+        );
+        let userRole = providerRuntime.role;
+        if (!providerRuntime.providerRuntimePresent) {
+          userRole = await resolveOwnerRuntimeRole(claimedUserRole, "login");
+        }
         let assignmentsPayload: any[] = [];
         if (
+          !providerRuntime.providerRuntimePresent &&
           shouldFetchAssignmentsForAuthRole(userRole) &&
           !hasCanonicalAccessAxes(payloadUser)
         ) {
           try {
             const assignmentsResponse = await apiService.users.getMyAssignments();
             console.log("[Auth] Assignments raw response:", assignmentsResponse);
-            assignmentsPayload = Array.isArray(assignmentsResponse)
-              ? assignmentsResponse
-              : Array.isArray(assignmentsResponse?.data)
-                ? assignmentsResponse.data
-                : [];
+            assignmentsPayload = getAssignmentsPayload(assignmentsResponse);
             console.log("[Auth] Assignments response:", assignmentsPayload);
           } catch (assignmentError) {
             console.warn("[Auth] Failed to load assignments:", assignmentError);
@@ -763,23 +921,35 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const nowIso = new Date().toISOString();
         const userEmail = (payloadUser.email || normalizedEmail).toLowerCase();
         const existingUser = state.users[userEmail];
-        const assignmentRole = resolveRoleFromAssignments(assignmentsPayload);
-        if (assignmentRole) {
-          userRole = assignmentRole;
-        }
-        userRole = userRole ?? resolveUserRole(payloadUser);
+        const accessDerivedRole = resolveAccessDerivedUserRole(payloadUser);
+        const assignmentRole = !providerRuntime.providerRuntimePresent
+          ? resolveRoleFromAssignments(assignmentsPayload)
+          : null;
+        userRole =
+          userRole ??
+          accessDerivedRole ??
+          assignmentRole ??
+          claimedUserRole ??
+          resolveUserRole(payloadUser);
         if (!userRole) {
           throw new Error("Unable to resolve user role from login response");
         }
         console.log("[Auth] Resolved user role:", {
           rawRole: payloadUser?.role ?? payloadUser?.roleKey ?? payloadUser?.roleName ?? payloadUser?.userRole ?? payloadUser?.type,
           explicitRole: explicitUserRole,
+          claimedRole: claimedUserRole,
           resolvedRole: userRole,
           assignmentRole,
+          accessDerivedRole,
+          providerRuntimePresent: providerRuntime.providerRuntimePresent,
+          providerRoleClaim,
         });
 
         const accessProfile = buildAccessProfile(payloadUser, userRole);
-        const assignmentProfile = buildAssignmentProfile(assignmentsPayload, userRole);
+        const assignmentProfile =
+          !providerRuntime.providerRuntimePresent && assignmentRole
+            ? buildAssignmentProfile(assignmentsPayload, assignmentRole)
+            : {};
 
         const authenticatedUser: User = {
           id: payloadUser?.id
@@ -836,6 +1006,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               existingUser?.profile?.phone,
             ...accessProfile,
             ...assignmentProfile,
+            ...providerRuntime.providerProfile,
           },
           createdAt: existingUser?.createdAt ?? payloadUser?.createdAt ?? nowIso,
           updatedAt: payloadUser?.updatedAt ?? nowIso,
@@ -911,6 +1082,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         actions.clearError();
 
         console.log('[Auth] Logging out, clearing session data...');
+        const currentRole = state.currentUser?.role;
 
         // Clear auth state
         actions.setAuth({
@@ -924,6 +1096,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           const pushDeviceToken = await SecureStore.getItemAsync(
             STORAGE_KEYS.push_device_token,
           );
+          const ownerPushDeviceId = await SecureStore.getItemAsync(
+            STORAGE_KEYS.owner_push_device_id,
+          );
           if (pushDeviceToken) {
             try {
               await apiService.notifications.unregisterPushDevice({
@@ -933,12 +1108,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               console.warn("[Auth] Failed to unregister push device:", pushError);
             }
           }
+          if (currentRole === 'owner' && ownerPushDeviceId) {
+            try {
+              await ownerPortalApi.deleteNotificationDevice(ownerPushDeviceId);
+            } catch (ownerPushError) {
+              console.warn(
+                '[Auth] Failed to unregister owner push device:',
+                ownerPushError,
+              );
+            }
+          }
 
           await apiService.logout();
           await SecureStore.deleteItemAsync(STORAGE_KEYS.user_data);
           await SecureStore.deleteItemAsync(STORAGE_KEYS.auth_token);
           await SecureStore.deleteItemAsync(STORAGE_KEYS.refresh_token);
           await SecureStore.deleteItemAsync(STORAGE_KEYS.push_device_token);
+          await SecureStore.deleteItemAsync(STORAGE_KEYS.owner_push_device_id);
+          await SecureStore.deleteItemAsync(STORAGE_KEYS.owner_push_device_token);
           console.log('[Auth] Session data cleared from SecureStore');
         } catch (storageError) {
           console.warn('[Auth] Failed to clear SecureStore:', storageError);

@@ -43,7 +43,7 @@ describe("PortalUnavailableScreen", () => {
   it("shows the unavailable state for unsupported roles", () => {
     mockUseAuth.mockReturnValue({
       isAuthenticated: true,
-      currentUser: buildUser({ role: "service_provider" }),
+      currentUser: buildUser({ role: "admin" }),
       actions: {
         logout: jest.fn().mockResolvedValue(undefined),
       },
@@ -66,7 +66,7 @@ describe("PortalUnavailableScreen", () => {
       "No mounted mobile portal for the current role",
     );
     expect(renderedTexts).toContain("Role: ");
-    expect(renderedTexts).toContain("service_provider");
+    expect(renderedTexts).toContain("admin");
   });
 
   it("signs out and routes to auth when the button is pressed", async () => {
@@ -97,7 +97,7 @@ describe("PortalUnavailableScreen", () => {
   it("redirects mounted roles away from the unavailable screen", () => {
     mockUseAuth.mockReturnValue({
       isAuthenticated: true,
-      currentUser: buildUser({ role: "tenant" }),
+      currentUser: buildUser({ role: "service_provider" }),
       actions: {
         logout: jest.fn().mockResolvedValue(undefined),
       },
@@ -107,6 +107,6 @@ describe("PortalUnavailableScreen", () => {
       TestRenderer.create(<PortalUnavailableScreen />);
     });
 
-    expect(mockRedirect).toHaveBeenCalledWith({ href: "/(tenant)" });
+    expect(mockRedirect).toHaveBeenCalledWith({ href: "/(serviceProvider)" });
   });
 });

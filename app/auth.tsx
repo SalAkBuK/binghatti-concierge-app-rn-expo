@@ -7,7 +7,6 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -158,10 +157,6 @@ export default function AuthScreen() {
         },
       ],
     );
-  };
-
-  const handleInfoLink = (label: string) => {
-    Alert.alert(label, 'This link is not wired in the mobile app yet.');
   };
 
   if (loading) {
@@ -326,31 +321,6 @@ export default function AuthScreen() {
                 </LinearGradient>
               </TouchableOpacity>
 
-              <View style={styles.dividerRow}>
-                <View style={styles.divider} />
-                <Text style={styles.dividerText}>Or continue with</Text>
-                <View style={styles.divider} />
-              </View>
-
-              <View style={styles.socialRow}>
-                <TouchableOpacity
-                  style={styles.socialButton}
-                  activeOpacity={0.85}
-                  onPress={() => Alert.alert('Google', 'Social login is not available yet.')}
-                >
-                  <Ionicons name='logo-google' size={15} color={P.text} />
-                  <Text style={styles.socialButtonText}>Google</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.socialButton}
-                  activeOpacity={0.85}
-                  onPress={() => Alert.alert('Apple', 'Social login is not available yet.')}
-                >
-                  <Ionicons name='logo-apple' size={15} color={P.text} />
-                  <Text style={styles.socialButtonText}>Apple</Text>
-                </TouchableOpacity>
-              </View>
-
               <View style={styles.demoBadge}>
                 <Ionicons name='information-circle-outline' size={15} color={P.warningText} />
                 <Text style={styles.demoText}>Demo version with mock-friendly data flows</Text>
@@ -376,17 +346,6 @@ export default function AuthScreen() {
             <Text style={styles.footerCopyright}>
               © 2024 Towerdesk. All rights reserved.
             </Text>
-            <View style={styles.footerLinks}>
-              <Pressable onPress={() => handleInfoLink('Privacy Policy')}>
-                <Text style={styles.footerLink}>Privacy Policy</Text>
-              </Pressable>
-              <Pressable onPress={() => handleInfoLink('Terms of Service')}>
-                <Text style={styles.footerLink}>Terms of Service</Text>
-              </Pressable>
-              <Pressable onPress={() => handleInfoLink('Contact Support')}>
-                <Text style={styles.footerLink}>Contact Support</Text>
-              </Pressable>
-            </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -633,46 +592,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
     color: '#EEF9FF',
   },
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginTop: 20,
-    marginBottom: 18,
-  },
-  divider: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#E1EAEC',
-  },
-  dividerText: {
-    fontSize: 9,
-    fontWeight: '700',
-    letterSpacing: 1.8,
-    textTransform: 'uppercase',
-    color: '#96A2A7',
-  },
-  socialRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  socialButton: {
-    flex: 1,
-    minHeight: 48,
-    borderRadius: 999,
-    backgroundColor: P.surfaceLow,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 8,
-  },
-  socialButtonText: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.1,
-    textTransform: 'uppercase',
-    color: P.text,
-  },
   demoBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -719,25 +638,12 @@ const styles = StyleSheet.create({
   footer: {
     marginTop: 32,
     alignItems: 'flex-start',
-    gap: 12,
     paddingBottom: 8,
   },
   footerCopyright: {
     fontSize: 10,
     lineHeight: 15,
     letterSpacing: 1.3,
-    textTransform: 'uppercase',
-    color: P.soft,
-  },
-  footerLinks: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 16,
-  },
-  footerLink: {
-    fontSize: 10,
-    fontWeight: '600',
-    letterSpacing: 1.2,
     textTransform: 'uppercase',
     color: P.soft,
   },

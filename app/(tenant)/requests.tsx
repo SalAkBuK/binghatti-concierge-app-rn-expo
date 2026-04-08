@@ -5,7 +5,6 @@ import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   RefreshControl,
   ScrollView,
@@ -20,17 +19,15 @@ import { AnimatedButton } from "../../components/ui/AnimatedButton";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { RequestsScreenSkeleton } from "../../components/ui/RequestsScreenSkeleton";
 import { SideMenu } from "../../components/ui/SideMenu";
-import { useAppDomain } from "../../lib/context/connected-app-provider";
 import { useAuth } from "../../lib/context/auth-context";
 import { useNotifications } from "../../lib/context/notifications-context";
 import { useRequests } from "../../lib/context/requests-context";
 import { useResidentRequests } from "../../lib/hooks/useResidentRequests";
-import type { Job, Request, RequestPriority, RequestStatus } from "../../lib/types";
+import type { Request, RequestPriority, RequestStatus } from "../../lib/types";
 import {
   filterNotificationsByUser,
   getUnreadNotificationsCount,
 } from "../../lib/utils/helpers";
-import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
 
 const P = {
   bg: "#F8F9FA",
@@ -77,28 +74,6 @@ const formatDate = (value?: string | null) => {
   });
 };
 
-const formatDateTime = (value?: string | null) => {
-  if (!value) return "Pending";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "Pending";
-  return `${parsed.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  })}, ${parsed.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  })}`;
-};
-
-const formatCurrency = (value?: number | null) => {
-  if (value == null) return "Unavailable";
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "AED",
-    maximumFractionDigits: 0,
-  }).format(value);
-};
-
 const formatCount = (value: number) => String(value).padStart(2, "0");
 
 const getStatusMeta = (status: RequestStatus) => {
@@ -112,7 +87,7 @@ const getStatusMeta = (status: RequestStatus) => {
       };
     case "cancelled":
       return {
-        label: "Cancelled",
+        label: "Canceled",
         bg: P.dangerBg,
         text: P.dangerText,
         icon: "close-circle-outline" as const,
@@ -140,7 +115,7 @@ const getStatusMeta = (status: RequestStatus) => {
       };
     default:
       return {
-        label: "Pending",
+        label: "Submitted",
         bg: P.warningBg,
         text: P.warningText,
         icon: "time-outline" as const,
@@ -155,7 +130,7 @@ const getPriorityMeta = (priority: RequestPriority) => {
     case "high":
       return { label: "High", bg: "#FFEDD5", text: "#B45309" };
     case "medium":
-      return { label: "Normal", bg: P.warningBg, text: P.warningText };
+      return { label: "Medium", bg: P.warningBg, text: P.warningText };
     default:
       return { label: "Low", bg: P.successBg, text: P.successText };
   }
@@ -170,7 +145,7 @@ const getRequestTypeMeta = (type?: Request["type"] | string | null) => {
     case "cleaning":
       return { label: "Cleaning", icon: "sparkles-outline" as const };
     case "hvac":
-      return { label: "HVAC", icon: "snow-outline" as const };
+      return { label: "Plumbing / AC / Heating", icon: "snow-outline" as const };
     case "repair":
     case "maintenance":
       return { label: "Maintenance", icon: "construct-outline" as const };
@@ -183,9 +158,6 @@ export default function RequestsScreen() {
   const { currentUser } = useAuth();
   const { notifications } = useNotifications();
   const { actions: requestActions } = useRequests();
-  const {
-    operations: { jobs, reviewJobEstimateAsTenant },
-  } = useAppDomain();
   const params = useLocalSearchParams<{ requestId?: string }>();
   const handledRequestIdRef = useRef<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
@@ -221,16 +193,6 @@ export default function RequestsScreen() {
 
   const hasMore = userRequests.length < allUserRequests.length;
 
-  const jobsByRequestId = useMemo(() => {
-    const map: Record<string, Job> = {};
-    jobs.forEach((job) => {
-      if (job.requestId) {
-        map[job.requestId] = job;
-      }
-    });
-    return map;
-  }, [jobs]);
-
   const stats = useMemo(() => {
     const statusCounts = backendRequests.reduce(
       (counts, req) => {
@@ -262,13 +224,17 @@ export default function RequestsScreen() {
 
   const statusFilters = useMemo(
     () => [
-      { label: "All", value: "all" as const, count: stats.total },
-      { label: "Pending", value: "pending" as const, count: stats.pending },
-      { label: "Assigned", value: "assigned" as const, count: stats.assigned },
-      { label: "In Progress", value: "in-progress" as const, count: stats.inProgress },
-      { label: "On Hold", value: "on-hold" as const, count: stats.onHold },
-      { label: "Completed", value: "completed" as const, count: stats.completed },
-      { label: "Cancelled", value: "cancelled" as const, count: stats.cancelled },
+      { label: 'All', value: 'all' as const, count: stats.total },
+      { label: 'Submitted', value: 'pending' as const, count: stats.pending },
+      { label: 'Assigned', value: 'assigned' as const, count: stats.assigned },
+      {
+        label: 'In Progress',
+        value: 'in-progress' as const,
+        count: stats.inProgress,
+      },
+      { label: 'On Hold', value: 'on-hold' as const, count: stats.onHold },
+      { label: 'Completed', value: 'completed' as const, count: stats.completed },
+      { label: 'Canceled', value: 'cancelled' as const, count: stats.cancelled },
     ],
     [stats],
   );
@@ -313,53 +279,6 @@ export default function RequestsScreen() {
     }
   };
 
-  const handleApproveEstimate = (jobId: string) => {
-    Alert.alert("Approve Estimate", "Do you want to proceed with the proposed costs?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Approve",
-        onPress: async () => {
-          try {
-            await reviewJobEstimateAsTenant?.(jobId, { decision: "approve" });
-            showSuccessAlert("Thank you for confirming the estimate.");
-          } catch (error: any) {
-            showErrorAlert(error);
-          }
-        },
-      },
-    ]);
-  };
-
-  const handleDeclineEstimate = (jobId: string) => {
-    Alert.prompt(
-      "Decline Estimate",
-      "Tell us what needs to change before work begins.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Submit",
-          style: "destructive",
-          onPress: async (reason) => {
-            if (!reason?.trim()) {
-              Alert.alert("Reason Required", "Please explain why you're declining the estimate.");
-              return;
-            }
-            try {
-              await reviewJobEstimateAsTenant?.(jobId, {
-                decision: "decline",
-                notes: reason.trim(),
-              });
-              showSuccessAlert("The service provider has been notified of your decline.");
-            } catch (error: any) {
-              showErrorAlert(error);
-            }
-          },
-        },
-      ],
-      "plain-text",
-    );
-  };
-
   const handleRequestPress = (request: Request): void => {
     requestActions.setSelectedRequest(request);
     router.push("/(modals)/request-details");
@@ -384,11 +303,6 @@ export default function RequestsScreen() {
     const statusMeta = getStatusMeta(request.status);
     const priorityMeta = getPriorityMeta(request.priority);
     const typeMeta = getRequestTypeMeta(request.type);
-    const isBackendRequest = (request as any)._source === "backend";
-    const job = isBackendRequest ? undefined : jobsByRequestId[request.id];
-    const estimate = job?.estimate;
-    const awaitingCompletionApproval = job?.completionStatus === "awaiting_tenant_approval";
-    const estimateAwaitingTenant = estimate?.status === "sp_approved";
 
     return (
       <AnimatedButton style={styles.requestCard} onPress={() => handleRequestPress(request)}>
@@ -401,7 +315,9 @@ export default function RequestsScreen() {
               {request.title}
             </Text>
             <Text style={styles.requestMetaText} numberOfLines={1}>
-              {typeMeta.label} • Updated {formatDate(request.updatedAt || request.createdAt)}
+              {`${typeMeta.label} - Updated ${formatDate(
+                request.updatedAt || request.createdAt,
+              )}`}
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color={P.soft} />
@@ -419,6 +335,14 @@ export default function RequestsScreen() {
               {priorityMeta.label}
             </Text>
           </View>
+          {request.isEmergency ? (
+            <View style={[styles.priorityPill, styles.emergencyPill]}>
+              <Ionicons name="warning-outline" size={12} color={P.dangerText} />
+              <Text style={[styles.priorityPillText, styles.emergencyPillText]}>
+                Emergency
+              </Text>
+            </View>
+          ) : null}
         </View>
 
         <Text style={styles.requestDescription} numberOfLines={2}>
@@ -431,53 +355,6 @@ export default function RequestsScreen() {
             {request.assignedTo ? `Assigned to ${request.assignedTo}` : "Awaiting assignment"}
           </Text>
         </View>
-
-        {estimate && (
-          <View style={styles.estimateCard}>
-            <View style={styles.estimateHeader}>
-              <View style={styles.estimateTitleRow}>
-                <Ionicons name="receipt-outline" size={14} color={P.primary} />
-                <Text style={styles.estimateHeaderText}>Estimate ready</Text>
-              </View>
-              <Text style={styles.estimateAmountText}>{formatCurrency(estimate.subtotal)}</Text>
-            </View>
-            <Text style={styles.estimateMetaText}>
-              Submitted {formatDateTime(estimate.createdAt)}
-            </Text>
-
-            {estimateAwaitingTenant && job?.id ? (
-              <View style={styles.estimateActionRow}>
-                <TouchableOpacity
-                  style={[styles.estimateActionButton, styles.estimateDeclineButton]}
-                  onPress={() => handleDeclineEstimate(job.id)}
-                >
-                  <Text style={styles.estimateDeclineText}>Decline</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.estimateActionButton, styles.estimateApproveButton]}
-                  onPress={() => handleApproveEstimate(job.id)}
-                >
-                  <Text style={styles.estimateApproveText}>Approve</Text>
-                </TouchableOpacity>
-              </View>
-            ) : null}
-          </View>
-        )}
-
-        {awaitingCompletionApproval && job?.id ? (
-          <TouchableOpacity
-            style={styles.reviewButton}
-            onPress={() =>
-              router.push({
-                pathname: "/(modals)/approve-job-completion",
-                params: { jobId: job.id },
-              })
-            }
-          >
-            <Ionicons name="checkmark-circle-outline" size={16} color={P.surface} />
-            <Text style={styles.reviewButtonText}>Review Completion</Text>
-          </TouchableOpacity>
-        ) : null}
       </AnimatedButton>
     );
   };
@@ -566,7 +443,7 @@ export default function RequestsScreen() {
         </View>
         <Text style={styles.spotlightText}>
           {latestRequest
-            ? `${getStatusMeta(latestRequest.status).label} • Updated ${formatDate(latestRequest.updatedAt)}`
+            ? `${getStatusMeta(latestRequest.status).label} - Updated ${formatDate(latestRequest.updatedAt)}`
             : "Once you create a request, its latest status will appear here."}
         </Text>
       </View>
@@ -952,6 +829,9 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   priorityPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 7,
@@ -959,6 +839,12 @@ const styles = StyleSheet.create({
   priorityPillText: {
     fontSize: 11,
     fontWeight: "700",
+  },
+  emergencyPill: {
+    backgroundColor: P.dangerBg,
+  },
+  emergencyPillText: {
+    color: P.dangerText,
   },
   requestDescription: {
     fontSize: 13,
@@ -979,86 +865,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 12,
     color: P.soft,
-  },
-  estimateCard: {
-    marginTop: 14,
-    padding: 12,
-    borderRadius: 18,
-    backgroundColor: P.surfaceLow,
-    borderWidth: 1,
-    borderColor: P.border,
-  },
-  estimateHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 12,
-  },
-  estimateTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    flex: 1,
-  },
-  estimateHeaderText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: P.text,
-  },
-  estimateAmountText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: P.text,
-  },
-  estimateMetaText: {
-    fontSize: 12,
-    color: P.soft,
-    marginTop: 6,
-  },
-  estimateActionRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 12,
-  },
-  estimateActionButton: {
-    flex: 1,
-    minHeight: 40,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  estimateDeclineButton: {
-    backgroundColor: P.surface,
-    borderWidth: 1,
-    borderColor: "#E7B4AD",
-  },
-  estimateApproveButton: {
-    backgroundColor: P.primary,
-  },
-  estimateDeclineText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: P.dangerText,
-  },
-  estimateApproveText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: P.surface,
-  },
-  reviewButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    minHeight: 44,
-    backgroundColor: P.primary,
-    borderRadius: 16,
-    marginTop: 12,
-  },
-  reviewButtonText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: P.surface,
   },
   loadMoreContainer: {
     alignItems: "center",

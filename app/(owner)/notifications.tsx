@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { router } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -23,6 +24,7 @@ import type { OwnerNotification } from '../../lib/types';
 import {
   formatOwnerDateTime,
   formatOwnerLabel,
+  getOwnerNotificationTarget,
   getOwnerNotificationTone,
   OWNER_PALETTE as P,
 } from '../../lib/utils/owner-portal';
@@ -34,6 +36,7 @@ export default function OwnerNotificationsScreen() {
   const {
     conversationUnreadCount,
     notificationUnreadCount,
+    notificationsRefreshKey,
     refresh: refreshUnreadSummary,
   } = useOwnerUnreadSummary({
     enabled: currentUser?.role === 'owner',
@@ -81,7 +84,7 @@ export default function OwnerNotificationsScreen() {
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, notificationsRefreshKey]);
 
   const visibleNotifications = useMemo(
     () =>
@@ -134,6 +137,50 @@ export default function OwnerNotificationsScreen() {
     [handleUnauthorized, load],
   );
 
+  const handleOpenNotification = useCallback(
+    async (notification: OwnerNotification) => {
+      const target = getOwnerNotificationTarget(notification.data);
+      if (!target) {
+        return;
+      }
+
+      if (!notification.readAt) {
+        try {
+          await ownerPortalApi.markNotificationRead(notification.id);
+          await refreshUnreadSummary();
+          setNotifications((current) =>
+            current.map((item) =>
+              item.id === notification.id
+                ? {
+                    ...item,
+                    readAt: item.readAt ?? new Date().toISOString(),
+                  }
+                : item,
+            ),
+          );
+        } catch (error) {
+          if (__DEV__) {
+            console.log('[OwnerNotifications] Failed to mark notification read before open', error);
+          }
+        }
+      }
+
+      if (target.kind === 'request') {
+        router.push({
+          pathname: '/(owner)/requests/[requestId]',
+          params: { requestId: target.id },
+        });
+        return;
+      }
+
+      router.push({
+        pathname: '/(owner)/messages/[conversationId]',
+        params: { conversationId: target.id },
+      });
+    },
+    [refreshUnreadSummary],
+  );
+
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -159,6 +206,7 @@ export default function OwnerNotificationsScreen() {
           <HeaderBar
             title="Notifications"
             subtitle={`${notificationUnreadCount} unread alerts`}
+            showNotifications={false}
             hasUnreadNotifications={notificationUnreadCount > 0}
             messagingUnreadCount={conversationUnreadCount}
             showSideMenu={showSideMenu}
@@ -221,10 +269,16 @@ export default function OwnerNotificationsScreen() {
             visibleNotifications.map((notification) => {
               const tone = getOwnerNotificationTone(notification);
               const unread = !notification.readAt;
+              const target = getOwnerNotificationTarget(notification.data);
 
               return (
                 <View key={notification.id} style={styles.notificationCard}>
-                  <View style={styles.notificationTopRow}>
+                  <TouchableOpacity
+                    style={styles.notificationTopRow}
+                    activeOpacity={target ? 0.88 : 1}
+                    disabled={!target}
+                    onPress={() => void handleOpenNotification(notification)}
+                  >
                     <View style={[styles.notificationIconWrap, { backgroundColor: tone.bg }]}>
                       <Ionicons name="notifications-outline" size={18} color={tone.text} />
                     </View>
@@ -243,9 +297,19 @@ export default function OwnerNotificationsScreen() {
                         {formatOwnerDateTime(notification.createdAt)}
                       </Text>
                     </View>
-                  </View>
+                  </TouchableOpacity>
 
                   <View style={styles.actionRow}>
+                    {target ? (
+                      <TouchableOpacity
+                        style={styles.actionChip}
+                        onPress={() => void handleOpenNotification(notification)}
+                      >
+                        <Text style={styles.actionChipText}>
+                          {target.kind === 'request' ? 'Open request' : 'Open message'}
+                        </Text>
+                      </TouchableOpacity>
+                    ) : null}
                     {!notification.readAt ? (
                       <TouchableOpacity
                         style={styles.actionChip}

@@ -56,21 +56,6 @@ const P = {
   shadow: "rgba(43, 52, 55, 0.06)",
 };
 
-const parseAmount = (value?: string | null) => {
-  if (!value) return null;
-  const amount = Number(String(value).replace(/[^0-9.-]/g, ""));
-  return Number.isFinite(amount) ? amount : null;
-};
-
-const formatCurrency = (value?: number | null) =>
-  value == null
-    ? "Unavailable"
-    : new Intl.NumberFormat("en-US", {
-        style: "currency",
-        currency: "AED",
-        maximumFractionDigits: 0,
-      }).format(value);
-
 const formatDate = (value?: string | null) => {
   if (!value) return "Date unavailable";
   const parsed = new Date(value);
@@ -80,13 +65,6 @@ const formatDate = (value?: string | null) => {
     day: "numeric",
     year: "numeric",
   });
-};
-
-const daysUntil = (value?: string | null) => {
-  if (!value) return null;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return Math.ceil((parsed.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 };
 
 const greeting = () => {
@@ -109,7 +87,7 @@ const requestStatusMeta = (status?: string | null) => {
     case "completed":
       return { label: "Completed", bg: P.successBg, text: P.successText };
     case "cancelled":
-      return { label: "Cancelled", bg: P.dangerBg, text: P.dangerText };
+      return { label: "Canceled", bg: P.dangerBg, text: P.dangerText };
     case "assigned":
       return { label: "Assigned", bg: P.infoBg, text: P.infoText };
     case "in-progress":
@@ -117,7 +95,7 @@ const requestStatusMeta = (status?: string | null) => {
     case "on-hold":
       return { label: "On Hold", bg: P.warningBg, text: P.warningText };
     default:
-      return { label: "Pending", bg: P.warningBg, text: P.warningText };
+      return { label: "Submitted", bg: P.warningBg, text: P.warningText };
   }
 };
 
@@ -233,70 +211,6 @@ export default function TenantHomeScreen() {
   );
 
   const activeContract = contractData.contract;
-  const annualRent = parseAmount(activeContract?.annualRent ?? activeContract?.contractValue);
-  const deposit = parseAmount(activeContract?.securityDepositAmount);
-  const leaseEndInDays = daysUntil(activeContract?.endDate);
-  const openRequestsCount = residentRequests.filter(
-    (request) => !["completed", "cancelled"].includes(request.status),
-  ).length;
-
-  const overviewCards = useMemo(() => {
-    const leaseCopy =
-      leaseEndInDays == null
-        ? "Lease details available in your contract"
-        : leaseEndInDays >= 0
-          ? `Ends in ${leaseEndInDays} day${leaseEndInDays === 1 ? "" : "s"}`
-          : `Ended ${Math.abs(leaseEndInDays)} day${Math.abs(leaseEndInDays) === 1 ? "" : "s"} ago`;
-
-    return [
-      {
-        key: "lease",
-        eyebrow: annualRent != null ? "Annual Rent" : "Lease Status",
-        title: annualRent != null ? formatCurrency(annualRent) : statusTitle,
-        subtitle: leaseCopy,
-        tone: "primary",
-        icon: "wallet-outline",
-        action: "View lease",
-        onPress: () => router.push("/(tenant)/lease-details" as any),
-      },
-      {
-        key: "residence",
-        eyebrow: "Residence",
-        title: buildingName,
-        subtitle: unitInfo,
-        tone: "secondary",
-        icon: "business-outline",
-        action: "Profile",
-        onPress: () => router.push("/(tenant)/profile" as any),
-      },
-      {
-        key: "requests",
-        eyebrow: "Service Requests",
-        title: `${openRequestsCount}`,
-        subtitle:
-          openRequestsCount > 0
-            ? "Open items need your attention"
-            : "Everything is clear right now",
-        tone: "accent",
-        icon: "construct-outline",
-        action: "My requests",
-        onPress: () => router.push("/(tenant)/requests" as any),
-      },
-      {
-        key: "deposit",
-        eyebrow: "Security Deposit",
-        title: deposit != null ? formatCurrency(deposit) : "Not listed",
-        subtitle: activeContract?.contractNumber
-          ? `Contract ${activeContract.contractNumber}`
-          : "Stored from your latest contract",
-        tone: "neutral",
-        icon: "shield-checkmark-outline",
-        action: "Contract details",
-        onPress: () => router.push("/(tenant)/lease-details" as any),
-      },
-    ];
-  }, [activeContract?.contractNumber, annualRent, buildingName, deposit, leaseEndInDays, openRequestsCount, statusTitle, unitInfo]);
-
   const quickActions = useMemo(
     () => [
       {
@@ -388,7 +302,7 @@ export default function TenantHomeScreen() {
             <Text style={styles.heroSubtitle}>
               {isFormerResident
                 ? "Your contract history and resident records stay accessible here."
-                : "A quieter overview of your home, requests, and building updates."}
+                : "Access requests, messages, and building updates from one place."}
             </Text>
           </View>
           <LinearGradient
@@ -428,66 +342,11 @@ export default function TenantHomeScreen() {
           </Animated.View>
         ) : null}
 
-        <Animated.View entering={FadeInDown.delay(140).duration(400)} style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <View>
-              <Text style={styles.sectionTitle}>Overview</Text>
-              <Text style={styles.sectionSubtitle}>Swipe across your household summary</Text>
-            </View>
-          </View>
-
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rail}>
-            {overviewCards.map((card) => {
-              const isPrimary = card.tone === "primary";
-              const cardToneStyle =
-                card.tone === "primary"
-                  ? styles.cardPrimary
-                  : card.tone === "secondary"
-                    ? styles.cardSecondary
-                    : card.tone === "accent"
-                      ? styles.cardAccent
-                      : styles.cardNeutral;
-
-              return (
-                <TouchableOpacity
-                  key={card.key}
-                  activeOpacity={0.9}
-                  onPress={card.onPress}
-                  style={[styles.overviewCard, cardToneStyle]}
-                >
-                  <View style={styles.cardTop}>
-                    <Text style={[styles.cardEyebrow, isPrimary ? styles.cardEyebrowPrimary : null]}>
-                      {card.eyebrow}
-                    </Text>
-                    <View style={styles.cardIcon}>
-                      <Ionicons name={card.icon as any} size={18} color={isPrimary ? P.surface : P.primary} />
-                    </View>
-                  </View>
-                  <View style={styles.cardBody}>
-                    <Text style={[styles.cardTitle, isPrimary ? styles.cardTitlePrimary : null]}>
-                      {card.title}
-                    </Text>
-                    <Text style={[styles.cardSubtitle, isPrimary ? styles.cardSubtitlePrimary : null]}>
-                      {card.subtitle}
-                    </Text>
-                  </View>
-                  <View style={styles.cardFooter}>
-                    <Text style={[styles.cardAction, isPrimary ? styles.cardActionPrimary : null]}>
-                      {card.action}
-                    </Text>
-                    <Ionicons name="arrow-forward" size={16} color={isPrimary ? P.surface : P.primary} />
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </Animated.View>
-
         <Animated.View entering={FadeInDown.delay(170).duration(400)} style={styles.section}>
           <View style={styles.sectionHeader}>
             <View>
               <Text style={styles.sectionTitle}>Active Service Requests</Text>
-              <Text style={styles.sectionSubtitle}>Track the latest movement on your requests</Text>
+              <Text style={styles.sectionSubtitle}>Follow the latest status on your maintenance issues</Text>
             </View>
             <TouchableOpacity onPress={() => router.push("/(tenant)/requests" as any)}>
               <Text style={styles.linkText}>View all</Text>
@@ -516,7 +375,7 @@ export default function TenantHomeScreen() {
                       <Text style={styles.requestTitle} numberOfLines={1}>
                         {request.title}
                       </Text>
-                      <Text style={styles.requestMeta}>Created {formatDate(request.createdAt)}</Text>
+                      <Text style={styles.requestMeta}>Updated {formatDate(request.updatedAt || request.createdAt)}</Text>
                     </View>
                     <View style={[styles.requestBadge, { backgroundColor: status.bg }]}>
                       <Text style={[styles.requestBadgeText, { color: status.text }]}>
@@ -529,6 +388,12 @@ export default function TenantHomeScreen() {
                     <Text style={styles.requestDescription} numberOfLines={1}>
                       {request.description || "Tap to review request details and latest updates."}
                     </Text>
+                    {request.isEmergency ? (
+                      <View style={styles.requestEmergencyBadge}>
+                        <Ionicons name="warning-outline" size={12} color={P.dangerText} />
+                        <Text style={styles.requestEmergencyBadgeText}>Emergency</Text>
+                      </View>
+                    ) : null}
                     <Ionicons name="chevron-forward" size={16} color={P.soft} />
                   </View>
                 </TouchableOpacity>
@@ -749,54 +614,6 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 19, fontWeight: "700", color: P.text, marginBottom: 3 },
   sectionSubtitle: { fontSize: 13, lineHeight: 19, color: P.soft },
   linkText: { fontSize: 13, fontWeight: "700", color: P.primary },
-  rail: { paddingRight: 20, gap: 14 },
-  overviewCard: {
-    width: 288,
-    minHeight: 204,
-    borderRadius: 28,
-    padding: 20,
-    justifyContent: "space-between",
-    borderWidth: 1,
-    shadowColor: P.shadow,
-    shadowOpacity: 1,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 14 },
-    elevation: 4,
-  },
-  cardPrimary: { backgroundColor: P.primary, borderColor: P.primary },
-  cardSecondary: { backgroundColor: P.secondary, borderColor: "#CBD8E2" },
-  cardAccent: { backgroundColor: P.accent, borderColor: "#EFD8BB" },
-  cardNeutral: { backgroundColor: P.surface, borderColor: P.border },
-  cardTop: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 12,
-  },
-  cardEyebrow: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: P.soft,
-    letterSpacing: 1.1,
-    textTransform: "uppercase",
-  },
-  cardEyebrowPrimary: { color: "rgba(255,255,255,0.74)" },
-  cardIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "rgba(255,255,255,0.18)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  cardBody: { gap: 8 },
-  cardTitle: { fontSize: 26, lineHeight: 31, fontWeight: "800", color: P.text },
-  cardTitlePrimary: { fontSize: 29, lineHeight: 33, color: P.surface },
-  cardSubtitle: { fontSize: 13, lineHeight: 20, color: P.muted },
-  cardSubtitlePrimary: { color: "rgba(255,255,255,0.78)" },
-  cardFooter: { flexDirection: "row", alignItems: "center", gap: 8 },
-  cardAction: { fontSize: 13, fontWeight: "700", color: P.primary },
-  cardActionPrimary: { color: P.surface },
   requestCard: {
     backgroundColor: P.surface,
     borderRadius: 24,
@@ -834,6 +651,20 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
   requestDescription: { flex: 1, fontSize: 13, lineHeight: 20, color: P.muted },
+  requestEmergencyBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    borderRadius: 999,
+    backgroundColor: P.dangerBg,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  requestEmergencyBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: P.dangerText,
+  },
   noticeCard: {
     backgroundColor: P.surface,
     borderRadius: 24,

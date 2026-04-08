@@ -1,6 +1,6 @@
 import { BaseApiService } from "./base";
 import { API_ENDPOINTS } from "../../utils/constants";
-import type { ApiResponse } from "../../types";
+import type { ApiResponse, ResidentEmergencySignal } from "../../types";
 
 export interface ResidentRequestAttachmentInput {
   fileName: string;
@@ -24,11 +24,17 @@ export interface CreateResidentRequestDTO {
   type?: ResidentRequestType;
   priority?: ResidentRequestPriority;
   attachments?: ResidentRequestAttachmentInput[];
+  isEmergency?: boolean;
+  emergencySignals?: ResidentEmergencySignal[];
 }
 
 export interface UpdateResidentRequestDTO {
   title?: string;
   description?: string;
+  type?: ResidentRequestType;
+  priority?: ResidentRequestPriority;
+  isEmergency?: boolean;
+  emergencySignals?: ResidentEmergencySignal[];
 }
 
 export class ResidentRequestsApiService extends BaseApiService {

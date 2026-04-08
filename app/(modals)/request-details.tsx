@@ -26,11 +26,14 @@ import {
   getPriorityColor,
   getStatusColor,
   getStatusIcon,
+  getTenantRequestNextStep,
+  getTenantRequestStatusLabel,
   normalizeAttachments,
   normalizePriority,
   normalizeStatus,
 } from "../../lib/hooks/modals/request-details/request-details-helpers";
 import { useRequestDetailsScreen } from "../../lib/hooks/modals/request-details/useRequestDetailsScreen";
+import { requestToResidentRequestForm } from "../../lib/utils/resident-request-form";
 
 export default function RequestDetailsScreen() {
   const params = useLocalSearchParams<{ initialTab?: string | string[] }>();
@@ -54,7 +57,7 @@ export default function RequestDetailsScreen() {
     showEditMode,
     setShowEditMode,
     editForm,
-    setEditForm,
+    editValidationErrors,
     loading,
     showImageViewer,
     setShowImageViewer,
@@ -67,7 +70,10 @@ export default function RequestDetailsScreen() {
     handleDeclineEstimate,
     handleReviewCompletion,
     handleDeleteRequest,
+    handleCancelEdit,
     handleUpdateRequest,
+    updateEditFormField,
+    toggleEditEmergencySignal,
     handleSubmitComment,
   } = useRequestDetailsScreen(requestedInitialTab);
 
@@ -106,7 +112,8 @@ export default function RequestDetailsScreen() {
 
   const canEdit = normalizedStatus === "pending";
   const canDelete = normalizedStatus === "pending";
-  const canCancel = normalizedStatus === "in-progress";
+  const canCancel =
+    normalizedStatus !== "completed" && normalizedStatus !== "cancelled";
   const canProvideFeedback = false;
   const canReviewJobEstimate = Boolean(reviewJobEstimateAsTenant);
   const canApproveTenantJobCompletion = Boolean(approveTenantJobCompletion);
@@ -185,7 +192,6 @@ export default function RequestDetailsScreen() {
     : null;
 
   const latestActivityNote =
-    comments[0]?.message ||
     job?.completionNotes ||
     estimateStatusDetails?.text ||
     null;
@@ -194,6 +200,8 @@ export default function RequestDetailsScreen() {
   const activeStepTitle =
     normalizedStatus === "on-hold"
       ? "On Hold"
+      : normalizedStatus === "assigned"
+        ? "Assigned"
       : normalizedStatus === "cancelled"
         ? "Cancelled"
         : "In Progress";
@@ -270,7 +278,7 @@ export default function RequestDetailsScreen() {
           time: formatShortDateTime(comments[0].createdAt),
         }
       : null,
-    estimate
+    !isTenantUser && estimate
       ? {
           key: "estimate",
           icon: "receipt-outline" as const,
@@ -278,7 +286,7 @@ export default function RequestDetailsScreen() {
           time: formatShortDateTime(estimate.createdAt),
         }
       : null,
-    additionalCosts[0]
+    !isTenantUser && additionalCosts[0]
       ? {
           key: "cost",
           icon: "construct-outline" as const,
@@ -300,16 +308,22 @@ export default function RequestDetailsScreen() {
     job?.assignedToEmployeeName || job?.assignedToName
       ? "Lead Technician"
       : "Support Team";
+  const tenantNextStep = getTenantRequestNextStep(normalizedStatus);
   const hasExistingRating = canProvideFeedback
     ? Boolean(getRatingByRequestId(selectedRequest.id))
     : false;
 
   const handleStartEdit = () => {
-    setEditForm({
-      title: selectedRequest.title || "",
-      description: selectedRequest.description || "",
-      priority: selectedRequest.priority || ("medium" as const),
-    });
+    const nextEditForm = requestToResidentRequestForm(selectedRequest);
+    updateEditFormField("title", nextEditForm.title);
+    updateEditFormField(
+      "description",
+      nextEditForm.description,
+    );
+    updateEditFormField("type", nextEditForm.type);
+    updateEditFormField("priority", nextEditForm.priority);
+    updateEditFormField("isEmergency", nextEditForm.isEmergency);
+    updateEditFormField("emergencySignals", nextEditForm.emergencySignals);
     setShowEditMode(true);
   };
 
@@ -342,7 +356,7 @@ export default function RequestDetailsScreen() {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
         <HeaderBar
-          title="Request Details"
+          title={isTenantUser ? "Maintenance Issue" : "Request Details"}
           showBackButton
           showMenu={false}
           showNotifications={false}
@@ -382,9 +396,8 @@ export default function RequestDetailsScreen() {
               job={job}
               resolvedBuildingName={resolvedBuildingName}
               showEditMode={showEditMode}
-              setShowEditMode={setShowEditMode}
               editForm={editForm}
-              setEditForm={setEditForm}
+              editValidationErrors={editValidationErrors}
               loading={loading}
               isTenantUser={isTenantUser}
               canEdit={canEdit}
@@ -392,11 +405,17 @@ export default function RequestDetailsScreen() {
               canCancel={canCancel}
               canProvideFeedback={canProvideFeedback}
               normalizedStatus={normalizedStatus}
+              statusDisplayLabel={
+                isTenantUser
+                  ? getTenantRequestStatusLabel(normalizedStatus)
+                  : normalizedStatus.replace("-", " ")
+              }
               normalizedPriority={normalizedPriority}
               normalizedAttachments={normalizedAttachments}
               statusColors={statusColors}
               priorityColors={priorityColors}
               statusIcon={statusIcon}
+              tenantNextStep={tenantNextStep}
               timelineSteps={timelineSteps}
               technicianName={technicianName}
               technicianRole={technicianRole}
@@ -416,8 +435,11 @@ export default function RequestDetailsScreen() {
               canReviewJobEstimate={canReviewJobEstimate}
               canApproveTenantJobCompletion={canApproveTenantJobCompletion}
               hasExistingRating={hasExistingRating}
+              onChangeEditField={updateEditFormField}
+              onToggleEmergencySignal={toggleEditEmergencySignal}
               onStartEdit={handleStartEdit}
               onRequestDelete={() => setShowDeleteConfirm(true)}
+              onCancelEdit={handleCancelEdit}
               onSaveEdit={handleUpdateRequest}
               onOpenAttachment={handleOpenAttachment}
               onReviewCompletion={handleReviewCompletion}
@@ -736,6 +758,27 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: P.muted,
     lineHeight: 21,
+  },
+  emergencySignalWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  emergencySignalChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: P.dangerBg,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#E9B7B0",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  emergencySignalChipText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: P.dangerText,
   },
   attachmentsGrid: {
     flexDirection: "row",
@@ -1368,6 +1411,261 @@ const styles = StyleSheet.create({
   editForm: {
     gap: 16,
   },
+  editHero: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    backgroundColor: P.surfaceLow,
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: P.border,
+  },
+  editHeroIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: P.primarySoft,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  editHeroCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  editHeroTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: P.text,
+  },
+  editHeroText: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: P.muted,
+  },
+  editContextRail: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  editContextChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: P.surfaceLow,
+    borderWidth: 1,
+    borderColor: P.border,
+  },
+  editContextChipText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: P.text,
+    textTransform: "capitalize",
+  },
+  readOnlyNotice: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    backgroundColor: P.accent,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: P.accentBorder,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  readOnlyNoticeText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 18,
+    color: P.warningText,
+  },
+  sectionBlock: {
+    gap: 10,
+  },
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: P.soft,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  editCategoryRail: {
+    gap: 10,
+  },
+  editCategoryChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderRadius: 16,
+    backgroundColor: P.surfaceLow,
+    borderWidth: 1,
+    borderColor: P.border,
+  },
+  editCategoryChipSelected: {
+    backgroundColor: P.primary,
+    borderColor: P.primary,
+  },
+  editCategoryChipText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: P.text,
+  },
+  editCategoryChipTextSelected: {
+    color: P.surface,
+  },
+  editSegmentedControl: {
+    flexDirection: "row",
+    backgroundColor: P.surfaceLow,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: P.border,
+    padding: 4,
+    gap: 6,
+  },
+  editSegmentItem: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  editSegmentItemSelected: {
+    backgroundColor: P.surface,
+  },
+  editSegmentItemText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: P.soft,
+  },
+  editSegmentItemTextSelected: {
+    color: P.text,
+  },
+  softInput: {
+    minHeight: 54,
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: P.border,
+    backgroundColor: P.surfaceLow,
+    fontSize: 15,
+    color: P.text,
+  },
+  descriptionInput: {
+    minHeight: 148,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 16,
+    borderWidth: 1,
+    borderColor: P.border,
+    backgroundColor: P.surfaceLow,
+    fontSize: 15,
+    lineHeight: 22,
+    color: P.text,
+  },
+  editInputDisabled: {
+    opacity: 0.7,
+  },
+  editDetailsCard: {
+    backgroundColor: P.accent,
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: P.accentBorder,
+    gap: 10,
+  },
+  editDetailRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+  },
+  editDetailLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: P.soft,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  editDetailValue: {
+    flex: 1,
+    textAlign: "right",
+    fontSize: 13,
+    fontWeight: "600",
+    color: P.text,
+  },
+  helperText: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: P.muted,
+  },
+  editEmergencySignalGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  editEmergencySignalChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderRadius: 16,
+    backgroundColor: P.dangerBg,
+    borderWidth: 1,
+    borderColor: "#E9B7B0",
+  },
+  editEmergencySignalChipSelected: {
+    backgroundColor: P.dangerText,
+    borderColor: P.dangerText,
+  },
+  editEmergencySignalText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: P.dangerText,
+  },
+  editEmergencySignalTextSelected: {
+    color: P.surface,
+  },
+  editChoiceDisabled: {
+    opacity: 0.6,
+  },
+  editErrorText: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: P.dangerText,
+  },
+  editAttachmentRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  editAttachmentTile: {
+    width: 92,
+    height: 92,
+    borderRadius: 18,
+    overflow: "hidden",
+    backgroundColor: P.surfaceMid,
+  },
+  editAttachmentImage: {
+    width: "100%",
+    height: "100%",
+    backgroundColor: P.surfaceMid,
+  },
+  editAttachmentOverlay: {
+    position: "absolute",
+    bottom: 6,
+    right: 6,
+    backgroundColor: "rgba(0, 0, 0, 0.55)",
+    borderRadius: 12,
+    padding: 4,
+  },
   inputGroup: {
     gap: 8,
   },
@@ -1421,6 +1719,42 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 12,
     marginTop: 8,
+  },
+  cancelButtonModern: {
+    flex: 1,
+    minHeight: 54,
+    borderRadius: 18,
+    backgroundColor: P.surfaceLow,
+    borderWidth: 1,
+    borderColor: P.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cancelButtonTextModern: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: P.text,
+  },
+  saveButtonModern: {
+    flex: 1.35,
+    borderRadius: 18,
+    overflow: "hidden",
+  },
+  saveButtonModernDisabled: {
+    opacity: 0.6,
+  },
+  saveButtonGradient: {
+    minHeight: 54,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+  saveButtonTextModern: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
   },
   cancelButton: {
     flex: 1,

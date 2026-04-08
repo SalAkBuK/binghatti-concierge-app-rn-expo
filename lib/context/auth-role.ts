@@ -99,6 +99,11 @@ const getRoleCandidates = (payloadUser: any): (string | undefined)[] => {
   return candidates;
 };
 
+const getFirstRoleCandidate = (payloadUser: any): string | undefined =>
+  getRoleCandidates(payloadUser).find(
+    (value) => typeof value === 'string' && value.trim().length > 0,
+  );
+
 const getBuildingAccessEntries = (payloadUser: any): Record<string, any>[] => [
   ...asArray(payloadUser?.buildingAccess),
   ...asArray(payloadUser?.buildingAssignments),
@@ -153,19 +158,31 @@ const resolveRoleFromAccessEntries = (
   return null;
 };
 
+export const resolveClaimedUserRole = (
+  payloadUser: any,
+): User['role'] | null =>
+  resolveNormalizedRole(normalizeRoleValue(getFirstRoleCandidate(payloadUser)));
+
+export const resolveProviderRoleClaim = (
+  payloadUser: any,
+): User['role'] | null => {
+  const claimedRole = resolveClaimedUserRole(payloadUser);
+  return claimedRole === 'service_provider' ? claimedRole : null;
+};
+
+export const resolveAccessDerivedUserRole = (
+  payloadUser: any,
+): User['role'] | null => resolveRoleFromAccessEntries(payloadUser);
+
 export const resolveExplicitUserRole = (
   payloadUser: any,
 ): User['role'] | null => {
-  const rawRole = getRoleCandidates(payloadUser).find(
-    (value) => typeof value === 'string' && value.trim().length > 0,
-  );
-
-  const explicitRole = resolveNormalizedRole(normalizeRoleValue(rawRole));
+  const explicitRole = resolveClaimedUserRole(payloadUser);
   if (explicitRole) {
     return explicitRole;
   }
 
-  return resolveRoleFromAccessEntries(payloadUser);
+  return resolveAccessDerivedUserRole(payloadUser);
 };
 
 export const resolveUserRole = (payloadUser: any): User['role'] | null =>
@@ -187,3 +204,7 @@ export const shouldFetchAssignmentsForAuthRole = (
 export const shouldProbeOwnerRuntimeForAuthRole = (
   role: User['role'] | null,
 ): boolean => role == null || role === 'tenant' || role === 'owner';
+
+export const shouldProbeProviderRuntimeForAuthRole = (
+  role: User['role'] | null,
+): boolean => role == null || (role !== 'tenant' && role !== 'owner');
