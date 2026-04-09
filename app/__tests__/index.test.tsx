@@ -1,4 +1,5 @@
 import React from "react";
+import { TouchableOpacity } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
 
 import type { User } from "../../lib/types";
@@ -6,6 +7,8 @@ import IndexScreen from "../index";
 
 const mockUseAuth = jest.fn();
 const mockRedirect = jest.fn();
+const mockReplace = jest.fn();
+const mockAppBootstrapErrorScreen = jest.fn();
 
 jest.mock("../../lib/context/auth-context", () => ({
   useAuth: () => mockUseAuth(),
@@ -15,7 +18,33 @@ jest.mock("../../components/ui/LoadingScreen", () => ({
   LoadingScreen: () => null,
 }));
 
+jest.mock("../../components/ui/AppBootstrapErrorScreen", () => ({
+  AppBootstrapErrorScreen: (props: {
+    message: string;
+    onRetry: () => void;
+    onContinueToSignIn: () => void;
+  }) => {
+    const React = jest.requireActual("react");
+    const { Text, TouchableOpacity } = jest.requireActual("react-native");
+    mockAppBootstrapErrorScreen(props);
+    return (
+      <React.Fragment>
+        <Text>{props.message}</Text>
+        <TouchableOpacity onPress={props.onRetry}>
+          <Text>Retry</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={props.onContinueToSignIn}>
+          <Text>Continue to Sign In</Text>
+        </TouchableOpacity>
+      </React.Fragment>
+    );
+  },
+}));
+
 jest.mock("expo-router", () => ({
+  router: {
+    replace: (...args: unknown[]) => mockReplace(...args),
+  },
   Redirect: (props: { href: string }) => {
     mockRedirect(props);
     return null;
@@ -32,59 +61,66 @@ const buildUser = (overrides: Partial<User> = {}): User => ({
   ...overrides,
 });
 
+const buildAuthValue = (overrides: Record<string, unknown> = {}) => ({
+  isAuthenticated: false,
+  currentUser: null,
+  bootstrapStatus: "ready",
+  bootstrapError: null,
+  actions: {
+    retryBootstrap: jest.fn(),
+    recoverFromBootstrapError: jest.fn().mockResolvedValue(undefined),
+  },
+  ...overrides,
+});
+
 describe("IndexScreen", () => {
   beforeEach(() => {
-    jest.useFakeTimers();
     mockRedirect.mockClear();
+    mockReplace.mockClear();
+    mockAppBootstrapErrorScreen.mockClear();
     jest.spyOn(console, "log").mockImplementation(() => {});
   });
 
   it("redirects authenticated tenant users to the tenant portal", () => {
-    mockUseAuth.mockReturnValue({
-      isAuthenticated: true,
-      currentUser: buildUser({ role: "tenant" }),
-    });
+    mockUseAuth.mockReturnValue(
+      buildAuthValue({
+        isAuthenticated: true,
+        currentUser: buildUser({ role: "tenant" }),
+      }),
+    );
 
     act(() => {
       TestRenderer.create(<IndexScreen />);
-    });
-
-    act(() => {
-      jest.advanceTimersByTime(2600);
     });
 
     expect(mockRedirect).toHaveBeenLastCalledWith({ href: "/(tenant)" });
   });
 
   it("redirects authenticated owner users to the owner portal", () => {
-    mockUseAuth.mockReturnValue({
-      isAuthenticated: true,
-      currentUser: buildUser({ role: "owner" }),
-    });
+    mockUseAuth.mockReturnValue(
+      buildAuthValue({
+        isAuthenticated: true,
+        currentUser: buildUser({ role: "owner" }),
+      }),
+    );
 
     act(() => {
       TestRenderer.create(<IndexScreen />);
-    });
-
-    act(() => {
-      jest.advanceTimersByTime(2600);
     });
 
     expect(mockRedirect).toHaveBeenLastCalledWith({ href: "/(owner)" });
   });
 
   it("redirects unsupported roles to the unavailable portal", () => {
-    mockUseAuth.mockReturnValue({
-      isAuthenticated: true,
-      currentUser: buildUser({ role: "admin" }),
-    });
+    mockUseAuth.mockReturnValue(
+      buildAuthValue({
+        isAuthenticated: true,
+        currentUser: buildUser({ role: "admin" }),
+      }),
+    );
 
     act(() => {
       TestRenderer.create(<IndexScreen />);
-    });
-
-    act(() => {
-      jest.advanceTimersByTime(2600);
     });
 
     expect(mockRedirect).toHaveBeenLastCalledWith({
@@ -93,19 +129,70 @@ describe("IndexScreen", () => {
   });
 
   it("redirects unauthenticated users to auth", () => {
-    mockUseAuth.mockReturnValue({
-      isAuthenticated: false,
-      currentUser: null,
-    });
+    mockUseAuth.mockReturnValue(buildAuthValue());
 
     act(() => {
       TestRenderer.create(<IndexScreen />);
     });
 
+    expect(mockRedirect).toHaveBeenLastCalledWith({ href: "/auth" });
+  });
+
+  it("stays in loading state while auth bootstrap is restoring", () => {
+    mockUseAuth.mockReturnValue(
+      buildAuthValue({
+        bootstrapStatus: "restoring",
+      }),
+    );
+
     act(() => {
-      jest.advanceTimersByTime(2600);
+      TestRenderer.create(<IndexScreen />);
     });
 
-    expect(mockRedirect).toHaveBeenLastCalledWith({ href: "/auth" });
+    expect(mockRedirect).not.toHaveBeenCalled();
+    expect(mockAppBootstrapErrorScreen).not.toHaveBeenCalled();
+  });
+
+  it("shows recovery actions when auth bootstrap fails", async () => {
+    const retryBootstrap = jest.fn();
+    const recoverFromBootstrapError = jest.fn().mockResolvedValue(undefined);
+    mockUseAuth.mockReturnValue(
+      buildAuthValue({
+        bootstrapStatus: "error",
+        bootstrapError: "Bootstrap failed",
+        actions: {
+          retryBootstrap,
+          recoverFromBootstrapError,
+        },
+      }),
+    );
+
+    let tree: TestRenderer.ReactTestRenderer;
+
+    act(() => {
+      tree = TestRenderer.create(<IndexScreen />);
+    });
+
+    expect(mockRedirect).not.toHaveBeenCalled();
+    expect(mockAppBootstrapErrorScreen).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: "Bootstrap failed",
+      }),
+    );
+
+    const touchables = tree!.root.findAllByType(TouchableOpacity);
+
+    act(() => {
+      touchables[0].props.onPress();
+    });
+
+    expect(retryBootstrap).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await touchables[1].props.onPress();
+    });
+
+    expect(recoverFromBootstrapError).toHaveBeenCalledTimes(1);
+    expect(mockReplace).toHaveBeenCalledWith("/auth");
   });
 });

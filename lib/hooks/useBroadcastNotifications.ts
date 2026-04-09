@@ -2,7 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { apiService } from "../services/api";
 import type { Notification } from "../types";
-import { normalizeNotifications } from "../utils/helpers";
+import {
+  isNotificationDismissed,
+  normalizeNotifications,
+} from "../utils/helpers";
 
 type RefetchOptions = {
   asRefresh?: boolean;
@@ -47,6 +50,10 @@ const mergeNotifications = (
   groups.forEach((items) => {
     items?.forEach((notification) => {
       if (!notification?.id || !isBroadcastNotification(notification)) return;
+      if (isNotificationDismissed(notification)) {
+        byId.delete(notification.id);
+        return;
+      }
       const existing = byId.get(notification.id);
       if (
         !existing ||

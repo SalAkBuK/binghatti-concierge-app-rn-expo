@@ -52,4 +52,14 @@ describe('notification recipient scoping', () => {
     expect(getUnreadNotificationsCount(notifications, 'tenant-1')).toBe(1);
     expect(getUnreadNotificationsCount(notifications, 'owner-1')).toBe(1);
   });
+
+  it('does not count unread chat notifications in the generic notification badge', () => {
+    const notifications = [
+      buildNotification({ id: 'tenant-alert', userId: 'tenant-1', type: 'info' }),
+      buildNotification({ id: 'tenant-message', userId: 'tenant-1', type: 'MESSAGE_CREATED' as any }),
+      buildNotification({ id: 'tenant-conversation', userId: 'tenant-1', type: 'CONVERSATION_CREATED' as any }),
+    ];
+
+    expect(getUnreadNotificationsCount(notifications, 'tenant-1')).toBe(1);
+  });
 });

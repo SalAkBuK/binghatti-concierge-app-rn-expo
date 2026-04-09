@@ -1,6 +1,6 @@
+import { Ionicons } from "@expo/vector-icons";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useFocusEffect } from "@react-navigation/native";
-import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useCallback, useMemo, useRef, useState } from "react";
@@ -20,8 +20,8 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
-import { useAppDomain } from "../../lib/context/connected-app-provider";
 import { useAuth } from "../../lib/context/auth-context";
+import { useAppDomain } from "../../lib/context/connected-app-provider";
 import { useNotifications } from "../../lib/context/notifications-context";
 import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
 import type {
@@ -331,7 +331,7 @@ export default function VisitorsScreen() {
             <Text style={styles.eyebrow}>Guest Access</Text>
             <Text style={styles.title}>Create a seamless entry experience.</Text>
             <Text style={styles.subtitle}>
-              Fill in the details below to pre-authorize your visitor and provide digital key access if required.
+              Fill in the details below to pre-authorize your visitor.
             </Text>
           </View>
 
@@ -349,7 +349,7 @@ export default function VisitorsScreen() {
             <View style={styles.recentSectionHeader}>
               <View>
                 <Text style={styles.recentSectionEyebrow}>Access History</Text>
-                <Text style={styles.recentSectionTitle}>Latest registrations</Text>
+                <Text style={styles.recentSectionTitle}>Visitor Pre-Registration</Text>
               </View>
               <Text style={styles.recentSectionMeta}>
                 {summary.total} total | {summary.expected} expected | {summary.arrived} arrived

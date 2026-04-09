@@ -11,6 +11,7 @@ import { AnimatedButton } from "../ui/AnimatedButton";
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 type TabKey = "notifications" | "notices" | "messages";
+type NotificationsTabBarVariant = "default" | "tenant";
 
 interface NotificationsTabBarProps {
   activeTab: TabKey;
@@ -18,7 +19,21 @@ interface NotificationsTabBarProps {
   unreadCount?: number;
   activeNoticesCount?: number;
   messagesUnreadCount?: number;
+  variant?: NotificationsTabBarVariant;
 }
+
+const TENANT = {
+  surface: "#FFFFFF",
+  surfaceLow: "#F1F4F6",
+  border: "#D9E0E4",
+  text: "#2B3437",
+  muted: "#667176",
+  primary: "#4D6169",
+  primaryDark: "#34474D",
+  info: "#3C5A8C",
+  warning: "#9A5B00",
+  shadow: "rgba(43, 52, 55, 0.06)",
+};
 
 export function NotificationsTabBar({
   activeTab,
@@ -26,6 +41,7 @@ export function NotificationsTabBar({
   unreadCount = 0,
   activeNoticesCount = 0,
   messagesUnreadCount = 0,
+  variant = "default",
 }: NotificationsTabBarProps) {
   const TAB_COUNT = 3;
   const TAB_WIDTH = (SCREEN_WIDTH * 0.9) / TAB_COUNT;
@@ -45,11 +61,23 @@ export function NotificationsTabBar({
       width: TAB_WIDTH - 8,
     };
   });
+  const isTenant = variant === "tenant";
 
   return (
-    <View style={styles.container}>
+    <View
+      style={[
+        styles.container,
+        isTenant && styles.tenantContainer,
+      ]}
+    >
       {/* Background Slider */}
-      <Animated.View style={[styles.slider, indicatorStyle]} />
+      <Animated.View
+        style={[
+          styles.slider,
+          indicatorStyle,
+          isTenant && styles.tenantSlider,
+        ]}
+      />
 
       {/* Notifications Tab */}
       <AnimatedButton
@@ -61,13 +89,15 @@ export function NotificationsTabBar({
             style={[
               styles.tabText,
               activeTab === "notifications" && styles.activeTabText,
+              isTenant && styles.tenantTabText,
+              activeTab === "notifications" && isTenant && styles.tenantActiveTabText,
             ]}
             numberOfLines={1}
           >
             Alerts
           </Text>
           {unreadCount > 0 && (
-            <View style={styles.badge}>
+            <View style={[styles.badge, isTenant && styles.tenantBadge]}>
               <Text style={styles.badgeText}>
                 {unreadCount > 99 ? "99+" : unreadCount}
               </Text>
@@ -86,13 +116,21 @@ export function NotificationsTabBar({
             style={[
               styles.tabText,
               activeTab === "messages" && styles.activeTabText,
+              isTenant && styles.tenantTabText,
+              activeTab === "messages" && isTenant && styles.tenantActiveTabText,
             ]}
             numberOfLines={1}
           >
             Messages
           </Text>
           {messagesUnreadCount > 0 && (
-            <View style={[styles.badge, styles.messagesBadge]}>
+            <View
+              style={[
+                styles.badge,
+                styles.messagesBadge,
+                isTenant && styles.tenantMessagesBadge,
+              ]}
+            >
               <Text style={styles.badgeText}>
                 {messagesUnreadCount > 99 ? "99+" : messagesUnreadCount}
               </Text>
@@ -108,13 +146,21 @@ export function NotificationsTabBar({
             style={[
               styles.tabText,
               activeTab === "notices" && styles.activeTabText,
+              isTenant && styles.tenantTabText,
+              activeTab === "notices" && isTenant && styles.tenantActiveTabText,
             ]}
             numberOfLines={1}
           >
             Notices
           </Text>
           {activeNoticesCount > 0 && (
-            <View style={[styles.badge, styles.noticesBadge]}>
+            <View
+              style={[
+                styles.badge,
+                styles.noticesBadge,
+                isTenant && styles.tenantNoticesBadge,
+              ]}
+            >
               <Text style={styles.badgeText}>
                 {activeNoticesCount > 99 ? "99+" : activeNoticesCount}
               </Text>
@@ -135,6 +181,13 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     position: "relative",
   },
+  tenantContainer: {
+    backgroundColor: TENANT.surfaceLow,
+    borderRadius: 18,
+    padding: 5,
+    borderWidth: 1,
+    borderColor: TENANT.border,
+  },
   slider: {
     position: "absolute",
     top: 4,
@@ -150,6 +203,20 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+  },
+  tenantSlider: {
+    top: 5,
+    left: 5,
+    backgroundColor: TENANT.surface,
+    borderRadius: 14,
+    shadowColor: TENANT.shadow,
+    shadowOffset: {
+      width: 0,
+      height: 10,
+    },
+    shadowOpacity: 1,
+    shadowRadius: 20,
+    elevation: 2,
   },
   tab: {
     flex: 1,
@@ -169,8 +236,15 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#6B7280",
   },
+  tenantTabText: {
+    color: TENANT.muted,
+    fontWeight: "700",
+  },
   activeTabText: {
     color: "#1F2937",
+  },
+  tenantActiveTabText: {
+    color: TENANT.text,
   },
   badge: {
     backgroundColor: "#3B82F6",
@@ -181,11 +255,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  tenantBadge: {
+    backgroundColor: TENANT.primary,
+  },
   messagesBadge: {
     backgroundColor: "#336BE3",
   },
+  tenantMessagesBadge: {
+    backgroundColor: TENANT.info,
+  },
   noticesBadge: {
     backgroundColor: "#F59E0B",
+  },
+  tenantNoticesBadge: {
+    backgroundColor: TENANT.warning,
   },
   badgeText: {
     color: "#FFFFFF",

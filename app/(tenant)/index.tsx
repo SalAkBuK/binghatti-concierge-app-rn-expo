@@ -4,7 +4,6 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert,
   Image,
   RefreshControl,
   ScrollView,
@@ -18,8 +17,13 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { HomeScreenSkeleton } from "../../components/ui/HomeScreenSkeleton";
+import { PortalLoadErrorScreen } from "../../components/ui/PortalLoadErrorScreen";
 import { ScreenEntrance } from "../../components/ui/ScreenEntrance";
 import { SideMenu } from "../../components/ui/SideMenu";
+import {
+  TenantAnnouncementModal,
+  type TenantAnnouncementPreview,
+} from "../../components/ui/TenantAnnouncementModal";
 import { useAuth } from "../../lib/context/auth-context";
 import { useNotifications } from "../../lib/context/notifications-context";
 import { useRequests } from "../../lib/context/requests-context";
@@ -27,6 +31,7 @@ import { useBroadcastNotifications } from "../../lib/hooks/useBroadcastNotificat
 import { useResidentContract } from "../../lib/hooks/useResidentSelfService";
 import { useResidentRequests } from "../../lib/hooks/useResidentRequests";
 import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
+import type { ResidentMoveRequest, ResidentMoveRequestStatus } from "../../lib/types";
 import {
   getResidentRequestOwnerRejectionReason,
   isResidentRequestOwnerRejected,
@@ -69,6 +74,19 @@ const formatDate = (value?: string | null) => {
     month: "short",
     day: "numeric",
     year: "numeric",
+  });
+};
+
+const formatDateTime = (value?: string | null) => {
+  if (!value) return "Date unavailable";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Date unavailable";
+  return parsed.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 };
 
@@ -131,11 +149,39 @@ const getRequestTimestamp = (request: { createdAt?: string | null; updatedAt?: s
   return Number.isNaN(parsed) ? 0 : parsed;
 };
 
+const moveRequestStatusMeta = (status: ResidentMoveRequestStatus) => {
+  switch (status) {
+    case "APPROVED":
+      return { label: "Approved", bg: P.successBg, text: P.successText };
+    case "REJECTED":
+      return { label: "Rejected", bg: P.dangerBg, text: P.dangerText };
+    case "CANCELLED":
+      return { label: "Cancelled", bg: P.dangerBg, text: P.dangerText };
+    case "COMPLETED":
+      return { label: "Completed", bg: P.infoBg, text: P.infoText };
+    case "PENDING":
+      return { label: "Pending", bg: P.warningBg, text: P.warningText };
+    default:
+      return { label: "Submitted", bg: P.warningBg, text: P.warningText };
+  }
+};
+
+const getMoveRequestTimestamp = (request: ResidentMoveRequest) => {
+  const parsed = Date.parse(
+    request.requestedMoveAt || request.updatedAt || request.createdAt || "",
+  );
+  return Number.isNaN(parsed) ? 0 : parsed;
+};
+
 export default function TenantHomeScreen() {
   const { currentUser, isAuthenticated, actions: authActions } = useAuth();
   const { notifications, actions: notificationActions } = useNotifications();
   const { actions: requestActions } = useRequests();
   const [showSideMenu, setShowSideMenu] = useState(false);
+  const [selectedAnnouncement, setSelectedAnnouncement] =
+    useState<TenantAnnouncementPreview | null>(null);
+  const [clearingAnnouncementId, setClearingAnnouncementId] = useState<string | null>(null);
+  const [hasLoadedCriticalPortalData, setHasLoadedCriticalPortalData] = useState(false);
   const tabBarHeight = useBottomTabBarHeight();
   const isHandlingUnauthorizedRef = useRef(false);
 
@@ -154,7 +200,11 @@ export default function TenantHomeScreen() {
 
   const {
     data: contractData,
+    errorMessage: contractErrorMessage,
+    isLoading: isContractLoading,
+    moveOutHistory,
     refetch: refetchContract,
+    refetchHistory,
     isRefreshing: isContractRefreshing,
   } = useResidentContract({
     enabled: Boolean(currentUser?.id && isAuthenticated),
@@ -166,6 +216,7 @@ export default function TenantHomeScreen() {
     canManageVisitors,
     displayBuildingName,
     displayUnitLabel,
+    errorMessage: tenancyErrorMessage,
     isFormerResident,
     isLoading: isTenancyLoading,
     refetch: refetchTenancy,
@@ -203,14 +254,72 @@ export default function TenantHomeScreen() {
     if (!isAuthenticated) router.replace("/auth");
   }, [isAuthenticated]);
 
+  useEffect(() => {
+    setHasLoadedCriticalPortalData(false);
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (
+      currentUser &&
+      !isTenancyLoading &&
+      !isContractLoading &&
+      !tenancyErrorMessage &&
+      !contractErrorMessage
+    ) {
+      setHasLoadedCriticalPortalData(true);
+    }
+  }, [
+    contractErrorMessage,
+    currentUser,
+    isContractLoading,
+    isTenancyLoading,
+    tenancyErrorMessage,
+  ]);
+
+  useEffect(() => {
+    const contractId = contractData.contract?.id;
+    if (!contractId) {
+      return;
+    }
+
+    void refetchHistory(contractId).catch((error) => {
+      console.warn("[TenantHome] Failed to load move request history:", error);
+    });
+  }, [contractData.contract?.id, refetchHistory]);
+
+  const handleReturnToSignIn = useCallback(async () => {
+    try {
+      await authActions.logout();
+    } catch (error) {
+      console.warn("[TenantHome] Failed to clear session after portal load failure:", error);
+    } finally {
+      router.replace("/auth" as any);
+    }
+  }, [authActions]);
+
+  const retryCriticalPortalLoad = useCallback(() => {
+    void Promise.all([
+      refetchContract({ asRefresh: false, showLoading: true }),
+      refetchTenancy({ asRefresh: false, showLoading: true }),
+    ]);
+  }, [refetchContract, refetchTenancy]);
+
   const onRefreshHome = useCallback(async () => {
     await Promise.all([
       refreshRequests({ asRefresh: true, reason: "manual" }),
       refetchContract({ asRefresh: true, showLoading: false }),
       refetchTenancy({ asRefresh: true, showLoading: false }),
       refetchBroadcastNotices({ asRefresh: true, showLoading: false }),
+      contractData.contract?.id ? refetchHistory(contractData.contract.id) : Promise.resolve(),
     ]);
-  }, [refetchBroadcastNotices, refetchContract, refetchTenancy, refreshRequests]);
+  }, [
+    contractData.contract?.id,
+    refetchBroadcastNotices,
+    refetchContract,
+    refetchHistory,
+    refetchTenancy,
+    refreshRequests,
+  ]);
 
   const isHomeRefreshing =
     isRequestsRefreshing || isContractRefreshing || isBroadcastNoticesRefreshing;
@@ -243,6 +352,12 @@ export default function TenantHomeScreen() {
         .sort((a, b) => getRequestTimestamp(b) - getRequestTimestamp(a))
         .slice(0, 3),
     [residentRequests],
+  );
+  const latestMoveOutRequest = useMemo(
+    () =>
+      [...moveOutHistory]
+        .sort((a, b) => getMoveRequestTimestamp(b) - getMoveRequestTimestamp(a))[0] || null,
+    [moveOutHistory],
   );
 
   const activeContract = contractData.contract;
@@ -282,25 +397,70 @@ export default function TenantHomeScreen() {
 
   const handleNoticePress = useCallback(
     (notification: any) => {
-        const body = getNotificationBody(notification).trim();
-        if (isNotificationUnread(notification)) {
+      const body = getNotificationBody(notification).trim();
+      const data = (notification.data ?? {}) as Record<string, any>;
+      const buildingName =
+        data?.buildingName ??
+        data?.building_name ??
+        data?.audienceLabel ??
+        data?.audience_label ??
+        null;
+
+      if (isNotificationUnread(notification)) {
         notificationActions.markNotificationAsRead?.(notification.id).catch((error: unknown) => {
           console.warn("[TenantHome] Failed to mark notice as read:", error);
         });
       }
-      Alert.alert(
-        notification.title || "Building notice",
-        body || "No additional details were provided for this building notice.",
-        [
-          { text: "Close", style: "cancel" },
-          { text: "Open Inbox", onPress: () => router.push("/(modals)/notifications-hub" as any) },
-        ],
-      );
+
+      setSelectedAnnouncement({
+        id: notification.id,
+        title: notification.title || "Building notice",
+        body: body || "No additional details were provided for this building notice.",
+        scheduledAt: notification.createdAt,
+        affectedAreas: buildingName ? [String(buildingName)] : [],
+      });
     },
     [notificationActions],
   );
 
-  if (!currentUser || isTenancyLoading) return <HomeScreenSkeleton />;
+  const handleClearAnnouncement = useCallback(
+    async (announcement: TenantAnnouncementPreview) => {
+      if (!announcement.id) {
+        return;
+      }
+
+      try {
+        setClearingAnnouncementId(announcement.id);
+        await notificationActions.dismissNotification(announcement.id);
+        setSelectedAnnouncement(null);
+      } catch (error) {
+        console.error("[TenantHome] Failed to clear announcement:", error);
+      } finally {
+        setClearingAnnouncementId(null);
+      }
+    },
+    [notificationActions],
+  );
+
+  if (!currentUser || isTenancyLoading || isContractLoading) return <HomeScreenSkeleton />;
+
+  if (!hasLoadedCriticalPortalData && (contractErrorMessage || tenancyErrorMessage)) {
+    return (
+      <PortalLoadErrorScreen
+        portalLabel="Resident Workspace"
+        message={
+          contractErrorMessage ||
+          tenancyErrorMessage ||
+          "Unable to load your resident workspace right now."
+        }
+        onRetry={retryCriticalPortalLoad}
+        secondaryActionLabel="Return to Sign In"
+        onSecondaryAction={() => {
+          void handleReturnToSignIn();
+        }}
+      />
+    );
+  }
 
   return (
     <ScreenEntrance>
@@ -377,6 +537,69 @@ export default function TenantHomeScreen() {
               <Text style={styles.bannerTitle}>{statusTitle}</Text>
               <Text style={styles.bannerText}>{statusMessage}</Text>
             </View>
+          </Animated.View>
+        ) : null}
+
+        {latestMoveOutRequest ? (
+          <Animated.View entering={FadeInDown.delay(140).duration(400)} style={styles.section}>
+            <TouchableOpacity
+              style={styles.moveOutCard}
+              activeOpacity={0.9}
+              onPress={() => router.push("/(tenant)/lease-details" as any)}
+            >
+              <View style={styles.moveOutHeader}>
+                <View style={styles.moveOutIconWrap}>
+                  <Ionicons name="exit-outline" size={18} color={P.primary} />
+                </View>
+                <View style={styles.moveOutHeaderCopy}>
+                  <Text style={styles.moveOutEyebrow}>Lease Request</Text>
+                  <Text style={styles.moveOutTitle}>Move Out Request</Text>
+                </View>
+                <View
+                  style={[
+                    styles.moveOutStatusBadge,
+                    {
+                      backgroundColor: moveRequestStatusMeta(latestMoveOutRequest.status).bg,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.moveOutStatusText,
+                      { color: moveRequestStatusMeta(latestMoveOutRequest.status).text },
+                    ]}
+                  >
+                    {moveRequestStatusMeta(latestMoveOutRequest.status).label}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.moveOutDetails}>
+                <View style={styles.moveOutMetaRow}>
+                  <Ionicons name="calendar-outline" size={15} color={P.soft} />
+                  <Text style={styles.moveOutMetaText}>
+                    {formatDateTime(
+                      latestMoveOutRequest.requestedMoveAt || latestMoveOutRequest.createdAt,
+                    )}
+                  </Text>
+                </View>
+                <View style={styles.moveOutMetaRow}>
+                  <Ionicons name="time-outline" size={15} color={P.soft} />
+                  <Text style={styles.moveOutMetaText}>
+                    {latestMoveOutRequest.reviewedAt
+                      ? `Reviewed ${formatDate(latestMoveOutRequest.reviewedAt)}`
+                      : "Awaiting review"}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.moveOutFooter}>
+                <Text style={styles.moveOutFooterText}>
+                  Open lease details for the full move-out timeline.
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color={P.soft} />
+              </View>
+            </TouchableOpacity>
           </Animated.View>
         ) : null}
 
@@ -471,13 +694,9 @@ export default function TenantHomeScreen() {
           </View>
 
           {broadcastNotifications.length > 0 ? (
-            broadcastNotifications.slice(0, 2).map((notice, index) => {
+            broadcastNotifications.slice(0, 2).map((notice) => {
               const unread = isNotificationUnread(notice);
               const body = getNotificationBody(notice).trim();
-              const colors =
-                index % 2 === 0
-                  ? ([P.primaryDark, P.primary] as const)
-                  : (["#86694B", "#B99673"] as const);
 
               return (
                 <TouchableOpacity
@@ -486,26 +705,22 @@ export default function TenantHomeScreen() {
                   activeOpacity={0.88}
                   onPress={() => handleNoticePress(notice)}
                 >
-                  <LinearGradient
-                    colors={colors}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.noticeVisual}
-                  >
-                    <View style={styles.noticeVisualBadge}>
-                      <Ionicons name="megaphone-outline" size={18} color={P.surface} />
-                    </View>
-                    {unread ? (
-                      <View style={styles.noticeVisualPill}>
-                        <Text style={styles.noticeVisualPillText}>New</Text>
-                      </View>
-                    ) : null}
-                  </LinearGradient>
-
                   <View style={styles.noticeBody}>
-                    <Text style={styles.noticeTitle} numberOfLines={1}>
-                      {notice.title || "Building notice"}
-                    </Text>
+                    <View style={styles.noticeHeader}>
+                      <View style={styles.noticeTitleRow}>
+                        <View style={styles.noticeIconWrap}>
+                          <Ionicons name="megaphone-outline" size={14} color={P.primary} />
+                        </View>
+                        <Text style={styles.noticeTitle} numberOfLines={1}>
+                          {notice.title || "Building notice"}
+                        </Text>
+                      </View>
+                      {unread ? (
+                        <View style={styles.noticePill}>
+                          <Text style={styles.noticePillText}>New</Text>
+                        </View>
+                      ) : null}
+                    </View>
                     <Text style={styles.noticeDescription} numberOfLines={2}>
                       {body || "No additional details were provided for this building notice."}
                     </Text>
@@ -578,6 +793,13 @@ export default function TenantHomeScreen() {
       </ScrollView>
 
       <SideMenu isVisible={showSideMenu} onClose={() => setShowSideMenu(false)} />
+      <TenantAnnouncementModal
+        announcement={selectedAnnouncement}
+        visible={Boolean(selectedAnnouncement)}
+        onClose={() => setSelectedAnnouncement(null)}
+        onClear={handleClearAnnouncement}
+        clearing={selectedAnnouncement?.id === clearingAnnouncementId}
+      />
       </SafeAreaView>
     </ScreenEntrance>
   );
@@ -652,6 +874,53 @@ const styles = StyleSheet.create({
   bannerTitle: { fontSize: 15, fontWeight: "700", color: P.text },
   bannerText: { fontSize: 13, lineHeight: 20, color: P.muted },
   section: { marginBottom: 28 },
+  moveOutCard: {
+    backgroundColor: P.surface,
+    borderRadius: 24,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: P.border,
+    shadowColor: P.shadow,
+    shadowOpacity: 1,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 3,
+  },
+  moveOutHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 14,
+  },
+  moveOutIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: P.surfaceLow,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  moveOutHeaderCopy: { flex: 1, gap: 2 },
+  moveOutEyebrow: { fontSize: 11, fontWeight: "700", color: P.soft, letterSpacing: 0.4 },
+  moveOutTitle: { fontSize: 16, fontWeight: "700", color: P.text },
+  moveOutStatusBadge: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
+  moveOutStatusText: { fontSize: 11, fontWeight: "700" },
+  moveOutDetails: {
+    gap: 10,
+    borderTopWidth: 1,
+    borderTopColor: P.border,
+    paddingTop: 12,
+  },
+  moveOutMetaRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  moveOutMetaText: { flex: 1, fontSize: 13, lineHeight: 20, color: P.muted },
+  moveOutFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginTop: 14,
+  },
+  moveOutFooterText: { flex: 1, fontSize: 12, lineHeight: 18, color: P.soft },
   sectionHeader: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -725,42 +994,50 @@ const styles = StyleSheet.create({
   },
   noticeCard: {
     backgroundColor: P.surface,
-    borderRadius: 24,
-    overflow: "hidden",
-    marginBottom: 14,
+    borderRadius: 18,
+    marginBottom: 10,
     borderWidth: 1,
     borderColor: P.border,
     shadowColor: P.shadow,
     shadowOpacity: 1,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 12 },
-    elevation: 3,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2,
   },
-  noticeVisual: { height: 134, padding: 16, justifyContent: "space-between" },
-  noticeVisualBadge: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: "rgba(255,255,255,0.18)",
+  noticeBody: { paddingHorizontal: 14, paddingVertical: 12, gap: 8 },
+  noticeHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  noticeTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    flex: 1,
+  },
+  noticeIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 10,
+    backgroundColor: P.surfaceLow,
     alignItems: "center",
     justifyContent: "center",
   },
-  noticeVisualPill: {
-    alignSelf: "flex-start",
-    backgroundColor: "rgba(255,255,255,0.22)",
+  noticePill: {
     borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    backgroundColor: P.accent,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
-  noticeVisualPillText: { color: P.surface, fontSize: 11, fontWeight: "700" },
-  noticeBody: { padding: 16, gap: 8 },
-  noticeTitle: { fontSize: 16, fontWeight: "700", color: P.text },
-  noticeDescription: { fontSize: 13, lineHeight: 20, color: P.muted },
+  noticePillText: { color: P.primaryDark, fontSize: 10, fontWeight: "700" },
+  noticeTitle: { flex: 1, fontSize: 14, fontWeight: "700", color: P.text },
+  noticeDescription: { fontSize: 12, lineHeight: 18, color: P.muted },
   noticeMeta: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginTop: 2,
   },
   noticeMetaText: { fontSize: 12, fontWeight: "600", color: P.soft },
   quickGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },

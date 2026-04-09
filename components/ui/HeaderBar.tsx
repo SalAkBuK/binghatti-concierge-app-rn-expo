@@ -66,7 +66,12 @@ export function HeaderBar({
 }: HeaderBarProps) {
   const insets = useSafeAreaInsets();
   const messaging = useMessaging();
-  const resolvedMessagingUnread = messagingUnreadCount > 0 ? messagingUnreadCount : messaging.totalUnreadCount;
+  const localMessagingUnread = messaging.conversations.reduce(
+    (sum, conversation) => sum + (conversation.unreadCount || 0),
+    0,
+  );
+  const resolvedMessagingUnread =
+    messagingUnreadCount > 0 ? messagingUnreadCount : localMessagingUnread;
 
   // Calculate responsive spacing based on screen width
   const getResponsiveSpacing = () => {

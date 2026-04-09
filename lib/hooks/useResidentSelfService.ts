@@ -109,6 +109,48 @@ const getStatusCode = (error: unknown): number | undefined => {
   return typeof status === "number" ? status : undefined;
 };
 
+const getErrorText = (error: unknown): string => {
+  if (!error || typeof error !== "object") return "";
+
+  const record = error as {
+    message?: unknown;
+    details?: {
+      message?: unknown;
+      error?: {
+        message?: unknown;
+      };
+    };
+  };
+
+  const values = [
+    record.message,
+    record.details?.message,
+    record.details?.error?.message,
+  ];
+
+  for (const value of values) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+
+  return "";
+};
+
+const isResidentContractPermissionError = (error: unknown): boolean => {
+  const status = getStatusCode(error);
+  if (status !== 401 && status !== 403) {
+    return false;
+  }
+
+  const message = getErrorText(error).toLowerCase();
+  return (
+    message.includes("not allowed to request move for this contract") ||
+    message.includes("not allowed to request move") ||
+    message.includes("not authorized to request move")
+  );
+};
+
 const getErrorMessage = (
   status: number | undefined,
   fallbackMessage: string,
@@ -254,6 +296,10 @@ export const useResidentContract = (
   }, [enabled]);
 
   const handleUnauthorizedIfNeeded = useCallback(async (error: unknown) => {
+    if (isResidentContractPermissionError(error)) {
+      return false;
+    }
+
     if (getStatusCode(error) === 401) {
       await onUnauthorizedRef.current?.();
       return true;

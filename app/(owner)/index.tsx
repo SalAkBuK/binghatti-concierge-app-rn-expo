@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { HeaderBar } from '../../components/ui/HeaderBar';
+import { PortalLoadErrorScreen } from '../../components/ui/PortalLoadErrorScreen';
 import { ScreenEntrance } from '../../components/ui/ScreenEntrance';
 import { SideMenu } from '../../components/ui/SideMenu';
 import { useAuth } from '../../lib/context/auth-context';
@@ -54,7 +55,7 @@ const firstName = (name?: string | null) => name?.trim().split(/\s+/)[0] || 'Own
 
 export default function OwnerHomeScreen() {
   const tabBarHeight = useBottomTabBarHeight();
-  const { currentUser } = useAuth();
+  const { currentUser, actions: authActions } = useAuth();
   const handleUnauthorized = useOwnerUnauthorized();
   const {
     conversationUnreadCount,
@@ -68,7 +69,26 @@ export default function OwnerHomeScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [hasLoadedDashboard, setHasLoadedDashboard] = useState(false);
   const [state, setState] = useState<DashboardState>(EMPTY_STATE);
+
+  useEffect(() => {
+    setState(EMPTY_STATE);
+    setErrorMessage(null);
+    setHasLoadedDashboard(false);
+    setIsLoading(true);
+    setIsRefreshing(false);
+  }, [currentUser?.id]);
+
+  const handleReturnToSignIn = useCallback(async () => {
+    try {
+      await authActions.logout();
+    } catch (error) {
+      console.warn('[OwnerHome] Failed to clear session after portal load failure:', error);
+    } finally {
+      router.replace('/auth' as any);
+    }
+  }, [authActions]);
 
   const load = useCallback(
     async (asRefresh = false) => {
@@ -93,7 +113,13 @@ export default function OwnerHomeScreen() {
           conversations: conversations.items,
         });
         setErrorMessage(null);
-        await refreshUnreadSummary();
+        setHasLoadedDashboard(true);
+
+        try {
+          await refreshUnreadSummary();
+        } catch (error) {
+          console.warn('[OwnerHome] Failed to refresh unread summary:', error);
+        }
       } catch (error) {
         if (await handleUnauthorized(error)) {
           return;
@@ -143,7 +169,7 @@ export default function OwnerHomeScreen() {
     [state.units],
   );
 
-  if (isLoading) {
+  if (isLoading && !hasLoadedDashboard) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingWrap}>
@@ -151,6 +177,22 @@ export default function OwnerHomeScreen() {
           <Text style={styles.loadingText}>Loading owner portfolio...</Text>
         </View>
       </SafeAreaView>
+    );
+  }
+
+  if (!hasLoadedDashboard && errorMessage) {
+    return (
+      <PortalLoadErrorScreen
+        portalLabel="Owner Workspace"
+        message={errorMessage}
+        onRetry={() => {
+          void load();
+        }}
+        secondaryActionLabel="Return to Sign In"
+        onSecondaryAction={() => {
+          void handleReturnToSignIn();
+        }}
+      />
     );
   }
 

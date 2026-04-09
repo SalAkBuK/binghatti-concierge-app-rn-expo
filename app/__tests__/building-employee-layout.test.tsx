@@ -1,4 +1,5 @@
 import React from 'react';
+import * as ReactNative from 'react-native';
 import { Text } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 
@@ -10,6 +11,7 @@ const mockReplace = jest.fn();
 const mockTabs = jest.fn();
 const mockTabsScreen = jest.fn();
 const mockUseSafeAreaInsets = jest.fn();
+const mockUseWindowDimensions = jest.fn();
 
 jest.mock('../../lib/context/auth-context', () => ({
   useAuth: () => mockUseAuth(),
@@ -51,6 +53,10 @@ jest.mock('expo-router', () => {
   };
 });
 
+jest.spyOn(ReactNative, 'useWindowDimensions').mockImplementation(
+  () => mockUseWindowDimensions(),
+);
+
 const buildUser = (overrides: Partial<User> = {}): User => ({
   id: 'employee-1',
   email: 'employee@example.com',
@@ -72,6 +78,12 @@ describe('BuildingEmployeeLayout', () => {
       right: 0,
       bottom: 10,
       left: 0,
+    });
+    mockUseWindowDimensions.mockReturnValue({
+      width: 390,
+      height: 844,
+      scale: 3,
+      fontScale: 1,
     });
   });
 
@@ -186,15 +198,16 @@ describe('BuildingEmployeeLayout', () => {
       TestRenderer.create(<BuildingEmployeeLayout />);
     });
 
-    expect(mockTabs).toHaveBeenCalledWith(
+    const tabBarStyle = mockTabs.mock.calls[0]?.[0]?.screenOptions?.tabBarStyle;
+
+    expect(tabBarStyle).toEqual(
       expect.objectContaining({
-        screenOptions: expect.objectContaining({
-          tabBarStyle: expect.objectContaining({
-            paddingBottom: 12,
-            height: 72,
-          }),
-        }),
+        paddingBottom: 12,
+        bottom: 14,
       }),
     );
+    expect(tabBarStyle.left).toBeGreaterThanOrEqual(12);
+    expect(tabBarStyle.right).toBe(tabBarStyle.left);
+    expect(tabBarStyle.height).toBeGreaterThanOrEqual(72);
   });
 });

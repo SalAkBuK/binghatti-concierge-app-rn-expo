@@ -324,7 +324,9 @@ export default function TenantContractScreen() {
   const contractValue = fmtMoney(selectedContract?.annualRent || selectedContract?.contractValue);
   const depositValue = fmtMoney(selectedContract?.securityDepositAmount);
   const paymentStatusLabel =
-    data.latestMoveOutRequestStatus === "APPROVED"
+    !selectedContract
+      ? "-"
+      : data.latestMoveOutRequestStatus === "APPROVED"
       ? "Moving Out"
       : data.latestMoveInRequestStatus === "APPROVED"
         ? "Move-In Approved"
@@ -506,10 +508,6 @@ export default function TenantContractScreen() {
           ) : (
             <View style={styles.summaryGrid}>
               <View style={styles.summaryItem}>
-                <Text style={styles.summaryItemLabel}>Status</Text>
-                <Text style={styles.summaryItemValue}>{contractStatusLabel}</Text>
-              </View>
-              <View style={styles.summaryItem}>
                 <Text style={styles.summaryItemLabel}>Building</Text>
                 <Text style={styles.summaryItemValue}>{buildingLabel}</Text>
               </View>
@@ -635,14 +633,6 @@ export default function TenantContractScreen() {
                   <Text style={styles.detailLabel}>Bathrooms</Text>
                   <Text style={styles.detailValue}>{fmtValue(selectedContract.unit?.bathrooms)}</Text>
                 </View>
-                <View style={styles.detailItem}>
-                  <Text style={styles.detailLabel}>Unit Size</Text>
-                  <Text style={styles.detailValue}>{fmtValue(selectedContract.unit?.unitSize)}</Text>
-                </View>
-                <View style={styles.detailItem}>
-                  <Text style={styles.detailLabel}>Size Unit</Text>
-                  <Text style={styles.detailValue}>{fmtValue(selectedContract.unit?.unitSizeUnit)}</Text>
-                </View>
               </View>
 
               <Text style={styles.blockTitle}>Parties</Text>
@@ -664,28 +654,22 @@ export default function TenantContractScreen() {
                   <Text style={styles.detailValue}>{fmtValue(selectedContract.ownerNameSnapshot)}</Text>
                 </View>
                 <View style={styles.detailItem}>
-                  <Text style={styles.detailLabel}>Tenant</Text>
-                  <Text style={styles.detailValue}>{fmtValue(selectedContract.tenantNameSnapshot)}</Text>
-                </View>
-                <View style={styles.detailItem}>
-                  <Text style={styles.detailLabel}>Tenant Email</Text>
-                  <Text style={styles.detailValue}>{fmtValue(selectedContract.tenantEmailSnapshot)}</Text>
-                </View>
-                <View style={styles.detailItem}>
-                  <Text style={styles.detailLabel}>Tenant Phone</Text>
-                  <Text style={styles.detailValue}>{fmtValue(selectedContract.tenantPhoneSnapshot)}</Text>
-                </View>
-                <View style={styles.detailItem}>
                   <Text style={styles.detailLabel}>Resident Name</Text>
-                  <Text style={styles.detailValue}>{fmtValue(selectedContract.resident?.name)}</Text>
+                  <Text style={styles.detailValue}>
+                    {fmtValue(selectedContract.resident?.name ?? selectedContract.tenantNameSnapshot)}
+                  </Text>
                 </View>
                 <View style={styles.detailItem}>
                   <Text style={styles.detailLabel}>Resident Email</Text>
-                  <Text style={styles.detailValue}>{fmtValue(selectedContract.resident?.email)}</Text>
+                  <Text style={styles.detailValue}>
+                    {fmtValue(selectedContract.resident?.email ?? selectedContract.tenantEmailSnapshot)}
+                  </Text>
                 </View>
                 <View style={styles.detailItem}>
                   <Text style={styles.detailLabel}>Resident Phone</Text>
-                  <Text style={styles.detailValue}>{fmtValue(selectedContract.resident?.phone)}</Text>
+                  <Text style={styles.detailValue}>
+                    {fmtValue(selectedContract.resident?.phone ?? selectedContract.tenantPhoneSnapshot)}
+                  </Text>
                 </View>
               </View>
 

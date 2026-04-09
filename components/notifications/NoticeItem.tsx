@@ -9,7 +9,18 @@ interface NoticeItemProps {
   userRole: UserRole;
   onPress?: (id: string) => void;
   onDelete?: (id: string) => void;
+  variant?: "default" | "tenant";
 }
+
+const TENANT = {
+  surface: "#FFFFFF",
+  border: "#D9E0E4",
+  text: "#2B3437",
+  muted: "#667176",
+  soft: "#7A8488",
+  primary: "#4D6169",
+  shadow: "rgba(43, 52, 55, 0.06)",
+};
 
 const getStatusConfig = (status: MaintenanceNotice["status"]) => {
   switch (status) {
@@ -75,10 +86,14 @@ export function NoticeItem({
   userRole,
   onPress,
   onDelete,
+  variant = "default",
 }: NoticeItemProps) {
   const config = getStatusConfig(notice.status);
   const isAdmin = userRole === "admin" || userRole === "management";
   const canInteract = onPress || (isAdmin && onDelete);
+  const statusLabel =
+    notice.createdBy === "broadcast" ? "Announcement" : config.label;
+  const isTenant = variant === "tenant";
 
   const content = (
     <>
@@ -95,7 +110,7 @@ export function NoticeItem({
 
           <View style={[styles.badge, { backgroundColor: config.badgeBg }]}>
             <Text style={[styles.badgeText, { color: config.badgeText }]}>
-              {config.label}
+              {statusLabel}
             </Text>
           </View>
         </View>
@@ -108,13 +123,17 @@ export function NoticeItem({
               onDelete(notice.id);
             }}
           >
-            <Ionicons name="trash-outline" size={20} color="#EF4444" />
+            <Ionicons
+              name="trash-outline"
+              size={20}
+              color={isTenant ? "#B24A41" : "#EF4444"}
+            />
           </AnimatedButton>
         )}
       </View>
 
       {/* Description */}
-      <Text style={styles.description} numberOfLines={3}>
+      <Text style={[styles.description, isTenant && styles.tenantDescription]} numberOfLines={3}>
         {notice.description}
       </Text>
 
@@ -123,8 +142,12 @@ export function NoticeItem({
         {/* Scheduled Date */}
         {notice.scheduledDate && (
           <View style={styles.metaItem}>
-            <Ionicons name="time-outline" size={16} color="#6B7280" />
-            <Text style={styles.metaText}>
+            <Ionicons
+              name="time-outline"
+              size={16}
+              color={isTenant ? TENANT.soft : "#6B7280"}
+            />
+            <Text style={[styles.metaText, isTenant && styles.tenantMetaText]}>
               {formatDate(notice.scheduledDate)}
             </Text>
           </View>
@@ -133,17 +156,27 @@ export function NoticeItem({
         {/* Duration */}
         {notice.estimatedDuration && (
           <View style={styles.metaItem}>
-            <Ionicons name="hourglass-outline" size={16} color="#6B7280" />
-            <Text style={styles.metaText}>{notice.estimatedDuration}</Text>
+            <Ionicons
+              name="hourglass-outline"
+              size={16}
+              color={isTenant ? TENANT.soft : "#6B7280"}
+            />
+            <Text style={[styles.metaText, isTenant && styles.tenantMetaText]}>
+              {notice.estimatedDuration}
+            </Text>
           </View>
         )}
       </View>
 
       {/* Affected Areas */}
       {notice.affectedAreas && notice.affectedAreas.length > 0 && (
-        <View style={styles.areasContainer}>
-          <Ionicons name="location-outline" size={16} color="#6B7280" />
-          <Text style={styles.areasText}>
+        <View style={[styles.areasContainer, isTenant && styles.tenantAreasContainer]}>
+          <Ionicons
+            name="location-outline"
+            size={16}
+            color={isTenant ? TENANT.soft : "#6B7280"}
+          />
+          <Text style={[styles.areasText, isTenant && styles.tenantAreasText]}>
             {notice.affectedAreas.slice(0, 3).join(", ")}
             {notice.affectedAreas.length > 3 &&
               ` +${notice.affectedAreas.length - 3} more`}
@@ -158,6 +191,7 @@ export function NoticeItem({
       <AnimatedButton
         style={[
           styles.container,
+          isTenant && styles.tenantContainer,
           { backgroundColor: config.bgColor, borderColor: config.borderColor },
         ]}
         onPress={() => onPress?.(notice.id)}
@@ -171,6 +205,7 @@ export function NoticeItem({
     <View
       style={[
         styles.container,
+        isTenant && styles.tenantContainer,
         { backgroundColor: config.bgColor, borderColor: config.borderColor },
       ]}
     >
@@ -185,6 +220,14 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
+  },
+  tenantContainer: {
+    borderRadius: 22,
+    shadowColor: TENANT.shadow,
+    shadowOpacity: 1,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 3,
   },
   header: {
     flexDirection: "row",
@@ -223,6 +266,9 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: 12,
   },
+  tenantDescription: {
+    color: TENANT.muted,
+  },
   metaContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -238,6 +284,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#6B7280",
   },
+  tenantMetaText: {
+    color: TENANT.soft,
+  },
   areasContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -246,9 +295,15 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: "#E5E7EB",
   },
+  tenantAreasContainer: {
+    borderTopColor: TENANT.border,
+  },
   areasText: {
     fontSize: 13,
     color: "#6B7280",
     flex: 1,
+  },
+  tenantAreasText: {
+    color: TENANT.muted,
   },
 });

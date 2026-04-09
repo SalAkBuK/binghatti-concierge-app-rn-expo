@@ -3,6 +3,7 @@ import React, {
   useContext,
   useReducer,
   ReactNode,
+  useCallback,
   useEffect,
   useState,
 } from "react";
@@ -35,6 +36,8 @@ interface AuthState {
   error: string | null;
 }
 
+export type AuthBootstrapStatus = "restoring" | "ready" | "error";
+
 // Auth Actions Interface
 interface AuthActions {
   setAuth: (authData: {
@@ -51,10 +54,14 @@ interface AuthActions {
   setLoading: (loading: boolean) => void;
   setError: (error: string) => void;
   clearError: () => void;
+  retryBootstrap: () => void;
+  recoverFromBootstrapError: () => Promise<void>;
 }
 
 // Auth Context Type
 export interface AuthContextType extends AuthState {
+  bootstrapStatus: AuthBootstrapStatus;
+  bootstrapError: string | null;
   actions: AuthActions;
 }
 
@@ -350,6 +357,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     {}, // No mock users - start fresh
   );
   const [isInitialized, setIsInitialized] = useState(false);
+  const [bootstrapStatus, setBootstrapStatus] =
+    useState<AuthBootstrapStatus>("restoring");
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const [bootstrapAttempt, setBootstrapAttempt] = useState(0);
   const storedUsers =
     users && typeof users === "object" ? (users as Record<string, User>) : {};
   const mergedInitialUsers = { ...storedUsers }; // No DEFAULT_USERS
@@ -582,6 +593,27 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   }, [users, isLoadingUsers, isInitialized, setUsers]);
 
+  const clearPersistedSession = useCallback(async (): Promise<void> => {
+    try {
+      await apiService.clearAuthToken();
+    } catch (error) {
+      console.warn("[Auth] Failed to clear in-memory auth token state:", error);
+    }
+
+    try {
+      await Promise.all([
+        SecureStore.deleteItemAsync(STORAGE_KEYS.user_data),
+        SecureStore.deleteItemAsync(STORAGE_KEYS.auth_token),
+        SecureStore.deleteItemAsync(STORAGE_KEYS.refresh_token),
+        SecureStore.deleteItemAsync(STORAGE_KEYS.push_device_token),
+        SecureStore.deleteItemAsync(STORAGE_KEYS.owner_push_device_id),
+        SecureStore.deleteItemAsync(STORAGE_KEYS.owner_push_device_token),
+      ]);
+    } catch (error) {
+      console.warn("[Auth] Failed to clear persisted session state:", error);
+    }
+  }, []);
+
   // Update AsyncStorage when users change (but not on initial load)
   useEffect(() => {
     if (isInitialized && state.users && typeof state.users === "object") {
@@ -592,7 +624,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   // Initialize auth state from saved session
   useEffect(() => {
+    let cancelled = false;
+
     const initializeAuth = async () => {
+      setBootstrapStatus("restoring");
+      setBootstrapError(null);
+
       try {
         console.log('[AuthProvider] Initializing auth from saved session...');
 
@@ -750,15 +787,37 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           console.log('[AuthProvider] No active session found');
         }
       } catch (error) {
-        // If auth check fails, user is not authenticated
         console.warn('[AuthProvider] Auth initialization failed:', error);
+        dispatch({
+          type: AUTH_ACTIONS.SET_AUTH,
+          payload: {
+            isAuthenticated: false,
+            currentUser: null,
+            userRole: null,
+          },
+        });
+        if (!cancelled) {
+          setBootstrapError(
+            "We could not restore your workspace. Retry or continue to sign in again.",
+          );
+          setBootstrapStatus("error");
+        }
+        return;
+      }
+
+      if (!cancelled) {
+        setBootstrapStatus("ready");
       }
     };
 
     if (isInitialized) {
-      initializeAuth();
+      void initializeAuth();
     }
-  }, [isInitialized]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bootstrapAttempt, isInitialized]);
 
   const enrichTenantProfile = async (user: User): Promise<User> => {
     try {
@@ -1489,10 +1548,31 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     clearError: () => {
       dispatch({ type: AUTH_ACTIONS.CLEAR_ERROR });
     },
+    retryBootstrap: () => {
+      setBootstrapError(null);
+      setBootstrapStatus("restoring");
+      setBootstrapAttempt((current) => current + 1);
+    },
+    recoverFromBootstrapError: async (): Promise<void> => {
+      await clearPersistedSession();
+      dispatch({
+        type: AUTH_ACTIONS.SET_AUTH,
+        payload: {
+          isAuthenticated: false,
+          currentUser: null,
+          userRole: null,
+        },
+      });
+      dispatch({ type: AUTH_ACTIONS.CLEAR_ERROR });
+      setBootstrapError(null);
+      setBootstrapStatus("ready");
+    },
   };
 
   const value: AuthContextType = {
     ...state,
+    bootstrapStatus,
+    bootstrapError,
     actions,
   };
 

@@ -1,5 +1,6 @@
 import { Tabs, router } from "expo-router";
 import React, { useEffect, useRef } from "react";
+import { useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import MessagesTabIcon from "../../components/icons/MessagesTabIcon";
 import NewHomeTabIcon from "../../components/icons/NewHomeTabIcon";
@@ -8,15 +9,17 @@ import RequestsTabIcon from "../../components/icons/RequestsTabIcon";
 import TenantTabIcon from "../../components/icons/TenantTabIcon";
 
 import { useAuth } from "../../lib/context/auth-context";
+import { getFloatingTabBarLayout } from "../../lib/utils/tab-bar-layout";
 
 export default function TabLayout() {
   const { isAuthenticated, currentUser } = useAuth();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const hasRedirectedToRole = useRef(false);
-  const hasBottomGestureInset = insets.bottom > 0;
-  const tabBarBottomOffset = hasBottomGestureInset ? 14 : 10;
-  const tabBarPaddingBottom = hasBottomGestureInset ? 12 : 10;
-  const tabBarHeight = 60 + tabBarPaddingBottom;
+  const tabBarLayout = getFloatingTabBarLayout({
+    bottomInset: insets.bottom,
+    screenWidth: width,
+  });
 
   // Redirect non-tenant users to their appropriate portal
   useEffect(() => {
@@ -50,42 +53,10 @@ export default function TabLayout() {
         freezeOnBlur: true,
         animation: "fade",
         tabBarHideOnKeyboard: true,
-        tabBarStyle: {
-          position: "absolute",
-          bottom: tabBarBottomOffset,
-          left: 16,
-          right: 16,
-          width: undefined,
-          backgroundColor: "#ffffff",
-          borderTopWidth: 0,
-          borderRadius: 28,
-          paddingBottom: tabBarPaddingBottom,
-          paddingTop: 8,
-          paddingHorizontal: 10,
-          minHeight: tabBarHeight,
-          height: tabBarHeight,
-          shadowColor: "rgba(43, 52, 55, 0.18)",
-          shadowOffset: {
-            width: 0,
-            height: -6,
-          },
-          shadowOpacity: 1,
-          shadowRadius: 24,
-          elevation: 18,
-          opacity: 1,
-        },
-        tabBarItemStyle: {
-          paddingTop: 0,
-        },
-        tabBarIconStyle: {
-          marginBottom: 7,
-        },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: "700",
-          letterSpacing: 0.2,
-          marginTop: 0,
-        },
+        tabBarStyle: tabBarLayout.tabBarStyle,
+        tabBarItemStyle: tabBarLayout.tabBarItemStyle,
+        tabBarIconStyle: tabBarLayout.tabBarIconStyle,
+        tabBarLabelStyle: tabBarLayout.tabBarLabelStyle,
       }}
     >
       <Tabs.Screen

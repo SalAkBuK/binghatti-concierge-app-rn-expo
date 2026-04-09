@@ -17,6 +17,7 @@ import { ImageViewer } from "../../components/ui/ImageViewer";
 import { RequestDetailsComments } from "../../components/modals/request-details/request-details-comments";
 import { RequestDetailsDeleteModal } from "../../components/modals/request-details/request-details-delete-modal";
 import { RequestDetailsOverview } from "../../components/modals/request-details/request-details-overview";
+import { useNotifications } from "../../lib/context/notifications-context";
 import {
   REQUEST_DETAILS_PALETTE as P,
   formatCurrency,
@@ -38,9 +39,14 @@ import {
   isResidentRequestOwnerRejected,
 } from "../../lib/utils/resident-request-approval";
 import { requestToResidentRequestForm } from "../../lib/utils/resident-request-form";
+import {
+  filterNotificationsByUser,
+  getUnreadNotificationsCount,
+} from "../../lib/utils/helpers";
 
 export default function RequestDetailsScreen() {
   const params = useLocalSearchParams<{ initialTab?: string | string[] }>();
+  const { notifications } = useNotifications();
   const requestedInitialTab = Array.isArray(params.initialTab)
     ? params.initialTab[0]
     : params.initialTab;
@@ -113,6 +119,12 @@ export default function RequestDetailsScreen() {
   const normalizedPriority = normalizePriority(selectedRequest.priority);
   const normalizedAttachments = normalizeAttachments(selectedRequest.attachments);
   const isTenantUser = currentUser?.role === "tenant";
+  const userNotifications = filterNotificationsByUser(
+    notifications || [],
+    currentUser?.id,
+  );
+  const hasUnreadNotifications =
+    getUnreadNotificationsCount(userNotifications) > 0;
 
   const canEdit = normalizedStatus === "pending";
   const canDelete = normalizedStatus === "pending";
@@ -371,20 +383,17 @@ export default function RequestDetailsScreen() {
         style={styles.keyboardAvoidingView}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        <HeaderBar
-          title={isTenantUser ? "Maintenance Issue" : "Request Details"}
-          showBackButton
-          showMenu={false}
-          showNotifications={false}
-          textColor="#2B3437"
-          backgroundColor="transparent"
-          style={styles.detailHeaderBar}
-        />
-
         <ScrollView
           style={styles.scrollView}
           showsVerticalScrollIndicator={false}
         >
+          <HeaderBar
+            title={isTenantUser ? "Maintenance Issue" : "Request Details"}
+            showBackButton
+            showMenu={false}
+            hasUnreadNotifications={hasUnreadNotifications}
+          />
+
           {/* Tabs */}
           <View style={styles.tabRow}>
             {(["overview", "comments"] as const).map((tab) => {
@@ -594,10 +603,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
   },
-  detailHeaderBar: {
-    paddingBottom: 18,
-    paddingHorizontal: 10,
-  },
   tabRow: {
     flexDirection: "row",
     gap: 8,
@@ -693,6 +698,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
+    marginTop: 8,
     marginBottom: 16,
     alignSelf: "flex-start",
     backgroundColor: P.surfaceLow,
@@ -1495,6 +1501,7 @@ const styles = StyleSheet.create({
     borderColor: P.accentBorder,
     paddingHorizontal: 14,
     paddingVertical: 12,
+    marginBottom: 8,
   },
   readOnlyNoticeText: {
     flex: 1,

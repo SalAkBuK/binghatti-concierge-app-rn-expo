@@ -177,7 +177,6 @@ export default function RequestsScreen() {
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [page, setPage] = useState(1);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const tabBarHeight = useBottomTabBarHeight();
 
   const {
@@ -200,12 +199,15 @@ export default function RequestsScreen() {
     return filteredRequests;
   }, [allRequestsByNewest, filterStatus]);
 
+  const totalPages = Math.max(1, Math.ceil(allUserRequests.length / REQUESTS_PER_PAGE));
+  const currentPage = Math.min(page, totalPages);
+  const pageStartIndex = (currentPage - 1) * REQUESTS_PER_PAGE;
   const userRequests = useMemo(
-    () => allUserRequests.slice(0, page * REQUESTS_PER_PAGE),
-    [allUserRequests, page],
+    () => allUserRequests.slice(pageStartIndex, pageStartIndex + REQUESTS_PER_PAGE),
+    [allUserRequests, pageStartIndex],
   );
-
-  const hasMore = userRequests.length < allUserRequests.length;
+  const visibleRangeStart = allUserRequests.length === 0 ? 0 : pageStartIndex + 1;
+  const visibleRangeEnd = pageStartIndex + userRequests.length;
 
   const stats = useMemo(() => {
     const statusCounts = backendRequests.reduce(
@@ -259,19 +261,16 @@ export default function RequestsScreen() {
       key: "open",
       label: "Open Requests",
       value: formatCount(stats.open),
-      tone: "primary" as const,
     },
     {
       key: "progress",
       label: "In Progress",
       value: formatCount(stats.inProgress + stats.assigned),
-      tone: "neutral" as const,
     },
     {
       key: "completed",
       label: "Completed",
       value: formatCount(stats.completed),
-      tone: "accent" as const,
     },
   ];
 
@@ -281,20 +280,16 @@ export default function RequestsScreen() {
     await refreshRequests({ asRefresh: true, reason: "manual" });
   };
 
-  const loadMoreRequests = () => {
-    if (!isLoadingMore && hasMore) {
-      setIsLoadingMore(true);
-      setTimeout(() => {
-        setPage((prevPage) => prevPage + 1);
-        setIsLoadingMore(false);
-      }, 300);
-    }
-  };
-
   const handleRequestPress = (request: Request): void => {
     requestActions.setSelectedRequest(request);
     router.push("/(modals)/request-details");
   };
+
+  useEffect(() => {
+    if (page !== currentPage) {
+      setPage(currentPage);
+    }
+  }, [currentPage, page]);
 
   useEffect(() => {
     const requestId = params.requestId ? String(params.requestId) : null;
@@ -431,30 +426,9 @@ export default function RequestsScreen() {
 
       <View style={styles.summaryRow}>
         {summaryCards.map((card) => (
-          <View
-            key={card.key}
-            style={[
-              styles.summaryCard,
-              card.tone === "primary" && styles.summaryCardPrimary,
-              card.tone === "accent" && styles.summaryCardAccent,
-            ]}
-          >
-            <Text
-              style={[
-                styles.summaryValue,
-                card.tone === "primary" && styles.summaryValuePrimary,
-              ]}
-            >
-              {card.value}
-            </Text>
-            <Text
-              style={[
-                styles.summaryLabel,
-                card.tone === "primary" && styles.summaryLabelPrimary,
-              ]}
-            >
-              {card.label}
-            </Text>
+          <View key={card.key} style={styles.summaryCard}>
+            <Text style={styles.summaryValue}>{card.value}</Text>
+            <Text style={styles.summaryLabel}>{card.label}</Text>
           </View>
         ))}
       </View>
@@ -528,17 +502,65 @@ export default function RequestsScreen() {
       );
     }
 
-    if (hasMore) {
+    if (totalPages > 1) {
       return (
-        <View style={styles.loadMoreContainer}>
-          {isLoadingMore ? (
-            <ActivityIndicator size="small" color={P.primary} />
-          ) : (
-            <TouchableOpacity style={styles.loadMoreButton} onPress={loadMoreRequests}>
-              <Text style={styles.loadMoreText}>Load More</Text>
-              <Ionicons name="chevron-down" size={16} color={P.primary} />
+        <View style={styles.paginationContainer}>
+          <Text style={styles.paginationSummary}>
+            Showing {visibleRangeStart}-{visibleRangeEnd} of {allUserRequests.length}
+          </Text>
+          <View style={styles.paginationControls}>
+            <TouchableOpacity
+              style={[
+                styles.paginationButton,
+                currentPage === 1 && styles.paginationButtonDisabled,
+              ]}
+              onPress={() => setPage((prevPage) => Math.max(1, prevPage - 1))}
+              disabled={currentPage === 1}
+            >
+              <Ionicons
+                name="chevron-back"
+                size={16}
+                color={currentPage === 1 ? P.soft : P.primary}
+              />
+              <Text
+                style={[
+                  styles.paginationButtonText,
+                  currentPage === 1 && styles.paginationButtonTextDisabled,
+                ]}
+              >
+                Previous
+              </Text>
             </TouchableOpacity>
-          )}
+
+            <View style={styles.paginationPagePill}>
+              <Text style={styles.paginationPageText}>
+                Page {currentPage} / {totalPages}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.paginationButton,
+                currentPage === totalPages && styles.paginationButtonDisabled,
+              ]}
+              onPress={() => setPage((prevPage) => Math.min(totalPages, prevPage + 1))}
+              disabled={currentPage === totalPages}
+            >
+              <Text
+                style={[
+                  styles.paginationButtonText,
+                  currentPage === totalPages && styles.paginationButtonTextDisabled,
+                ]}
+              >
+                Next
+              </Text>
+              <Ionicons
+                name="chevron-forward"
+                size={16}
+                color={currentPage === totalPages ? P.soft : P.primary}
+              />
+            </TouchableOpacity>
+          </View>
         </View>
       );
     }
@@ -566,8 +588,6 @@ export default function RequestsScreen() {
         refreshControl={
           <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={P.primary} />
         }
-        onEndReached={loadMoreRequests}
-        onEndReachedThreshold={0.5}
         showsVerticalScrollIndicator={false}
       />
 
@@ -646,30 +666,16 @@ const styles = StyleSheet.create({
     borderColor: P.border,
     justifyContent: "space-between",
   },
-  summaryCardPrimary: {
-    backgroundColor: P.primary,
-    borderColor: P.primary,
-  },
-  summaryCardAccent: {
-    backgroundColor: P.accent,
-    borderColor: P.accentBorder,
-  },
   summaryValue: {
     fontSize: 28,
     fontWeight: "800",
     color: P.text,
-  },
-  summaryValuePrimary: {
-    color: P.surface,
   },
   summaryLabel: {
     fontSize: 12,
     lineHeight: 17,
     color: P.muted,
     fontWeight: "600",
-  },
-  summaryLabelPrimary: {
-    color: "rgba(255,255,255,0.76)",
   },
   filterSection: {
     marginBottom: 14,
@@ -843,25 +849,58 @@ const styles = StyleSheet.create({
     color: P.dangerText,
     fontWeight: "700",
   },
-  loadMoreContainer: {
+  paginationContainer: {
     alignItems: "center",
-    paddingVertical: 20,
+    gap: 12,
+    paddingTop: 10,
+    paddingBottom: 20,
   },
-  loadMoreButton: {
+  paginationSummary: {
+    fontSize: 12,
+    color: P.soft,
+    fontWeight: "600",
+  },
+  paginationControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    flexWrap: "wrap",
+  },
+  paginationButton: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingVertical: 12,
-    paddingHorizontal: 18,
+    minHeight: 42,
+    paddingHorizontal: 14,
     backgroundColor: P.surface,
-    borderRadius: 16,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: P.border,
   },
-  loadMoreText: {
+  paginationButtonDisabled: {
+    backgroundColor: P.surfaceLow,
+  },
+  paginationButtonText: {
     fontSize: 13,
     fontWeight: "700",
     color: P.primary,
+  },
+  paginationButtonTextDisabled: {
+    color: P.soft,
+  },
+  paginationPagePill: {
+    minHeight: 42,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: P.surfaceLow,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  paginationPageText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: P.text,
   },
   emptyState: {
     backgroundColor: P.surface,

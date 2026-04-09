@@ -1,10 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs, router, usePathname } from 'expo-router';
 import React, { useEffect, useMemo, useRef } from 'react';
+import { useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '../../lib/context/auth-context';
 import { OwnerNotificationsProvider } from '../../lib/context/owner-notifications-context';
+import { getFloatingTabBarLayout } from '../../lib/utils/tab-bar-layout';
 
 type OwnerTabIconProps = {
   color: string;
@@ -31,12 +33,13 @@ function OwnerTabIcon({
 export default function OwnerLayout() {
   const { isAuthenticated, currentUser } = useAuth();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const pathname = usePathname();
   const hasRedirectedToRole = useRef(false);
-  const hasBottomGestureInset = insets.bottom > 0;
-  const tabBarBottomOffset = hasBottomGestureInset ? 14 : 10;
-  const tabBarPaddingBottom = hasBottomGestureInset ? 12 : 10;
-  const tabBarHeight = 60 + tabBarPaddingBottom;
+  const tabBarLayout = getFloatingTabBarLayout({
+    bottomInset: insets.bottom,
+    screenWidth: width,
+  });
 
   useEffect(() => {
     if (
@@ -77,42 +80,10 @@ export default function OwnerLayout() {
           tabBarHideOnKeyboard: true,
           tabBarStyle: shouldHideTabBar
             ? { display: 'none' }
-            : {
-                position: 'absolute',
-                bottom: tabBarBottomOffset,
-                left: 16,
-                right: 16,
-                width: undefined,
-                backgroundColor: '#FFFFFF',
-                borderTopWidth: 0,
-                borderRadius: 28,
-                paddingBottom: tabBarPaddingBottom,
-                paddingTop: 8,
-                paddingHorizontal: 10,
-                minHeight: tabBarHeight,
-                height: tabBarHeight,
-                shadowColor: 'rgba(43, 52, 55, 0.18)',
-                shadowOffset: {
-                  width: 0,
-                  height: -6,
-                },
-                shadowOpacity: 1,
-                shadowRadius: 24,
-                elevation: 18,
-                opacity: 1,
-              },
-          tabBarItemStyle: {
-            paddingTop: 0,
-          },
-          tabBarIconStyle: {
-            marginBottom: 7,
-          },
-          tabBarLabelStyle: {
-            fontSize: 11,
-            fontWeight: '700',
-            letterSpacing: 0.2,
-            marginTop: 0,
-          },
+            : tabBarLayout.tabBarStyle,
+          tabBarItemStyle: tabBarLayout.tabBarItemStyle,
+          tabBarIconStyle: tabBarLayout.tabBarIconStyle,
+          tabBarLabelStyle: tabBarLayout.tabBarLabelStyle,
         }}
       >
         <Tabs.Screen

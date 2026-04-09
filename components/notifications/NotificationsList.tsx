@@ -26,9 +26,23 @@ interface NotificationsListProps {
   onMarkAsRead: (id: string) => void;
   onMarkAllAsRead: () => void;
   onDismiss: (id: string) => void;
+  onClearAll?: () => void;
   onRefresh?: () => Promise<void>;
   loading?: boolean;
+  variant?: "default" | "tenant";
+  clearingAll?: boolean;
 }
+
+const TENANT = {
+  text: "#2B3437",
+  muted: "#667176",
+  soft: "#7A8488",
+  primary: "#4D6169",
+  primaryDark: "#34474D",
+  border: "#D9E0E4",
+  surface: "#FFFFFF",
+  surfaceLow: "#F1F4F6",
+};
 
 export function NotificationsList({
   notifications,
@@ -38,10 +52,14 @@ export function NotificationsList({
   onMarkAsRead,
   onMarkAllAsRead,
   onDismiss,
+  onClearAll,
   onRefresh,
   loading = false,
+  variant = "default",
+  clearingAll = false,
 }: NotificationsListProps) {
   const [refreshing, setRefreshing] = useState(false);
+  const isTenant = variant === "tenant";
   const userNotifications = useMemo(() => {
     return filterNotificationsByUser(notifications, userId).sort(
       (a, b) =>
@@ -52,6 +70,7 @@ export function NotificationsList({
   const unreadCount = useMemo(() => {
     return userNotifications.filter(isNotificationUnread).length;
   }, [userNotifications]);
+  const showClearAll = Boolean(onClearAll && userNotifications.length > 0);
 
   const handleRefresh = async () => {
     if (!onRefresh) return;
@@ -137,15 +156,25 @@ export function NotificationsList({
         contentContainerStyle={styles.emptyContainer}
         refreshControl={
           onRefresh ? (
-            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={isTenant ? TENANT.primary : undefined}
+            />
           ) : undefined
         }
       >
-        <Ionicons name="notifications-off-outline" size={64} color="#D1D5DB" />
-        <Text style={styles.emptyTitle}>No Notifications</Text>
-       <Text style={styles.emptyText}>
-  {"You don't have any notifications yet. When you receive notifications about your requests, they'll appear here."}
-</Text>
+        <Ionicons
+          name="notifications-off-outline"
+          size={64}
+          color={isTenant ? TENANT.soft : "#D1D5DB"}
+        />
+        <Text style={[styles.emptyTitle, isTenant && styles.tenantEmptyTitle]}>
+          No Notifications
+        </Text>
+        <Text style={[styles.emptyText, isTenant && styles.tenantEmptyText]}>
+          {"You don't have any notifications yet. When you receive notifications about your requests, they'll appear here."}
+        </Text>
 
       </ScrollView>
     );
@@ -154,20 +183,49 @@ export function NotificationsList({
   return (
     <View style={styles.container}>
       {/* Mark All as Read Button */}
-      {unreadCount > 0 && (
+      {(unreadCount > 0 || showClearAll) && (
         <Animated.View
           entering={FadeInDown.duration(300)}
           style={styles.headerActions}
         >
-          <AnimatedButton
-            style={styles.markAllButton}
-            onPress={handleMarkAllAsRead}
-          >
-            <Ionicons name="checkmark-done" size={18} color="#3B82F6" />
-            <Text style={styles.markAllText}>
-              Mark all as read ({unreadCount})
-            </Text>
-          </AnimatedButton>
+          {unreadCount > 0 ? (
+            <AnimatedButton
+              style={[styles.markAllButton, isTenant && styles.tenantMarkAllButton]}
+              onPress={handleMarkAllAsRead}
+            >
+              <Ionicons
+                name="checkmark-done"
+                size={18}
+                color={isTenant ? TENANT.primary : "#3B82F6"}
+              />
+              <Text style={[styles.markAllText, isTenant && styles.tenantMarkAllText]}>
+                Mark all as read ({unreadCount})
+              </Text>
+            </AnimatedButton>
+          ) : null}
+          {showClearAll ? (
+            <AnimatedButton
+              style={[
+                styles.clearAllButton,
+                isTenant && styles.tenantClearAllButton,
+                clearingAll && styles.clearAllButtonDisabled,
+              ]}
+              onPress={() => {
+                if (!clearingAll) {
+                  onClearAll?.();
+                }
+              }}
+            >
+              <Text
+                style={[
+                  styles.clearAllText,
+                  isTenant && styles.tenantClearAllText,
+                ]}
+              >
+                {clearingAll ? "Clearing..." : `Clear all (${userNotifications.length})`}
+              </Text>
+            </AnimatedButton>
+          ) : null}
         </Animated.View>
       )}
 
@@ -177,7 +235,11 @@ export function NotificationsList({
         showsVerticalScrollIndicator={false}
         refreshControl={
           onRefresh ? (
-            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={isTenant ? TENANT.primary : undefined}
+            />
           ) : undefined
         }
       >
@@ -191,6 +253,7 @@ export function NotificationsList({
               onPress={onPress ? () => onPress(notification) : undefined}
               onMarkAsRead={onMarkAsRead}
               onDismiss={handleDismiss}
+              variant={variant}
             />
           </Animated.View>
         ))}
@@ -211,6 +274,9 @@ const styles = StyleSheet.create({
   },
   headerActions: {
     marginBottom: 16,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
   },
   markAllButton: {
     flexDirection: "row",
@@ -228,6 +294,39 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: "#3B82F6",
+  },
+  tenantMarkAllButton: {
+    backgroundColor: TENANT.surfaceLow,
+    borderColor: TENANT.border,
+    borderRadius: 999,
+  },
+  tenantMarkAllText: {
+    color: TENANT.primaryDark,
+  },
+  clearAllButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    backgroundColor: "#FEF2F2",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    alignSelf: "flex-start",
+  },
+  clearAllButtonDisabled: {
+    opacity: 0.7,
+  },
+  clearAllText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#B91C1C",
+  },
+  tenantClearAllButton: {
+    backgroundColor: "#FFF1F0",
+    borderColor: "#F2D4CF",
+    borderRadius: 999,
+  },
+  tenantClearAllText: {
+    color: "#B24A41",
   },
   skeletonItem: {
     marginBottom: 12,
@@ -251,6 +350,12 @@ const styles = StyleSheet.create({
     color: "#6B7280",
     textAlign: "center",
     lineHeight: 22,
+  },
+  tenantEmptyTitle: {
+    color: TENANT.text,
+  },
+  tenantEmptyText: {
+    color: TENANT.muted,
   },
   bottomSpacing: {
     height: 40,

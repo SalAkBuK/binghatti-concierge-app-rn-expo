@@ -16,6 +16,7 @@ import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { HeaderBar } from '../../components/ui/HeaderBar';
+import { PortalLoadErrorScreen } from '../../components/ui/PortalLoadErrorScreen';
 import { ScreenEntrance } from '../../components/ui/ScreenEntrance';
 import { SideMenu } from '../../components/ui/SideMenu';
 import { useAuth } from '../../lib/context/auth-context';
@@ -137,14 +138,25 @@ const priorityMeta = (priority: number) => {
 };
 
 export default function BuildingEmployeeDashboard() {
-  const { isAuthenticated, currentUser } = useAuth();
+  const { isAuthenticated, currentUser, actions: authActions } = useAuth();
   const { notifications } = useNotifications();
   const tabBarHeight = useBottomTabBarHeight();
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [hasLoadedDashboard, setHasLoadedDashboard] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [assignedBuildings, setAssignedBuildings] = useState<BuildingAssignment[]>([]);
   const [maintenanceRequests, setMaintenanceRequests] = useState<MaintenanceRequest[]>([]);
+
+  useEffect(() => {
+    setHasLoadedDashboard(false);
+    setErrorMessage(null);
+    setAssignedBuildings([]);
+    setMaintenanceRequests([]);
+    setIsLoading(true);
+    setRefreshing(false);
+  }, [currentUser?.id]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -152,15 +164,31 @@ export default function BuildingEmployeeDashboard() {
     }
   }, [isAuthenticated]);
 
-  const fetchDashboardData = useCallback(async () => {
+  const handleReturnToSignIn = useCallback(async () => {
+    try {
+      await authActions.logout();
+    } catch (error) {
+      console.warn('[BuildingEmployeeDashboard] Failed to clear session after portal load failure:', error);
+    } finally {
+      router.replace('/auth' as any);
+    }
+  }, [authActions]);
+
+  const fetchDashboardData = useCallback(async (options?: { asRefresh?: boolean }) => {
+    const asRefresh = options?.asRefresh ?? false;
+
     if (!currentUser?.id) {
       setAssignedBuildings([]);
       setMaintenanceRequests([]);
+      setErrorMessage(null);
       setIsLoading(false);
       return;
     }
 
-    setIsLoading(true);
+    if (!asRefresh || !hasLoadedDashboard) {
+      setIsLoading(true);
+    }
+
     try {
       const buildingsResponse = await orgBuildingsApi.getAssignedBuildings();
       const buildingsPayload = Array.isArray(buildingsResponse)
@@ -184,52 +212,49 @@ export default function BuildingEmployeeDashboard() {
 
       const requestArrays = await Promise.all(
         mappedBuildings.map(async (building) => {
-          try {
-            const response = await orgBuildingsApi.getBuildingRequests(building.id);
-            const payload = Array.isArray(response)
-              ? response
-              : Array.isArray(response?.data)
-                ? response.data
-                : [];
+          const response = await orgBuildingsApi.getBuildingRequests(building.id);
+          const payload = Array.isArray(response)
+            ? response
+            : Array.isArray(response?.data)
+              ? response.data
+              : [];
 
-            return payload.map((request: any) => ({
-              id: String(request?.id ?? request?.requestId ?? ''),
-              title: request?.title || 'Maintenance request',
-              description: request?.description || '',
-              priority: normalizePriority(request?.priority),
-              status: normalizeStatus(request?.status),
-              createdAt: request?.createdAt || new Date().toISOString(),
-              updatedAt: request?.updatedAt,
-              buildingId: String(request?.buildingId ?? request?.building?.id ?? building.id),
-              buildingName: request?.buildingName ?? request?.building?.name ?? building.name,
-            }));
-          } catch (error) {
-            console.error(
-              `[BuildingEmployeeDashboard] Failed to fetch requests for building ${building.id}`,
-              error,
-            );
-            return [];
-          }
+          return payload.map((request: any) => ({
+            id: String(request?.id ?? request?.requestId ?? ''),
+            title: request?.title || 'Maintenance request',
+            description: request?.description || '',
+            priority: normalizePriority(request?.priority),
+            status: normalizeStatus(request?.status),
+            createdAt: request?.createdAt || new Date().toISOString(),
+            updatedAt: request?.updatedAt,
+            buildingId: String(request?.buildingId ?? request?.building?.id ?? building.id),
+            buildingName: request?.buildingName ?? request?.building?.name ?? building.name,
+          }));
         }),
       );
 
       setMaintenanceRequests(requestArrays.flat());
+      setErrorMessage(null);
+      setHasLoadedDashboard(true);
     } catch (error) {
       console.error('[BuildingEmployeeDashboard] Failed to fetch dashboard data', error);
-      setAssignedBuildings([]);
-      setMaintenanceRequests([]);
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Unable to load building operations right now.',
+      );
     } finally {
       setIsLoading(false);
     }
-  }, [currentUser?.id]);
+  }, [authActions, currentUser?.id, hasLoadedDashboard]);
 
   useEffect(() => {
-    fetchDashboardData();
+    void fetchDashboardData();
   }, [fetchDashboardData]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchDashboardData();
+    await fetchDashboardData({ asRefresh: true });
     setRefreshing(false);
   }, [fetchDashboardData]);
 
@@ -309,6 +334,22 @@ export default function BuildingEmployeeDashboard() {
     return null;
   }
 
+  if (!hasLoadedDashboard && errorMessage && !isLoading) {
+    return (
+      <PortalLoadErrorScreen
+        portalLabel="Building Operations"
+        message={errorMessage}
+        onRetry={() => {
+          void fetchDashboardData();
+        }}
+        secondaryActionLabel="Return to Sign In"
+        onSecondaryAction={() => {
+          void handleReturnToSignIn();
+        }}
+      />
+    );
+  }
+
   if (currentUser.role !== 'building_employee') {
     return (
       <SafeAreaView style={styles.restrictedContainer}>
@@ -381,6 +422,13 @@ export default function BuildingEmployeeDashboard() {
               </Text>
             </View>
           </Animated.View>
+
+          {errorMessage && hasLoadedDashboard ? (
+            <View style={styles.errorCard}>
+              <Ionicons name="alert-circle-outline" size={18} color={P.dangerText} />
+              <Text style={styles.errorText}>{errorMessage}</Text>
+            </View>
+          ) : null}
 
           {isLoading ? (
             <View style={styles.loadingCard}>
@@ -638,6 +686,21 @@ const styles = StyleSheet.create({
     gap: 8,
     borderWidth: 1,
     borderColor: P.border,
+  },
+  errorCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: P.dangerBg,
+    marginBottom: 16,
+  },
+  errorText: {
+    flex: 1,
+    fontSize: 13,
+    color: P.dangerText,
+    fontWeight: '600',
   },
   summaryRow: {
     flexDirection: 'row',

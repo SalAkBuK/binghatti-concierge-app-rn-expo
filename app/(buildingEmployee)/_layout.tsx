@@ -1,18 +1,21 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs, router } from "expo-router";
 import React, { useEffect } from "react";
+import { useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "../../lib/context/auth-context";
+import { getFloatingTabBarLayout } from "../../lib/utils/tab-bar-layout";
 
 export default function BuildingEmployeeLayout() {
   const { isAuthenticated, currentUser } = useAuth();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const isBuildingEmployee = currentUser?.role === "building_employee";
-  const hasBottomGestureInset = insets.bottom > 0;
-  const tabBarBottomOffset = hasBottomGestureInset ? 14 : 10;
-  const tabBarPaddingBottom = hasBottomGestureInset ? 12 : 10;
-  const tabBarHeight = 60 + tabBarPaddingBottom;
+  const tabBarLayout = getFloatingTabBarLayout({
+    bottomInset: insets.bottom,
+    screenWidth: width,
+  });
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -44,39 +47,10 @@ export default function BuildingEmployeeLayout() {
         freezeOnBlur: true,
         animation: "fade",
         tabBarHideOnKeyboard: true,
-        tabBarStyle: {
-          position: "absolute",
-          bottom: tabBarBottomOffset,
-          left: 16,
-          right: 16,
-          width: undefined,
-          backgroundColor: "#FFFFFF",
-          borderTopWidth: 0,
-          borderRadius: 28,
-          paddingBottom: tabBarPaddingBottom,
-          paddingTop: 8,
-          paddingHorizontal: 10,
-          minHeight: tabBarHeight,
-          height: tabBarHeight,
-          shadowColor: "rgba(43, 52, 55, 0.18)",
-          shadowOffset: { width: 0, height: -6 },
-          shadowOpacity: 1,
-          shadowRadius: 24,
-          elevation: 18,
-          opacity: 1,
-        },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: "700",
-          letterSpacing: 0.2,
-          marginTop: 0,
-        },
-        tabBarItemStyle: {
-          paddingTop: 0,
-        },
-        tabBarIconStyle: {
-          marginBottom: 7,
-        },
+        tabBarStyle: tabBarLayout.tabBarStyle,
+        tabBarLabelStyle: tabBarLayout.tabBarLabelStyle,
+        tabBarItemStyle: tabBarLayout.tabBarItemStyle,
+        tabBarIconStyle: tabBarLayout.tabBarIconStyle,
       }}
     >
       <Tabs.Screen

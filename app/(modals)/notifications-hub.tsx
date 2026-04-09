@@ -1,7 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
+  Alert,
   Dimensions,
   StyleSheet,
   Text,
@@ -15,23 +16,71 @@ import { NotificationsList } from "../../components/notifications/NotificationsL
 import { NotificationsTabBar } from "../../components/notifications/NotificationsTabBar";
 import { ConversationsTab } from "../../components/notifications/ConversationsTab";
 import {
+  TenantAnnouncementModal,
+  type TenantAnnouncementPreview,
+} from "../../components/ui/TenantAnnouncementModal";
+import {
   useAuth,
   useMessaging,
   useNotices,
   useNotifications,
   useRequests,
 } from "../../lib/context/connected-app-provider";
-import type { Notification } from "../../lib/types";
-import { isNotificationUnread } from "../../lib/utils/helpers";
+import type { MaintenanceNotice, Notification } from "../../lib/types";
+import {
+  filterNotificationsByUser,
+  getNotificationBody,
+  isChatNotificationType,
+  isNotificationUnread,
+} from "../../lib/utils/helpers";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
+
+const P = {
+  bg: "#F8F9FA",
+  surface: "#FFFFFF",
+  surfaceLow: "#F1F4F6",
+  border: "#D9E0E4",
+  text: "#2B3437",
+  muted: "#667176",
+  soft: "#7A8488",
+  primary: "#4D6169",
+  primaryDark: "#34474D",
+  shadow: "rgba(43, 52, 55, 0.06)",
+};
+
+const isBroadcastNotification = (notification: Notification): boolean =>
+  String(notification.type || "").toUpperCase() === "BROADCAST";
+
+const mapBroadcastToNotice = (notification: Notification): MaintenanceNotice => {
+  const data = (notification.data ?? {}) as Record<string, any>;
+  const buildingName =
+    data?.buildingName ??
+    data?.building_name ??
+    data?.audienceLabel ??
+    data?.audience_label ??
+    null;
+
+  return {
+    id: notification.id,
+    title: notification.title || "Building Notice",
+    description:
+      getNotificationBody(notification).trim() ||
+      "No additional details were provided for this building notice.",
+    scheduledDate: notification.createdAt,
+    status: "scheduled",
+    affectedAreas: buildingName ? [String(buildingName)] : [],
+    createdBy: "broadcast",
+    createdAt: notification.createdAt,
+    updatedAt: notification.createdAt,
+  };
+};
 
 export default function NotificationsHubScreen() {
   const insets = useSafeAreaInsets();
   const { currentUser, userRole } = useAuth();
   const {
     notifications,
-    unreadCount,
     actions: notificationActions,
   } = useNotifications();
   const { requests, actions: requestActions } = useRequests();
@@ -41,9 +90,50 @@ export default function NotificationsHubScreen() {
     actions: noticeActions,
   } = useNotices();
   const { totalUnreadCount: messagingUnreadCount } = useMessaging();
+  const isTenant = userRole === "tenant";
 
   const [activeTab, setActiveTab] = useState<"notifications" | "notices" | "messages">(
     "notifications",
+  );
+  const [selectedTenantNotice, setSelectedTenantNotice] =
+    useState<TenantAnnouncementPreview | null>(null);
+  const [clearingAnnouncementId, setClearingAnnouncementId] = useState<string | null>(null);
+  const [isClearingAllTenantNotices, setIsClearingAllTenantNotices] = useState(false);
+  const [isClearingAllAlerts, setIsClearingAllAlerts] = useState(false);
+
+  const tenantVisibleNotifications = useMemo(
+    () => filterNotificationsByUser(notifications, currentUser?.id),
+    [currentUser?.id, notifications],
+  );
+
+  const tenantBroadcastNotices = useMemo(
+    () =>
+      tenantVisibleNotifications
+        .filter(isBroadcastNotification)
+        .sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        )
+        .map(mapBroadcastToNotice),
+    [tenantVisibleNotifications],
+  );
+
+  const resolvedNotices = isTenant ? tenantBroadcastNotices : notices;
+  const resolvedNoticesCount = isTenant
+    ? tenantBroadcastNotices.length
+    : activeNoticesCount;
+  const alertNotifications = useMemo(
+    () =>
+      tenantVisibleNotifications.filter(
+        (notification) =>
+          !isBroadcastNotification(notification) &&
+          !isChatNotificationType(notification.type),
+      ),
+    [tenantVisibleNotifications],
+  );
+  const alertUnreadCount = useMemo(
+    () => alertNotifications.filter(isNotificationUnread).length,
+    [alertNotifications],
   );
 
   const handleMarkAsRead = async (id: string) => {
@@ -58,7 +148,12 @@ export default function NotificationsHubScreen() {
     if (!currentUser) return;
 
     try {
-      await notificationActions.markAllNotificationsAsRead(currentUser.id);
+      const unreadAlerts = alertNotifications.filter(isNotificationUnread);
+      await Promise.all(
+        unreadAlerts.map((notification) =>
+          notificationActions.markNotificationAsRead(notification.id),
+        ),
+      );
     } catch (error) {
       console.error("Error marking all notifications as read:", error);
     }
@@ -94,6 +189,110 @@ export default function NotificationsHubScreen() {
 
   const handleRefresh = async () => {
     await notificationActions.refreshNotifications();
+  };
+
+  const handleClearAllAlerts = () => {
+    if (alertNotifications.length === 0 || isClearingAllAlerts) {
+      return;
+    }
+
+    Alert.alert(
+      "Clear All Alerts",
+      "This will remove all alerts from your alerts list.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear All",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setIsClearingAllAlerts(true);
+              await Promise.all(
+                alertNotifications.map((notification) =>
+                  notificationActions.dismissNotification(notification.id),
+                ),
+              );
+            } catch (error) {
+              console.error("Error clearing all alerts:", error);
+            } finally {
+              setIsClearingAllAlerts(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleTenantNoticePress = (notice: MaintenanceNotice) => {
+    const notification = tenantVisibleNotifications.find((item) => item.id === notice.id);
+    if (!notification) {
+      return;
+    }
+
+    if (isNotificationUnread(notification)) {
+      void notificationActions.markNotificationAsRead(notification.id);
+    }
+
+    setSelectedTenantNotice({
+      id: notice.id,
+      title: notice.title,
+      body:
+        notice.description ||
+        "No additional details were provided for this building notice.",
+      scheduledAt: notice.scheduledDate || notice.createdAt,
+      affectedAreas: notice.affectedAreas,
+    });
+  };
+
+  const handleClearTenantAnnouncement = async (
+    announcement: TenantAnnouncementPreview,
+  ) => {
+    if (!announcement.id) {
+      return;
+    }
+
+    try {
+      setClearingAnnouncementId(announcement.id);
+      await notificationActions.dismissNotification(announcement.id);
+      setSelectedTenantNotice(null);
+    } catch (error) {
+      console.error("Error clearing announcement:", error);
+    } finally {
+      setClearingAnnouncementId(null);
+    }
+  };
+
+  const handleClearAllTenantNotices = () => {
+    if (tenantBroadcastNotices.length === 0 || isClearingAllTenantNotices) {
+      return;
+    }
+
+    Alert.alert(
+      "Clear All Notices",
+      "This will remove all broadcast notices from your notices list.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear All",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setIsClearingAllTenantNotices(true);
+              await Promise.all(
+                tenantBroadcastNotices.map((notice) =>
+                  notificationActions.dismissNotification(notice.id),
+                ),
+              );
+              setSelectedTenantNotice(null);
+            } catch (error) {
+              console.error("Error clearing all tenant notices:", error);
+            } finally {
+              setIsClearingAllTenantNotices(false);
+            }
+          },
+        },
+      ],
+    );
   };
 
   const handleNotificationPress = (notification: Notification) => {
@@ -195,9 +394,10 @@ export default function NotificationsHubScreen() {
           <NotificationsTabBar
             activeTab={activeTab}
             onTabChange={setActiveTab}
-            unreadCount={unreadCount}
-            activeNoticesCount={activeNoticesCount}
+            unreadCount={alertUnreadCount}
+            activeNoticesCount={resolvedNoticesCount}
             messagesUnreadCount={messagingUnreadCount}
+            variant="tenant"
           />
         </View>
 
@@ -205,7 +405,7 @@ export default function NotificationsHubScreen() {
         <View style={styles.tabContent}>
           {activeTab === "notifications" ? (
             <NotificationsList
-              notifications={notifications}
+              notifications={alertNotifications}
               userId={currentUser.id}
               userRole={
                 (userRole || "tenant") as
@@ -219,16 +419,20 @@ export default function NotificationsHubScreen() {
               onMarkAsRead={handleMarkAsRead}
               onMarkAllAsRead={handleMarkAllAsRead}
               onDismiss={handleDismissNotification}
+              onClearAll={handleClearAllAlerts}
+              clearingAll={isClearingAllAlerts}
               onRefresh={handleRefresh}
+              variant="tenant"
             />
           ) : activeTab === "messages" ? (
             <ConversationsTab
               userId={currentUser.id}
               onRefresh={handleRefresh}
+              variant="tenant"
             />
           ) : (
             <NoticesList
-              notices={notices}
+              notices={resolvedNotices}
               userRole={
                 (userRole || "tenant") as
                   | "tenant"
@@ -237,6 +441,7 @@ export default function NotificationsHubScreen() {
                   | "service_provider"
                   | "employee"
               }
+              onPress={isTenant ? handleTenantNoticePress : undefined}
               onDelete={
                 userRole === "admin" || userRole === "management"
                   ? handleDeleteNotice
@@ -247,10 +452,21 @@ export default function NotificationsHubScreen() {
                   ? handleAddNotice
                   : undefined
               }
+              onClearAll={isTenant ? handleClearAllTenantNotices : undefined}
+              clearingAll={isTenant ? isClearingAllTenantNotices : false}
               onRefresh={handleRefresh}
+              variant="tenant"
             />
           )}
         </View>
+
+        <TenantAnnouncementModal
+          announcement={selectedTenantNotice}
+          visible={Boolean(selectedTenantNotice)}
+          onClose={() => setSelectedTenantNotice(null)}
+          onClear={handleClearTenantAnnouncement}
+          clearing={selectedTenantNotice?.id === clearingAnnouncementId}
+        />
       </Animated.View>
     </SafeAreaView>
   );
@@ -259,7 +475,7 @@ export default function NotificationsHubScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F9FAFB",
+    backgroundColor: P.bg,
   },
   content: {
     flex: 1,
@@ -276,23 +492,52 @@ const styles = StyleSheet.create({
     marginRight: 16,
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#1F2937",
-    marginBottom: 4,
+    fontSize: 28,
+    fontWeight: "800",
+    color: P.text,
+    marginBottom: 6,
   },
   headerSubtitle: {
     fontSize: 14,
-    color: "#6B7280",
-    lineHeight: 20,
+    color: P.muted,
+    lineHeight: 22,
   },
   closeButton: {
-    padding: 4,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: P.surface,
+    borderWidth: 1,
+    borderColor: P.border,
+    shadowColor: P.shadow,
+    shadowOpacity: 1,
+    shadowRadius: 14,
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    elevation: 2,
   },
   tabBarContainer: {
-    marginBottom: 20,
+    marginBottom: 18,
   },
   tabContent: {
     flex: 1,
+    backgroundColor: P.surface,
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: P.border,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    shadowColor: P.shadow,
+    shadowOpacity: 1,
+    shadowRadius: 20,
+    shadowOffset: {
+      width: 0,
+      height: 12,
+    },
+    elevation: 3,
   },
 });

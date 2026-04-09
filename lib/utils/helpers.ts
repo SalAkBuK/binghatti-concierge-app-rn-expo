@@ -206,6 +206,7 @@ export const getUnreadNotificationsCount = (
     (notification) =>
       isNotificationForUser(notification, userId) &&
       shouldShowNotificationInInbox(notification) &&
+      !isChatNotificationType(notification.type) &&
       !isNotificationDismissed(notification) &&
       isNotificationUnread(notification),
   ).length;

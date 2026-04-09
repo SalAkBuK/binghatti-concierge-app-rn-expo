@@ -1,4 +1,4 @@
-import React, { startTransition, useCallback, useDeferredValue, useMemo, useState } from "react";
+import React, { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -14,7 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "../../lib/context/auth-context";
 import { useMessaging } from "../../lib/context/messaging-context";
@@ -54,6 +54,7 @@ const P = {
 
 type MessageFilter = "all" | "unread" | "staff" | "management";
 type ConversationCategory = Exclude<MessageFilter, "all" | "unread"> | "resident";
+const CONVERSATIONS_PER_PAGE = 10;
 
 type ConversationListItem = {
   conversation: Conversation;
@@ -357,6 +358,7 @@ export default function MessagesScreen() {
   const { conversations, loading, actions } = useMessaging();
   const { currentUser } = useAuth();
   const { notifications } = useNotifications();
+  const insets = useSafeAreaInsets();
   const {
     canCreateManagementConversation,
     isFormerResident,
@@ -365,10 +367,12 @@ export default function MessagesScreen() {
     enabled: Boolean(currentUser?.role === "tenant" && currentUser?.id),
   });
   const tabBarHeight = useBottomTabBarHeight();
+  const fabBottomOffset = tabBarHeight + Math.max(insets.bottom, 24) + 28;
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<MessageFilter>("all");
   const [showSideMenu, setShowSideMenu] = useState(false);
+  const [page, setPage] = useState(1);
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
   const userNotifications = useMemo(
@@ -418,6 +422,22 @@ export default function MessagesScreen() {
       return conversation.category === activeFilter;
     });
   }, [activeFilter, conversationItems, deferredSearchQuery]);
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredConversations.length / CONVERSATIONS_PER_PAGE),
+  );
+  const currentPage = Math.min(page, totalPages);
+  const pageStartIndex = (currentPage - 1) * CONVERSATIONS_PER_PAGE;
+  const paginatedConversations = useMemo(
+    () =>
+      filteredConversations.slice(
+        pageStartIndex,
+        pageStartIndex + CONVERSATIONS_PER_PAGE,
+      ),
+    [filteredConversations, pageStartIndex],
+  );
+  const visibleRangeStart = filteredConversations.length === 0 ? 0 : pageStartIndex + 1;
+  const visibleRangeEnd = pageStartIndex + paginatedConversations.length;
 
   const hasActiveQuery = searchQuery.trim().length > 0 || activeFilter !== "all";
 
@@ -456,6 +476,16 @@ export default function MessagesScreen() {
     [],
   );
 
+  useEffect(() => {
+    setPage(1);
+  }, [activeFilter, deferredSearchQuery]);
+
+  useEffect(() => {
+    if (page !== currentPage) {
+      setPage(currentPage);
+    }
+  }, [currentPage, page]);
+
   const keyExtractor = useCallback((item: ConversationListItem) => item.conversation.id, []);
 
   const header = useMemo(
@@ -488,15 +518,10 @@ export default function MessagesScreen() {
               <Text style={styles.heroStatValue}>{summary.total}</Text>
               <Text style={styles.heroStatLabel}>Total threads</Text>
             </View>
-            <LinearGradient
-              colors={[P.primary, P.primaryDark]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.heroStatCardPrimary}
-            >
-              <Text style={styles.heroStatValuePrimary}>{summary.unread}</Text>
-              <Text style={styles.heroStatLabelPrimary}>Unread now</Text>
-            </LinearGradient>
+            <View style={styles.heroStatCard}>
+              <Text style={styles.heroStatValue}>{summary.unread}</Text>
+              <Text style={styles.heroStatLabel}>Unread now</Text>
+            </View>
           </View>
 
           <View style={styles.heroActionRow}>
@@ -610,6 +635,7 @@ export default function MessagesScreen() {
               onPress={() => {
                 startTransition(() => {
                   setActiveFilter(option.key);
+                  setPage(1);
                 });
               }}
             />
@@ -657,7 +683,7 @@ export default function MessagesScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <FlatList
-        data={filteredConversations}
+        data={paginatedConversations}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
         keyboardShouldPersistTaps="handled"
@@ -671,7 +697,7 @@ export default function MessagesScreen() {
           {
             paddingBottom: tabBarHeight + (canCreateManagementConversation ? 96 : 32),
           },
-          filteredConversations.length === 0 && styles.emptyListContent,
+          paginatedConversations.length === 0 && styles.emptyListContent,
         ]}
         refreshing={refreshing}
         onRefresh={onRefresh}
@@ -703,13 +729,79 @@ export default function MessagesScreen() {
             ) : null}
           </View>
         }
-        ListFooterComponent={<View style={styles.listFooterSpacer} />}
+        ListFooterComponent={
+          filteredConversations.length > 0 && totalPages > 1 ? (
+            <View style={styles.paginationContainer}>
+              <Text style={styles.paginationSummary}>
+                Showing {visibleRangeStart}-{visibleRangeEnd} of {filteredConversations.length}
+              </Text>
+              <View style={styles.paginationControls}>
+                <TouchableOpacity
+                  style={[
+                    styles.paginationButton,
+                    currentPage === 1 && styles.paginationButtonDisabled,
+                  ]}
+                  onPress={() => setPage((prevPage) => Math.max(1, prevPage - 1))}
+                  disabled={currentPage === 1}
+                >
+                  <Ionicons
+                    name="chevron-back"
+                    size={16}
+                    color={currentPage === 1 ? P.soft : P.primary}
+                  />
+                  <Text
+                    style={[
+                      styles.paginationButtonText,
+                      currentPage === 1 && styles.paginationButtonTextDisabled,
+                    ]}
+                  >
+                    Previous
+                  </Text>
+                </TouchableOpacity>
+
+                <View style={styles.paginationPagePill}>
+                  <Text style={styles.paginationPageText}>
+                    Page {currentPage} / {totalPages}
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  style={[
+                    styles.paginationButton,
+                    currentPage === totalPages && styles.paginationButtonDisabled,
+                  ]}
+                  onPress={() =>
+                    setPage((prevPage) => Math.min(totalPages, prevPage + 1))
+                  }
+                  disabled={currentPage === totalPages}
+                >
+                  <Text
+                    style={[
+                      styles.paginationButtonText,
+                      currentPage === totalPages &&
+                        styles.paginationButtonTextDisabled,
+                    ]}
+                  >
+                    Next
+                  </Text>
+                  <Ionicons
+                    name="chevron-forward"
+                    size={16}
+                    color={currentPage === totalPages ? P.soft : P.primary}
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.listFooterSpacer} />
+          )
+        }
       />
 
       {canCreateManagementConversation ? (
         <TouchableOpacity
           activeOpacity={0.92}
-          style={[styles.fabWrap, { bottom: tabBarHeight + 24 }]}
+          style={[styles.fabWrap, { bottom: fabBottomOffset }]}
           onPress={() => router.push("/(modals)/new-conversation" as any)}
         >
           <LinearGradient
@@ -888,31 +980,15 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     backgroundColor: P.surfaceLow,
   },
-  heroStatCardPrimary: {
-    flex: 1,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
   heroStatValue: {
     fontSize: 26,
     fontWeight: "800",
     color: P.text,
   },
-  heroStatValuePrimary: {
-    fontSize: 26,
-    fontWeight: "800",
-    color: "#EEF7FB",
-  },
   heroStatLabel: {
     marginTop: 4,
     fontSize: 13,
     color: P.muted,
-  },
-  heroStatLabelPrimary: {
-    marginTop: 4,
-    fontSize: 13,
-    color: "#DCE8EE",
   },
   infoBanner: {
     flexDirection: "row",
@@ -1099,6 +1175,59 @@ const styles = StyleSheet.create({
   },
   rowSpacer: {
     height: 12,
+  },
+  paginationContainer: {
+    alignItems: "center",
+    gap: 12,
+    paddingTop: 18,
+    paddingBottom: 8,
+  },
+  paginationSummary: {
+    fontSize: 12,
+    color: P.soft,
+    fontWeight: "600",
+  },
+  paginationControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    flexWrap: "wrap",
+  },
+  paginationButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    minHeight: 42,
+    paddingHorizontal: 14,
+    backgroundColor: P.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: P.border,
+  },
+  paginationButtonDisabled: {
+    backgroundColor: P.surfaceLow,
+  },
+  paginationButtonText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: P.primary,
+  },
+  paginationButtonTextDisabled: {
+    color: P.soft,
+  },
+  paginationPagePill: {
+    minHeight: 42,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: P.surfaceLow,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  paginationPageText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: P.text,
   },
   rowCard: {
     flexDirection: "row",

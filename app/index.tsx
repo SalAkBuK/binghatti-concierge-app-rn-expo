@@ -1,5 +1,6 @@
-import { Redirect, type Href } from "expo-router";
-import React, { useEffect, useState } from "react";
+import { Redirect, router, type Href } from "expo-router";
+import React, { useEffect } from "react";
+import { AppBootstrapErrorScreen } from "../components/ui/AppBootstrapErrorScreen";
 import { LoadingScreen } from "../components/ui/LoadingScreen";
 import { useAuth } from "../lib/context/auth-context";
 import {
@@ -8,43 +9,46 @@ import {
 } from "../lib/config/portals";
 
 export default function IndexScreen() {
-  const { isAuthenticated, currentUser } = useAuth();
-  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
-  const [isFinishingSplash, setIsFinishingSplash] = useState(false);
-
-  // Initial load timer
-  useEffect(() => {
-    const finishTimer = setTimeout(() => {
-      setIsFinishingSplash(true);
-    }, 2200);
-
-    const completeTimer = setTimeout(() => {
-      console.log("[Index] Initial load complete");
-      setInitialLoadComplete(true);
-    }, 2560);
-
-    return () => {
-      clearTimeout(finishTimer);
-      clearTimeout(completeTimer);
-    };
-  }, []);
+  const {
+    isAuthenticated,
+    currentUser,
+    bootstrapStatus,
+    bootstrapError,
+    actions,
+  } = useAuth();
 
   // Log whenever auth state changes
   useEffect(() => {
     console.log("[Index] Component rendered - Auth state:", {
       isAuthenticated,
+      bootstrapStatus,
       role: currentUser?.role,
-      userEmail: currentUser?.email
+      userEmail: currentUser?.email,
     });
-  }, [isAuthenticated, currentUser]);
+  }, [bootstrapStatus, currentUser, isAuthenticated]);
 
-  // Show loading during initial load
-  if (!initialLoadComplete) {
+  if (bootstrapStatus === "restoring") {
     return (
       <LoadingScreen
-        message="Loading..."
+        message="Restoring your workspace..."
         useLottie={false}
-        isFinishing={isFinishingSplash}
+      />
+    );
+  }
+
+  if (bootstrapStatus === "error") {
+    return (
+      <AppBootstrapErrorScreen
+        message={
+          bootstrapError ||
+          "We could not restore your workspace. Retry or continue to sign in again."
+        }
+        onRetry={actions.retryBootstrap}
+        onContinueToSignIn={() => {
+          void actions.recoverFromBootstrapError().then(() => {
+            router.replace("/auth" as any);
+          });
+        }}
       />
     );
   }

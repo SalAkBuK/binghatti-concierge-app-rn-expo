@@ -38,7 +38,21 @@ function getOtherParticipants(conversation: Conversation, currentUserId?: string
 interface ConversationsTabProps {
   userId?: string;
   onRefresh?: () => void;
+  variant?: "default" | "tenant";
 }
+
+const TENANT = {
+  surface: "#FFFFFF",
+  surfaceLow: "#F1F4F6",
+  border: "#D9E0E4",
+  text: "#2B3437",
+  muted: "#667176",
+  soft: "#7A8488",
+  primary: "#4D6169",
+  primaryDark: "#34474D",
+  primarySoft: "#DCE8EE",
+  shadow: "rgba(43, 52, 55, 0.06)",
+};
 
 function ConversationRow({
   conversation,
@@ -109,7 +123,11 @@ function ConversationRow({
   );
 }
 
-export function ConversationsTab({ userId, onRefresh }: ConversationsTabProps) {
+export function ConversationsTab({
+  userId,
+  onRefresh,
+  variant = "default",
+}: ConversationsTabProps) {
   const { currentUser } = useAuth();
   const { conversations, loading, actions } = useMessaging();
   const { canCreateManagementConversation } = useResidentTenancy({
@@ -118,6 +136,7 @@ export function ConversationsTab({ userId, onRefresh }: ConversationsTabProps) {
   const canStartConversation =
     currentUser?.role === "tenant" ? canCreateManagementConversation : true;
   const [refreshing, setRefreshing] = useState(false);
+  const isTenant = variant === "tenant";
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -145,7 +164,10 @@ export function ConversationsTab({ userId, onRefresh }: ConversationsTabProps) {
   if (loading && conversations.length === 0) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#336BE3" />
+        <ActivityIndicator
+          size="large"
+          color={isTenant ? TENANT.primary : "#336BE3"}
+        />
       </View>
     );
   }
@@ -164,30 +186,57 @@ export function ConversationsTab({ userId, onRefresh }: ConversationsTabProps) {
       ListHeaderComponent={
         conversations.length > 0 && canStartConversation ? (
           <TouchableOpacity
-            style={styles.newConversationButton}
+            style={[
+              styles.newConversationButton,
+              isTenant && styles.tenantNewConversationButton,
+            ]}
             onPress={handleNewConversation}
             activeOpacity={0.7}
           >
-            <Ionicons name="create-outline" size={18} color="#336BE3" />
-            <Text style={styles.newConversationText}>New Conversation</Text>
+            <Ionicons
+              name="create-outline"
+              size={18}
+              color={isTenant ? TENANT.primary : "#336BE3"}
+            />
+            <Text
+              style={[
+                styles.newConversationText,
+                isTenant && styles.tenantNewConversationText,
+              ]}
+            >
+              New Conversation
+            </Text>
           </TouchableOpacity>
         ) : null
       }
       ListEmptyComponent={
         <View style={styles.emptyState}>
-          <Ionicons name="chatbubbles-outline" size={56} color="#CBD5E1" />
-          <Text style={styles.emptyTitle}>No conversations yet</Text>
-          <Text style={styles.emptySubtitle}>
+          <Ionicons
+            name="chatbubbles-outline"
+            size={56}
+            color={isTenant ? TENANT.soft : "#CBD5E1"}
+          />
+          <Text style={[styles.emptyTitle, isTenant && styles.tenantEmptyTitle]}>
+            No conversations yet
+          </Text>
+          <Text
+            style={[styles.emptySubtitle, isTenant && styles.tenantEmptySubtitle]}
+          >
             {canStartConversation
               ? "Start a new conversation to get in touch with staff or management."
               : "Existing conversations remain available here for follow-up and history."}
           </Text>
           {canStartConversation ? (
             <TouchableOpacity
-              style={styles.emptyButton}
+              style={[styles.emptyButton, isTenant && styles.tenantEmptyButton]}
               onPress={handleNewConversation}
             >
-              <Ionicons name="create-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Ionicons
+                name="create-outline"
+                size={16}
+                color="#FFFFFF"
+                style={{ marginRight: 6 }}
+              />
               <Text style={styles.emptyButtonText}>New Message</Text>
             </TouchableOpacity>
           ) : null}
@@ -217,11 +266,26 @@ const styles = StyleSheet.create({
     borderColor: "#DBEAFE",
     borderStyle: "dashed",
   },
+  tenantNewConversationButton: {
+    justifyContent: "flex-start",
+    paddingHorizontal: 16,
+    marginHorizontal: 0,
+    marginBottom: 12,
+    backgroundColor: TENANT.surfaceLow,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: TENANT.border,
+    borderStyle: "solid",
+  },
   newConversationText: {
     fontSize: 14,
     fontWeight: "600",
     color: "#336BE3",
     marginLeft: 6,
+  },
+  tenantNewConversationText: {
+    color: TENANT.primaryDark,
+    fontWeight: "700",
   },
   row: {
     flexDirection: "row",
@@ -330,6 +394,13 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     marginBottom: 18,
   },
+  tenantEmptyTitle: {
+    color: TENANT.text,
+    fontWeight: "700",
+  },
+  tenantEmptySubtitle: {
+    color: TENANT.muted,
+  },
   emptyButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -337,6 +408,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 8,
+  },
+  tenantEmptyButton: {
+    backgroundColor: TENANT.primary,
+    borderRadius: 18,
+    paddingHorizontal: 22,
+    paddingVertical: 12,
   },
   emptyButtonText: {
     fontSize: 14,
