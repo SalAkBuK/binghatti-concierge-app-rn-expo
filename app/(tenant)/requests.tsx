@@ -234,8 +234,6 @@ export default function RequestsScreen() {
     };
   }, [backendRequests]);
 
-  const latestRequest = allRequestsByNewest[0];
-
   const statusFilters = useMemo(
     () => [
       { label: 'All', value: 'all' as const, count: stats.total },
@@ -461,25 +459,6 @@ export default function RequestsScreen() {
         ))}
       </View>
 
-      <View style={styles.spotlightCard}>
-        <View style={styles.spotlightHeader}>
-          <View>
-            <Text style={styles.sectionEyebrow}>Latest Update</Text>
-            <Text style={styles.spotlightTitle}>
-              {latestRequest ? latestRequest.title : "No requests yet"}
-            </Text>
-          </View>
-          <View style={styles.spotlightBadge}>
-            <Text style={styles.spotlightBadgeText}>{formatCount(stats.total)}</Text>
-          </View>
-        </View>
-        <Text style={styles.spotlightText}>
-          {latestRequest
-            ? `${getStatusMeta(latestRequest).label} - Updated ${formatDate(latestRequest.updatedAt)}`
-            : "Once you create a request, its latest status will appear here."}
-        </Text>
-      </View>
-
       <View style={styles.filterSection}>
         <View style={styles.sectionHeader}>
           <View>
@@ -691,52 +670,6 @@ const styles = StyleSheet.create({
   },
   summaryLabelPrimary: {
     color: "rgba(255,255,255,0.76)",
-  },
-  spotlightCard: {
-    backgroundColor: P.surface,
-    borderRadius: 24,
-    padding: 16,
-    marginBottom: 18,
-    borderWidth: 1,
-    borderColor: P.border,
-  },
-  spotlightHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: 12,
-    marginBottom: 10,
-  },
-  sectionEyebrow: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: P.soft,
-    textTransform: "uppercase",
-    letterSpacing: 1.2,
-    marginBottom: 6,
-  },
-  spotlightTitle: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: P.text,
-  },
-  spotlightBadge: {
-    minWidth: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: P.surfaceLow,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  spotlightBadgeText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: P.primary,
-  },
-  spotlightText: {
-    fontSize: 13,
-    lineHeight: 20,
-    color: P.muted,
   },
   filterSection: {
     marginBottom: 14,

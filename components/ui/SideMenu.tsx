@@ -7,6 +7,7 @@ import {
   Alert,
   Dimensions,
   Image,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -123,11 +124,7 @@ export function SideMenu({ isVisible, onClose, userRole }: SideMenuProps) {
     currentUser?.profile?.avatarUrl ||
     currentUser?.profile?.avatar ||
     null;
-  const hasBottomTabBar =
-    effectiveRole === "tenant" ||
-    effectiveRole === "owner" ||
-    effectiveRole === "building_employee";
-  const footerBottomPadding = Math.max(insets.bottom, 20) + (hasBottomTabBar ? 104 : 24);
+  const footerBottomPadding = Math.max(insets.bottom, 20) + 24;
 
   // Animation values
   const translateX = useSharedValue(-MENU_WIDTH - 20);
@@ -636,30 +633,29 @@ export function SideMenu({ isVisible, onClose, userRole }: SideMenuProps) {
   };
 
   return (
-    <View style={styles.container}>
-      {/* Overlay */}
-      <Animated.View
-        style={[styles.overlay, overlayAnimatedStyle]}
-      >
-        <TouchableOpacity
-          style={StyleSheet.absoluteFill}
-          activeOpacity={1}
-          onPress={onClose}
-        />
-      </Animated.View>
+    <Modal
+      visible={isRendered}
+      transparent
+      animationType="none"
+      statusBarTranslucent
+      onRequestClose={onClose}
+    >
+      <View style={styles.container}>
+        {/* Overlay */}
+        <Animated.View
+          style={[styles.overlay, overlayAnimatedStyle]}
+        >
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={onClose}
+          />
+        </Animated.View>
 
-      {/* Menu Panel */}
-      <Animated.View style={[styles.menuPanel, menuAnimatedStyle]}>
-        <View style={[styles.menuHeader, { paddingTop: insets.top + 18 }]}>
-          <View style={styles.menuHeaderTopRow}>
-            <View />
-            <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-              <Ionicons name="close" size={20} color={P.onInverse} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.profileHero}>
-            <View style={styles.profileHeroTopRow}>
+        {/* Menu Panel */}
+        <Animated.View style={[styles.menuPanel, menuAnimatedStyle]}>
+          <View style={[styles.menuHeader, { paddingTop: insets.top + 18 }]}>
+            <View style={styles.menuHeaderTopRow}>
               <LinearGradient
                 colors={[P.primary, P.primaryDark]}
                 start={{ x: 0, y: 0 }}
@@ -674,63 +670,68 @@ export function SideMenu({ isVisible, onClose, userRole }: SideMenuProps) {
                   </View>
                 )}
               </LinearGradient>
+              <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+                <Ionicons name="close" size={7} color={P.onInverse} />
+              </TouchableOpacity>
             </View>
 
-            <View style={styles.userDetails}>
-              <View style={styles.identityPillRow}>
-                <View style={styles.roleChip}>
-                  <Ionicons
-                    name="sparkles-outline"
-                    size={12}
-                    color={P.onInverse}
-                  />
-                  <Text style={styles.roleChipText}>
-                    {formatRoleLabel(effectiveRole)}
-                  </Text>
-                </View>
-                {resolvedUnitLabel ? (
-                  <View style={[styles.profileMetaPill, styles.profileMetaPillUnit]}>
+            <View style={styles.profileHero}>
+              <View style={styles.userDetails}>
+                <View style={styles.identityPillRow}>
+                  <View style={styles.roleChip}>
                     <Ionicons
-                      name="home-outline"
+                      name="sparkles-outline"
                       size={12}
                       color={P.onInverse}
                     />
-                    <Text style={[styles.profileMetaPillText, styles.profileMetaPillTextUnit]}>
-                      {resolvedUnitLabel}
+                    <Text style={styles.roleChipText}>
+                      {formatRoleLabel(effectiveRole)}
                     </Text>
                   </View>
-                ) : null}
-              </View>
-              <Text style={styles.userName} numberOfLines={2}>
-                {displayName}
-              </Text>
-              <View style={styles.profileMetaRow}>
-                {messagingUnreadCount > 0 ? (
-                  <View style={styles.profileMetaPill}>
-                    <Text style={styles.profileMetaPillText}>
-                      {messagingUnreadCount > 99 ? "99+" : messagingUnreadCount} unread
-                    </Text>
-                  </View>
-                ) : null}
+                  {resolvedUnitLabel ? (
+                    <View style={[styles.profileMetaPill, styles.profileMetaPillUnit]}>
+                      <Ionicons
+                        name="home-outline"
+                        size={12}
+                        color={P.onInverse}
+                      />
+                      <Text style={[styles.profileMetaPillText, styles.profileMetaPillTextUnit]}>
+                        {resolvedUnitLabel}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+                <Text style={styles.userName} numberOfLines={2}>
+                  {displayName}
+                </Text>
+                <View style={styles.profileMetaRow}>
+                  {messagingUnreadCount > 0 ? (
+                    <View style={styles.profileMetaPill}>
+                      <Text style={styles.profileMetaPillText}>
+                        {messagingUnreadCount > 99 ? "99+" : messagingUnreadCount} unread
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
               </View>
             </View>
           </View>
-        </View>
 
-        <ScrollView
-          style={styles.menuItems}
-          contentContainerStyle={styles.menuItemsContent}
-          showsVerticalScrollIndicator={false}
-          bounces={false}
-        >
-          {primaryMenuItems.map(renderMenuItem)}
-        </ScrollView>
+          <ScrollView
+            style={styles.menuItems}
+            contentContainerStyle={styles.menuItemsContent}
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+          >
+            {primaryMenuItems.map(renderMenuItem)}
+          </ScrollView>
 
-        <View style={[styles.menuFooter, { paddingBottom: footerBottomPadding }]}>
-          {footerMenuItems.map(renderMenuItem)}
-        </View>
-      </Animated.View>
-    </View>
+          <View style={[styles.menuFooter, { paddingBottom: footerBottomPadding }]}>
+            {footerMenuItems.map(renderMenuItem)}
+          </View>
+        </Animated.View>
+      </View>
+    </Modal>
   );
 }
 
@@ -772,16 +773,12 @@ const styles = StyleSheet.create({
   },
   menuHeaderTopRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
-    marginBottom: 10,
+    marginBottom: 16,
   },
   profileHero: {
-    gap: 18,
-  },
-  profileHeroTopRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
+    gap: 14,
   },
   avatarRing: {
     width: 86,
@@ -874,9 +871,9 @@ const styles = StyleSheet.create({
     color: P.onInverse,
   },
   closeButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: P.inverse,

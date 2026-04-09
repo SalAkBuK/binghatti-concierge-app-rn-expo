@@ -195,7 +195,22 @@ export default function AuthScreen() {
 
             <View style={styles.heroAccentCard}>
               <View style={styles.heroAccentGlow} />
-              <Ionicons name='business-outline' size={28} color={P.primary} />
+              <View style={styles.heroMonogramShell}>
+                <View style={styles.heroMonogramGlow} />
+                <View style={styles.heroMonogramGlassRing} />
+                <View style={styles.heroMonogramMark}>
+                  <View style={styles.heroMonogramDot} />
+                  <View
+                    style={[styles.heroMonogramLine, styles.heroMonogramLineLeft]}
+                  />
+                  <View
+                    style={[styles.heroMonogramLine, styles.heroMonogramLineCenter]}
+                  />
+                  <View
+                    style={[styles.heroMonogramLine, styles.heroMonogramLineRight]}
+                  />
+                </View>
+              </View>
               <Text style={styles.heroAccentText}>
                 Resident, management, and workforce access from one polished gateway.
               </Text>
@@ -332,7 +347,7 @@ export default function AuthScreen() {
 
           <View style={styles.footer}>
             <Text style={styles.footerCopyright}>
-              © 2024 Towerdesk. All rights reserved.
+              {'\u00A9'} 2026 Towerdesk. All rights reserved.
             </Text>
           </View>
         </ScrollView>
@@ -426,6 +441,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.55)',
     padding: 18,
     overflow: 'hidden',
+    alignItems: 'center',
   },
   heroAccentGlow: {
     position: 'absolute',
@@ -436,12 +452,82 @@ const styles = StyleSheet.create({
     borderRadius: 55,
     backgroundColor: 'rgba(77, 97, 105, 0.08)',
   },
+  heroMonogramShell: {
+    width: 78,
+    height: 78,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    shadowColor: 'rgba(42, 52, 55, 0.08)',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 1,
+    shadowRadius: 22,
+    elevation: 4,
+  },
+  heroMonogramGlow: {
+    position: 'absolute',
+    top: -12,
+    right: -8,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(77, 97, 105, 0.05)',
+  },
+  heroMonogramGlassRing: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    right: 10,
+    bottom: 10,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(77, 97, 105, 0.05)',
+  },
+  heroMonogramMark: {
+    width: 26,
+    height: 30,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+  },
+  heroMonogramDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    borderWidth: 1.5,
+    borderColor: P.primaryDark,
+    backgroundColor: 'transparent',
+    marginBottom: 4,
+  },
+  heroMonogramLine: {
+    position: 'absolute',
+    bottom: 0,
+    width: 1.5,
+    borderRadius: 999,
+    backgroundColor: P.primaryDark,
+  },
+  heroMonogramLineLeft: {
+    height: 14,
+    left: 6,
+    transform: [{ rotate: '23deg' }],
+  },
+  heroMonogramLineCenter: {
+    height: 16,
+    left: 12,
+  },
+  heroMonogramLineRight: {
+    height: 14,
+    right: 6,
+    transform: [{ rotate: '-23deg' }],
+  },
   heroAccentText: {
     marginTop: 10,
     fontSize: 13,
     lineHeight: 19,
     color: P.muted,
     maxWidth: 250,
+    textAlign: 'center',
   },
   cardWrap: {
     position: 'relative',

@@ -109,6 +109,28 @@ const requestStatusMeta = (request: { status?: string | null; ownerApproval?: un
   }
 };
 
+const isActiveRequest = (request: {
+  status?: string | null;
+  ownerApproval?: unknown;
+  ownerApprovalStatus?: unknown;
+}) => {
+  if (isResidentRequestOwnerRejected(request)) {
+    return false;
+  }
+
+  return (
+    request.status === "pending" ||
+    request.status === "assigned" ||
+    request.status === "in-progress" ||
+    request.status === "on-hold"
+  );
+};
+
+const getRequestTimestamp = (request: { createdAt?: string | null; updatedAt?: string | null }) => {
+  const parsed = Date.parse(request.updatedAt || request.createdAt || "");
+  return Number.isNaN(parsed) ? 0 : parsed;
+};
+
 export default function TenantHomeScreen() {
   const { currentUser, isAuthenticated, actions: authActions } = useAuth();
   const { notifications, actions: notificationActions } = useNotifications();
@@ -214,10 +236,11 @@ export default function TenantHomeScreen() {
   );
   const hasUnreadNotifications = getUnreadNotificationsCount(userNotifications) > 0;
 
-  const recentRequests = useMemo(
+  const activeRequests = useMemo(
     () =>
       [...residentRequests]
-        .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+        .filter((request) => isActiveRequest(request))
+        .sort((a, b) => getRequestTimestamp(b) - getRequestTimestamp(a))
         .slice(0, 3),
     [residentRequests],
   );
@@ -368,8 +391,8 @@ export default function TenantHomeScreen() {
             </TouchableOpacity>
           </View>
 
-          {recentRequests.length > 0 ? (
-            recentRequests.map((request) => {
+          {activeRequests.length > 0 ? (
+            activeRequests.map((request) => {
               const status = requestStatusMeta(request);
               const ownerRejected = isResidentRequestOwnerRejected(request);
               const ownerRejectionReason = getResidentRequestOwnerRejectionReason(request);
@@ -428,9 +451,9 @@ export default function TenantHomeScreen() {
           ) : (
             <View style={styles.emptyCard}>
               <Ionicons name="clipboard-outline" size={26} color={P.soft} />
-              <Text style={styles.emptyTitle}>No recent requests</Text>
+              <Text style={styles.emptyTitle}>No active requests</Text>
               <Text style={styles.emptyText}>
-                When you submit a maintenance request, it will appear here.
+                There are no active requests right now.
               </Text>
             </View>
           )}
