@@ -33,6 +33,13 @@ Use this document when:
   - `Sign in with Google` and `Sign in with Apple` are intentionally hidden from `app/auth.tsx`.
 - The login screen hides placeholder footer links that only showed not-yet-wired alerts.
   - `Privacy Policy`, `Terms of Service`, and `Contact Support` are intentionally hidden from `app/auth.tsx` until real mobile destinations exist.
+- The login screen hides the old `Contact Management` footer line.
+  - `app/auth.tsx` now ends the primary card at the cache action so production-backed sign-in copy does not point at a vague manual fallback.
+
+### Building Employee Portal
+
+- The legacy building employee `Shifts` screen is intentionally removed from the mounted mobile portal.
+  - It is no longer linked from `app/(buildingEmployee)/index.tsx` and no longer registered in `app/(buildingEmployee)/_layout.tsx`.
 
 ### Owner Portal
 

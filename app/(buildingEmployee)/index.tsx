@@ -301,12 +301,6 @@ export default function BuildingEmployeeDashboard() {
         icon: 'person-outline' as const,
         onPress: () => router.push('/(buildingEmployee)/profile'),
       },
-      {
-        key: 'shifts',
-        label: 'Shifts',
-        icon: 'calendar-outline' as const,
-        onPress: () => router.push('/(buildingEmployee)/shifts'),
-      },
     ],
     [],
   );

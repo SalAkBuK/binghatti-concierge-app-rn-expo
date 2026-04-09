@@ -321,7 +321,6 @@ export default function VisitorsScreen() {
         >
           <HeaderBar
             title="Visitors"
-            subtitle="Guest access and pre-authorization"
             hasUnreadNotifications={hasUnreadNotifications}
             showSideMenu={showSideMenu}
             onSideMenuToggle={setShowSideMenu}

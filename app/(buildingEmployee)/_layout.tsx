@@ -120,20 +120,6 @@ export default function BuildingEmployeeLayout() {
         }}
       />
       <Tabs.Screen
-        name="shifts"
-        options={{
-          href: null,
-          title: "Shifts",
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? "calendar" : "calendar-outline"}
-              size={22}
-              color={color}
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="profile"
         options={{
           title: "Profile",

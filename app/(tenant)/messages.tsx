@@ -2,6 +2,7 @@ import React, { startTransition, useCallback, useDeferredValue, useMemo, useStat
 import {
   ActivityIndicator,
   FlatList,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -23,6 +24,7 @@ import type { Conversation } from "../../lib/types";
 import { filterNotificationsByUser, getUnreadNotificationsCount } from "../../lib/utils/helpers";
 import {
   getTenantConversationAvatarLetter,
+  getTenantConversationAvatarUrl,
   getTenantConversationContextLabel,
   getTenantConversationDisplayName,
   getTenantLastSenderLabel,
@@ -57,6 +59,7 @@ type ConversationListItem = {
   conversation: Conversation;
   avatarColors: { bg: string; text: string };
   avatarLetter: string;
+  avatarUrl: string | null;
   category: ConversationCategory;
   categoryLabel: string;
   contextLabel: string;
@@ -69,6 +72,7 @@ type ConversationListItem = {
   timeLabel: string;
   unread: boolean;
   unreadCountLabel: string;
+  showCategoryBadge: boolean;
 };
 
 function formatTime(dateStr: string): string {
@@ -138,7 +142,7 @@ function getConversationCategoryMeta(category: ConversationCategory) {
       };
     default:
       return {
-        label: "Resident",
+        label: "Direct",
         icon: "people-outline" as const,
         badgeBg: P.surfaceLow,
         badgeText: P.muted,
@@ -154,6 +158,7 @@ function getConversationMeta(conversation: Conversation, currentUserId?: string)
   const time = conversation.lastMessage?.createdAt || conversation.updatedAt;
   const unread = conversation.unreadCount > 0;
   const avatarLetter = getTenantConversationAvatarLetter(conversation, currentUserId);
+  const avatarUrl = getTenantConversationAvatarUrl(conversation, currentUserId);
   const category = isManagement
     ? "management"
     : inferConversationCategory(conversation, displayName, preview);
@@ -170,6 +175,7 @@ function getConversationMeta(conversation: Conversation, currentUserId?: string)
 
   return {
     avatarLetter,
+    avatarUrl,
     category,
     categoryLabel,
     contextLabel,
@@ -191,6 +197,7 @@ function buildConversationListItem(
     conversation,
     avatarColors: avatarPalette(meta.displayName),
     avatarLetter: meta.avatarLetter,
+    avatarUrl: meta.avatarUrl,
     category: meta.category,
     categoryLabel: meta.categoryLabel,
     contextLabel: meta.contextLabel,
@@ -205,6 +212,7 @@ function buildConversationListItem(
     timeLabel: formatTime(meta.time),
     unread: meta.unread,
     unreadCountLabel: conversation.unreadCount > 99 ? "99+" : String(conversation.unreadCount),
+    showCategoryBadge: meta.category !== "resident",
   };
 }
 
@@ -283,11 +291,15 @@ function ConversationRow({
     >
       <View style={styles.rowAccent}>
         {item.unread ? <View style={styles.unreadRail} /> : null}
-        <View style={[styles.avatar, { backgroundColor: item.avatarColors.bg }]}>
-          <Text style={[styles.avatarText, { color: item.avatarColors.text }]}>
-            {item.avatarLetter}
-          </Text>
-        </View>
+        {item.avatarUrl ? (
+          <Image source={{ uri: item.avatarUrl }} style={styles.avatarImage} />
+        ) : (
+          <View style={[styles.avatar, { backgroundColor: item.avatarColors.bg }]}>
+            <Text style={[styles.avatarText, { color: item.avatarColors.text }]}>
+              {item.avatarLetter}
+            </Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.rowContent}>
@@ -305,11 +317,13 @@ function ConversationRow({
               {item.contextLabel}
             </Text>
           </View>
-          <View style={[styles.metaBadge, { backgroundColor: categoryMeta.badgeBg }]}>
-            <Text style={[styles.metaBadgeText, { color: categoryMeta.badgeText }]}>
-              {item.categoryLabel}
-            </Text>
-          </View>
+          {item.showCategoryBadge ? (
+            <View style={[styles.metaBadge, { backgroundColor: categoryMeta.badgeBg }]}>
+              <Text style={[styles.metaBadgeText, { color: categoryMeta.badgeText }]}>
+                {item.categoryLabel}
+              </Text>
+            </View>
+          ) : null}
           <View style={styles.metaBadge}>
             <Text style={styles.metaBadgeText}>{item.messageCountLabel}</Text>
           </View>
@@ -450,7 +464,6 @@ export default function MessagesScreen() {
         <View>
           <HeaderBar
             title="Messages"
-            subtitle="Resident inbox and ongoing conversations"
             hasUnreadNotifications={hasUnreadNotifications}
             showSideMenu={showSideMenu}
             onSideMenuToggle={setShowSideMenu}
@@ -532,9 +545,11 @@ export default function MessagesScreen() {
             </View>
 
             <View style={styles.featuredBadgeRow}>
-              <View style={styles.featuredBadge}>
-                <Text style={styles.featuredBadgeText}>{featuredConversation.categoryLabel}</Text>
-              </View>
+              {featuredConversation.showCategoryBadge ? (
+                <View style={styles.featuredBadge}>
+                  <Text style={styles.featuredBadgeText}>{featuredConversation.categoryLabel}</Text>
+                </View>
+              ) : null}
               <View style={styles.featuredBadge}>
                 <Text style={styles.featuredBadgeText}>{featuredConversation.contextLabel}</Text>
               </View>
@@ -1124,6 +1139,11 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     alignItems: "center",
     justifyContent: "center",
+  },
+  avatarImage: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
   },
   avatarText: {
     fontSize: 20,

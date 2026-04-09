@@ -170,15 +170,6 @@ describe('BuildingEmployeeLayout', () => {
     );
     expect(mockTabsScreen).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: 'shifts',
-        options: expect.objectContaining({
-          href: null,
-          title: 'Shifts',
-        }),
-      }),
-    );
-    expect(mockTabsScreen).toHaveBeenCalledWith(
-      expect.objectContaining({
         name: 'messages',
         options: expect.objectContaining({ href: null }),
       }),

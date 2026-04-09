@@ -46,8 +46,6 @@ const P = {
   primarySoft: '#D0E6EF',
   accent: '#EEF5F8',
   accentText: '#596063',
-  warningBg: '#FDF1DB',
-  warningText: '#9A5B00',
   error: '#B24844',
   shadow: 'rgba(42, 52, 55, 0.08)',
 };
@@ -321,11 +319,6 @@ export default function AuthScreen() {
                 </LinearGradient>
               </TouchableOpacity>
 
-              <View style={styles.demoBadge}>
-                <Ionicons name='information-circle-outline' size={15} color={P.warningText} />
-                <Text style={styles.demoText}>Demo version with mock-friendly data flows</Text>
-              </View>
-
               <TouchableOpacity
                 style={styles.clearCacheButton}
                 onPress={handleClearCache}
@@ -334,11 +327,6 @@ export default function AuthScreen() {
                 <Ionicons name='refresh-outline' size={16} color={P.muted} />
                 <Text style={styles.clearCacheText}>Clear cached users</Text>
               </TouchableOpacity>
-
-              <Text style={styles.contactLine}>
-                Don&apos;t have an account?{' '}
-                <Text style={styles.contactLineStrong}>Contact Management</Text>
-              </Text>
             </View>
           </View>
 
@@ -592,23 +580,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
     color: '#EEF9FF',
   },
-  demoBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    borderRadius: 999,
-    backgroundColor: P.warningBg,
-  },
-  demoText: {
-    flex: 1,
-    fontSize: 12,
-    lineHeight: 17,
-    color: P.warningText,
-    fontWeight: '600',
-  },
   clearCacheButton: {
     marginTop: 14,
     minHeight: 44,
@@ -623,17 +594,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: P.muted,
-  },
-  contactLine: {
-    marginTop: 20,
-    fontSize: 12,
-    lineHeight: 18,
-    textAlign: 'center',
-    color: P.muted,
-  },
-  contactLineStrong: {
-    color: P.primary,
-    fontWeight: '800',
   },
   footer: {
     marginTop: 32,

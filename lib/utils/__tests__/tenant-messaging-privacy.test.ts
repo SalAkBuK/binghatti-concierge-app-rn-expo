@@ -1,4 +1,5 @@
 import {
+  getTenantConversationAvatarUrl,
   getTenantConversationDisplayName,
   getTenantLastSenderLabel,
   getTenantMessageSenderName,
@@ -41,6 +42,7 @@ describe('tenant messaging privacy helpers', () => {
     expect(getTenantConversationDisplayName(conversation, currentUserId)).toBe(
       'Management',
     );
+    expect(getTenantConversationAvatarUrl(conversation, currentUserId)).toBeNull();
     expect(getTenantLastSenderLabel(conversation, currentUserId)).toBe('Management');
     expect(
       getTenantMessageSenderName(
@@ -58,12 +60,12 @@ describe('tenant messaging privacy helpers', () => {
     const conversation = buildConversation({
       participants: [
         { id: currentUserId, name: 'Resident User', avatarUrl: null },
-        { id: 'owner-1', name: 'Owner User', avatarUrl: null },
+        { id: 'owner-1', name: 'Owner User', avatarUrl: 'https://example.com/owner.png' },
       ],
       lastMessage: {
         id: 'msg-2',
         content: 'Please confirm the renewal details.',
-        sender: { id: 'owner-1', name: 'Owner User', avatarUrl: null },
+        sender: { id: 'owner-1', name: 'Owner User', avatarUrl: 'https://example.com/owner.png' },
         createdAt: '2026-04-08T12:00:00.000Z',
       },
     });
@@ -71,6 +73,9 @@ describe('tenant messaging privacy helpers', () => {
     expect(isTenantManagementConversation(conversation, currentUserId)).toBe(false);
     expect(getTenantConversationDisplayName(conversation, currentUserId)).toBe(
       'Owner User',
+    );
+    expect(getTenantConversationAvatarUrl(conversation, currentUserId)).toBe(
+      'https://example.com/owner.png',
     );
     expect(getTenantLastSenderLabel(conversation, currentUserId)).toBe('Owner User');
     expect(

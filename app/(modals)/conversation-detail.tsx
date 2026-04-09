@@ -370,9 +370,11 @@ export default function ConversationDetailModal() {
             </View>
 
             <View style={styles.headerActions}>
-              <TouchableOpacity style={styles.headerIconButton} activeOpacity={0.85}>
-                <Ionicons name="call-outline" size={18} color={P.text} />
-              </TouchableOpacity>
+              {!isTenantUser ? (
+                <TouchableOpacity style={styles.headerIconButton} activeOpacity={0.85}>
+                  <Ionicons name="call-outline" size={18} color={P.text} />
+                </TouchableOpacity>
+              ) : null}
               <TouchableOpacity
                 style={styles.headerIconButton}
                 activeOpacity={0.85}
@@ -415,9 +417,11 @@ export default function ConversationDetailModal() {
 
         <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, 10) }]}>
           <View style={styles.composerCard}>
-            <TouchableOpacity style={styles.attachButton} activeOpacity={0.85}>
-              <Ionicons name="add-circle" size={20} color={P.muted} />
-            </TouchableOpacity>
+            {!isTenantUser ? (
+              <TouchableOpacity style={styles.attachButton} activeOpacity={0.85}>
+                <Ionicons name="add-circle" size={20} color={P.muted} />
+              </TouchableOpacity>
+            ) : null}
             <View style={styles.inputShell}>
               <TextInput
                 style={styles.textInput}

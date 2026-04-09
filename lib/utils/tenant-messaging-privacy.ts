@@ -102,6 +102,22 @@ export const getTenantConversationAvatarLetter = (
   return (displayName || '?').charAt(0).toUpperCase();
 };
 
+export const getTenantConversationAvatarUrl = (
+  conversation: ConversationLike,
+  currentUserId?: string | null,
+): string | null => {
+  if (isTenantManagementConversation(conversation, currentUserId)) {
+    return null;
+  }
+
+  const others = getOtherParticipants(conversation, currentUserId);
+  const participantWithAvatar = others.find(
+    (participant) => typeof participant.avatarUrl === 'string' && participant.avatarUrl.trim().length > 0,
+  );
+
+  return participantWithAvatar?.avatarUrl?.trim() || null;
+};
+
 export const getTenantConversationContextLabel = (
   conversation: ConversationLike,
   currentUserId?: string | null,
