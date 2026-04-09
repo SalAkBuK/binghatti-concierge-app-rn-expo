@@ -251,9 +251,11 @@ export const API_ENDPOINTS = {
 // App configuration
 export const APP_CONFIG = {
   api: {
-    baseUrl: process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://13.50.241.81/api",
+    baseUrl:
+      process.env.EXPO_PUBLIC_API_BASE_URL ??
+      "https://api.towerdeskpro.com/api",
     timeout: 10000,
-    adminLoginUrl: "http://13.50.241.81/api/auth/login",
+    adminLoginUrl: "https://api.towerdeskpro.com/api/auth/login",
   },
   pagination: {
     defaultPageSize: 20,
