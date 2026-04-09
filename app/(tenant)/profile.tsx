@@ -1,11 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -107,6 +109,69 @@ const initials = (name?: string | null) =>
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("") || "R";
 
+const TENANT_AVATAR_ALLOWED_TYPES = [
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+] as const;
+
+const TENANT_AVATAR_MAX_SIZE_BYTES = 5 * 1024 * 1024;
+
+const getMimeTypeFromAsset = (asset: {
+  mimeType?: string | null;
+  uri: string;
+}) => {
+  const explicitMimeType = asset.mimeType?.toLowerCase().trim();
+  if (explicitMimeType) {
+    return explicitMimeType;
+  }
+
+  const lowerUri = asset.uri.toLowerCase();
+  if (lowerUri.endsWith(".jpg") || lowerUri.endsWith(".jpeg")) {
+    return "image/jpeg";
+  }
+  if (lowerUri.endsWith(".png")) {
+    return "image/png";
+  }
+  if (lowerUri.endsWith(".webp")) {
+    return "image/webp";
+  }
+
+  return "image/jpeg";
+};
+
+const getAvatarFileName = (uri: string, mimeType: string, fallback?: string | null) => {
+  const trimmedFallback = fallback?.trim();
+  if (trimmedFallback) {
+    return trimmedFallback;
+  }
+
+  const uriParts = uri.split("/");
+  const uriFileName = uriParts[uriParts.length - 1]?.trim();
+  if (uriFileName) {
+    return uriFileName;
+  }
+
+  const extension = mimeType === "image/png"
+    ? "png"
+    : mimeType === "image/webp"
+      ? "webp"
+      : "jpg";
+
+  return `tenant-avatar-${Date.now()}.${extension}`;
+};
+
+const formatFileSize = (bytes: number) => {
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  if (bytes >= 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${bytes} B`;
+};
+
 const leaseSummary = (endDate?: string | null) => {
   if (!endDate) return "Lease dates will appear once a contract is linked.";
   const parsed = new Date(endDate);
@@ -159,9 +224,12 @@ export default function ProfileScreen() {
   const leaseStatusLabel = activeContract?.status
     ? formatRole(String(activeContract.status).toLowerCase())
     : "No active lease";
+  const displayAvatarUri =
+    currentUser?.profile?.avatarUrl || currentUser?.profile?.avatar || null;
 
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [isResettingPassword, setIsResettingPassword] = useState(false);
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>(
     {},
@@ -181,6 +249,105 @@ export default function ProfileScreen() {
   const hasUnreadNotifications =
     getUnreadNotificationsCount(userNotifications) > 0;
   const minPasswordLength = APP_CONFIG.validation.minPasswordLength;
+
+  const handleChangeAvatar = useCallback(async () => {
+    if (!currentUser?.email) {
+      showErrorAlert(new Error("User not found"));
+      return;
+    }
+
+    try {
+      const permission =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (permission.status !== "granted") {
+        Alert.alert(
+          "Permission Required",
+          "Allow photo library access to update your profile photo.",
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: "images" as any,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (result.canceled || !result.assets?.length) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      const mimeType = getMimeTypeFromAsset(asset);
+
+      if (!TENANT_AVATAR_ALLOWED_TYPES.includes(mimeType as any)) {
+        Alert.alert(
+          "Unsupported File",
+          "Use a JPEG, PNG, or WebP image for your profile photo.",
+        );
+        return;
+      }
+
+      if (
+        typeof asset.fileSize === "number" &&
+        asset.fileSize > TENANT_AVATAR_MAX_SIZE_BYTES
+      ) {
+        Alert.alert(
+          "File Too Large",
+          `Select an image under 5 MB. The selected file is ${formatFileSize(asset.fileSize)}.`,
+        );
+        return;
+      }
+
+      setIsUploadingAvatar(true);
+
+      const uploadResponse = await apiService.residentSelfService.uploadResidentAvatar({
+        uri: asset.uri,
+        type: mimeType,
+        name: getAvatarFileName(asset.uri, mimeType, asset.fileName),
+      });
+
+      let canonicalAvatarUrl = uploadResponse.avatarUrl;
+      let canonicalName = currentUser.name;
+      let canonicalPhone = currentUser.phone;
+
+      try {
+        const residentIdentity =
+          await apiService.residentSelfService.getResidentIdentity();
+        canonicalAvatarUrl =
+          residentIdentity.user?.avatarUrl ?? canonicalAvatarUrl;
+        canonicalName = residentIdentity.user?.name ?? canonicalName;
+        canonicalPhone = residentIdentity.user?.phone ?? canonicalPhone;
+      } catch (identityError) {
+        console.warn(
+          "[TenantProfile] Failed to refresh resident identity after avatar upload:",
+          identityError,
+        );
+      }
+
+      const nextUser = {
+        ...currentUser,
+        name: canonicalName ?? currentUser.name,
+        phone: canonicalPhone ?? currentUser.phone,
+        profile: {
+          ...(currentUser.profile ?? {}),
+          ...(canonicalName ? { name: canonicalName } : {}),
+          ...(canonicalPhone ? { phone: canonicalPhone } : {}),
+          avatar: canonicalAvatarUrl,
+          avatarUrl: canonicalAvatarUrl,
+        },
+      };
+
+      await authActions.updateUser(currentUser.email, nextUser);
+      showSuccessAlert("Profile photo updated successfully!");
+    } catch (error) {
+      showErrorAlert(error, "Failed to upload your profile photo.");
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  }, [authActions, currentUser]);
 
   const validateForm = (): ValidationErrors => {
     const errors: ValidationErrors = {};
@@ -408,14 +575,18 @@ export default function ProfileScreen() {
           <View style={styles.heroCard}>
             <View style={styles.heroTopRow}>
               <View style={styles.heroProfileBlock}>
-                <LinearGradient
-                  colors={[P.primary, P.primaryDark]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.avatar}
-                >
-                  <Text style={styles.avatarText}>{initials(residentName)}</Text>
-                </LinearGradient>
+                {displayAvatarUri ? (
+                  <Image source={{ uri: displayAvatarUri }} style={styles.avatarImage} />
+                ) : (
+                  <LinearGradient
+                    colors={[P.primary, P.primaryDark]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.avatar}
+                  >
+                    <Text style={styles.avatarText}>{initials(residentName)}</Text>
+                  </LinearGradient>
+                )}
 
                 <View style={styles.headerText}>
                   <Text style={styles.heroEyebrow}>{buildingName}</Text>
@@ -443,6 +614,27 @@ export default function ProfileScreen() {
                 ? "Update your personal details and emergency contact information."
                 : `Good to see you, ${firstName(residentName)}. Your residence and lease snapshot stay accessible here.`}
             </Text>
+
+            <View style={styles.heroActionRow}>
+              <TouchableOpacity
+                style={[
+                  styles.avatarActionButton,
+                  isUploadingAvatar && styles.avatarActionButtonDisabled,
+                ]}
+                onPress={() => void handleChangeAvatar()}
+                disabled={isUploadingAvatar}
+              >
+                {isUploadingAvatar ? (
+                  <ActivityIndicator size="small" color={P.primary} />
+                ) : (
+                  <Ionicons name="camera-outline" size={16} color={P.primary} />
+                )}
+                <Text style={styles.avatarActionText}>
+                  {displayAvatarUri ? "Change Avatar" : "Add Avatar"}
+                </Text>
+              </TouchableOpacity>
+              <Text style={styles.avatarHint}>JPEG, PNG, or WebP up to 5 MB</Text>
+            </View>
 
             <View style={styles.profilePillRow}>
               <View style={styles.profilePill}>
@@ -895,6 +1087,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginRight: 16,
   },
+  avatarImage: {
+    width: 72,
+    height: 72,
+    borderRadius: 24,
+    marginRight: 16,
+    backgroundColor: P.surfaceLow,
+  },
   avatarText: {
     fontSize: 24,
     fontWeight: "800",
@@ -938,6 +1137,35 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: P.muted,
     marginBottom: 14,
+  },
+  heroActionRow: {
+    gap: 10,
+    marginBottom: 14,
+  },
+  avatarActionButton: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: P.surfaceLow,
+    borderWidth: 1,
+    borderColor: P.border,
+  },
+  avatarActionButtonDisabled: {
+    opacity: 0.7,
+  },
+  avatarActionText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: P.primary,
+  },
+  avatarHint: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: P.soft,
   },
   profilePillRow: {
     flexDirection: "row",

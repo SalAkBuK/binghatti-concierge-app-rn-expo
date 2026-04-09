@@ -883,6 +883,7 @@ export interface ResidentIdentityUser {
   email: string | null;
   name: string | null;
   phone: string | null;
+  avatarUrl: string | null;
 }
 
 export interface ResidentOccupancy {
@@ -897,6 +898,10 @@ export interface ResidentOccupancy {
 export interface ResidentIdentity {
   user: ResidentIdentityUser | null;
   occupancy: ResidentOccupancy | null;
+}
+
+export interface ResidentAvatarUploadResponse {
+  avatarUrl: string;
 }
 
 export type ResidentTenancyMode =

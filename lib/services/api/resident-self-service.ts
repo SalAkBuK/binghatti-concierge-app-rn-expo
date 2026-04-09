@@ -11,6 +11,7 @@ import type {
   ResidentContractDocument,
   ResidentContractDocumentUploadUrlResponse,
   ResidentContractsListResponse,
+  ResidentAvatarUploadResponse,
   ResidentIdentity,
   ResidentContractStatus,
   ResidentExtendedProfile,
@@ -426,6 +427,9 @@ const mapResidentIdentity = (payload: unknown): ResidentIdentity => {
             phone: toStringOrNull(
               firstDefined(userRecord.phone, userRecord.phoneNumber),
             ),
+            avatarUrl: toStringOrNull(
+              firstDefined(userRecord.avatarUrl, userRecord.avatar),
+            ),
           }
         : null,
     occupancy: occupancyRecord
@@ -478,6 +482,21 @@ const mapResidentIdentity = (payload: unknown): ResidentIdentity => {
         }
       : null,
   };
+};
+
+const mapResidentAvatarUploadResponse = (
+  payload: unknown,
+): ResidentAvatarUploadResponse => {
+  const record = isRecord(payload) ? payload : {};
+  const avatarUrl = toStringOrNull(
+    firstDefined(record.avatarUrl, readProp(record, "url")),
+  );
+
+  if (!avatarUrl) {
+    throw new Error("Resident avatar upload did not return an avatar URL");
+  }
+
+  return { avatarUrl };
 };
 
 const EMPTY_CONTRACT_STATE: ResidentLatestContract = {
@@ -733,6 +752,31 @@ export class ResidentSelfServiceApiService
       return normalized;
     } catch (error) {
       logResidentContract("GET /resident/me error", error);
+      throw error;
+    }
+  }
+
+  async uploadResidentAvatar(file: {
+    uri: string;
+    type: string;
+    name: string;
+  }): Promise<ResidentAvatarUploadResponse> {
+    try {
+      const formData = new FormData();
+      formData.append("file", file as any);
+
+      const response = await this.post<ApiResponse<unknown> | unknown>(
+        API_ENDPOINTS.resident.meAvatar,
+        formData,
+      );
+      logResidentContract("POST /resident/me/avatar raw response", response);
+
+      const payload = unwrapResponseData(response);
+      const normalized = mapResidentAvatarUploadResponse(payload);
+      logResidentContract("POST /resident/me/avatar normalized", normalized);
+      return normalized;
+    } catch (error) {
+      logResidentContract("POST /resident/me/avatar error", error);
       throw error;
     }
   }

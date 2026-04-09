@@ -101,6 +101,7 @@ export const API_ENDPOINTS = {
   resident: {
     me: "/resident/me",
     meProfile: "/resident/me/profile",
+    meAvatar: "/resident/me/avatar",
     visitors: "/resident/visitors",
     visitorDetail: (visitorId: string) => `/resident/visitors/${visitorId}`,
     visitorCancel: (visitorId: string) =>

@@ -27,6 +27,7 @@ import type {
   ResidentIdentity,
   ResidentContract,
   ResidentContractsListResponse,
+  ResidentAvatarUploadResponse,
   ListResidentContractsParams,
   CreateResidentMoveRequestDTO,
   ListResidentMoveRequestsParams,
@@ -136,6 +137,11 @@ export interface EmployeeApi {
 
 export interface ResidentSelfServiceApi {
   getResidentIdentity(): Promise<ResidentIdentity>;
+  uploadResidentAvatar(file: {
+    uri: string;
+    type: string;
+    name: string;
+  }): Promise<ResidentAvatarUploadResponse>;
   getResidentLatestContract(): Promise<ResidentLatestContract>;
   getResidentContractDetail(contractId: string): Promise<ResidentContract>;
   listResidentActiveLeaseDocuments(): Promise<ResidentContractDocument[]>;

@@ -834,6 +834,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             residentUser?.phone ??
             residentUser?.phoneNumber ??
             nextProfile.phone,
+          ...(residentUser?.avatarUrl ?? residentUser?.avatar
+            ? {
+                avatar:
+                  residentUser?.avatarUrl ??
+                  residentUser?.avatar,
+                avatarUrl:
+                  residentUser?.avatarUrl ??
+                  residentUser?.avatar,
+              }
+            : {}),
         },
       };
     } catch (error) {
@@ -1425,10 +1435,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         actions.setLoading(true);
         actions.clearError();
 
+        const isCurrentUser = state.currentUser?.email === email;
+
         dispatch({
           type: AUTH_ACTIONS.UPDATE_USER,
           payload: { email, user: userData },
         });
+
+        if (isCurrentUser) {
+          await SecureStore.setItemAsync(
+            STORAGE_KEYS.user_data,
+            JSON.stringify(userData),
+          );
+        }
 
         actions.setLoading(false);
         return userData;

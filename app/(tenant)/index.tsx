@@ -5,6 +5,7 @@ import { router } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
+  Image,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -204,6 +205,8 @@ export default function TenantHomeScreen() {
           .join(" - ")
       : "Not assigned";
   const unitInfo = displayUnitLabel || profileUnitInfo;
+  const avatarUri =
+    currentUser?.profile?.avatarUrl || currentUser?.profile?.avatar || null;
 
   const userNotifications = useMemo(
     () => filterNotificationsByUser(notifications || [], currentUser?.id),
@@ -303,7 +306,6 @@ export default function TenantHomeScreen() {
 
         <Animated.View entering={FadeInDown.delay(40).duration(400)} style={styles.hero}>
           <View style={styles.heroCopy}>
-            <Text style={styles.heroEyebrow}>{buildingName}</Text>
             <Text style={styles.heroTitle}>
               {greeting()},{"\n"}
               {firstName(currentUser?.name)}
@@ -314,14 +316,18 @@ export default function TenantHomeScreen() {
                 : "Access requests, messages, and building updates from one place."}
             </Text>
           </View>
-          <LinearGradient
-            colors={[P.primary, P.primaryDark]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.avatar}
-          >
-            <Text style={styles.avatarText}>{initials(currentUser?.name)}</Text>
-          </LinearGradient>
+          {avatarUri ? (
+            <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
+          ) : (
+            <LinearGradient
+              colors={[P.primary, P.primaryDark]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.avatar}
+            >
+              <Text style={styles.avatarText}>{initials(currentUser?.name)}</Text>
+            </LinearGradient>
+          )}
         </Animated.View>
 
         <Animated.View entering={FadeInDown.delay(80).duration(400)} style={styles.profileStrip}>
@@ -566,13 +572,6 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   heroCopy: { flex: 1, gap: 8 },
-  heroEyebrow: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: P.soft,
-    textTransform: "uppercase",
-    letterSpacing: 1.1,
-  },
   heroTitle: { fontSize: 31, lineHeight: 36, fontWeight: "800", color: P.text },
   heroSubtitle: { fontSize: 14, lineHeight: 22, color: P.muted, maxWidth: 280 },
   avatar: {
@@ -586,6 +585,12 @@ const styles = StyleSheet.create({
     shadowRadius: 22,
     shadowOffset: { width: 0, height: 12 },
     elevation: 4,
+  },
+  avatarImage: {
+    width: 58,
+    height: 58,
+    borderRadius: 20,
+    backgroundColor: P.surfaceLow,
   },
   avatarText: { color: P.surface, fontSize: 18, fontWeight: "800" },
   profileStrip: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 18 },

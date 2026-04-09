@@ -97,22 +97,6 @@ const matchesRoutePattern = (pathname: string, pattern: string) =>
   pathname === `${pattern}/index` ||
   pathname.startsWith(`${pattern}/`);
 
-const getPortalAccessLabel = (role?: User["role"], unitLabel?: string) => {
-  if (unitLabel && unitLabel.trim().length > 0) {
-    return unitLabel.trim().toUpperCase();
-  }
-
-  const label = formatRoleLabel(role);
-  const initials = label
-    .split(" ")
-    .map((part) => part.charAt(0))
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-
-  return initials || "TD";
-};
-
 export function SideMenu({ isVisible, onClose, userRole }: SideMenuProps) {
   const { currentUser, actions } = useAuth();
   const { totalUnreadCount: messagingUnreadCount } = useMessaging();
@@ -133,10 +117,6 @@ export function SideMenu({ isVisible, onClose, userRole }: SideMenuProps) {
     currentUser?.resident?.unit?.number ||
     currentUser?.resident?.unit?.unitNumber ||
     currentUser?.profile?.apartment;
-  const portalAccessLabel = getPortalAccessLabel(
-    effectiveRole,
-    resolvedUnitLabel,
-  );
   const displayName = currentUser?.name || "User";
   const avatarLetter = displayName.charAt(0).toUpperCase() || "U";
   const avatarUri =
@@ -672,7 +652,7 @@ export function SideMenu({ isVisible, onClose, userRole }: SideMenuProps) {
       <Animated.View style={[styles.menuPanel, menuAnimatedStyle]}>
         <View style={[styles.menuHeader, { paddingTop: insets.top + 18 }]}>
           <View style={styles.menuHeaderTopRow}>
-            <Text style={styles.menuHeading}>Portal Navigation</Text>
+            <View />
             <TouchableOpacity style={styles.closeButton} onPress={onClose}>
               <Ionicons name="close" size={20} color={P.onInverse} />
             </TouchableOpacity>
@@ -694,41 +674,35 @@ export function SideMenu({ isVisible, onClose, userRole }: SideMenuProps) {
                   </View>
                 )}
               </LinearGradient>
-
-              <LinearGradient
-                colors={[P.primary, P.primaryDark]}
-                start={{ x: 0.15, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.heroPillar}
-              >
-                <Text style={styles.heroPillarEyebrow}>Access</Text>
-                <Text style={styles.heroPillarValue} numberOfLines={2}>
-                  {portalAccessLabel}
-                </Text>
-                <Ionicons
-                  name="sparkles-outline"
-                  size={14}
-                  color="rgba(238, 247, 251, 0.8)"
-                />
-              </LinearGradient>
             </View>
 
             <View style={styles.userDetails}>
-              <View style={styles.roleChip}>
-                <Ionicons
-                  name="sparkles-outline"
-                  size={12}
-                  color={P.onInverse}
-                />
-                <Text style={styles.roleChipText}>
-                  {formatRoleLabel(effectiveRole)}
-                </Text>
+              <View style={styles.identityPillRow}>
+                <View style={styles.roleChip}>
+                  <Ionicons
+                    name="sparkles-outline"
+                    size={12}
+                    color={P.onInverse}
+                  />
+                  <Text style={styles.roleChipText}>
+                    {formatRoleLabel(effectiveRole)}
+                  </Text>
+                </View>
+                {resolvedUnitLabel ? (
+                  <View style={[styles.profileMetaPill, styles.profileMetaPillUnit]}>
+                    <Ionicons
+                      name="home-outline"
+                      size={12}
+                      color={P.onInverse}
+                    />
+                    <Text style={[styles.profileMetaPillText, styles.profileMetaPillTextUnit]}>
+                      {resolvedUnitLabel}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
               <Text style={styles.userName} numberOfLines={2}>
                 {displayName}
-              </Text>
-              <Text style={styles.userEmail} numberOfLines={1}>
-                {currentUser?.email || "user@example.com"}
               </Text>
               <View style={styles.profileMetaRow}>
                 {messagingUnreadCount > 0 ? (
@@ -800,13 +774,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 16,
-  },
-  menuHeading: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: P.text,
-    lineHeight: 32,
+    marginBottom: 10,
   },
   profileHero: {
     gap: 18,
@@ -814,7 +782,6 @@ const styles = StyleSheet.create({
   profileHeroTopRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    justifyContent: "space-between",
   },
   avatarRing: {
     width: 86,
@@ -837,36 +804,6 @@ const styles = StyleSheet.create({
     borderRadius: 40,
     backgroundColor: P.surfaceLow,
   },
-  heroPillar: {
-    width: 102,
-    height: 156,
-    borderRadius: 32,
-    paddingVertical: 18,
-    paddingHorizontal: 10,
-    alignItems: "center",
-    justifyContent: "space-between",
-    shadowColor: P.primaryDark,
-    shadowOpacity: 0.18,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 12 },
-    elevation: 6,
-  },
-  heroPillarEyebrow: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: "rgba(238, 247, 251, 0.72)",
-    textTransform: "uppercase",
-    letterSpacing: 1.3,
-  },
-  heroPillarValue: {
-    fontSize: 20,
-    fontWeight: "800",
-    color: P.onInverse,
-    letterSpacing: 0.2,
-    lineHeight: 22,
-    textAlign: "center",
-    width: "100%",
-  },
   userDetails: {
     minWidth: 0,
     paddingRight: 10,
@@ -878,10 +815,6 @@ const styles = StyleSheet.create({
     lineHeight: 34,
     marginTop: 10,
     marginBottom: 6,
-  },
-  userEmail: {
-    fontSize: 13,
-    color: P.muted,
   },
   avatarText: {
     fontSize: 28,
@@ -898,6 +831,12 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: P.inverseSoft,
   },
+  identityPillRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 8,
+  },
   roleChipText: {
     fontSize: 10,
     fontWeight: "700",
@@ -913,10 +852,16 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   profileMetaPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 999,
     backgroundColor: "rgba(255,255,255,0.74)",
+  },
+  profileMetaPillUnit: {
+    backgroundColor: P.inverse,
   },
   profileMetaPillText: {
     fontSize: 10,
@@ -924,6 +869,9 @@ const styles = StyleSheet.create({
     color: P.primary,
     textTransform: "uppercase",
     letterSpacing: 0.9,
+  },
+  profileMetaPillTextUnit: {
+    color: P.onInverse,
   },
   closeButton: {
     width: 42,
