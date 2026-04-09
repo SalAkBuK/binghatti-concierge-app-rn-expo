@@ -27,6 +27,9 @@ Use this file as the source of truth for frontend integration with owner-facing 
 ## Locked Frontend Rules
 
 - Treat owner app data as cross-org by default.
+- Use `GET /owner/me` to load the owner settings screen.
+- Use `PATCH /owner/me/profile` for account-level fields such as `name`, `avatarUrl`, and account-level `phone`.
+- Use `PATCH /owner/profiles/:ownerId` for org-local owner contact fields such as `email`, `phone`, and `address`.
 - Always display `orgName` and `buildingName` on owner request and conversation screens.
 - Opening owner request comments marks visible comments as read.
 - Posting an owner request comment also marks that request comment thread as read for the owner.
@@ -37,6 +40,9 @@ Use this file as the source of truth for frontend integration with owner-facing 
 
 ### Portfolio Overview
 
+- `GET /owner/me`
+- `PATCH /owner/me/profile`
+- `PATCH /owner/profiles/:ownerId`
 - `GET /owner/portfolio/summary`
 - `GET /owner/portfolio/units`
 - `GET /owner/portfolio/units/:unitId/tenant`

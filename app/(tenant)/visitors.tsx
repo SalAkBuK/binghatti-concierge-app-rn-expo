@@ -58,6 +58,8 @@ const P = {
 
 const VISITOR_FOCUS_REFRESH_TTL_MS = 30_000;
 
+type VisitorListFilter = "ALL" | "EXPECTED" | "ARRIVED";
+
 const formatArrivalMeta = (value: string | null) => {
   if (!value) return "Arrival time flexible";
   const parsed = new Date(value);
@@ -128,7 +130,7 @@ function RecentVisitorCard({
       </View>
 
       <Text style={styles.recentSupportingText}>
-        {visitor.phoneNumber} · Unit {visitor.unit.label || "Assigned"}
+        {visitor.phoneNumber} | Unit {visitor.unit.label || "Assigned"}
       </Text>
       <Text style={styles.recentSupportingText}>
         {formatArrivalMeta(visitor.expectedArrivalAt)}
@@ -180,6 +182,7 @@ export default function VisitorsScreen() {
   const lastVisitorsFetchAtRef = useRef(0);
   const [refreshing, setRefreshing] = useState(false);
   const [showSideMenu, setShowSideMenu] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<VisitorListFilter>("ALL");
 
   const userNotifications = useMemo(
     () => filterNotificationsByUser(notifications || [], currentUser?.id),
@@ -226,15 +229,14 @@ export default function VisitorsScreen() {
     }, [currentUser?.id, loadVisitors]),
   );
 
-  const sortedVisitors = useMemo(
-    () =>
-      [...residentVisitors].sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      ),
-    [residentVisitors],
-  );
+  const sortedVisitors = useMemo(() => {
+    const getSortTime = (visitor: ResidentVisitor) => {
+      const createdAtTime = new Date(visitor.createdAt).getTime();
+      return Number.isNaN(createdAtTime) ? 0 : createdAtTime;
+    };
 
-  const recentVisitors = useMemo(() => sortedVisitors.slice(0, 6), [sortedVisitors]);
+    return [...residentVisitors].sort((a, b) => getSortTime(b) - getSortTime(a));
+  }, [residentVisitors]);
 
   const summary = useMemo(
     () => ({
@@ -243,6 +245,23 @@ export default function VisitorsScreen() {
       arrived: residentVisitors.filter((visitor) => visitor.status === "ARRIVED").length,
     }),
     [residentVisitors],
+  );
+
+  const filteredVisitors = useMemo(() => {
+    if (activeFilter === "ALL") {
+      return sortedVisitors;
+    }
+
+    return sortedVisitors.filter((visitor) => visitor.status === activeFilter);
+  }, [activeFilter, sortedVisitors]);
+
+  const filterChips = useMemo(
+    () => [
+      { key: "ALL" as const, label: "All", count: summary.total },
+      { key: "EXPECTED" as const, label: "Expected", count: summary.expected },
+      { key: "ARRIVED" as const, label: "Arrived", count: summary.arrived },
+    ],
+    [summary.arrived, summary.expected, summary.total],
   );
 
   const footerBottomOffset = tabBarHeight + Math.max(insets.bottom, 12) + 16;
@@ -331,11 +350,44 @@ export default function VisitorsScreen() {
             <View style={styles.recentSectionHeader}>
               <View>
                 <Text style={styles.recentSectionEyebrow}>Access History</Text>
-                <Text style={styles.recentSectionTitle}>Recent registrations</Text>
+                <Text style={styles.recentSectionTitle}>Latest registrations</Text>
               </View>
               <Text style={styles.recentSectionMeta}>
-                {summary.total} total · {summary.expected} expected · {summary.arrived} arrived
+                {summary.total} total | {summary.expected} expected | {summary.arrived} arrived
               </Text>
+            </View>
+
+            <View style={styles.filterRow}>
+              {filterChips.map((filter) => {
+                const isActive = activeFilter === filter.key;
+
+                return (
+                  <TouchableOpacity
+                    key={filter.key}
+                    activeOpacity={0.88}
+                    style={[styles.filterChip, isActive && styles.filterChipActive]}
+                    onPress={() => setActiveFilter(filter.key)}
+                  >
+                    <Text
+                      style={[styles.filterChipText, isActive && styles.filterChipTextActive]}
+                    >
+                      {filter.label}
+                    </Text>
+                    <View
+                      style={[styles.filterChipCount, isActive && styles.filterChipCountActive]}
+                    >
+                      <Text
+                        style={[
+                          styles.filterChipCountText,
+                          isActive && styles.filterChipCountTextActive,
+                        ]}
+                      >
+                        {filter.count}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
 
             {residentVisitorsLoading && residentVisitors.length === 0 ? (
@@ -343,17 +395,23 @@ export default function VisitorsScreen() {
                 <ActivityIndicator size="small" color={P.primary} />
                 <Text style={styles.loadingText}>Loading visitor history...</Text>
               </View>
-            ) : recentVisitors.length === 0 ? (
+            ) : filteredVisitors.length === 0 ? (
               <View style={styles.emptyState}>
                 <Ionicons name="people-outline" size={28} color={P.soft} />
-                <Text style={styles.emptyTitle}>No recent visitors yet</Text>
+                <Text style={styles.emptyTitle}>
+                  {activeFilter === "ALL"
+                    ? "No visitor registrations yet"
+                    : `No ${activeFilter.toLowerCase()} visitors`}
+                </Text>
                 <Text style={styles.emptyText}>
-                  Your last visitor registrations will appear here for quick follow-up.
+                  {activeFilter === "ALL"
+                    ? "Your visitor registrations will appear here once they are created."
+                    : `Visitors marked as ${activeFilter.toLowerCase()} will appear here.`}
                 </Text>
               </View>
             ) : (
               <>
-                {recentVisitors.map((visitor) => (
+                {filteredVisitors.map((visitor) => (
                   <RecentVisitorCard
                     key={visitor.id}
                     visitor={visitor}
@@ -361,11 +419,7 @@ export default function VisitorsScreen() {
                     onCancel={handleCancelVisitor}
                   />
                 ))}
-                {sortedVisitors.length > recentVisitors.length ? (
-                  <Text style={styles.recentFooterText}>
-                    Showing the latest {recentVisitors.length} visitor registrations.
-                  </Text>
-                ) : null}
+                <Text style={styles.recentFooterText}>Showing newest registrations first.</Text>
               </>
             )}
           </View>
@@ -476,6 +530,55 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontSize: 13,
     color: P.muted,
+  },
+  filterRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginBottom: 16,
+  },
+  filterChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: P.surface,
+    borderWidth: 1,
+    borderColor: P.border,
+  },
+  filterChipActive: {
+    backgroundColor: P.primary,
+    borderColor: P.primary,
+  },
+  filterChipText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: P.text,
+  },
+  filterChipTextActive: {
+    color: "#EEF7FB",
+  },
+  filterChipCount: {
+    minWidth: 24,
+    height: 24,
+    paddingHorizontal: 7,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: P.surfaceLow,
+  },
+  filterChipCountActive: {
+    backgroundColor: "rgba(238, 247, 251, 0.18)",
+  },
+  filterChipCountText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: P.primary,
+  },
+  filterChipCountTextActive: {
+    color: "#EEF7FB",
   },
   loadingState: {
     paddingVertical: 24,

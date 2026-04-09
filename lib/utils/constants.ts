@@ -145,6 +145,7 @@ export const API_ENDPOINTS = {
   users: {
     profile: "/users/me",
     update: "/users/me/profile",
+    avatar: "/users/me/avatar",
     assignments: "/users/me/assignments",
     list: "/users",
   },

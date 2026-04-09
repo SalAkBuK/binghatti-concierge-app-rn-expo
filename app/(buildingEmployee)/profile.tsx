@@ -5,6 +5,7 @@ import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -17,6 +18,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { AttachmentPicker } from "../../components/ui/AttachmentPicker";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
 import { useAuth } from "../../lib/context/auth-context";
@@ -29,6 +31,10 @@ import {
   filterNotificationsByUser,
   getUnreadNotificationsCount,
 } from "../../lib/utils/helpers";
+import {
+  isRemoteAssetUri,
+  uploadCurrentUserAvatar,
+} from "../../lib/utils/user-avatar-upload";
 import { APP_CONFIG } from "../../lib/utils/constants";
 
 export default function BuildingEmployeeProfileScreen() {
@@ -44,6 +50,12 @@ export default function BuildingEmployeeProfileScreen() {
   const [isResettingPassword, setIsResettingPassword] = useState(false);
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [buildingName, setBuildingName] = useState("Assigned Building");
+  const [avatar, setAvatar] = useState<string[]>(
+    currentUser?.profile?.avatarUrl || currentUser?.profile?.avatar
+      ? [currentUser.profile.avatarUrl || currentUser.profile.avatar || ""]
+      : [],
+  );
+  const [isSavingAvatar, setIsSavingAvatar] = useState(false);
   const minPasswordLength = APP_CONFIG.validation.minPasswordLength;
   const buildingEmployee = currentUser?.id
     ? property.getBuildingEmployeeByUserId?.(currentUser.id)
@@ -100,6 +112,12 @@ export default function BuildingEmployeeProfileScreen() {
     fetchBuildingName();
   }, [building?.name, currentUser?.id, currentUser?.profile?.buildingName]);
 
+  useEffect(() => {
+    const nextAvatar =
+      currentUser?.profile?.avatarUrl || currentUser?.profile?.avatar || "";
+    setAvatar(nextAvatar ? [nextAvatar] : []);
+  }, [currentUser?.profile?.avatar, currentUser?.profile?.avatarUrl]);
+
   if (!isAuthenticated || !currentUser) {
     return null;
   }
@@ -117,6 +135,39 @@ export default function BuildingEmployeeProfileScreen() {
       </SafeAreaView>
     );
   }
+
+  const displayAvatarUri =
+    avatar[0] || currentUser.profile?.avatarUrl || currentUser.profile?.avatar || null;
+
+  const handleSaveAvatar = async () => {
+    const selectedAvatar = avatar[0];
+
+    if (!selectedAvatar) {
+      Alert.alert("No photo selected", "Choose a profile photo before saving.");
+      return;
+    }
+
+    try {
+      setIsSavingAvatar(true);
+      const avatarUrl = isRemoteAssetUri(selectedAvatar)
+        ? selectedAvatar
+        : await uploadCurrentUserAvatar(selectedAvatar, "building-employee-avatar");
+
+      await authActions.updateProfile({
+        profile: {
+          avatar: avatarUrl,
+          avatarUrl,
+        },
+      } as any);
+
+      setAvatar([avatarUrl]);
+      showSuccessAlert("Profile photo updated successfully!");
+    } catch (error) {
+      showErrorAlert(error, "Failed to update your profile photo.");
+    } finally {
+      setIsSavingAvatar(false);
+    }
+  };
 
   const handleLogout = () => {
     Alert.alert("Sign out", "Are you sure you want to sign out?", [
@@ -208,14 +259,45 @@ export default function BuildingEmployeeProfileScreen() {
           onSideMenuToggle={setShowSideMenu}
           style={styles.headerBar}
         />
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>
-            {currentUser.name.charAt(0).toUpperCase()}
-          </Text>
-        </View>
+        {displayAvatarUri ? (
+          <Image source={{ uri: displayAvatarUri }} style={styles.avatarImage} />
+        ) : (
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>
+              {currentUser.name.charAt(0).toUpperCase()}
+            </Text>
+          </View>
+        )}
 
         <Text style={styles.name}>{currentUser.name}</Text>
         <Text style={styles.roleLabel}>Building Operations</Text>
+
+        <View style={styles.photoCard}>
+          <Text style={styles.sectionTitle}>Profile Photo</Text>
+          <AttachmentPicker
+            attachments={avatar}
+            onAttachmentsChange={setAvatar}
+            maxAttachments={1}
+            disabled={isSavingAvatar}
+          />
+          <TouchableOpacity
+            style={[
+              styles.photoSaveButton,
+              (isSavingAvatar || avatar.length === 0) && styles.photoSaveButtonDisabled,
+            ]}
+            onPress={() => void handleSaveAvatar()}
+            disabled={isSavingAvatar || avatar.length === 0}
+          >
+            {isSavingAvatar ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <>
+                <Ionicons name="cloud-upload-outline" size={18} color="#FFFFFF" />
+                <Text style={styles.photoSaveButtonText}>Save Photo</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
 
         <View style={styles.infoCard}>
           <View style={styles.row}>
@@ -502,6 +584,14 @@ const styles = StyleSheet.create({
     marginTop: 24,
     marginBottom: 16,
   },
+  avatarImage: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    marginTop: 24,
+    marginBottom: 16,
+    backgroundColor: "#E5E7EB",
+  },
   avatarText: {
     fontSize: 40,
     fontWeight: "700",
@@ -516,6 +606,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#4B5563",
     marginBottom: 24,
+  },
+  photoCard: {
+    width: "100%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 3,
   },
   infoCard: {
     width: "100%",
@@ -603,6 +705,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 12,
     backgroundColor: "#EF4444",
+    width: "100%",
   },
   logoutText: {
     fontSize: 14,
@@ -758,5 +861,23 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
     color: "#FFFFFF",
+  },
+  photoSaveButton: {
+    marginTop: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: "#2563EB",
+  },
+  photoSaveButtonDisabled: {
+    backgroundColor: "#9CA3AF",
+  },
+  photoSaveButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
   },
 });

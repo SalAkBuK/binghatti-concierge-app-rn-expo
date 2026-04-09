@@ -6,6 +6,52 @@ import type { UsersApi, UserListParams } from "./types";
 import type { ApiResponse, User } from "../../types";
 
 export class UsersApiService extends BaseApiService implements UsersApi {
+  async getMe(): Promise<ApiResponse<User>> {
+    try {
+      const response = await this.get<ApiResponse<User>>(
+        API_ENDPOINTS.users.profile,
+      );
+
+      return response;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async updateMeProfile(data: {
+    name?: string;
+    avatarUrl?: string;
+    phone?: string;
+  }): Promise<ApiResponse<User>> {
+    try {
+      const response = await this.patch<ApiResponse<User>>(
+        API_ENDPOINTS.users.update,
+        data,
+      );
+
+      return response;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async uploadMeAvatar(file: FormData): Promise<ApiResponse<{ avatarUrl: string }>> {
+    try {
+      const response = await this.request<ApiResponse<{ avatarUrl: string }>>({
+        method: "POST",
+        url: API_ENDPOINTS.users.avatar,
+        data: file,
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
+
+      return response;
+    } catch (error) {
+      throw error;
+    }
+  }
+
   async getMyAssignments(): Promise<ApiResponse<any[]>> {
     try {
       const response = await this.get<ApiResponse<any[]>>(

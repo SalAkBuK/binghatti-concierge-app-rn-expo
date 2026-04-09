@@ -18,6 +18,7 @@ import { router } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../../lib/context/auth-context";
 import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
+import { useResidentContract } from "../../lib/hooks/useResidentSelfService";
 import { useMessaging } from "../../lib/context/messaging-context";
 import type { ResidentConversationTarget } from "../../lib/types";
 const P = {
@@ -46,6 +47,9 @@ export default function NewConversationModal() {
     useResidentTenancy({
       enabled: Boolean(currentUser?.role === "tenant" && currentUser?.id),
     });
+  const { data: contractData } = useResidentContract({
+    enabled: Boolean(currentUser?.role === "tenant" && currentUser?.id),
+  });
   const canComposeConversation =
     currentUser?.role === "tenant" ? canCreateManagementConversation : true;
   const [subject, setSubject] = useState("");
@@ -55,6 +59,7 @@ export default function NewConversationModal() {
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const [target, setTarget] = useState<ResidentConversationTarget>("management");
   const isTenant = currentUser?.role === "tenant";
+  const hasAssignedOwner = Boolean(contractData.contract?.ownerNameSnapshot?.trim());
   const isSubmitDisabled = submitting || !canComposeConversation;
 
   useEffect(() => {
@@ -74,6 +79,12 @@ export default function NewConversationModal() {
     };
   }, []);
 
+  useEffect(() => {
+    if (isTenant && target === "owner" && !hasAssignedOwner) {
+      setTarget("management");
+    }
+  }, [hasAssignedOwner, isTenant, target]);
+
   const handleSubmit = async () => {
     if (!canComposeConversation) {
       Alert.alert("Messaging Unavailable", statusMessage);
@@ -91,6 +102,12 @@ export default function NewConversationModal() {
     }
     if (!message.trim()) {
       Alert.alert("Error", "Please enter a message.");
+      return;
+    }
+
+    if (isTenant && target === "owner" && !hasAssignedOwner) {
+      Alert.alert("Owner Unavailable", "No owner is assigned to this unit.");
+      setTarget("management");
       return;
     }
 
@@ -217,32 +234,34 @@ export default function NewConversationModal() {
                       </View>
                     </TouchableOpacity>
 
-                    <TouchableOpacity
-                      activeOpacity={0.9}
-                      style={[styles.routeCard, target === "owner" && styles.routeCardActive]}
-                      onPress={() => setTarget("owner")}
-                    >
-                      <View style={[styles.routeIconWrap, target === "owner" && styles.routeIconWrapActive]}>
-                        <Ionicons
-                          name="home-outline"
-                          size={18}
-                          color={target === "owner" ? "#EEF7FB" : P.primary}
-                        />
-                      </View>
-                      <View style={styles.routeCopy}>
-                        <Text style={[styles.routeTitle, target === "owner" && styles.routeTitleActive]}>
-                          Message Owner
-                        </Text>
-                        <Text
-                          style={[
-                            styles.routeDescription,
-                            target === "owner" && styles.routeDescriptionActive,
-                          ]}
-                        >
-                          Contact the current owner of your active unit when owner access exists.
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
+                    {hasAssignedOwner ? (
+                      <TouchableOpacity
+                        activeOpacity={0.9}
+                        style={[styles.routeCard, target === "owner" && styles.routeCardActive]}
+                        onPress={() => setTarget("owner")}
+                      >
+                        <View style={[styles.routeIconWrap, target === "owner" && styles.routeIconWrapActive]}>
+                          <Ionicons
+                            name="home-outline"
+                            size={18}
+                            color={target === "owner" ? "#EEF7FB" : P.primary}
+                          />
+                        </View>
+                        <View style={styles.routeCopy}>
+                          <Text style={[styles.routeTitle, target === "owner" && styles.routeTitleActive]}>
+                            Message Owner
+                          </Text>
+                          <Text
+                            style={[
+                              styles.routeDescription,
+                              target === "owner" && styles.routeDescriptionActive,
+                            ]}
+                          >
+                            Contact the current owner of your active unit when owner access exists.
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    ) : null}
                   </View>
 
                   <Text style={styles.hint}>

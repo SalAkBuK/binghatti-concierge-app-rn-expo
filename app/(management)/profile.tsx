@@ -30,6 +30,10 @@ import {
   filterNotificationsByUser,
   getUnreadNotificationsCount,
 } from "../../lib/utils/helpers";
+import {
+  isRemoteAssetUri,
+  uploadCurrentUserAvatar,
+} from "../../lib/utils/user-avatar-upload";
 import { APP_CONFIG } from "../../lib/utils/constants";
 
 const MANAGEMENT_NOTIFICATION_ROUTE = "/(modals)/admin-notifications";
@@ -62,7 +66,8 @@ export default function ManagementProfileScreen() {
       jobTitle: currentUser?.profile?.jobTitle || "",
       department: currentUser?.profile?.department || "",
       bio: currentUser?.profile?.bio || "",
-      avatar: currentUser?.profile?.avatar || "",
+      avatar:
+        currentUser?.profile?.avatarUrl || currentUser?.profile?.avatar || "",
     }),
     [currentUser],
   );
@@ -84,19 +89,36 @@ export default function ManagementProfileScreen() {
   const handleSave = async () => {
     setIsSaving(true);
     try {
+      const selectedAvatar = avatar[0];
+      const avatarUrl = selectedAvatar
+        ? isRemoteAssetUri(selectedAvatar)
+          ? selectedAvatar
+          : await uploadCurrentUserAvatar(selectedAvatar, "management-avatar")
+        : profileForm.avatar || "";
       const profileUpdates: Partial<UserProfile> = {
         name: profileForm.name.trim() || undefined,
         jobTitle: profileForm.jobTitle.trim() || undefined,
         department: profileForm.department.trim() || undefined,
         bio: profileForm.bio.trim() || undefined,
         phone: profileForm.phone.trim() || undefined,
-        avatar: avatar[0] || undefined,
+        ...(avatarUrl
+          ? {
+              avatar: avatarUrl,
+              avatarUrl,
+            }
+          : {}),
       };
 
-      await authActions.updateProfile({
+      const updatedUser = await authActions.updateProfile({
         name: profileForm.name.trim() || undefined,
         profile: profileUpdates,
       } as any);
+      setAvatar(avatarUrl ? [avatarUrl] : []);
+      setProfileForm((prev) => ({
+        ...prev,
+        avatar:
+          updatedUser.profile?.avatarUrl || updatedUser.profile?.avatar || avatarUrl,
+      }));
 
       // Mark profile as completed after saving details if needed
       if (currentUser && !currentUser.profileCompleted) {

@@ -515,12 +515,34 @@ GET `/org/owners`
 
 - Query: `search` (optional)
 - Returns owners in the org
+- Each row includes:
+  - `id`
+  - `orgId`
+  - `partyId`
+  - `party?` with:
+    - `id`
+    - `type = INDIVIDUAL | COMPANY`
+    - `displayNameEn`
+    - `displayNameAr`
+  - `name`
+  - `email`
+  - `phone`
+  - `address`
+  - `identifier?` with:
+    - `type`
+    - `maskedValue`
+    - `countryCode`
+    - `issuingAuthority`
+  - `isActive`
+  - `createdAt`
+  - `updatedAt`
 - Requires `owners.read`
 
 POST `/org/owners`
 
 - Creates or reuses a global `Party` and creates or reuses the org-scoped `Owner`
 - Body: `{ name, partyType?, displayNameEn?, displayNameAr?, email?, phone?, address?, resolutionToken?, identifier?, ownerOverrides? }`
+- Returns the same enriched owner payload shape as `GET /org/owners`
 - Requires `owners.write`
 
 POST `/org/owners/resolve-party`
@@ -598,12 +620,12 @@ GET `/org/service-providers`
 
 - Requires `service_providers.read`
 - Query: `search` (optional)
-- Returns service providers in the current org with linked buildings and linked users
+- Returns global service providers with current-org linked buildings and provider-admin access state
 
 GET `/org/service-providers/:providerId`
 
 - Requires `service_providers.read`
-- Returns one service provider with linked buildings and linked users
+- Returns one global service provider with current-org linked buildings and provider-admin access state
 
 POST `/org/service-providers`
 
@@ -611,11 +633,14 @@ POST `/org/service-providers`
 - Body:
   - `name` required
   - `serviceCategory`, `contactName`, `contactEmail`, `contactPhone`, `notes`, `isActive` optional
+  - `buildingIds` optional
+  - `adminEmail` optional initial provider-admin invite
 
 PATCH `/org/service-providers/:providerId`
 
 - Requires `service_providers.write`
 - Partial update for provider details and active flag
+- Rejected once the provider has an active provider-admin owner
 
 POST `/org/service-providers/:providerId/buildings`
 
@@ -628,19 +653,26 @@ DELETE `/org/service-providers/:providerId/buildings/:buildingId`
 - Requires `service_providers.write`
 - Removes the provider-building link
 
-POST `/org/service-providers/:providerId/users`
+GET `/org/service-providers/:providerId/access-grants`
 
-- Requires `service_provider_users.write`
-- Body: `{ userId, role, isActive? }`
-- `role`: `MANAGER | WORKER`
-- User must belong to the same org
-- Existing link is updated in place if already present
-- `isActive` defaults to `true` and can be set to `false` to suspend provider access without deleting the membership
+- Requires `service_providers.read`
+- Returns provider-admin onboarding/access grants visible from the current org
 
-DELETE `/org/service-providers/:providerId/users/:userId`
+POST `/org/service-providers/:providerId/access-grants`
 
-- Requires `service_provider_users.write`
-- Removes the provider-user link
+- Requires `service_providers.write`
+- Body: `{ email }`
+- Creates the initial provider-admin invite and provider admin membership
+
+POST `/org/service-providers/:providerId/access-grants/:grantId/resend-invite`
+
+- Requires `service_providers.write`
+- Re-sends the onboarding invite for a pending provider access grant
+
+POST `/org/service-providers/:providerId/access-grants/:grantId/disable`
+
+- Requires `service_providers.write`
+- Disables a pending or active provider access grant
 
 ## Building Assignments (building-scoped)
 
@@ -901,7 +933,7 @@ GET `/org/buildings/:buildingId/residents`
 
 GET `/resident/me`
 
-- Returns the current user (with phone if stored) and their ACTIVE occupancy (building + unit).
+- Returns the current user (including `avatarUrl` and phone if stored) and their ACTIVE occupancy (building + unit).
 - `occupancy` is null when the user is not assigned to a unit.
 
 PUT `/resident/me/profile`
@@ -910,6 +942,16 @@ PUT `/resident/me/profile`
   - `emiratesIdNumber?`, `passportNumber?`, `nationality?`, `dateOfBirth?`, `currentAddress?`, `emergencyContactName?`, `emergencyContactPhone?`, `preferredBuildingId?`
 - Upserts the authenticated resident's own extended profile (self-service).
 - Does not require org-wide `residents.profile.write`.
+
+POST `/resident/me/avatar`
+
+- Requires `resident.profile.write`
+- Multipart form-data with required `file`
+- Allowed mime types: `image/jpeg`, `image/jpg`, `image/png`, `image/webp`
+- Max size: `5 MB`
+- Uploads the authenticated resident's avatar and updates `user.avatarUrl`
+- Response:
+  - `avatarUrl`
 
 ## Invite Deployment Notes
 
@@ -1042,10 +1084,13 @@ Resident visitor limitation:
 
 POST `/resident/requests`
 
-- Body: `{ title, description?, type?, priority?, attachments?: [{ fileName, mimeType, sizeBytes, url }] }`
+- Body: `{ title, description?, type?, priority?, isEmergency?, emergencySignals?, attachments?: [{ fileName, mimeType, sizeBytes, url }] }`
 - Uses resident ACTIVE occupancy to select building/unit
   - `type` values: `CLEANING` | `ELECTRICAL` | `MAINTENANCE` | `PLUMBING_AC_HEATING` | `OTHER`
   - `priority` values: `LOW` | `MEDIUM` | `HIGH`
+  - `isEmergency` defaults to `false` when omitted
+  - `emergencySignals` values: `ACTIVE_LEAK` | `NO_POWER` | `SAFETY_RISK` | `NO_COOLING`
+  - if `emergencySignals` is present, backend treats the request as emergency intake even when `isEmergency` is omitted
 
 GET `/resident/requests`
 
@@ -1079,14 +1124,25 @@ GET `/resident/requests/:requestId/comments`
 GET `/org/buildings/:buildingId/requests`
 
 - Query: `status=OPEN|ASSIGNED|IN_PROGRESS|COMPLETED|CANCELED` (optional)
+- Query: `ownerApprovalStatus=NOT_REQUIRED|PENDING|APPROVED|REJECTED` (optional)
+- Query: `queue=NEW|NEEDS_ESTIMATE|AWAITING_ESTIMATE|AWAITING_OWNER|READY_TO_ASSIGN|ASSIGNED|IN_PROGRESS|OVERDUE` (optional)
 - Requires `requests.read` OR building assignment read access
 - STAFF without `requests.read` only sees requests assigned to them
-- Includes `unit` (with `floor`), `createdBy`, `attachments` when present, `ownerApproval`, and provider assignment fields when set
+- Includes `unit` (with `floor`), `createdBy`, `attachments` when present, `ownerApproval`, `policy`, computed `queue`, and provider assignment fields when set
+- Includes `estimate` workflow state with:
+  - `status = NOT_REQUESTED | REQUESTED | SUBMITTED`
+  - `requestedAt`
+  - `requestedByUserId`
+  - `dueAt`
+  - `reminderSentAt`
+  - `submittedAt`
+  - `submittedByUserId`
 
 GET `/org/buildings/:buildingId/requests/:requestId`
 
 - Same access rules as list
-- Includes `unit` (with `floor`), `attachments` when present, `ownerApproval`, and provider assignment fields when set
+- Includes `unit` (with `floor`), `attachments` when present, `ownerApproval`, `policy`, computed `queue`, and provider assignment fields when set
+- Includes the same `estimate` workflow block as list items
 
 POST `/org/buildings/:buildingId/requests/:requestId/assign`
 
@@ -1101,17 +1157,30 @@ POST `/org/buildings/:buildingId/requests/:requestId/assign-provider`
 
 - Body: `{ serviceProviderId }`
 - Requires `requests.assign` OR BUILDING_ADMIN assignment
-- Provider must be active, belong to the same org, and be linked to the building
+- Provider must be active and linked to the building
 - Allows re-assigning while status is `ASSIGNED`
 - Clears any internal staff assignment and any previously assigned provider worker
 - Blocked while owner approval is `PENDING`
+
+POST `/org/buildings/:buildingId/requests/:requestId/request-estimate`
+
+- Body: `{ serviceProviderId }`
+- Requires `requests.assign` OR BUILDING_ADMIN assignment
+- Provider must be active and linked to the building
+- Allowed only while backend policy route is `NEEDS_ESTIMATE`
+- Links the request to a provider without moving it into execution
+- Keeps request status as `OPEN` while the primary queue becomes `AWAITING_ESTIMATE`
+- Sets `estimate.status = REQUESTED`
+- Stamps `estimate.requestedAt` and `estimate.requestedByUserId`
+- Sets `estimate.dueAt` using the backend estimate SLA window
+- Clears any internal staff assignment and any previously assigned provider worker
 
 POST `/org/buildings/:buildingId/requests/:requestId/assign-provider-worker`
 
 - Body: `{ userId }`
 - Requires `requests.assign` OR BUILDING_ADMIN assignment
 - Request must already be assigned to a provider
-- User must be an active member of the assigned provider in the same org
+- User must be an active member of the assigned provider
 - Keeps request status as `ASSIGNED`
 
 POST `/org/buildings/:buildingId/requests/:requestId/unassign-provider`
@@ -1167,6 +1236,11 @@ POST `/org/buildings/:buildingId/requests/:requestId/owner-approval/require`
   - `approvalRequiredReason`
   - `estimatedAmount?`
   - `estimatedCurrency?`
+  - `isEmergency?`
+  - `isLikeForLike?`
+  - `isUpgrade?`
+  - `isMajorReplacement?`
+  - `isResponsibilityDisputed?`
   - `ownerApprovalDeadlineAt?`
 - Blocked for closed requests and requests with no `unitId`
 
@@ -1176,6 +1250,61 @@ POST `/org/buildings/:buildingId/requests/:requestId/owner-approval/request`
 - Allowed only while owner approval state is `PENDING`
 - Stamps `ownerApproval.requestedAt` and `ownerApproval.requestedByUserId`
 - Fails if owner approval was already requested; use resend instead
+
+POST `/org/buildings/:buildingId/requests/:requestId/owner-approval/request-now`
+
+- Requires `requests.assign`
+- Atomic V1 helper for the one-button management flow
+- In one transaction it:
+  - marks owner approval required
+  - stores any supplied triage/estimate fields
+  - stamps `ownerApproval.requestedAt`
+  - stamps `ownerApproval.requestedByUserId`
+- Body:
+  - `approvalRequiredReason`
+  - `estimatedAmount?`
+  - `estimatedCurrency?`
+  - `isEmergency?`
+  - `isLikeForLike?`
+  - `isUpgrade?`
+  - `isMajorReplacement?`
+  - `isResponsibilityDisputed?`
+  - `ownerApprovalDeadlineAt?`
+
+POST `/org/buildings/:buildingId/requests/:requestId/policy-triage`
+
+- Requires `requests.assign`
+- Updates management triage/policy inputs without starting owner approval
+- Body:
+  - `estimatedAmount?`
+  - `estimatedCurrency?`
+  - `isEmergency?`
+  - `isLikeForLike?`
+  - `isUpgrade?`
+  - `isMajorReplacement?`
+  - `isResponsibilityDisputed?`
+- At least one field is required
+- Returns the same building request detail payload, including recomputed `policy` and `queue`
+
+POST `/org/buildings/:buildingId/requests/:requestId/estimate`
+
+- Requires `requests.assign`
+- Stores estimate facts and re-runs backend policy evaluation
+- Body:
+  - `estimatedAmount`
+  - `estimatedCurrency?`
+  - `approvalRequiredReason?`
+  - `isEmergency?`
+  - `isLikeForLike?`
+  - `isUpgrade?`
+  - `isMajorReplacement?`
+  - `isResponsibilityDisputed?`
+  - `ownerApprovalDeadlineAt?`
+- If the estimate still qualifies for direct dispatch, owner approval state is cleared back to `NOT_REQUIRED`
+- If the estimate requires owner approval and the request is linked to a unit, backend automatically moves owner approval to `PENDING` and stamps `requestedAt` / `requestedByUserId`
+- Sets `estimate.status = SUBMITTED`
+- Stamps `estimate.submittedAt` and `estimate.submittedByUserId`
+- Returns the same building request detail payload, including recomputed `policy` and `queue`
 
 POST `/org/buildings/:buildingId/requests/:requestId/owner-approval/resend`
 
@@ -1196,7 +1325,7 @@ POST `/org/buildings/:buildingId/requests/:requestId/owner-approval/override`
 
 ## Maintenance Requests (service provider)
 
-GET `/org/provider/requests`
+GET `/provider/requests`
 
 - Lists requests assigned to one of the current user's active service provider memberships
 - Query:
@@ -1204,48 +1333,68 @@ GET `/org/provider/requests`
   - `serviceProviderId=<uuid>` (optional, must be one of the caller's active provider memberships)
 - Returns provider-facing request detail including `buildingName`, `unit`, `createdBy`, `serviceProvider`, `serviceProviderAssignedTo`, `attachments`, and `ownerApproval`
 
-GET `/org/provider/requests/:requestId`
+GET `/provider/requests/:requestId`
 
 - Returns one request only when it is assigned to one of the caller's active service provider memberships
 - Returns `404` for unrelated provider requests
 
-POST `/org/provider/requests/:requestId/assign-worker`
+POST `/provider/requests/:requestId/assign-worker`
 
 - Body: `{ userId }`
-- Provider managers only
+- Provider admins only
 - Request must already be assigned to that provider
-- User must be an active member of the same provider in the same org
+- User must be an active member of the same provider
 
-POST `/org/provider/requests/:requestId/status`
+POST `/provider/requests/:requestId/status`
 
 - Body: `{ status: "IN_PROGRESS" | "COMPLETED" }`
-- Provider managers can update any request for their provider
+- Provider admins can update any request for their provider
 - Provider workers can update only when they are the assigned provider worker
 - Blocked while owner approval is still execution-blocking
 
-POST `/org/provider/requests/:requestId/comments`
-GET `/org/provider/requests/:requestId/comments`
+POST `/provider/requests/:requestId/estimate`
+
+- Body:
+  - `estimatedAmount`
+  - `estimatedCurrency?`
+  - `approvalRequiredReason?`
+  - `isEmergency?`
+  - `isLikeForLike?`
+  - `isUpgrade?`
+  - `isMajorReplacement?`
+  - `isResponsibilityDisputed?`
+  - `ownerApprovalDeadlineAt?`
+- Provider admins can submit an estimate on any request for their provider
+- Provider workers can submit an estimate only when they are the assigned provider worker
+- Backend re-runs policy from the estimate facts
+- If owner approval is not needed after re-evaluation, owner approval state is cleared back to `NOT_REQUIRED`
+- If owner approval is required and the request is linked to a unit, backend automatically moves owner approval to `PENDING` and stamps `requestedAt` / `requestedByUserId`
+- Sets `estimate.status = SUBMITTED`
+- Stamps `estimate.submittedAt` and `estimate.submittedByUserId`
+
+POST `/provider/requests/:requestId/comments`
+GET `/provider/requests/:requestId/comments`
 
 - Provider comments are always stored as `SHARED`
-- Provider managers can comment on any request for their provider
+- Provider admins can comment on any request for their provider
 - Provider workers can comment only when they are the assigned provider worker
 - Provider comment reads only return `SHARED` comments and hide building `INTERNAL` comments
 
-GET `/org/provider/requests/comments/unread-count`
+GET `/provider/requests/comments/unread-count`
 
 - Returns `{ unreadCount }`
 - Counts unread `SHARED` comments across requests assigned to one of the caller's active provider memberships
 - `INTERNAL` building comments never count for provider users because they are not visible on provider comment reads
-- Reading `GET /org/provider/requests/:requestId/comments` marks that request's visible provider comments as read for the caller
+- Reading `GET /provider/requests/:requestId/comments` marks that request's visible provider comments as read for the caller
 
-POST `/org/provider/requests/:requestId/attachments`
+POST `/provider/requests/:requestId/attachments`
 
 - Body: `{ attachments: [{ fileName, mimeType, sizeBytes, url }] }`
-- Provider managers can add attachments on any request for their provider
+- Provider admins can add attachments on any request for their provider
 - Provider workers can add attachments only when they are the assigned provider worker
 - Blocked for `COMPLETED` or `CANCELED` requests
 - Notification behavior:
-  - assigning a request to a provider notifies active provider managers
+  - assigning a request to a provider notifies active provider admins
   - dispatching a provider worker notifies that worker
   - provider completion continues to notify building-side recipients through the standard maintenance status notification path
 
@@ -1477,6 +1626,28 @@ POST `/owner/notifications/:id/undismiss`
 - Restores one dismissed owner-visible notification across the caller's current owner org scope
 - Returns `{ success: true }`
 
+GET `/owner/me`
+
+- Returns the current owner runtime account plus every accessible org-local owner profile
+- Uses owner runtime access, not org RBAC
+- Requires:
+  - authenticated user
+  - at least one active owner access grant
+
+PATCH `/owner/me/profile`
+
+- Updates the current owner runtime account fields
+- Body: `{ name?, avatarUrl?, phone? }`
+- Intended for account-level profile edits such as display name, picture, and personal phone
+- Uses owner runtime access, not org RBAC
+
+PATCH `/owner/profiles/:ownerId`
+
+- Updates one org-local owner profile inside the caller's current owner access scope
+- Body: `{ email?, phone?, address? }`
+- Returns `404` if `ownerId` is not inside the caller's active owner access scope
+- Uses owner runtime access, not org RBAC
+
 ## Owner Portfolio
 
 GET `/owner/portfolio/units`
@@ -1497,6 +1668,19 @@ GET `/owner/portfolio/units`
   - `buildingId`
   - `buildingName`
   - `unitLabel`
+
+GET `/owner/portfolio/units/:unitId/tenant`
+
+- Returns the current active tenant for one unit inside the caller's current owner scope
+- Returns `404` when the unit is outside the current owner scope
+- Returns `null` when the unit is accessible but currently vacant
+- Intended for owner-safe tenant discovery before `POST /owner/messages/tenants`
+- Returns exactly:
+  - `occupancyId`
+  - `tenantUserId`
+  - `name`
+  - `email`
+  - `phone`
 
 GET `/owner/portfolio/summary`
 
@@ -1608,6 +1792,20 @@ POST `/owner/portfolio/requests/:requestId/comments`
   - `decisionSource`
   - `overrideReason`
   - `overriddenByUserId`
+- Building request detail/list additionally returns:
+  - `estimate.status = NOT_REQUESTED | REQUESTED | SUBMITTED`
+  - `estimate.requestedAt`
+  - `estimate.requestedByUserId`
+  - `estimate.submittedAt`
+  - `estimate.submittedByUserId`
+  - `policy.isEmergency`
+  - `policy.isLikeForLike`
+  - `policy.isUpgrade`
+  - `policy.isMajorReplacement`
+  - `policy.isResponsibilityDisputed`
+  - `policy.route = DIRECT_ASSIGN | EMERGENCY_DISPATCH | NEEDS_ESTIMATE | OWNER_APPROVAL_REQUIRED`
+  - `policy.recommendation = PROCEED_NOW | GET_ESTIMATE | REQUEST_OWNER_APPROVAL | PROCEED_AND_NOTIFY`
+  - `queue = NEW | NEEDS_ESTIMATE | AWAITING_ESTIMATE | AWAITING_OWNER | READY_TO_ASSIGN | ASSIGNED | IN_PROGRESS | OVERDUE | null`
 - `ownerApproval.status` values:
   - `NOT_REQUIRED`
   - `PENDING`
@@ -1765,6 +1963,15 @@ PATCH `/users/me/profile`
 
 - Body: `{ name?, avatarUrl?, phone? }`
 - Updates only the current user
+
+POST `/users/me/avatar`
+
+- Multipart form-data with required `file`
+- Allowed mime types: `image/jpeg`, `image/jpg`, `image/png`, `image/webp`
+- Max size: `5 MB`
+- Uploads the authenticated user's avatar and updates `user.avatarUrl`
+- Response:
+  - `avatarUrl`
 
 Cloudinary unsigned upload (frontend):
 
