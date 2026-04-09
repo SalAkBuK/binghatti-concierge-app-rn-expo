@@ -1,7 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
+import Constants from "expo-constants";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, usePathname } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import type { TextStyle, ViewStyle } from "react-native";
 import {
   Alert,
@@ -125,6 +126,13 @@ export function SideMenu({ isVisible, onClose, userRole }: SideMenuProps) {
     currentUser?.profile?.avatar ||
     null;
   const footerBottomPadding = Math.max(insets.bottom, 20) + 24;
+  const appVersion = useMemo(() => {
+    const version =
+      Constants.expoConfig?.version ??
+      Constants.nativeApplicationVersion ??
+      "1.0.0";
+    return `Version ${version}`;
+  }, []);
 
   // Animation values
   const translateX = useSharedValue(-MENU_WIDTH - 20);
@@ -728,6 +736,7 @@ export function SideMenu({ isVisible, onClose, userRole }: SideMenuProps) {
 
           <View style={[styles.menuFooter, { paddingBottom: footerBottomPadding }]}>
             {footerMenuItems.map(renderMenuItem)}
+            <Text style={styles.footerVersion}>{appVersion}</Text>
           </View>
         </Animated.View>
       </View>
@@ -978,5 +987,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 8,
     paddingBottom: 24,
+  },
+  footerVersion: {
+    marginTop: 14,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+    color: P.soft,
+    textAlign: "center",
   },
 });

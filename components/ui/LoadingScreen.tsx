@@ -1,4 +1,5 @@
-import React, { useEffect } from 'react';
+import Constants from 'expo-constants';
+import React, { useEffect, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -38,6 +39,13 @@ export function LoadingScreen({
   message = 'Building workspace environment...',
   isFinishing = false,
 }: LoadingScreenProps) {
+  const appVersion = useMemo(() => {
+    const version =
+      Constants.expoConfig?.version ??
+      Constants.nativeApplicationVersion ??
+      '1.0.0';
+    return `Version ${version}`;
+  }, []);
   const screenOpacity = useSharedValue(1);
   const screenScale = useSharedValue(1);
   const screenTranslateY = useSharedValue(0);
@@ -516,7 +524,7 @@ export function LoadingScreen({
 
       <Animated.View style={[styles.header, headerAnimatedStyle]}>
         <View style={styles.headerColumn}>
-          <Text style={styles.headerLabel}>Digital Curator v2.4</Text>
+          <Text style={[styles.headerLabel, styles.headerVersionLabel]}>{appVersion}</Text>
           <View style={styles.headerRule} />
         </View>
         <Text style={styles.headerLabel}>Established MMXXIV</Text>
@@ -643,6 +651,9 @@ const styles = StyleSheet.create({
     letterSpacing: 2.2,
     textTransform: 'uppercase',
     color: P.soft,
+  },
+  headerVersionLabel: {
+    color: P.primaryDark,
   },
   headerRule: {
     width: 34,
