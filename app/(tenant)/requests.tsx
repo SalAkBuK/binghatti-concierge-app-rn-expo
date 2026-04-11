@@ -26,11 +26,19 @@ import { useNotifications } from "../../lib/context/notifications-context";
 import { useRequests } from "../../lib/context/requests-context";
 import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
 import { useResidentRequests } from "../../lib/hooks/useResidentRequests";
-import type { Request, RequestPriority, RequestStatus } from "../../lib/types";
+import type { Request, RequestStatus } from "../../lib/types";
 import {
   getResidentRequestOwnerRejectionReason,
   isResidentRequestOwnerRejected,
 } from "../../lib/utils/resident-request-approval";
+import {
+  classifyTenantRequestByTenancyCycle,
+  getTenantLifecycleChip,
+  groupTenantRequestsByTenancyCycle,
+  TENANT_REQUEST_SECTION_COPY,
+  type TenantLifecycleChipTone,
+  type TenantRequestSectionKey,
+} from "../../lib/utils/tenant-request-tenancy-display";
 import {
   filterNotificationsByUser,
   getUnreadNotificationsCount,
@@ -62,6 +70,20 @@ const P = {
 };
 
 type FilterStatus = "all" | RequestStatus;
+type TenantRequestsView = "current" | "history";
+type TenantRequestListRow =
+  | {
+      type: "section";
+      key: string;
+      sectionKey: TenantRequestSectionKey;
+      title: string;
+      subtitle: string;
+    }
+  | {
+      type: "request";
+      key: string;
+      request: Request;
+    };
 
 const REQUESTS_PER_PAGE = 10;
 
@@ -83,6 +105,8 @@ const formatDate = (value?: string | null) => {
 };
 
 const formatCount = (value: number) => String(value).padStart(2, "0");
+const getTenantRequestsRoute = (view: TenantRequestsView) =>
+  view === "current" ? "/(tenant)/requests" : "/(tenant)/request-history";
 
 const getStatusMeta = (request: Request) => {
   if (isResidentRequestOwnerRejected(request)) {
@@ -141,19 +165,6 @@ const getStatusMeta = (request: Request) => {
   }
 };
 
-const getPriorityMeta = (priority: RequestPriority) => {
-  switch (priority) {
-    case "urgent":
-      return { label: "Urgent", bg: P.dangerBg, text: P.dangerText };
-    case "high":
-      return { label: "High", bg: "#FFEDD5", text: "#B45309" };
-    case "medium":
-      return { label: "Medium", bg: P.warningBg, text: P.warningText };
-    default:
-      return { label: "Low", bg: P.successBg, text: P.successText };
-  }
-};
-
 const getRequestTypeMeta = (type?: Request["type"] | string | null) => {
   switch (type) {
     case "plumbing":
@@ -172,7 +183,24 @@ const getRequestTypeMeta = (type?: Request["type"] | string | null) => {
   }
 };
 
-export default function RequestsScreen() {
+const lifecycleBadgeTone = (tone: TenantLifecycleChipTone) => {
+  switch (tone) {
+    case "success":
+      return { bg: P.successBg, text: P.successText };
+    case "warning":
+      return { bg: P.warningBg, text: P.warningText };
+    default:
+      return { bg: P.surfaceLow, text: P.text };
+  }
+};
+
+type TenantRequestsScreenProps = {
+  mode?: TenantRequestsView;
+};
+
+export function TenantRequestsScene({
+  mode = "current",
+}: TenantRequestsScreenProps) {
   const { currentUser } = useAuth();
   const { notifications } = useNotifications();
   const { actions: requestActions } = useRequests();
@@ -181,6 +209,8 @@ export default function RequestsScreen() {
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [page, setPage] = useState(1);
+  const activeView = mode;
+  const isHistoryView = activeView === "history";
   const tabBarHeight = useBottomTabBarHeight();
   const {
     canCreateMaintenanceRequest,
@@ -222,14 +252,29 @@ export default function RequestsScreen() {
     () => [...backendRequests].sort((a, b) => getRequestTimestamp(b) - getRequestTimestamp(a)),
     [backendRequests],
   );
+  const allGroupedRequests = useMemo(
+    () => groupTenantRequestsByTenancyCycle(allRequestsByNewest),
+    [allRequestsByNewest],
+  );
+  const currentRequestCount = allGroupedRequests.current.length;
+  const historyRequestCount =
+    allGroupedRequests.archived.length + allGroupedRequests.older.length;
+
+  const activeViewRequests = useMemo(() => {
+    if (!isHistoryView) {
+      return allGroupedRequests.current;
+    }
+
+    return [...allGroupedRequests.archived, ...allGroupedRequests.older];
+  }, [allGroupedRequests, isHistoryView]);
 
   const allUserRequests = useMemo(() => {
     const filteredRequests =
       filterStatus === "all"
-        ? allRequestsByNewest
-        : allRequestsByNewest.filter((req) => req.status === filterStatus);
+        ? activeViewRequests
+        : activeViewRequests.filter((req) => req.status === filterStatus);
     return filteredRequests;
-  }, [allRequestsByNewest, filterStatus]);
+  }, [activeViewRequests, filterStatus]);
 
   const totalPages = Math.max(1, Math.ceil(allUserRequests.length / REQUESTS_PER_PAGE));
   const currentPage = Math.min(page, totalPages);
@@ -238,11 +283,49 @@ export default function RequestsScreen() {
     () => allUserRequests.slice(pageStartIndex, pageStartIndex + REQUESTS_PER_PAGE),
     [allUserRequests, pageStartIndex],
   );
+  const groupedUserRequests = useMemo(
+    () => groupTenantRequestsByTenancyCycle(userRequests),
+    [userRequests],
+  );
+  const sectionedUserRequests = useMemo<TenantRequestListRow[]>(
+    () => {
+      if (activeView === "current") {
+        return groupedUserRequests.current.map((request) => ({
+          type: "request" as const,
+          key: request.id,
+          request,
+        }));
+      }
+
+      return (["archived", "older"] as const).flatMap((sectionKey) => {
+        const sectionRequests = groupedUserRequests[sectionKey];
+        if (sectionRequests.length === 0) {
+          return [];
+        }
+
+        return [
+          {
+            type: "section" as const,
+            key: `section-${sectionKey}`,
+            sectionKey,
+            title: TENANT_REQUEST_SECTION_COPY[sectionKey].title,
+            subtitle: TENANT_REQUEST_SECTION_COPY[sectionKey].subtitle,
+          },
+          ...sectionRequests.map((request) => ({
+            type: "request" as const,
+            key: request.id,
+            request,
+          })),
+        ];
+      });
+    },
+    [activeView, groupedUserRequests],
+  );
   const visibleRangeStart = allUserRequests.length === 0 ? 0 : pageStartIndex + 1;
   const visibleRangeEnd = pageStartIndex + userRequests.length;
 
   const stats = useMemo(() => {
-    const statusCounts = backendRequests.reduce(
+    const statusCounts = activeViewRequests.reduce(
       (counts, req) => {
         counts[req.status] = (counts[req.status] || 0) + 1;
         return counts;
@@ -257,7 +340,7 @@ export default function RequestsScreen() {
       (statusCounts["on-hold"] || 0);
 
     return {
-      total: backendRequests.length,
+      total: activeViewRequests.length,
       open,
       pending: statusCounts.pending || 0,
       assigned: statusCounts.assigned || 0,
@@ -266,7 +349,7 @@ export default function RequestsScreen() {
       completed: statusCounts.completed || 0,
       cancelled: statusCounts.cancelled || 0,
     };
-  }, [backendRequests]);
+  }, [activeViewRequests]);
 
   const statusFilters = useMemo(
     () => [
@@ -337,10 +420,38 @@ export default function RequestsScreen() {
     const request = backendRequests.find((item) => item.id === requestId);
     if (!request) return;
 
+    const requestView =
+      classifyTenantRequestByTenancyCycle(request) === "current"
+        ? "current"
+        : "history";
+
+    if (requestView !== activeView) {
+      handledRequestIdRef.current = requestId;
+      router.replace(
+        requestView === "current"
+          ? ({
+              pathname: "/(tenant)/requests",
+              params: { requestId },
+            } as any)
+          : ({
+              pathname: "/(tenant)/request-history",
+              params: { requestId },
+            } as any),
+      );
+      return;
+    }
+
     handledRequestIdRef.current = requestId;
     requestActions.setSelectedRequest(request);
     router.push("/(modals)/request-details");
-  }, [backendRequests, isPreMoveIn, isResidentHistoryLocked, params.requestId, requestActions]);
+  }, [
+    activeView,
+    backendRequests,
+    isPreMoveIn,
+    isResidentHistoryLocked,
+    params.requestId,
+    requestActions,
+  ]);
 
   const userNotifications = filterNotificationsByUser(notifications || [], currentUser?.id);
   const hasUnreadNotifications = getUnreadNotificationsCount(userNotifications) > 0;
@@ -430,12 +541,17 @@ export default function RequestsScreen() {
     );
   }
 
-  const renderRequestCard = ({ item: request }: { item: Request }) => {
+  const renderRequestCard = (request: Request) => {
     const ownerRejected = isResidentRequestOwnerRejected(request);
     const ownerRejectionReason = getResidentRequestOwnerRejectionReason(request);
     const statusMeta = getStatusMeta(request);
-    const priorityMeta = getPriorityMeta(request.priority);
     const typeMeta = getRequestTypeMeta(request.type);
+    const lifecycleChip = getTenantLifecycleChip(request);
+    const unitLabel =
+      request.apartment ||
+      currentUser?.profile?.apartment ||
+      currentUser?.resident?.unitLabel ||
+      "Assigned unit";
 
     return (
       <AnimatedButton style={styles.requestCard} onPress={() => handleRequestPress(request)}>
@@ -448,9 +564,7 @@ export default function RequestsScreen() {
               {request.title}
             </Text>
             <Text style={styles.requestMetaText} numberOfLines={1}>
-              {`${typeMeta.label} - Updated ${formatDate(
-                request.updatedAt || request.createdAt,
-              )}`}
+              {`Unit ${unitLabel} · ${typeMeta.label}`}
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color={P.soft} />
@@ -463,24 +577,25 @@ export default function RequestsScreen() {
               {statusMeta.label}
             </Text>
           </View>
-          <View style={[styles.priorityPill, { backgroundColor: priorityMeta.bg }]}>
-            <Text style={[styles.priorityPillText, { color: priorityMeta.text }]}>
-              {priorityMeta.label}
-            </Text>
-          </View>
-          {request.isEmergency ? (
-            <View style={[styles.priorityPill, styles.emergencyPill]}>
-              <Ionicons name="warning-outline" size={12} color={P.dangerText} />
-              <Text style={[styles.priorityPillText, styles.emergencyPillText]}>
-                Emergency
+          {lifecycleChip ? (
+            <View
+              style={[
+                styles.lifecycleBadge,
+                { backgroundColor: lifecycleBadgeTone(lifecycleChip.tone).bg },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.lifecycleBadgeText,
+                  { color: lifecycleBadgeTone(lifecycleChip.tone).text },
+                ]}
+              >
+                {lifecycleChip.label}
               </Text>
             </View>
           ) : null}
         </View>
 
-        <Text style={styles.requestDescription} numberOfLines={2}>
-          {request.description}
-        </Text>
         {ownerRejected ? (
           <Text style={styles.requestAlertText} numberOfLines={2}>
             {ownerRejectionReason
@@ -490,7 +605,9 @@ export default function RequestsScreen() {
         ) : null}
 
         <View style={styles.requestInfoRow}>
-          <Text style={styles.requestInfoText}>{formatDate(request.createdAt)}</Text>
+          <Text style={styles.requestInfoText}>
+            {`Updated ${formatDate(request.updatedAt || request.createdAt)}`}
+          </Text>
           <Text
             style={[
               styles.requestInfoText,
@@ -508,11 +625,23 @@ export default function RequestsScreen() {
     );
   };
 
+  const renderSectionHeader = (row: Extract<TenantRequestListRow, { type: "section" }>) => (
+    <View style={styles.requestSectionBlock}>
+      <Text style={styles.requestSectionTitle}>{row.title}</Text>
+      <Text style={styles.requestSectionSubtitle}>{row.subtitle}</Text>
+    </View>
+  );
+
+  const renderListRow = ({ item }: { item: TenantRequestListRow }) =>
+    item.type === "section" ? renderSectionHeader(item) : renderRequestCard(item.request);
+
   const renderListHeader = () => (
     <>
       <View>
         <HeaderBar
-          title="My Requests"
+          title={isHistoryView ? "Request History" : "My Requests"}
+          showBackButton={isHistoryView}
+          showMenu={!isHistoryView}
           hasUnreadNotifications={hasUnreadNotifications}
           showSideMenu={showSideMenu}
           onSideMenuToggle={setShowSideMenu}
@@ -530,18 +659,20 @@ export default function RequestsScreen() {
           <View style={styles.heroCopy}>
             <Text style={styles.heroEyebrow}>Service Desk</Text>
             <Text style={styles.heroTitle}>
-              {isFormerResident ? "Request History" : "Request Tracking"}
+              {isHistoryView ? "Request History" : "Request Tracking"}
             </Text>
             <Text style={styles.heroSubtitle}>
               {isFormerResident
                 ? "Review the latest request history from your previous residency."
                 : filterStatus === "all"
-                ? `${stats.open} active requests need attention across your residence.`
-                : `${allUserRequests.length} request${allUserRequests.length === 1 ? "" : "s"} in ${activeFilterLabel.toLowerCase()}.`}
+                ? activeView === "current"
+                  ? `${currentRequestCount} current request${currentRequestCount === 1 ? "" : "s"} are visible in your active stay.`
+                  : `${historyRequestCount} archived request${historyRequestCount === 1 ? "" : "s"} are available in your history.`
+                : `${allUserRequests.length} ${activeView === "current" ? "current" : "history"} request${allUserRequests.length === 1 ? "" : "s"} in ${activeFilterLabel.toLowerCase()}.`}
             </Text>
           </View>
 
-          {canCreateMaintenanceRequest ? (
+          {!isHistoryView && canCreateMaintenanceRequest ? (
             <TouchableOpacity
               style={styles.heroAction}
               activeOpacity={0.88}
@@ -549,6 +680,15 @@ export default function RequestsScreen() {
             >
               <Ionicons name="add-outline" size={16} color={P.surface} />
               <Text style={styles.heroActionText}>New Request</Text>
+            </TouchableOpacity>
+          ) : isHistoryView && currentRequestCount > 0 ? (
+            <TouchableOpacity
+              style={styles.heroAction}
+              activeOpacity={0.88}
+              onPress={() => router.push("/(tenant)/requests" as any)}
+            >
+              <Ionicons name="arrow-back-outline" size={16} color={P.surface} />
+              <Text style={styles.heroActionText}>Current Requests</Text>
             </TouchableOpacity>
           ) : null}
         </LinearGradient>
@@ -576,9 +716,26 @@ export default function RequestsScreen() {
       <View style={styles.filterSection}>
         <View style={styles.sectionHeader}>
           <View>
-            <Text style={styles.sectionTitle}>Browse Requests</Text>
-            <Text style={styles.sectionSubtitle}>Filter by current status</Text>
+            <Text style={styles.sectionTitle}>
+              {activeView === "current" ? "Current Requests" : "Request History"}
+            </Text>
+            <Text style={styles.sectionSubtitle}>
+              {activeView === "current"
+                ? "Only requests from your current stay appear here."
+                : "Archived requests stay separate from your active work."}
+            </Text>
           </View>
+          {isHistoryView ? (
+            <TouchableOpacity
+              style={styles.sectionActionButton}
+              onPress={() => router.push("/(tenant)/requests" as any)}
+              activeOpacity={0.88}
+            >
+              <Text style={styles.sectionActionButtonText}>
+                {`Current (${currentRequestCount})`}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
 
         <ScrollView
@@ -629,12 +786,22 @@ export default function RequestsScreen() {
           <Text style={styles.emptyStateTitle}>No requests found</Text>
           <Text style={styles.emptyStateText}>
             {filterStatus === "all"
-              ? canCreateMaintenanceRequest
-                ? "Create a new service request to start tracking it here."
-                : "Your previous resident requests will appear here when history is available."
-              : `There are no requests in ${activeFilterLabel.toLowerCase()} right now.`}
+              ? activeView === "current"
+                ? "You do not have any requests from your current stay right now."
+                : "You do not have any archived requests in history right now."
+              : `There are no ${activeView === "current" ? "current" : "history"} requests in ${activeFilterLabel.toLowerCase()} right now.`}
           </Text>
-          {canCreateMaintenanceRequest ? (
+          {activeView === "history" && currentRequestCount > 0 ? (
+            <TouchableOpacity
+              style={styles.emptyAction}
+              onPress={() => {
+                router.push(getTenantRequestsRoute("current") as any);
+                setPage(1);
+              }}
+            >
+              <Text style={styles.emptyActionText}>Open Current Requests</Text>
+            </TouchableOpacity>
+          ) : canCreateMaintenanceRequest && activeView === "current" ? (
             <TouchableOpacity
               style={styles.emptyAction}
               onPress={() => router.push("/(tenant)/new-request" as any)}
@@ -719,9 +886,9 @@ export default function RequestsScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <FlatList
-        data={userRequests}
-        renderItem={renderRequestCard}
-        keyExtractor={(item) => item.id}
+        data={sectionedUserRequests}
+        renderItem={renderListRow}
+        keyExtractor={(item) => item.key}
         ListHeaderComponent={renderListHeader}
         ListFooterComponent={renderListFooter}
         contentContainerStyle={[styles.listContent, { paddingBottom: tabBarHeight + 32 }]}
@@ -738,6 +905,10 @@ export default function RequestsScreen() {
       <SideMenu isVisible={showSideMenu} onClose={() => setShowSideMenu(false)} />
     </SafeAreaView>
   );
+}
+
+export default function RequestsScreen() {
+  return <TenantRequestsScene mode="current" />;
 }
 
 const styles = StyleSheet.create({
@@ -857,7 +1028,39 @@ const styles = StyleSheet.create({
   filterSection: {
     marginBottom: 14,
   },
+  viewSwitch: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 14,
+  },
+  viewSwitchOption: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 16,
+    backgroundColor: P.surface,
+    borderWidth: 1,
+    borderColor: P.border,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 14,
+  },
+  viewSwitchOptionActive: {
+    backgroundColor: P.primary,
+    borderColor: P.primary,
+  },
+  viewSwitchText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: P.text,
+  },
+  viewSwitchTextActive: {
+    color: P.surface,
+  },
   sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
     marginBottom: 12,
   },
   sectionTitle: {
@@ -870,6 +1073,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     color: P.soft,
+  },
+  sectionActionButton: {
+    minHeight: 38,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: P.surface,
+    borderWidth: 1,
+    borderColor: P.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sectionActionButtonText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: P.primary,
   },
   filterRowContent: {
     paddingRight: 20,
@@ -976,29 +1194,29 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "700",
   },
-  priorityPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
+  lifecycleBadge: {
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 7,
   },
-  priorityPillText: {
+  lifecycleBadgeText: {
     fontSize: 11,
     fontWeight: "700",
   },
-  emergencyPill: {
-    backgroundColor: P.dangerBg,
+  requestSectionBlock: {
+    marginBottom: 10,
+    paddingHorizontal: 2,
   },
-  emergencyPillText: {
-    color: P.dangerText,
+  requestSectionTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: P.text,
   },
-  requestDescription: {
-    fontSize: 13,
-    lineHeight: 20,
-    color: P.muted,
-    marginBottom: 12,
+  requestSectionSubtitle: {
+    marginTop: 4,
+    fontSize: 12,
+    lineHeight: 18,
+    color: P.soft,
   },
   requestAlertText: {
     marginTop: -2,

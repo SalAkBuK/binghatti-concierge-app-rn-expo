@@ -34,8 +34,25 @@ import {
   getProviderRequestStatusTone,
   resolveProviderApprovalStatus,
 } from '../../lib/utils/provider-portal';
+import {
+  getRequestLifecycleBadges,
+  type RequestLifecycleBadgeTone,
+} from '../../lib/utils/request-tenancy-context';
 
 type RequestFilter = ProviderPortalRequestStatus;
+
+const lifecycleBadgeTone = (tone: RequestLifecycleBadgeTone) => {
+  switch (tone) {
+    case 'success':
+      return { bg: P.successBg, text: P.successText };
+    case 'warning':
+      return { bg: P.warningBg, text: P.warningText };
+    case 'info':
+      return { bg: P.infoBg, text: P.infoText };
+    default:
+      return { bg: P.surfaceLow, text: P.muted };
+  }
+};
 
 const FILTERS: Array<{
   key: RequestFilter;
@@ -224,6 +241,7 @@ export default function ServiceProviderQueueScreen() {
               const statusTone = getProviderRequestStatusTone(request.status);
               const approvalStatus = resolveProviderApprovalStatus(request);
               const approvalTone = getProviderApprovalTone(approvalStatus);
+              const lifecycleBadges = getRequestLifecycleBadges(request);
 
               return (
                 <TouchableOpacity
@@ -259,6 +277,24 @@ export default function ServiceProviderQueueScreen() {
                   <Text style={styles.cardDescription} numberOfLines={2}>
                     {request.description}
                   </Text>
+
+                  {lifecycleBadges.length > 0 ? (
+                    <View style={styles.lifecycleBadgeRow}>
+                      {lifecycleBadges.map((badge) => {
+                        const tone = lifecycleBadgeTone(badge.tone);
+                        return (
+                          <View
+                            key={`${request.id}-${badge.key}-${badge.label}`}
+                            style={[styles.lifecycleBadge, { backgroundColor: tone.bg }]}
+                          >
+                            <Text style={[styles.lifecycleBadgeText, { color: tone.text }]}>
+                              {badge.label}
+                            </Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ) : null}
 
                   <View style={styles.metaRow}>
                     <View style={[styles.subtlePill, { backgroundColor: approvalTone.bg }]}>
@@ -487,6 +523,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 20,
     color: P.text,
+  },
+  lifecycleBadgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  lifecycleBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  lifecycleBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   metaRow: {
     marginTop: 14,

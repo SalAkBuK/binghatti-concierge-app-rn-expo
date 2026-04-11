@@ -30,8 +30,37 @@ import {
   resolveOwnerRequestApprovalStatus,
   OWNER_PALETTE as P,
 } from '../../../lib/utils/owner-portal';
+import { groupOwnerRequestsByTenancyCycle } from '../../../lib/utils/owner-request-grouping';
+import {
+  getOwnerCurrentOccupantName,
+  getOwnerPrimaryLifecycleBadge,
+  getOwnerRequesterName,
+  getOwnerSecondaryLifecycleBadge,
+  OWNER_REQUEST_SECTION_COPY,
+  type OwnerRequestSectionKey,
+  type OwnerTenancyBadgeTone,
+} from '../../../lib/utils/owner-request-tenancy-display';
 
 type RequestFilter = 'all' | 'approval' | 'open' | 'completed';
+type GroupedRequestSection = {
+  key: OwnerRequestSectionKey;
+  title: string;
+  subtitle: string;
+  items: OwnerPortfolioRequest[];
+};
+
+const lifecycleBadgeTone = (tone: OwnerTenancyBadgeTone) => {
+  switch (tone) {
+    case 'success':
+      return { bg: P.successBg, text: P.successText };
+    case 'warning':
+      return { bg: P.warningBg, text: P.warningText };
+    case 'info':
+      return { bg: P.infoBg, text: P.infoText };
+    default:
+      return { bg: P.surfaceLow, text: P.muted };
+  }
+};
 
 const FILTERS: {
   key: RequestFilter;
@@ -43,6 +72,145 @@ const FILTERS: {
   { key: 'open', label: 'Open', icon: 'clipboard-outline' },
   { key: 'completed', label: 'Closed', icon: 'checkmark-done-outline' },
 ];
+
+const renderRequestCard = (request: OwnerPortfolioRequest) => {
+  const statusTone = getOwnerRequestStatusTone(request.status);
+  const approvalStatus = resolveOwnerRequestApprovalStatus(request);
+  const approvalTone = getOwnerApprovalTone(approvalStatus);
+  const unitLabel = request.unit?.label || 'Unknown unit';
+  const requesterName = getOwnerRequesterName(request);
+  const currentOccupantName = getOwnerCurrentOccupantName(request);
+  const primaryLifecycleBadge = getOwnerPrimaryLifecycleBadge(request);
+  const secondaryLifecycleBadge = getOwnerSecondaryLifecycleBadge(request);
+
+  return (
+    <TouchableOpacity
+      key={request.id}
+      style={styles.requestCard}
+      activeOpacity={0.9}
+      onPress={() =>
+        router.push({
+          pathname: '/(owner)/requests/[requestId]',
+          params: {
+            requestId: request.id,
+            returnTo: '/(owner)/requests',
+          },
+        })
+      }
+    >
+      <View style={styles.cardTopRow}>
+        <View style={styles.requestIconWrap}>
+          <Ionicons name="clipboard-outline" size={18} color={P.primary} />
+        </View>
+        <View style={styles.cardCopy}>
+          <View style={styles.cardTitleRow}>
+            <Text style={styles.cardTitle} numberOfLines={1}>
+              {request.title}
+            </Text>
+          </View>
+          <Text style={styles.cardMeta} numberOfLines={1}>
+            Unit {unitLabel} · {request.buildingName}
+          </Text>
+          <Text style={styles.cardSubMeta} numberOfLines={1}>
+            {`Requester: ${requesterName}`}
+          </Text>
+          {currentOccupantName ? (
+            <Text style={styles.cardSubMeta} numberOfLines={1}>
+              {`Current tenant: ${currentOccupantName}`}
+            </Text>
+          ) : null}
+        </View>
+        <View style={[styles.pill, { backgroundColor: statusTone.bg }]}>
+          <Text style={[styles.pillText, { color: statusTone.text }]}>
+            {formatOwnerLabel(request.status)}
+          </Text>
+        </View>
+      </View>
+
+      <Text style={styles.cardDescription} numberOfLines={2}>
+        {request.description}
+      </Text>
+
+      {primaryLifecycleBadge || secondaryLifecycleBadge ? (
+        <View style={styles.lifecycleBadgeRow}>
+          {primaryLifecycleBadge ? (
+            <View
+              style={[
+                styles.lifecycleBadge,
+                styles.lifecycleBadgePrimary,
+                { backgroundColor: lifecycleBadgeTone(primaryLifecycleBadge.tone).bg },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.lifecycleBadgeText,
+                  {
+                    color: lifecycleBadgeTone(primaryLifecycleBadge.tone).text,
+                  },
+                ]}
+              >
+                {primaryLifecycleBadge.label}
+              </Text>
+            </View>
+          ) : null}
+          {secondaryLifecycleBadge ? (
+            <View
+              style={[
+                styles.lifecycleBadge,
+                { backgroundColor: lifecycleBadgeTone(secondaryLifecycleBadge.tone).bg },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.lifecycleBadgeText,
+                  {
+                    color: lifecycleBadgeTone(secondaryLifecycleBadge.tone).text,
+                  },
+                ]}
+              >
+                {secondaryLifecycleBadge.label}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
+      <View style={styles.cardFooter}>
+        <View style={[styles.subtlePill, { backgroundColor: approvalTone.bg }]}>
+          <Text style={[styles.subtlePillText, { color: approvalTone.text }]}>
+            Approval {formatOwnerLabel(approvalStatus)}
+          </Text>
+        </View>
+        <Text style={styles.footerText}>
+          Updated {formatOwnerRelativeTime(request.updatedAt)}
+        </Text>
+      </View>
+
+      {approvalStatus === 'PENDING' ? (
+        <View style={styles.pendingActionRow}>
+          <Text style={styles.pendingActionHint}>
+            Owner approval is waiting on your decision.
+          </Text>
+          <TouchableOpacity
+            style={styles.pendingActionButton}
+            onPress={() =>
+              router.push({
+                pathname: '/(owner)/requests/[requestId]',
+                params: {
+                  requestId: request.id,
+                  returnTo: '/(owner)/requests',
+                },
+              })
+            }
+          >
+            <Ionicons name="eye-outline" size={14} color="#FFFFFF" />
+            <Text style={styles.pendingActionButtonText}>Review</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+    </TouchableOpacity>
+  );
+};
 
 export default function OwnerRequestsScreen() {
   const tabBarHeight = useBottomTabBarHeight();
@@ -101,13 +269,18 @@ export default function OwnerRequestsScreen() {
     const query = searchQuery.trim().toLowerCase();
 
     return requests.filter((request) => {
+      const unitLabel = request.unit?.label || 'Unknown unit';
+      const requesterName = getOwnerRequesterName(request);
+      const currentOccupantName = getOwnerCurrentOccupantName(request);
       const matchesSearch =
         !query ||
-        `${request.title} ${request.description} ${request.buildingName} ${request.unit.label} ${request.orgName}`
+        `${request.title} ${request.description} ${request.buildingName} ${unitLabel} ${request.orgName} ${requesterName} ${currentOccupantName ?? ''}`
           .toLowerCase()
           .includes(query);
 
-        if (!matchesSearch) return false;
+      if (!matchesSearch) {
+        return false;
+      }
 
       const approvalStatus = resolveOwnerRequestApprovalStatus(request);
 
@@ -128,6 +301,14 @@ export default function OwnerRequestsScreen() {
     });
   }, [activeFilter, requests, searchQuery]);
 
+  const sortedFilteredRequests = useMemo(
+    () =>
+      [...filteredRequests].sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+      ),
+    [filteredRequests],
+  );
+
   const filterCounts = useMemo(
     () => ({
       all: requests.length,
@@ -143,6 +324,23 @@ export default function OwnerRequestsScreen() {
       ).length,
     }),
     [requests],
+  );
+
+  const groupedRequests = useMemo(
+    () => groupOwnerRequestsByTenancyCycle(sortedFilteredRequests),
+    [sortedFilteredRequests],
+  );
+
+  const groupedSections = useMemo<GroupedRequestSection[]>(
+    () =>
+      (['current', 'historical', 'uncategorized'] as const)
+        .map((key) => ({
+          key,
+          ...OWNER_REQUEST_SECTION_COPY[key],
+          items: groupedRequests[key],
+        }))
+        .filter((section) => section.items.length > 0),
+    [groupedRequests],
   );
 
   if (isLoading) {
@@ -233,96 +431,25 @@ export default function OwnerRequestsScreen() {
             </View>
           ) : null}
 
-          {filteredRequests.length === 0 ? (
+          {sortedFilteredRequests.length === 0 ? (
             <View style={styles.emptyCard}>
               <Ionicons name="clipboard-outline" size={28} color={P.soft} />
               <Text style={styles.emptyTitle}>No matching requests</Text>
               <Text style={styles.emptyText}>
-                Owner requests appear only while the unit remains inside current owner scope.
+                Owner requests appear only while the unit remains inside current owner
+                scope.
               </Text>
             </View>
           ) : (
-            filteredRequests.map((request) => {
-              const statusTone = getOwnerRequestStatusTone(request.status);
-              const approvalStatus = resolveOwnerRequestApprovalStatus(request);
-              const approvalTone = getOwnerApprovalTone(approvalStatus);
-
-              return (
-                <TouchableOpacity
-                  key={request.id}
-                  style={styles.requestCard}
-                  activeOpacity={0.9}
-                  onPress={() =>
-                    router.push({
-                      pathname: '/(owner)/requests/[requestId]',
-                      params: {
-                        requestId: request.id,
-                        returnTo: '/(owner)/requests',
-                      },
-                    })
-                  }
-                >
-                  <View style={styles.cardTopRow}>
-                    <View style={styles.requestIconWrap}>
-                      <Ionicons name="clipboard-outline" size={18} color={P.primary} />
-                    </View>
-                    <View style={styles.cardCopy}>
-                      <View style={styles.cardTitleRow}>
-                        <Text style={styles.cardTitle} numberOfLines={1}>
-                          {request.title}
-                        </Text>
-                      </View>
-                      <Text style={styles.cardMeta} numberOfLines={1}>
-                        {request.buildingName} • Unit {request.unit.label} • {request.orgName}
-                      </Text>
-                    </View>
-                    <View style={[styles.pill, { backgroundColor: statusTone.bg }]}>
-                      <Text style={[styles.pillText, { color: statusTone.text }]}>
-                        {formatOwnerLabel(request.status)}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <Text style={styles.cardDescription} numberOfLines={2}>
-                    {request.description}
-                  </Text>
-
-                  <View style={styles.cardFooter}>
-                    <View style={[styles.subtlePill, { backgroundColor: approvalTone.bg }]}>
-                      <Text style={[styles.subtlePillText, { color: approvalTone.text }]}>
-                        Approval {formatOwnerLabel(approvalStatus)}
-                      </Text>
-                    </View>
-                    <Text style={styles.footerText}>
-                      Updated {formatOwnerRelativeTime(request.updatedAt)}
-                    </Text>
-                  </View>
-
-                  {approvalStatus === 'PENDING' ? (
-                    <View style={styles.pendingActionRow}>
-                      <Text style={styles.pendingActionHint}>
-                        Owner approval is waiting on your decision.
-                      </Text>
-                      <TouchableOpacity
-                        style={styles.pendingActionButton}
-                        onPress={() =>
-                          router.push({
-                            pathname: '/(owner)/requests/[requestId]',
-                            params: {
-                              requestId: request.id,
-                              returnTo: '/(owner)/requests',
-                            },
-                          })
-                        }
-                      >
-                        <Ionicons name="eye-outline" size={14} color="#FFFFFF" />
-                        <Text style={styles.pendingActionButtonText}>Review</Text>
-                      </TouchableOpacity>
-                    </View>
-                  ) : null}
-                </TouchableOpacity>
-              );
-            })
+            groupedSections.map((section) => (
+              <View key={section.key} style={styles.sectionBlock}>
+                <View style={styles.sectionHeaderBlock}>
+                  <Text style={styles.sectionTitle}>{section.title}</Text>
+                  <Text style={styles.sectionSubtitle}>{section.subtitle}</Text>
+                </View>
+                {section.items.map(renderRequestCard)}
+              </View>
+            ))
           )}
         </ScrollView>
 
@@ -451,6 +578,24 @@ const styles = StyleSheet.create({
     color: P.muted,
     textAlign: 'center',
   },
+  sectionBlock: {
+    marginBottom: 18,
+  },
+  sectionHeaderBlock: {
+    marginBottom: 10,
+    paddingHorizontal: 4,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: P.text,
+  },
+  sectionSubtitle: {
+    marginTop: 4,
+    fontSize: 12,
+    lineHeight: 18,
+    color: P.muted,
+  },
   requestCard: {
     backgroundColor: P.surface,
     borderRadius: 22,
@@ -491,6 +636,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: P.muted,
   },
+  cardSubMeta: {
+    marginTop: 4,
+    fontSize: 12,
+    color: P.soft,
+  },
   pill: {
     borderRadius: 999,
     paddingHorizontal: 10,
@@ -505,6 +655,25 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 20,
     color: P.text,
+  },
+  lifecycleBadgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  lifecycleBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  lifecycleBadgePrimary: {
+    borderWidth: 1,
+    borderColor: P.border,
+  },
+  lifecycleBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   cardFooter: {
     marginTop: 14,

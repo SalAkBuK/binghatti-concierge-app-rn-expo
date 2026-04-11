@@ -22,6 +22,7 @@ type RequestDetailsCommentsProps = {
   setNewComment: (value: string) => void;
   isPostingComment: boolean;
   normalizedStatus: string;
+  commentsDisabledMessage?: string | null;
   onSubmitComment: () => void;
   styles: Record<string, any>;
 };
@@ -33,17 +34,22 @@ export function RequestDetailsComments({
   setNewComment,
   isPostingComment,
   normalizedStatus,
+  commentsDisabledMessage,
   onSubmitComment,
   styles,
 }: RequestDetailsCommentsProps) {
   const commentsDisabled =
-    normalizedStatus === "cancelled" || normalizedStatus === "completed";
+    Boolean(commentsDisabledMessage) ||
+    normalizedStatus === "cancelled" ||
+    normalizedStatus === "completed";
 
-  const placeholder = commentsDisabled
-    ? normalizedStatus === "cancelled"
+  const placeholder = commentsDisabledMessage
+    ? commentsDisabledMessage
+    : commentsDisabled
+      ? normalizedStatus === "cancelled"
       ? "Comments are disabled for cancelled requests"
       : "Comments are disabled for completed requests"
-    : "Share an update or ask a question...";
+      : "Share an update or ask a question...";
 
   return (
     <Animated.View entering={FadeInDown.duration(300)} style={styles.card}>

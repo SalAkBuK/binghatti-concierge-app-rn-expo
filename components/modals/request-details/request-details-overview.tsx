@@ -21,6 +21,7 @@ import type {
   ResidentEmergencySignal,
   User,
 } from "../../../lib/types";
+import type { RequestLifecycleBadge, RequestLifecycleBadgeTone } from "../../../lib/utils/request-tenancy-context";
 import {
   REQUEST_DETAILS_PALETTE as P,
   formatRequestTypeLabel,
@@ -77,6 +78,9 @@ type ActivityItem = {
 type RequestDetailsOverviewProps = {
   selectedRequest: Request;
   currentUser: User | null;
+  lifecycleBadges: RequestLifecycleBadge[];
+  tenantLifecycleMessage?: string | null;
+  tenantReadOnlyMessage?: string | null;
   job?: Job;
   resolvedBuildingName: string | null;
   showEditMode: boolean;
@@ -134,9 +138,25 @@ type RequestDetailsOverviewProps = {
   styles: Record<string, any>;
 };
 
+const lifecycleBadgeTone = (tone: RequestLifecycleBadgeTone) => {
+  switch (tone) {
+    case "success":
+      return { bg: "#E4F4EA", text: "#25674A" };
+    case "warning":
+      return { bg: "#FDF1DB", text: "#9A5B00" };
+    case "info":
+      return { bg: "#E7EEF9", text: "#3C5A8C" };
+    default:
+      return { bg: "#F3F4F6", text: "#4B5563" };
+  }
+};
+
 export function RequestDetailsOverview({
   selectedRequest,
   currentUser,
+  lifecycleBadges,
+  tenantLifecycleMessage,
+  tenantReadOnlyMessage,
   job,
   resolvedBuildingName,
   showEditMode,
@@ -226,7 +246,8 @@ export function RequestDetailsOverview({
             <View style={styles.readOnlyNotice}>
               <Ionicons name="information-circle-outline" size={16} color={P.warningText} />
               <Text style={styles.readOnlyNoticeText}>
-                This request is currently {statusDisplayLabel.toLowerCase()}, so the detail fields below are read-only.
+                {tenantReadOnlyMessage ??
+                  `This request is currently ${statusDisplayLabel.toLowerCase()}, so the detail fields below are read-only.`}
               </Text>
             </View>
           ) : null}
@@ -648,11 +669,36 @@ export function RequestDetailsOverview({
             ) : null}
           </View>
 
+          {isTenantUser && tenantLifecycleMessage ? (
+            <View style={styles.notesBox}>
+              <Text style={styles.notesText}>{tenantLifecycleMessage}</Text>
+            </View>
+          ) : null}
+
+          {!isTenantUser && lifecycleBadges.length > 0 ? (
+            <View style={styles.lifecycleBadgeRow}>
+              {lifecycleBadges.map((badge) => {
+                const tone = lifecycleBadgeTone(badge.tone);
+                return (
+                  <View
+                    key={`${selectedRequest.id}-${badge.key}-${badge.label}`}
+                    style={[styles.lifecycleBadge, { backgroundColor: tone.bg }]}
+                  >
+                    <Text style={[styles.lifecycleBadgeText, { color: tone.text }]}>
+                      {badge.label}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          ) : null}
+
           {isTenantUser && !canEdit ? (
             <View style={styles.readOnlyNotice}>
               <Ionicons name="lock-closed-outline" size={16} color={P.warningText} />
               <Text style={styles.readOnlyNoticeText}>
-                You can update request details only while the status is Submitted. This request is now read-only.
+                {tenantReadOnlyMessage ??
+                  "You can update request details only while the status is Submitted. This request is now read-only."}
               </Text>
             </View>
           ) : null}

@@ -1,8 +1,15 @@
 import type {
   OwnerApprovalStatus,
+  RequestLeaseCycleLabel,
   RequestPolicy,
   RequestQueue,
   RequestRecommendation,
+  RequestTenancyCycleLabel,
+  RequestTenancyContext,
+  RequestTenancyContextSource,
+  RequesterContext,
+  RequesterResidentInviteStatus,
+  RequesterResidentOccupancyStatus,
 } from '../types';
 
 const toBooleanOrUndefined = (value: unknown): boolean | undefined => {
@@ -17,6 +24,101 @@ const toBooleanOrUndefined = (value: unknown): boolean | undefined => {
   }
 
   return undefined;
+};
+
+const asRecord = (value: unknown): Record<string, unknown> | null => {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  return value as Record<string, unknown>;
+};
+
+const asString = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const normalizeOccupancyStatus = (
+  value?: unknown,
+): RequesterResidentOccupancyStatus | null => {
+  const normalized = asString(value)?.toUpperCase() ?? null;
+
+  switch (normalized) {
+    case 'ACTIVE':
+    case 'NONE':
+    case 'FORMER':
+      return normalized;
+    default:
+      return null;
+  }
+};
+
+const normalizeInviteStatus = (
+  value?: unknown,
+): RequesterResidentInviteStatus | null => {
+  const normalized = asString(value)?.toUpperCase() ?? null;
+
+  switch (normalized) {
+    case 'PENDING':
+    case 'ACCEPTED':
+    case 'FAILED':
+    case 'EXPIRED':
+      return normalized;
+    default:
+      return null;
+  }
+};
+
+const normalizeTenancyCycleLabel = (
+  value?: unknown,
+): RequestTenancyCycleLabel | null => {
+  const normalized = asString(value)?.toUpperCase() ?? null;
+
+  switch (normalized) {
+    case 'CURRENT_OCCUPANCY':
+    case 'PREVIOUS_OCCUPANCY':
+    case 'NO_ACTIVE_OCCUPANCY':
+    case 'UNKNOWN_TENANCY_CYCLE':
+      return normalized;
+    default:
+      return null;
+  }
+};
+
+const normalizeLeaseCycleLabel = (
+  value?: unknown,
+): RequestLeaseCycleLabel | null => {
+  const normalized = asString(value)?.toUpperCase() ?? null;
+
+  switch (normalized) {
+    case 'CURRENT_LEASE':
+    case 'PREVIOUS_LEASE':
+    case 'NO_ACTIVE_LEASE':
+    case 'UNKNOWN_LEASE_CYCLE':
+      return normalized;
+    default:
+      return null;
+  }
+};
+
+const normalizeTenancyContextSource = (
+  value?: unknown,
+): RequestTenancyContextSource | null => {
+  const normalized = asString(value)?.toUpperCase() ?? null;
+
+  switch (normalized) {
+    case 'SNAPSHOT':
+    case 'HISTORICAL_INFERENCE':
+    case 'UNRESOLVED':
+      return normalized;
+    default:
+      return null;
+  }
 };
 
 export const normalizeOwnerApprovalStatusOptional = (
@@ -121,16 +223,119 @@ export const mapRequestPolicy = (source: any): RequestPolicy | null => {
   };
 };
 
+export const mapRequesterContext = (
+  source: any,
+): RequesterContext | null => {
+  const requesterContext =
+    source?.requesterContext != null && typeof source.requesterContext === 'object'
+      ? source.requesterContext
+      : null;
+
+  if (!requesterContext) {
+    return null;
+  }
+
+  const currentUnitOccupant = asRecord(requesterContext.currentUnitOccupant);
+  const normalized: RequesterContext = {
+    isResident: requesterContext.isResident === true,
+    residentOccupancyStatus: normalizeOccupancyStatus(
+      requesterContext.residentOccupancyStatus,
+    ),
+    residentInviteStatus: normalizeInviteStatus(
+      requesterContext.residentInviteStatus,
+    ),
+    isFormerResident:
+      toBooleanOrUndefined(requesterContext.isFormerResident) ?? null,
+    currentUnitOccupiedByRequester:
+      toBooleanOrUndefined(requesterContext.currentUnitOccupiedByRequester) ?? null,
+    currentUnitOccupant: currentUnitOccupant
+      ? {
+          userId:
+            asString(
+              currentUnitOccupant.userId ?? currentUnitOccupant.id,
+            ) ?? '',
+          name: asString(currentUnitOccupant.name),
+        }
+      : null,
+  };
+
+  const hasCurrentUnitOccupant =
+    normalized.currentUnitOccupant != null &&
+    normalized.currentUnitOccupant.userId.length > 0;
+
+  if (
+    !normalized.isResident &&
+    normalized.residentOccupancyStatus == null &&
+    normalized.residentInviteStatus == null &&
+    normalized.isFormerResident == null &&
+    normalized.currentUnitOccupiedByRequester == null &&
+    !hasCurrentUnitOccupant
+  ) {
+    return null;
+  }
+
+  return {
+    ...normalized,
+    ...(hasCurrentUnitOccupant ? {} : { currentUnitOccupant: null }),
+  };
+};
+
+export const mapRequestTenancyContext = (
+  source: any,
+): RequestTenancyContext | null => {
+  const tenancyContext =
+    source?.requestTenancyContext != null &&
+    typeof source.requestTenancyContext === 'object'
+      ? source.requestTenancyContext
+      : null;
+
+  if (!tenancyContext) {
+    return null;
+  }
+
+  const label = normalizeTenancyCycleLabel(tenancyContext.label);
+  const leaseLabel = normalizeLeaseCycleLabel(tenancyContext.leaseLabel);
+  const tenancyContextSource = normalizeTenancyContextSource(
+    tenancyContext.tenancyContextSource,
+  );
+  const leaseContextSource = normalizeTenancyContextSource(
+    tenancyContext.leaseContextSource,
+  );
+
+  if (label == null && leaseLabel == null) {
+    return null;
+  }
+
+  return {
+    occupancyIdAtCreation: asString(tenancyContext.occupancyIdAtCreation),
+    leaseIdAtCreation: asString(tenancyContext.leaseIdAtCreation),
+    currentOccupancyId: asString(tenancyContext.currentOccupancyId),
+    currentLeaseId: asString(tenancyContext.currentLeaseId),
+    isCurrentOccupancy:
+      toBooleanOrUndefined(tenancyContext.isCurrentOccupancy) ?? null,
+    isCurrentLease:
+      toBooleanOrUndefined(tenancyContext.isCurrentLease) ?? null,
+    label: label ?? 'UNKNOWN_TENANCY_CYCLE',
+    leaseLabel: leaseLabel ?? 'UNKNOWN_LEASE_CYCLE',
+    ...(tenancyContextSource != null ? { tenancyContextSource } : {}),
+    ...(leaseContextSource != null ? { leaseContextSource } : {}),
+  };
+};
+
 export const mapRequestContractFields = (source: any) => {
   const policy = mapRequestPolicy(source);
   const ownerApprovalStatus = normalizeOwnerApprovalStatusOptional(
     source?.ownerApprovalStatus ?? source?.ownerApproval?.status,
   );
   const queue = normalizeRequestQueue(source?.queue);
+  const requesterContext = mapRequesterContext(source);
+  const requestTenancyContext = mapRequestTenancyContext(source);
 
   return {
     ...(source?.ownerApproval != null ? { ownerApproval: source.ownerApproval } : {}),
     ...(ownerApprovalStatus != null ? { ownerApprovalStatus } : {}),
+    ...(requesterContext != null ? { requesterContext } : {}),
+    ...(requestTenancyContext != null ? { requestTenancyContext } : {}),
     ...(policy != null ? { policy } : {}),
     ...(policy?.isEmergency != null ? { isEmergency: policy.isEmergency } : {}),
     ...(policy?.isLikeForLike != null
@@ -180,4 +385,3 @@ export const extractNotificationMetadata = (payload: any) => {
     ...(isEmergency != null ? { isEmergency } : {}),
   };
 };
-

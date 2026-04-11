@@ -1,7 +1,10 @@
 import React, { useEffect } from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
 
-import { useResidentRequests } from '../useResidentRequests';
+import {
+  mapResidentRequestFromBackend,
+  useResidentRequests,
+} from '../useResidentRequests';
 import type { User } from '../../types';
 
 const mockUseAsyncStorage = jest.fn();
@@ -165,5 +168,62 @@ describe('useResidentRequests', () => {
     expect(latest.historyUnavailable).toBe(false);
     expect(latest.requests).toHaveLength(1);
     expect(mockGetRequests).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves requester and tenancy lifecycle context on resident requests', () => {
+    const request = mapResidentRequestFromBackend(
+      {
+        id: 'request-legacy-1',
+        title: 'Legacy request',
+        description: 'Created during a previous stay',
+        type: 'MAINTENANCE',
+        status: 'COMPLETED',
+        priority: 'LOW',
+        requesterContext: {
+          isResident: true,
+          residentOccupancyStatus: 'FORMER',
+          residentInviteStatus: 'ACCEPTED',
+          isFormerResident: true,
+          currentUnitOccupiedByRequester: false,
+          currentUnitOccupant: {
+            userId: 'resident-2',
+            name: 'New Occupant',
+          },
+        },
+        requestTenancyContext: {
+          occupancyIdAtCreation: 'occupancy-old',
+          leaseIdAtCreation: 'lease-old',
+          currentOccupancyId: 'occupancy-current',
+          currentLeaseId: 'lease-current',
+          isCurrentOccupancy: false,
+          isCurrentLease: false,
+          label: 'PREVIOUS_OCCUPANCY',
+          leaseLabel: 'PREVIOUS_LEASE',
+        },
+      },
+      buildUser('ACTIVE'),
+    );
+
+    expect(request).toEqual(
+      expect.objectContaining({
+        requesterContext: expect.objectContaining({
+          isResident: true,
+          isFormerResident: true,
+          residentOccupancyStatus: 'FORMER',
+          currentUnitOccupiedByRequester: false,
+          currentUnitOccupant: {
+            userId: 'resident-2',
+            name: 'New Occupant',
+          },
+        }),
+        requestTenancyContext: expect.objectContaining({
+          occupancyIdAtCreation: 'occupancy-old',
+          currentOccupancyId: 'occupancy-current',
+          isCurrentOccupancy: false,
+          label: 'PREVIOUS_OCCUPANCY',
+          leaseLabel: 'PREVIOUS_LEASE',
+        }),
+      }),
+    );
   });
 });

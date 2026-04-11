@@ -42,6 +42,11 @@ import {
 import { requestToResidentRequestForm } from "../../lib/utils/resident-request-form";
 import { RESIDENT_HISTORY_UNAVAILABLE_MESSAGE } from "../../lib/utils/resident-history-access";
 import {
+  classifyTenantRequestByTenancyCycle,
+  getTenantLifecycleMessage,
+} from "../../lib/utils/tenant-request-tenancy-display";
+import { getRequestLifecycleBadges } from "../../lib/utils/request-tenancy-context";
+import {
   filterNotificationsByUser,
   getUnreadNotificationsCount,
 } from "../../lib/utils/helpers";
@@ -123,6 +128,9 @@ export default function RequestDetailsScreen() {
   const normalizedPriority = normalizePriority(selectedRequest.priority);
   const normalizedAttachments = normalizeAttachments(selectedRequest.attachments);
   const isTenantUser = currentUser?.role === "tenant";
+  const isTenantHistoricalRequest =
+    isTenantUser &&
+    classifyTenantRequestByTenancyCycle(selectedRequest) !== "current";
   const userNotifications = filterNotificationsByUser(
     notifications || [],
     currentUser?.id,
@@ -130,17 +138,30 @@ export default function RequestDetailsScreen() {
   const hasUnreadNotifications =
     getUnreadNotificationsCount(userNotifications) > 0;
 
-  const canEdit = normalizedStatus === "pending";
-  const canDelete = normalizedStatus === "pending";
+  const canEdit = !isTenantHistoricalRequest && normalizedStatus === "pending";
+  const canDelete = !isTenantHistoricalRequest && normalizedStatus === "pending";
   const canCancel =
+    !isTenantHistoricalRequest &&
     normalizedStatus !== "completed" && normalizedStatus !== "cancelled";
   const canProvideFeedback = false;
-  const canReviewJobEstimate = Boolean(reviewJobEstimateAsTenant);
-  const canApproveTenantJobCompletion = Boolean(approveTenantJobCompletion);
+  const canReviewJobEstimate =
+    !isTenantHistoricalRequest && Boolean(reviewJobEstimateAsTenant);
+  const canApproveTenantJobCompletion =
+    !isTenantHistoricalRequest && Boolean(approveTenantJobCompletion);
   const ownerRejected = isTenantUser && isResidentRequestOwnerRejected(selectedRequest);
   const ownerRejectionReason = ownerRejected
     ? getResidentRequestOwnerRejectionReason(selectedRequest)
     : null;
+  const lifecycleBadges = getRequestLifecycleBadges(selectedRequest);
+  const tenantLifecycleMessage = isTenantUser
+    ? getTenantLifecycleMessage(selectedRequest)
+    : null;
+  const tenantReadOnlyMessage =
+    isTenantHistoricalRequest
+      ? "Archived requests are view-only. You cannot edit, cancel, or comment on them."
+      : !canEdit
+        ? "You can update request details only while the status is Submitted. This request is now read-only."
+        : null;
   const statusColors = ownerRejected
     ? { bg: P.dangerBg, text: P.dangerText, border: "#E9B7B0" }
     : getStatusColor(normalizedStatus);
@@ -476,6 +497,9 @@ export default function RequestDetailsScreen() {
               }
               ownerRejected={ownerRejected}
               ownerRejectionReason={ownerRejectionReason}
+              lifecycleBadges={lifecycleBadges}
+              tenantLifecycleMessage={tenantLifecycleMessage}
+              tenantReadOnlyMessage={tenantReadOnlyMessage}
               normalizedPriority={normalizedPriority}
               normalizedAttachments={normalizedAttachments}
               statusColors={statusColors}
@@ -522,6 +546,7 @@ export default function RequestDetailsScreen() {
               setNewComment={setNewComment}
               isPostingComment={isPostingComment}
               normalizedStatus={normalizedStatus}
+              commentsDisabledMessage={tenantReadOnlyMessage}
               onSubmitComment={handleSubmitComment}
               styles={styles}
             />
@@ -734,6 +759,22 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "700",
     textTransform: "capitalize",
+  },
+  lifecycleBadgeRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: -4,
+    marginBottom: 16,
+  },
+  lifecycleBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  lifecycleBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
   },
   assignedRow: {
     flexDirection: "row",

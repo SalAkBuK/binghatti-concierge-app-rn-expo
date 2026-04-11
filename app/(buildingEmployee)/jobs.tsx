@@ -36,11 +36,17 @@ import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
 import { getUnreadNotificationsCount } from "../../lib/utils/helpers";
 import { hasEffectivePermission } from "../../lib/utils/permissions";
 import { mapRequestContractFields } from "../../lib/utils/request-contract";
+import {
+  getRequestLifecycleBadges,
+  type RequestLifecycleBadgeTone,
+} from "../../lib/utils/request-tenancy-context";
 import type {
   OwnerApprovalStatus,
   RequestPolicy,
   RequestQueue,
   RequestRecommendation,
+  RequestTenancyContext,
+  RequesterContext,
 } from "../../lib/types";
 
 type StaffRequestStatus =
@@ -62,6 +68,8 @@ type StaffJob = {
   buildingName?: string;
   unitNumber?: string;
   ownerApprovalStatus?: OwnerApprovalStatus | null;
+  requesterContext?: RequesterContext | null;
+  requestTenancyContext?: RequestTenancyContext | null;
   queue?: RequestQueue | null;
   recommendation?: RequestRecommendation | null;
   policy?: RequestPolicy | null;
@@ -152,6 +160,19 @@ const mapPriorityFromBackend = (priority: any): StaffJob["priority"] => {
   if (["HIGH", "3"].includes(normalized)) return "high";
   if (["URGENT", "4"].includes(normalized)) return "urgent";
   return "medium";
+};
+
+const lifecycleBadgeTone = (tone: RequestLifecycleBadgeTone) => {
+  switch (tone) {
+    case "success":
+      return { bg: P.successBg, text: P.successText };
+    case "warning":
+      return { bg: P.warningBg, text: P.warningText };
+    case "info":
+      return { bg: P.infoBg, text: P.infoText };
+    default:
+      return { bg: P.surfaceLow, text: P.muted };
+  }
 };
 
 const normalizeId = (value: number | string | null | undefined): number | undefined => {
@@ -401,6 +422,10 @@ export default function BuildingEmployeeJobsScreen() {
     }
     return "No active jobs in your queue";
   }, [stats.assigned, stats.inProgress, stats.total]);
+  const selectedJobLifecycleBadges = useMemo(
+    () => getRequestLifecycleBadges(selectedJob),
+    [selectedJob],
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -1153,6 +1178,7 @@ export default function BuildingEmployeeJobsScreen() {
           ) : (
             filteredJobs.map((job) => {
               const statusToken = statusBadgeStyle(job.status);
+              const lifecycleBadges = getRequestLifecycleBadges(job);
               return (
                 <TouchableOpacity
                   key={job.id}
@@ -1200,6 +1226,24 @@ export default function BuildingEmployeeJobsScreen() {
                       </View>
                     ) : null}
                   </View>
+
+                  {lifecycleBadges.length > 0 ? (
+                    <View style={styles.lifecycleBadgeRow}>
+                      {lifecycleBadges.map((badge) => {
+                        const tone = lifecycleBadgeTone(badge.tone);
+                        return (
+                          <View
+                            key={`${job.id}-${badge.key}-${badge.label}`}
+                            style={[styles.lifecycleBadge, { backgroundColor: tone.bg }]}
+                          >
+                            <Text style={[styles.lifecycleBadgeText, { color: tone.text }]}>
+                              {badge.label}
+                            </Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ) : null}
 
                   <View style={styles.metaRow}>
                     <Ionicons name="home-outline" size={16} color="#6B7280" />
@@ -1276,6 +1320,23 @@ export default function BuildingEmployeeJobsScreen() {
               >
               {selectedJob ? (
               <>
+                {selectedJobLifecycleBadges.length > 0 ? (
+                  <View style={styles.lifecycleBadgeRow}>
+                    {selectedJobLifecycleBadges.map((badge) => {
+                      const tone = lifecycleBadgeTone(badge.tone);
+                      return (
+                        <View
+                          key={`${selectedJob.id}-${badge.key}-${badge.label}`}
+                          style={[styles.lifecycleBadge, { backgroundColor: tone.bg }]}
+                        >
+                          <Text style={[styles.lifecycleBadgeText, { color: tone.text }]}>
+                            {badge.label}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                ) : null}
                 {/* Status & Priority Section */}
                 <View style={styles.detailsCard}>
                   <View style={styles.badgeRow}>
@@ -1813,6 +1874,21 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
+  },
+  lifecycleBadgeRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 12,
+  },
+  lifecycleBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  lifecycleBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
   },
   queueChip: {
     borderRadius: 999,

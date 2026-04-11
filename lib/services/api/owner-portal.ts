@@ -236,12 +236,34 @@ const getUnreadCountCandidate = (response: any): number => {
   return typeof candidate === 'number' && Number.isFinite(candidate) ? candidate : 0;
 };
 
-const normalizeOwnerPortfolioRequest = (
+export const normalizeOwnerPortfolioRequest = (
   request: OwnerPortfolioRequest,
-): OwnerPortfolioRequest => ({
-  ...request,
-  ...mapRequestContractFields(request),
-});
+): OwnerPortfolioRequest => {
+  const requestRecord = request as unknown as Record<string, unknown>;
+  const unit = asRecord(request.unit);
+  const attachments = Array.isArray(request.attachments) ? request.attachments : [];
+
+  return {
+    ...request,
+    buildingName: asString(request.buildingName) ?? 'Unknown building',
+    orgName: asString(request.orgName) ?? 'Owner scope',
+    title: asString(request.title) ?? 'Maintenance request',
+    description: asString(request.description) ?? '',
+    attachments,
+    unit: {
+      id:
+        asString(unit?.id) ??
+        asString(requestRecord.unitId) ??
+        'unknown-unit',
+      label:
+        asString(unit?.label) ??
+        asString(requestRecord.unitLabel) ??
+        asString(requestRecord.unitNumber) ??
+        'Unknown unit',
+    },
+    ...mapRequestContractFields(request),
+  };
+};
 
 const normalizeOwnerSelfServiceUser = (
   value: unknown,

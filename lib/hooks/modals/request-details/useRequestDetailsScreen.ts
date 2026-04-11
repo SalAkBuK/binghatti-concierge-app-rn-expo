@@ -40,6 +40,8 @@ import {
   isActiveOccupancyRequiredError,
   RESIDENT_HISTORY_UNAVAILABLE_MESSAGE,
 } from "../../../utils/resident-history-access";
+import { mapRequestContractFields } from "../../../utils/request-contract";
+import { classifyTenantRequestByTenancyCycle } from "../../../utils/tenant-request-tenancy-display";
 
 export type RequestDetailsComment = {
   id: string;
@@ -111,6 +113,10 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
   const [showImageViewer, setShowImageViewer] = useState(false);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const isTenantUser = currentUser?.role === "tenant";
+  const isTenantHistoricalRequest =
+    isTenantUser &&
+    selectedRequest != null &&
+    classifyTenantRequestByTenancyCycle(selectedRequest) !== "current";
   const hasResidentHistoryAccess = hasActiveResidentHistoryAccess(currentUser);
   const lastDetailsFetchRef = useRef<{ id: string | null; inFlight: boolean }>({
     id: null,
@@ -267,6 +273,7 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
             normalizeOwnerApprovalSnapshot(apiRequest) ??
             selectedRequest.ownerApproval ??
             null;
+          const contractFields = mapRequestContractFields(apiRequest);
           const assignedUserId =
             apiRequest.assignedTo?.id != null
               ? String(apiRequest.assignedTo.id)
@@ -308,9 +315,13 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
                 : typeof apiRequest.policy?.isEmergency === "boolean"
                   ? apiRequest.policy.isEmergency
                   : selectedRequest.isEmergency,
+            ...contractFields,
             ownerApproval,
             ownerApprovalStatus:
-              ownerApproval?.status ?? selectedRequest.ownerApprovalStatus ?? null,
+              ownerApproval?.status ??
+              contractFields.ownerApprovalStatus ??
+              selectedRequest.ownerApprovalStatus ??
+              null,
             emergencySignals: Array.isArray(apiRequest.emergencySignals)
               ? normalizeResidentEmergencySignals(apiRequest.emergencySignals)
               : selectedRequest.emergencySignals,
@@ -615,6 +626,13 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
 
   const handleDeleteRequest = useCallback(async () => {
     if (!selectedRequest) return;
+    if (isTenantHistoricalRequest) {
+      Alert.alert(
+        "Archived Request",
+        "Archived requests are view-only and cannot be changed.",
+      );
+      return;
+    }
 
     setLoading(true);
     try {
@@ -683,6 +701,7 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
     }
   }, [
     currentUser?.id,
+    isTenantHistoricalRequest,
     isTenantUser,
     markResidentHistoryUnavailable,
     selectedRequest,
@@ -691,6 +710,13 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
 
   const handleUpdateRequest = useCallback(async () => {
     if (!selectedRequest) return;
+    if (isTenantHistoricalRequest) {
+      Alert.alert(
+        "Archived Request",
+        "Archived requests are view-only and cannot be changed.",
+      );
+      return;
+    }
 
     setLoading(true);
     try {
@@ -743,6 +769,7 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
           normalizeOwnerApprovalSnapshot(apiRequest) ??
           selectedRequest.ownerApproval ??
           null;
+        const contractFields = mapRequestContractFields(apiRequest);
         const updatedRequest: Request = {
           ...selectedRequest,
           title: apiRequest.title ?? payload.title ?? selectedRequest.title,
@@ -764,9 +791,13 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
               : typeof payload.isEmergency === "boolean"
                 ? payload.isEmergency
                 : selectedRequest.isEmergency,
+          ...contractFields,
           ownerApproval,
           ownerApprovalStatus:
-            ownerApproval?.status ?? selectedRequest.ownerApprovalStatus ?? null,
+            ownerApproval?.status ??
+            contractFields.ownerApprovalStatus ??
+            selectedRequest.ownerApprovalStatus ??
+            null,
           emergencySignals: Array.isArray(apiRequest.emergencySignals)
             ? normalizeResidentEmergencySignals(apiRequest.emergencySignals)
             : payload.emergencySignals ?? selectedRequest.emergencySignals ?? [],
@@ -807,6 +838,7 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
   }, [
     currentUser?.id,
     editForm,
+    isTenantHistoricalRequest,
     isTenantUser,
     markResidentHistoryUnavailable,
     selectedRequest,
@@ -816,6 +848,13 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
 
   const handleSubmitComment = useCallback(async () => {
     if (!selectedRequest || !newComment.trim() || !currentUser?.id) return;
+    if (isTenantHistoricalRequest) {
+      Alert.alert(
+        "Archived Request",
+        "Archived requests are view-only and cannot be changed.",
+      );
+      return;
+    }
     if (isTenantUser && !hasResidentHistoryAccess) {
       markResidentHistoryUnavailable();
       Alert.alert("Resident History", RESIDENT_HISTORY_UNAVAILABLE_MESSAGE);
@@ -906,6 +945,7 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
   }, [
     currentUser?.id,
     hasResidentHistoryAccess,
+    isTenantHistoricalRequest,
     isTenantUser,
     markResidentHistoryUnavailable,
     mapComments,

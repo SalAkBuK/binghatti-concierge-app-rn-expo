@@ -15,13 +15,16 @@ jest.mock('react-native', () => {
   const React = jest.requireActual('react');
   const createMockComponent =
     (name: string) =>
-    ({
-      children,
-      ...props
-    }: {
-      children?: React.ReactNode;
-    }) =>
-      React.createElement(name, props, children);
+      {
+        const MockComponent = ({
+          children,
+          ...props
+        }: {
+          children?: React.ReactNode;
+        }) => React.createElement(name, props, children);
+        MockComponent.displayName = name;
+        return MockComponent;
+      };
 
   return {
     Alert: {

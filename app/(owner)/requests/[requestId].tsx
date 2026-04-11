@@ -36,6 +36,20 @@ import {
   resolveOwnerRequestApprovalStatus,
   OWNER_PALETTE as P,
 } from '../../../lib/utils/owner-portal';
+import {
+  getOwnerRequestAttachmentLabel,
+  getOwnerRequestAttachmentUrl,
+} from '../../../lib/utils/owner-request-attachments';
+import {
+  getOwnerCurrentOccupantName,
+  getOwnerLeaseSummary,
+  getOwnerPrimaryLifecycleBadge,
+  getOwnerRequesterName,
+  getOwnerSecondaryLifecycleBadge,
+  getOwnerTenancySummary,
+  getOwnerTenancyUnresolvedMessage,
+  type OwnerTenancyBadgeTone,
+} from '../../../lib/utils/owner-request-tenancy-display';
 
 type RequestErrorType = 'outside_scope' | 'unknown' | null;
 
@@ -49,46 +63,6 @@ const getStatusCode = (error: unknown): number | undefined => {
 
   const status = (error as { status?: unknown }).status;
   return typeof status === 'number' ? status : undefined;
-};
-
-const getRequestAttachmentUrl = (
-  attachment: OwnerPortfolioRequest['attachments'][number],
-): string | null => {
-  if (typeof attachment === 'string') {
-    const trimmed = attachment.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  }
-
-  if (!attachment || typeof attachment !== 'object') {
-    return null;
-  }
-
-  const candidate = attachment.url ?? attachment.fileUrl ?? attachment.uri ?? null;
-  return typeof candidate === 'string' && candidate.trim().length > 0
-    ? candidate.trim()
-    : null;
-};
-
-const getRequestAttachmentLabel = (
-  attachment: OwnerPortfolioRequest['attachments'][number],
-  index: number,
-): string => {
-  if (attachment && typeof attachment === 'object' && 'name' in attachment) {
-    const name = attachment.name;
-    if (typeof name === 'string' && name.trim().length > 0) {
-      return name.trim();
-    }
-  }
-
-  const url = getRequestAttachmentUrl(attachment);
-  if (!url) {
-    return `Attachment ${index + 1}`;
-  }
-
-  const segments = url.split('/');
-  const rawFileName = segments[segments.length - 1]?.split('?')[0] ?? '';
-  const decodedFileName = rawFileName ? decodeURIComponent(rawFileName) : '';
-  return decodedFileName || `Attachment ${index + 1}`;
 };
 
 const formatActorSummary = (
@@ -131,6 +105,19 @@ const resolveKnownUserLabel = ({
   }
 
   return null;
+};
+
+const lifecycleBadgeTone = (tone: OwnerTenancyBadgeTone) => {
+  switch (tone) {
+    case 'success':
+      return { bg: P.successBg, text: P.successText };
+    case 'warning':
+      return { bg: P.warningBg, text: P.warningText };
+    case 'info':
+      return { bg: P.infoBg, text: P.infoText };
+    default:
+      return { bg: P.surfaceLow, text: P.muted };
+  }
 };
 
 export default function OwnerRequestDetailScreen() {
@@ -290,14 +277,14 @@ export default function OwnerRequestDetailScreen() {
     () =>
       (request?.attachments ?? [])
         .map((attachment, index) => {
-          const url = getRequestAttachmentUrl(attachment);
+          const url = getOwnerRequestAttachmentUrl(attachment);
           if (!url) {
             return null;
           }
 
           return {
             key: `${index}-${url}`,
-            label: getRequestAttachmentLabel(attachment, index),
+            label: getOwnerRequestAttachmentLabel(attachment, index),
             url,
           };
         })
@@ -305,6 +292,25 @@ export default function OwnerRequestDetailScreen() {
           attachment != null,
         ),
     [request?.attachments],
+  );
+  const requesterName = useMemo(() => getOwnerRequesterName(request), [request]);
+  const currentOccupantName = useMemo(
+    () => getOwnerCurrentOccupantName(request),
+    [request],
+  );
+  const requestFromLabel = useMemo(() => getOwnerTenancySummary(request), [request]);
+  const leaseSummary = useMemo(() => getOwnerLeaseSummary(request), [request]);
+  const tenancyUnresolvedMessage = useMemo(
+    () => getOwnerTenancyUnresolvedMessage(request),
+    [request],
+  );
+  const primaryLifecycleBadge = useMemo(
+    () => getOwnerPrimaryLifecycleBadge(request),
+    [request],
+  );
+  const secondaryLifecycleBadge = useMemo(
+    () => getOwnerSecondaryLifecycleBadge(request),
+    [request],
   );
 
   const handleBackNavigation = useCallback(() => {
@@ -543,6 +549,54 @@ export default function OwnerRequestDetailScreen() {
                 {request.description || 'No description provided.'}
               </Text>
 
+              {primaryLifecycleBadge || secondaryLifecycleBadge ? (
+                <View style={styles.lifecycleBadgeRow}>
+                  {primaryLifecycleBadge ? (
+                    <View
+                      style={[
+                        styles.lifecycleBadge,
+                        styles.lifecycleBadgePrimary,
+                        {
+                          backgroundColor: lifecycleBadgeTone(primaryLifecycleBadge.tone).bg,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.lifecycleBadgeText,
+                          {
+                            color: lifecycleBadgeTone(primaryLifecycleBadge.tone).text,
+                          },
+                        ]}
+                      >
+                        {primaryLifecycleBadge.label}
+                      </Text>
+                    </View>
+                  ) : null}
+                  {secondaryLifecycleBadge ? (
+                    <View
+                      style={[
+                        styles.lifecycleBadge,
+                        {
+                          backgroundColor: lifecycleBadgeTone(secondaryLifecycleBadge.tone).bg,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.lifecycleBadgeText,
+                          {
+                            color: lifecycleBadgeTone(secondaryLifecycleBadge.tone).text,
+                          },
+                        ]}
+                      >
+                        {secondaryLifecycleBadge.label}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
+
               <View style={styles.metaGrid}>
                 <MetaField label="Building" value={request.buildingName || 'Not provided'} />
                 <MetaField label="Unit" value={request.unit?.label || 'Not provided'} />
@@ -552,6 +606,29 @@ export default function OwnerRequestDetailScreen() {
                 <MetaField label="Created" value={formatOwnerDateTime(request.createdAt)} />
                 <MetaField label="Updated" value={formatOwnerDateTime(request.updatedAt)} />
               </View>
+            </View>
+
+            <View style={styles.infoCard}>
+              <View style={styles.approvalHeader}>
+                <View>
+                  <Text style={styles.sectionEyebrow}>Tenancy Context</Text>
+                  <Text style={styles.sectionTitle}>Resident linkage</Text>
+                </View>
+              </View>
+
+              <View style={styles.metaGrid}>
+                <MetaField label="Request From" value={requestFromLabel} />
+                <MetaField label="Requester" value={requesterName} />
+                <MetaField
+                  label="Current Occupant"
+                  value={currentOccupantName || 'None'}
+                />
+                <MetaField label="Lease" value={leaseSummary} />
+              </View>
+
+              {tenancyUnresolvedMessage ? (
+                <Text style={styles.tenancyContextNote}>{tenancyUnresolvedMessage}</Text>
+              ) : null}
             </View>
 
             <View style={styles.infoCard}>
@@ -934,6 +1011,25 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: P.text,
   },
+  lifecycleBadgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 14,
+  },
+  lifecycleBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  lifecycleBadgePrimary: {
+    borderWidth: 1,
+    borderColor: P.border,
+  },
+  lifecycleBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
   metaGrid: {
     gap: 10,
     marginTop: 16,
@@ -1006,6 +1102,12 @@ const styles = StyleSheet.create({
   },
   emptyInlineText: {
     marginTop: 8,
+    fontSize: 13,
+    lineHeight: 20,
+    color: P.muted,
+  },
+  tenancyContextNote: {
+    marginTop: 12,
     fontSize: 13,
     lineHeight: 20,
     color: P.muted,

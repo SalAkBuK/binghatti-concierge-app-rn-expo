@@ -385,6 +385,7 @@ export default function MessagesScreen() {
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [page, setPage] = useState(1);
   const deferredSearchQuery = useDeferredValue(searchQuery);
+  const safeConversations = conversations ?? [];
 
   const userNotifications = useMemo(
     () => filterNotificationsByUser(notifications || [], currentUser?.id),
@@ -408,101 +409,12 @@ export default function MessagesScreen() {
     setRefreshing(false);
   }, [actions]);
 
-  if (isPreMoveIn) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <ScrollView
-          contentContainerStyle={[
-            styles.listContent,
-            { paddingBottom: tabBarHeight + 32, paddingTop: 0 },
-          ]}
-          refreshControl={
-            <RefreshControl
-              refreshing={false}
-              onRefresh={() => {
-                void refetchTenancy({ asRefresh: true, showLoading: false });
-              }}
-            />
-          }
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={styles.headerBlock}>
-            <HeaderBar
-              title="Messages"
-              hasUnreadNotifications={hasUnreadNotifications}
-              showSideMenu={showSideMenu}
-              onSideMenuToggle={setShowSideMenu}
-              textColor={P.text}
-            />
-          </View>
-
-          <TenantLockedFeatureCard
-            title={preMoveInStatusTitle}
-            message={`${preMoveInStatusMessage} Messaging with management and staff unlocks automatically once your move-in is completed.`}
-            actionLabel={shouldShowMoveInCTA ? "Request Move In" : preMoveInActionLabel}
-            onPress={() =>
-              router.push(
-                shouldShowMoveInCTA
-                  ? ({
-                      pathname: "/(tenant)/lease-details",
-                      params: { openMoveModal: "move-in" },
-                    } as any)
-                  : ("/(tenant)/lease-details" as any),
-              )
-            }
-          />
-        </ScrollView>
-
-        <SideMenu isVisible={showSideMenu} onClose={() => setShowSideMenu(false)} />
-      </SafeAreaView>
-    );
-  }
-
-  if (isResidentHistoryLocked) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <ScrollView
-          contentContainerStyle={[
-            styles.listContent,
-            { paddingBottom: tabBarHeight + 32, paddingTop: 0 },
-          ]}
-          refreshControl={
-            <RefreshControl
-              refreshing={false}
-              onRefresh={onRefresh}
-            />
-          }
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={styles.headerBlock}>
-            <HeaderBar
-              title="Messages"
-              hasUnreadNotifications={hasUnreadNotifications}
-              showSideMenu={showSideMenu}
-              onSideMenuToggle={setShowSideMenu}
-              textColor={P.text}
-            />
-          </View>
-
-          <TenantLockedFeatureCard
-            title="Resident history unavailable"
-            message={error ?? RESIDENT_HISTORY_UNAVAILABLE_MESSAGE}
-            actionLabel="Review Lease Details"
-            onPress={() => router.push("/(tenant)/lease-details" as any)}
-          />
-        </ScrollView>
-
-        <SideMenu isVisible={showSideMenu} onClose={() => setShowSideMenu(false)} />
-      </SafeAreaView>
-    );
-  }
-
   const conversationItems = useMemo(
     () =>
-      conversations
+      safeConversations
         .map((conversation) => buildConversationListItem(conversation, currentUser?.id))
         .sort((a, b) => Date.parse(b.time) - Date.parse(a.time)),
-    [conversations, currentUser?.id],
+    [currentUser?.id, safeConversations],
   );
 
   const summary = useMemo(() => {
@@ -779,7 +691,96 @@ export default function MessagesScreen() {
     ],
   );
 
-  if (loading && conversations.length === 0) {
+  if (isPreMoveIn) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingBottom: tabBarHeight + 32, paddingTop: 0 },
+          ]}
+          refreshControl={
+            <RefreshControl
+              refreshing={false}
+              onRefresh={() => {
+                void refetchTenancy({ asRefresh: true, showLoading: false });
+              }}
+            />
+          }
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.headerBlock}>
+            <HeaderBar
+              title="Messages"
+              hasUnreadNotifications={hasUnreadNotifications}
+              showSideMenu={showSideMenu}
+              onSideMenuToggle={setShowSideMenu}
+              textColor={P.text}
+            />
+          </View>
+
+          <TenantLockedFeatureCard
+            title={preMoveInStatusTitle}
+            message={`${preMoveInStatusMessage} Messaging with management and staff unlocks automatically once your move-in is completed.`}
+            actionLabel={shouldShowMoveInCTA ? "Request Move In" : preMoveInActionLabel}
+            onPress={() =>
+              router.push(
+                shouldShowMoveInCTA
+                  ? ({
+                      pathname: "/(tenant)/lease-details",
+                      params: { openMoveModal: "move-in" },
+                    } as any)
+                  : ("/(tenant)/lease-details" as any),
+              )
+            }
+          />
+        </ScrollView>
+
+        <SideMenu isVisible={showSideMenu} onClose={() => setShowSideMenu(false)} />
+      </SafeAreaView>
+    );
+  }
+
+  if (isResidentHistoryLocked) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingBottom: tabBarHeight + 32, paddingTop: 0 },
+          ]}
+          refreshControl={
+            <RefreshControl
+              refreshing={false}
+              onRefresh={onRefresh}
+            />
+          }
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.headerBlock}>
+            <HeaderBar
+              title="Messages"
+              hasUnreadNotifications={hasUnreadNotifications}
+              showSideMenu={showSideMenu}
+              onSideMenuToggle={setShowSideMenu}
+              textColor={P.text}
+            />
+          </View>
+
+          <TenantLockedFeatureCard
+            title="Resident history unavailable"
+            message={error ?? RESIDENT_HISTORY_UNAVAILABLE_MESSAGE}
+            actionLabel="Review Lease Details"
+            onPress={() => router.push("/(tenant)/lease-details" as any)}
+          />
+        </ScrollView>
+
+        <SideMenu isVisible={showSideMenu} onClose={() => setShowSideMenu(false)} />
+      </SafeAreaView>
+    );
+  }
+
+  if (loading && safeConversations.length === 0) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={P.primary} />

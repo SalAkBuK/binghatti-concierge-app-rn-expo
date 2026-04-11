@@ -36,6 +36,15 @@ import {
   resolveOwnerRequestApprovalStatus,
   OWNER_PALETTE as P,
 } from '../../lib/utils/owner-portal';
+import { groupOwnerRequestsByTenancyCycle } from '../../lib/utils/owner-request-grouping';
+import {
+  getOwnerCurrentOccupantName,
+  getOwnerPrimaryLifecycleBadge,
+  getOwnerRequesterName,
+  getOwnerSecondaryLifecycleBadge,
+  OWNER_REQUEST_SECTION_COPY,
+  type OwnerTenancyBadgeTone,
+} from '../../lib/utils/owner-request-tenancy-display';
 
 type DashboardState = {
   summary: OwnerPortfolioSummary | null;
@@ -51,7 +60,22 @@ const EMPTY_STATE: DashboardState = {
   conversations: [],
 };
 
+const OWNER_HOME_RECENT_REQUESTS_PER_SECTION = 2;
+
 const firstName = (name?: string | null) => name?.trim().split(/\s+/)[0] || 'Owner';
+
+const lifecycleBadgeTone = (tone: OwnerTenancyBadgeTone) => {
+  switch (tone) {
+    case 'success':
+      return { bg: P.successBg, text: P.successText };
+    case 'warning':
+      return { bg: P.warningBg, text: P.warningText };
+    case 'info':
+      return { bg: P.infoBg, text: P.infoText };
+    default:
+      return { bg: P.surfaceLow, text: P.muted };
+  }
+};
 
 export default function OwnerHomeScreen() {
   const tabBarHeight = useBottomTabBarHeight();
@@ -144,14 +168,23 @@ export default function OwnerHomeScreen() {
 
   const recentRequests = useMemo(
     () =>
-      [...state.requests]
-        .sort(
-          (a, b) =>
-            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-        )
-        .slice(0, 3),
+      [...state.requests].sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+      ),
     [state.requests],
   );
+
+  const groupedRecentRequests = useMemo(() => {
+    const grouped = groupOwnerRequestsByTenancyCycle(recentRequests);
+
+    return (['current', 'historical', 'uncategorized'] as const)
+      .map((key) => ({
+        key,
+        title: OWNER_REQUEST_SECTION_COPY[key].title,
+        items: grouped[key].slice(0, OWNER_HOME_RECENT_REQUESTS_PER_SECTION),
+      }))
+      .filter((section) => section.items.length > 0);
+  }, [recentRequests]);
 
   const recentConversations = useMemo(
     () =>
@@ -258,24 +291,28 @@ export default function OwnerHomeScreen() {
               value={String(state.summary?.unitCount ?? state.units.length)}
               helper="Inside your active scope"
               icon="business-outline"
+              onPress={() => router.push('/(owner)/units' as any)}
             />
             <MetricCard
               label="Unread Comments"
               value={String(requestCommentUnreadCount)}
               helper="Shared request threads"
               icon="chatbubble-ellipses-outline"
+              onPress={() => router.push('/(owner)/requests' as any)}
             />
             <MetricCard
               label="Unread Messages"
               value={String(conversationUnreadCount)}
               helper="Owner conversations"
               icon="mail-unread-outline"
+              onPress={() => router.push('/(owner)/messages' as any)}
             />
             <MetricCard
               label="Alerts"
               value={String(notificationUnreadCount)}
               helper="Unread notifications"
               icon="notifications-outline"
+              onPress={() => router.push('/(modals)/owner-alerts' as any)}
             />
           </View>
 
@@ -306,7 +343,7 @@ export default function OwnerHomeScreen() {
                 <View style={styles.listCardBody}>
                   <Text style={styles.listCardTitle}>{unit.unitLabel}</Text>
                   <Text style={styles.listCardMeta}>
-                    {unit.buildingName} • {unit.orgName}
+                    {unit.buildingName} - {unit.orgName}
                   </Text>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={P.soft} />
@@ -328,65 +365,131 @@ export default function OwnerHomeScreen() {
               body="Requests appear here only while their unit remains in your current owner scope."
             />
           ) : (
-            recentRequests.map((request) => {
-              const statusTone = getOwnerRequestStatusTone(request.status);
-              const approvalStatus = resolveOwnerRequestApprovalStatus(request);
-              const approvalTone = getOwnerApprovalTone(approvalStatus);
+            groupedRecentRequests.map((section) => (
+              <View key={section.key} style={styles.requestSectionBlock}>
+                <Text style={styles.requestSectionTitle}>{section.title}</Text>
+                {section.items.map((request) => {
+                  const statusTone = getOwnerRequestStatusTone(request.status);
+                  const approvalStatus = resolveOwnerRequestApprovalStatus(request);
+                  const approvalTone = getOwnerApprovalTone(approvalStatus);
+                  const requesterName = getOwnerRequesterName(request);
+                  const currentOccupantName = getOwnerCurrentOccupantName(request);
+                  const primaryLifecycleBadge = getOwnerPrimaryLifecycleBadge(request);
+                  const secondaryLifecycleBadge = getOwnerSecondaryLifecycleBadge(request);
 
-              return (
-                <TouchableOpacity
-                  key={request.id}
-                  style={styles.requestCard}
-                  activeOpacity={0.9}
-                  onPress={() =>
-                    router.push({
-                      pathname: '/(owner)/requests/[requestId]',
-                      params: {
-                        requestId: request.id,
-                        returnTo: '/(owner)',
-                      },
-                    })
-                  }
-                >
-                  <View style={styles.requestTopRow}>
-                    <View style={styles.requestTitleWrap}>
-                      <Text style={styles.requestTitle} numberOfLines={1}>
-                        {request.title}
-                      </Text>
-                      <Text style={styles.requestMeta}>
-                        {request.buildingName} • Unit {request.unit.label}
-                      </Text>
-                    </View>
-                    <View style={[styles.statusPill, { backgroundColor: statusTone.bg }]}>
-                      <Text style={[styles.statusPillText, { color: statusTone.text }]}>
-                        {formatOwnerLabel(request.status)}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <Text style={styles.requestDescription} numberOfLines={2}>
-                    {request.description}
-                  </Text>
-
-                  <View style={styles.requestFooter}>
-                    <View
-                      style={[
-                        styles.subtlePill,
-                        { backgroundColor: approvalTone.bg },
-                      ]}
+                  return (
+                    <TouchableOpacity
+                      key={request.id}
+                      style={styles.requestCard}
+                      activeOpacity={0.9}
+                      onPress={() =>
+                        router.push({
+                          pathname: '/(owner)/requests/[requestId]',
+                          params: {
+                            requestId: request.id,
+                            returnTo: '/(owner)',
+                          },
+                        })
+                      }
                     >
-                      <Text style={[styles.subtlePillText, { color: approvalTone.text }]}>
-                        Approval{' '}
-                        {formatOwnerLabel(approvalStatus)}
+                      <View style={styles.requestTopRow}>
+                        <View style={styles.requestTitleWrap}>
+                          <Text style={styles.requestTitle} numberOfLines={1}>
+                            {request.title}
+                          </Text>
+                          <Text style={styles.requestMeta}>
+                            Unit {request.unit?.label || 'Unknown unit'} · {request.buildingName}
+                          </Text>
+                          <Text style={styles.requestSubMeta} numberOfLines={1}>
+                            {`Requester: ${requesterName}`}
+                          </Text>
+                          {currentOccupantName ? (
+                            <Text style={styles.requestSubMeta} numberOfLines={1}>
+                              {`Current tenant: ${currentOccupantName}`}
+                            </Text>
+                          ) : null}
+                        </View>
+                        <View style={[styles.statusPill, { backgroundColor: statusTone.bg }]}>
+                          <Text style={[styles.statusPillText, { color: statusTone.text }]}>
+                            {formatOwnerLabel(request.status)}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <Text style={styles.requestDescription} numberOfLines={2}>
+                        {request.description}
                       </Text>
-                    </View>
-                    <Text style={styles.requestFooterText}>
-                      Updated {formatOwnerRelativeTime(request.updatedAt)}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })
+
+                      {primaryLifecycleBadge || secondaryLifecycleBadge ? (
+                        <View style={styles.lifecycleBadgeRow}>
+                          {primaryLifecycleBadge ? (
+                            <View
+                              style={[
+                                styles.lifecycleBadge,
+                                styles.lifecycleBadgePrimary,
+                                {
+                                  backgroundColor: lifecycleBadgeTone(primaryLifecycleBadge.tone).bg,
+                                },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.lifecycleBadgeText,
+                                  {
+                                    color: lifecycleBadgeTone(primaryLifecycleBadge.tone).text,
+                                  },
+                                ]}
+                              >
+                                {primaryLifecycleBadge.label}
+                              </Text>
+                            </View>
+                          ) : null}
+                          {secondaryLifecycleBadge ? (
+                            <View
+                              style={[
+                                styles.lifecycleBadge,
+                                {
+                                  backgroundColor:
+                                    lifecycleBadgeTone(secondaryLifecycleBadge.tone).bg,
+                                },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.lifecycleBadgeText,
+                                  {
+                                    color:
+                                      lifecycleBadgeTone(secondaryLifecycleBadge.tone).text,
+                                  },
+                                ]}
+                              >
+                                {secondaryLifecycleBadge.label}
+                              </Text>
+                            </View>
+                          ) : null}
+                        </View>
+                      ) : null}
+
+                      <View style={styles.requestFooter}>
+                        <View
+                          style={[
+                            styles.subtlePill,
+                            { backgroundColor: approvalTone.bg },
+                          ]}
+                        >
+                          <Text style={[styles.subtlePillText, { color: approvalTone.text }]}>
+                            Approval {formatOwnerLabel(approvalStatus)}
+                          </Text>
+                        </View>
+                        <Text style={styles.requestFooterText}>
+                          Updated {formatOwnerRelativeTime(request.updatedAt)}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ))
           )}
 
           <SectionHeader
@@ -426,7 +529,7 @@ export default function OwnerHomeScreen() {
                     {getOwnerConversationDisplayName(conversation, currentUser?.id)}
                   </Text>
                   <Text style={styles.listCardMeta} numberOfLines={1}>
-                    {conversation.buildingName || 'Portfolio conversation'} •{' '}
+                    {conversation.buildingName || 'Portfolio conversation'} -{' '}
                     {conversation.lastMessage?.content || conversation.subject || 'No messages yet'}
                   </Text>
                 </View>
@@ -460,21 +563,27 @@ function MetricCard({
   label,
   value,
   helper,
+  onPress,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   value: string;
   helper: string;
+  onPress: () => void;
 }) {
   return (
-    <View style={styles.metricCard}>
+    <TouchableOpacity style={styles.metricCard} activeOpacity={0.88} onPress={onPress}>
       <View style={styles.metricIcon}>
         <Ionicons name={icon} size={18} color={P.primary} />
       </View>
       <Text style={styles.metricLabel}>{label}</Text>
       <Text style={styles.metricValue}>{value}</Text>
       <Text style={styles.metricHelper}>{helper}</Text>
-    </View>
+      <View style={styles.metricActionRow}>
+        <Text style={styles.metricActionText}>Open</Text>
+        <Ionicons name="chevron-forward" size={14} color={P.primary} />
+      </View>
+    </TouchableOpacity>
   );
 }
 
@@ -645,6 +754,20 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     color: P.muted,
   },
+  metricActionRow: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: P.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  metricActionText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: P.primary,
+  },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -725,6 +848,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: P.muted,
   },
+  requestSectionBlock: {
+    marginBottom: 10,
+  },
+  requestSectionTitle: {
+    marginBottom: 10,
+    paddingHorizontal: 4,
+    fontSize: 14,
+    fontWeight: '800',
+    color: P.text,
+  },
   requestCard: {
     backgroundColor: P.surface,
     borderRadius: 22,
@@ -752,6 +885,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: P.muted,
   },
+  requestSubMeta: {
+    marginTop: 4,
+    fontSize: 12,
+    color: P.soft,
+  },
   statusPill: {
     borderRadius: 999,
     paddingHorizontal: 10,
@@ -766,6 +904,25 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 20,
     color: P.text,
+  },
+  lifecycleBadgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  lifecycleBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  lifecycleBadgePrimary: {
+    borderWidth: 1,
+    borderColor: P.border,
+  },
+  lifecycleBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   requestFooter: {
     marginTop: 14,

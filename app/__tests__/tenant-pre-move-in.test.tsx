@@ -25,13 +25,16 @@ jest.mock("react-native", () => {
   const React = jest.requireActual("react");
   const createMockComponent =
     (name: string) =>
-    ({
-      children,
-      ...props
-    }: {
-      children?: React.ReactNode;
-    }) =>
-      React.createElement(name, props, children);
+      {
+        const MockComponent = ({
+          children,
+          ...props
+        }: {
+          children?: React.ReactNode;
+        }) => React.createElement(name, props, children);
+        MockComponent.displayName = name;
+        return MockComponent;
+      };
 
   const renderMaybeComponent = (component?: React.ReactNode | (() => React.ReactNode)) => {
     if (typeof component === "function") {
@@ -409,6 +412,64 @@ describe("Tenant pre-move-in screens", () => {
       showLoading: false,
     });
     expect(mockTenancyRefetch).not.toHaveBeenCalled();
+  });
+
+  it("shows only current-stay items in Active Service Requests", async () => {
+    mockUseResidentTenancy.mockReturnValue({
+      ...preMoveInTenancy,
+      canCreateMaintenanceRequest: true,
+      canCreateManagementConversation: true,
+      canManageVisitors: true,
+      isPreMoveIn: false,
+      statusMessage: "",
+      statusTitle: "Active resident",
+    });
+    mockUseResidentRequests.mockReturnValue({
+      errorMessage: null,
+      historyUnavailable: false,
+      isLoading: false,
+      isRefreshing: false,
+      refreshRequests: jest.fn().mockResolvedValue(undefined),
+      requests: [
+        {
+          id: "request-current",
+          title: "Current leak",
+          description: "Active current-stay request",
+          status: "pending",
+          priority: "medium",
+          updatedAt: "2026-04-11T11:00:00.000Z",
+          createdAt: "2026-04-11T10:00:00.000Z",
+          requestTenancyContext: {
+            label: "CURRENT_OCCUPANCY",
+          },
+        },
+        {
+          id: "request-archived",
+          title: "Archived repair",
+          description: "Older stay request still open",
+          status: "assigned",
+          priority: "medium",
+          updatedAt: "2026-04-11T12:00:00.000Z",
+          createdAt: "2026-04-11T09:00:00.000Z",
+          requestTenancyContext: {
+            label: "PREVIOUS_OCCUPANCY",
+          },
+        },
+      ],
+    });
+
+    let tree: TestRenderer.ReactTestRenderer;
+
+    await act(async () => {
+      tree = TestRenderer.create(<TenantHomeScreen />);
+    });
+    await flushEffects();
+
+    const renderedTexts = getRenderedTexts(tree!);
+
+    expect(renderedTexts).toContain("Active Service Requests");
+    expect(renderedTexts).toContain("Current leak");
+    expect(renderedTexts).not.toContain("Archived repair");
   });
 
   it("locks the requests screen until move-in completes", () => {

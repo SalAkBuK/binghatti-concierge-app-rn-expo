@@ -39,6 +39,7 @@ import {
   getResidentRequestOwnerRejectionReason,
   isResidentRequestOwnerRejected,
 } from "../../lib/utils/resident-request-approval";
+import { classifyTenantRequestByTenancyCycle } from "../../lib/utils/tenant-request-tenancy-display";
 import {
   filterNotificationsByUser,
   getNotificationBody,
@@ -372,7 +373,11 @@ export default function TenantHomeScreen() {
   const activeRequests = useMemo(
     () =>
       [...residentRequests]
-        .filter((request) => isActiveRequest(request))
+        .filter(
+          (request) =>
+            classifyTenantRequestByTenancyCycle(request) === "current" &&
+            isActiveRequest(request),
+        )
         .sort((a, b) => getRequestTimestamp(b) - getRequestTimestamp(a))
         .slice(0, 3),
     [residentRequests],

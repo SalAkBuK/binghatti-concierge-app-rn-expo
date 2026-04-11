@@ -26,7 +26,11 @@ import { SideMenu } from "../../components/ui/SideMenu";
 import { useAuth } from "../../lib/context/auth-context";
 import { useNotifications } from "../../lib/context/notifications-context";
 import { useResidentContract } from "../../lib/hooks/useResidentSelfService";
-import type { ResidentMoveRequest, ResidentMoveRequestStatus } from "../../lib/types";
+import type {
+  ResidentContractDisplayStatus,
+  ResidentMoveRequest,
+  ResidentMoveRequestStatus,
+} from "../../lib/types";
 import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
 import {
   filterNotificationsByUser,
@@ -127,6 +131,23 @@ const fmtMoney = (value?: string | null) => {
 
 const formatStatusLabel = (value?: string | null) =>
   value ? value.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase()) : "Not available";
+
+const formatContractDisplayStatus = (
+  value?: ResidentContractDisplayStatus | null,
+) => {
+  switch (value) {
+    case "ACTIVE":
+      return "Active";
+    case "DRAFT":
+      return "Draft";
+    case "CANCELLED":
+      return "Cancelled";
+    case "MOVED_OUT":
+      return "Moved out";
+    default:
+      return "Not available";
+  }
+};
 
 const mimeFromName = (name: string, fallback?: string | null) => {
   if (fallback) return fallback;
@@ -320,11 +341,14 @@ export default function TenantContractScreen() {
   const canRequestMoveIn = isLatestContractSelected && data.canRequestMoveIn;
   const canRequestMoveOut = isLatestContractSelected && data.canRequestMoveOut;
   const isSubmitting = moveType === "move-in" ? isRequestingMoveIn : isRequestingMoveOut;
-  const contractStatusLabel = formatStatusLabel(selectedContract?.status);
+  const contractStatusLabel = formatContractDisplayStatus(
+    selectedContract?.displayStatus ?? null,
+  );
   const buildingLabel = fmtValue(selectedContract?.buildingName);
   const unitLabel = fmtValue(selectedContract?.unit?.label || selectedContract?.unitLabel);
   const contractValue = fmtMoney(selectedContract?.annualRent || selectedContract?.contractValue);
   const depositValue = fmtMoney(selectedContract?.securityDepositAmount);
+  const actualMoveOutLabel = fmtDate(selectedContract?.actualMoveOutDate);
   const paymentStatusLabel =
     !selectedContract
       ? "-"
@@ -542,6 +566,14 @@ export default function TenantContractScreen() {
               <View style={styles.summaryItem}>
                 <Text style={styles.summaryItemLabel}>End</Text>
                 <Text style={styles.summaryItemValue}>{fmtDate(selectedContract.endDate)}</Text>
+              </View>
+              <View style={styles.summaryItem}>
+                <Text style={styles.summaryItemLabel}>Display Status</Text>
+                <Text style={styles.summaryItemValue}>{contractStatusLabel}</Text>
+              </View>
+              <View style={styles.summaryItem}>
+                <Text style={styles.summaryItemLabel}>Actual Move Out</Text>
+                <Text style={styles.summaryItemValue}>{actualMoveOutLabel}</Text>
               </View>
               <View style={styles.summaryItem}>
                 <Text style={styles.summaryItemLabel}>Move In</Text>

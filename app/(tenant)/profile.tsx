@@ -27,6 +27,7 @@ import { useNotifications } from "../../lib/context/notifications-context";
 import { useResidentContract } from "../../lib/hooks/useResidentSelfService";
 import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
 import { apiService } from "../../lib/services/api";
+import type { ResidentContractDisplayStatus } from "../../lib/types";
 import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
 import {
   filterNotificationsByUser,
@@ -99,6 +100,23 @@ const formatDate = (value?: string | null) => {
 
 const formatRole = (role?: string | null) =>
   role ? role.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase()) : "Tenant";
+
+const formatContractDisplayStatus = (
+  value?: ResidentContractDisplayStatus | null,
+) => {
+  switch (value) {
+    case "ACTIVE":
+      return "Active";
+    case "DRAFT":
+      return "Draft";
+    case "CANCELLED":
+      return "Cancelled";
+    case "MOVED_OUT":
+      return "Moved out";
+    default:
+      return "No active lease";
+  }
+};
 
 const firstName = (name?: string | null) => name?.trim().split(/\s+/)[0] || "Resident";
 
@@ -221,9 +239,9 @@ export default function ProfileScreen() {
     (activeContract?.unit?.floor != null ? String(activeContract.unit.floor) : null) ||
     "Not assigned";
   const residentName = profileData.name || currentUser?.name || "Resident";
-  const leaseStatusLabel = activeContract?.status
-    ? formatRole(String(activeContract.status).toLowerCase())
-    : "No active lease";
+  const leaseStatusLabel = formatContractDisplayStatus(
+    activeContract?.displayStatus ?? null,
+  );
   const displayAvatarUri =
     currentUser?.profile?.avatarUrl || currentUser?.profile?.avatar || null;
 
@@ -589,11 +607,7 @@ export default function ProfileScreen() {
                 )}
 
                 <View style={styles.headerText}>
-                  <Text style={styles.heroEyebrow}>{buildingName}</Text>
                   <Text style={styles.headerTitle}>{residentName}</Text>
-                  <Text style={styles.headerSubtitle}>
-                    {unitLabel} • Floor {floorLabel === "Not assigned" ? "-" : floorLabel}
-                  </Text>
                 </View>
               </View>
 
@@ -638,16 +652,18 @@ export default function ProfileScreen() {
 
             <View style={styles.profilePillRow}>
               <View style={styles.profilePill}>
-                <Ionicons name="person-outline" size={15} color={P.primary} />
-                <Text style={styles.profilePillText}>{formatRole(currentUser?.role)}</Text>
-              </View>
-              <View style={styles.profilePill}>
                 <Ionicons name="business-outline" size={15} color={P.primary} />
                 <Text style={styles.profilePillText}>{buildingName}</Text>
               </View>
               <View style={styles.profilePill}>
                 <Ionicons name="home-outline" size={15} color={P.primary} />
                 <Text style={styles.profilePillText}>{unitLabel}</Text>
+              </View>
+              <View style={styles.profilePill}>
+                <Ionicons name="layers-outline" size={15} color={P.primary} />
+                <Text style={styles.profilePillText}>
+                  Floor {floorLabel === "Not assigned" ? "-" : floorLabel}
+                </Text>
               </View>
             </View>
           </View>
@@ -686,7 +702,7 @@ export default function ProfileScreen() {
           </LinearGradient>
 
           <View style={styles.summaryGrid}>
-            <View style={[styles.summaryCard, styles.summaryCardAccent]}>
+            <View style={styles.summaryCard}>
               <Text style={styles.summaryLabel}>Lease End</Text>
               <Text style={styles.summaryValue}>{formatDate(activeContract?.endDate)}</Text>
             </View>

@@ -217,6 +217,59 @@ export type RequestRecommendation =
   | "REQUEST_OWNER_APPROVAL"
   | "PROCEED_AND_NOTIFY";
 
+export type RequesterResidentOccupancyStatus =
+  | "ACTIVE"
+  | "NONE"
+  | "FORMER";
+
+export type RequesterResidentInviteStatus =
+  | "PENDING"
+  | "ACCEPTED"
+  | "FAILED"
+  | "EXPIRED";
+
+export type RequestTenancyCycleLabel =
+  | "CURRENT_OCCUPANCY"
+  | "PREVIOUS_OCCUPANCY"
+  | "NO_ACTIVE_OCCUPANCY"
+  | "UNKNOWN_TENANCY_CYCLE";
+
+export type RequestLeaseCycleLabel =
+  | "CURRENT_LEASE"
+  | "PREVIOUS_LEASE"
+  | "NO_ACTIVE_LEASE"
+  | "UNKNOWN_LEASE_CYCLE";
+
+export type RequestTenancyContextSource =
+  | "SNAPSHOT"
+  | "HISTORICAL_INFERENCE"
+  | "UNRESOLVED";
+
+export interface RequesterContext {
+  isResident: boolean;
+  residentOccupancyStatus?: RequesterResidentOccupancyStatus | null;
+  residentInviteStatus?: RequesterResidentInviteStatus | null;
+  isFormerResident?: boolean | null;
+  currentUnitOccupiedByRequester?: boolean | null;
+  currentUnitOccupant?: {
+    userId: string;
+    name?: string | null;
+  } | null;
+}
+
+export interface RequestTenancyContext {
+  occupancyIdAtCreation?: string | null;
+  leaseIdAtCreation?: string | null;
+  currentOccupancyId?: string | null;
+  currentLeaseId?: string | null;
+  isCurrentOccupancy?: boolean | null;
+  isCurrentLease?: boolean | null;
+  label: RequestTenancyCycleLabel;
+  leaseLabel: RequestLeaseCycleLabel;
+  tenancyContextSource?: RequestTenancyContextSource | null;
+  leaseContextSource?: RequestTenancyContextSource | null;
+}
+
 export type ResidentEmergencySignal =
   | "ACTIVE_LEAK"
   | "NO_POWER"
@@ -276,6 +329,8 @@ export interface Request {
   lastEscalatedAt?: string;
   ownerApproval?: OwnerApprovalSnapshot | null;
   ownerApprovalStatus?: OwnerApprovalStatus | null;
+  requesterContext?: RequesterContext | null;
+  requestTenancyContext?: RequestTenancyContext | null;
   policy?: RequestPolicy | null;
   isEmergency?: boolean;
   emergencySignals?: ResidentEmergencySignal[];
@@ -827,6 +882,12 @@ export type ResidentContractStatus =
   | "ENDED"
   | "CANCELLED";
 
+export type ResidentContractDisplayStatus =
+  | "DRAFT"
+  | "ACTIVE"
+  | "CANCELLED"
+  | "MOVED_OUT";
+
 export type ResidentMoveRequestStatus =
   | "PENDING"
   | "APPROVED"
@@ -866,11 +927,13 @@ export interface ResidentContractUnit {
 export interface ResidentContract {
   id: string | null;
   status: ResidentContractStatus | null;
+  displayStatus?: ResidentContractDisplayStatus | null;
   contractNumber: string | null;
   unitLabel: string | null;
   buildingName: string | null;
   startDate: string | null;
   endDate: string | null;
+  actualMoveOutDate?: string | null;
   buildingId?: string | null;
   orgId?: string | null;
   occupancyId?: string | null;
@@ -2396,6 +2459,8 @@ export interface OwnerPortfolioRequest {
   attachments: (string | { url?: string; fileUrl?: string; uri?: string })[];
   ownerApproval?: OwnerApprovalSnapshot | null;
   ownerApprovalStatus?: OwnerApprovalStatus | null;
+  requesterContext?: RequesterContext | null;
+  requestTenancyContext?: RequestTenancyContext | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -2540,6 +2605,8 @@ export interface ProviderPortalRequest {
   attachments: ProviderPortalRequestAttachment[];
   ownerApproval?: OwnerApprovalSnapshot | null;
   ownerApprovalStatus?: OwnerApprovalStatus | null;
+  requesterContext?: RequesterContext | null;
+  requestTenancyContext?: RequestTenancyContext | null;
   policy?: RequestPolicy | null;
   isEmergency?: boolean;
   isLikeForLike?: boolean;

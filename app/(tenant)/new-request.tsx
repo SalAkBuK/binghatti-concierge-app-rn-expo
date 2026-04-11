@@ -411,7 +411,7 @@ export default function NewRequestScreen() {
 
             <TouchableOpacity
               style={styles.secondaryButton}
-              onPress={() => router.push("/(tenant)/requests" as any)}
+              onPress={() => router.push("/(tenant)/request-history" as any)}
             >
               <Text style={styles.secondaryButtonText}>Open Request History</Text>
             </TouchableOpacity>

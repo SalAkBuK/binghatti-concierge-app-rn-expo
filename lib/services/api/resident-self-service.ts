@@ -13,6 +13,7 @@ import type {
   ResidentContractsListResponse,
   ResidentAvatarUploadResponse,
   ResidentIdentity,
+  ResidentContractDisplayStatus,
   ResidentContractStatus,
   ResidentExtendedProfile,
   ResidentLatestContract,
@@ -117,6 +118,24 @@ const normalizeContractStatus = (value: unknown): ResidentContractStatus | null 
   }
 };
 
+const normalizeContractDisplayStatus = (
+  value: unknown,
+): ResidentContractDisplayStatus | null => {
+  const normalized = toStringOrNull(value)?.toUpperCase();
+  switch (normalized) {
+    case "DRAFT":
+      return "DRAFT";
+    case "ACTIVE":
+      return "ACTIVE";
+    case "CANCELLED":
+      return "CANCELLED";
+    case "MOVED_OUT":
+      return "MOVED_OUT";
+    default:
+      return null;
+  }
+};
+
 const normalizeMoveRequestStatus = (
   value: unknown,
 ): ResidentMoveRequestStatus => {
@@ -199,6 +218,9 @@ const mapContract = (payload: UnknownRecord): ResidentContract => {
   return {
     id: extractContractReference(source, extractContractReference(payload)),
     status: normalizeContractStatus(firstDefined(source.status, payload.status)),
+    displayStatus: normalizeContractDisplayStatus(
+      firstDefined(source.displayStatus, payload.displayStatus),
+    ),
     contractNumber: toStringOrNull(
       firstDefined(
         source.contractNumber,
@@ -263,6 +285,14 @@ const mapContract = (payload: UnknownRecord): ResidentContract => {
         payload.expiryDate,
         payload.contractPeriodTo,
         payload.leaseEndDate,
+      ),
+    ),
+    actualMoveOutDate: toStringOrNull(
+      firstDefined(
+        source.actualMoveOutDate,
+        payload.actualMoveOutDate,
+        source.actual_move_out_date,
+        payload.actual_move_out_date,
       ),
     ),
     buildingId: toStringOrNull(firstDefined(source.buildingId, payload.buildingId)),

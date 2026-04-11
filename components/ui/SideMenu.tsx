@@ -200,6 +200,14 @@ export function SideMenu({ isVisible, onClose, userRole }: SideMenuProps) {
       routePatterns: ["/(tenant)/requests"],
       action: () => navigateAndClose("/(tenant)/requests"),
     },
+    {
+      id: "tenant-request-history",
+      title: "Request History",
+      icon: "archive-outline",
+      locked: isPreMoveIn || isFormerResident,
+      routePatterns: ["/(tenant)/request-history"],
+      action: () => navigateAndClose("/(tenant)/request-history"),
+    },
     ...(canCreateMaintenanceRequest
       ? [
           {

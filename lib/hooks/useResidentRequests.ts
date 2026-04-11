@@ -10,6 +10,7 @@ import {
   isActiveOccupancyRequiredError,
   RESIDENT_HISTORY_UNAVAILABLE_MESSAGE,
 } from "../utils/resident-history-access";
+import { mapRequestContractFields } from "../utils/request-contract";
 import { normalizeOwnerApprovalSnapshot } from "../utils/resident-request-approval";
 import type {
   Notification,
@@ -298,6 +299,7 @@ export const mapResidentRequestFromBackend = (
   if (!currentUser?.id) return null;
 
   const ownerApproval = normalizeOwnerApprovalSnapshot(item);
+  const contractFields = mapRequestContractFields(item);
 
   return ensureResidentRequestShape({
     id: String(item.id),
@@ -336,8 +338,10 @@ export const mapResidentRequestFromBackend = (
         : typeof item.policy?.isEmergency === "boolean"
           ? item.policy.isEmergency
           : undefined,
+    ...contractFields,
     ownerApproval,
-    ownerApprovalStatus: ownerApproval?.status ?? null,
+    ownerApprovalStatus:
+      ownerApproval?.status ?? contractFields.ownerApprovalStatus ?? null,
     emergencySignals: normalizeEmergencySignals(item.emergencySignals),
     comments: [],
     messages: [],

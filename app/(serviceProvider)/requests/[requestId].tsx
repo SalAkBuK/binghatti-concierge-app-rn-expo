@@ -49,6 +49,10 @@ import {
   isProviderRequestClosed,
   resolveProviderApprovalStatus,
 } from '../../../lib/utils/provider-portal';
+import {
+  getRequestLifecycleBadges,
+  type RequestLifecycleBadgeTone,
+} from '../../../lib/utils/request-tenancy-context';
 
 const UNAVAILABLE = 'This request is not visible through the current provider membership.';
 const getStatusCode = (error: unknown): number | undefined =>
@@ -65,6 +69,19 @@ const initialEstimate = (): ProviderPortalEstimateInput => ({
   isLikeForLike: true,
   isUpgrade: false,
 });
+
+const lifecycleBadgeTone = (tone: RequestLifecycleBadgeTone) => {
+  switch (tone) {
+    case 'success':
+      return { bg: P.successBg, text: P.successText };
+    case 'warning':
+      return { bg: P.warningBg, text: P.warningText };
+    case 'info':
+      return { bg: P.infoBg, text: P.infoText };
+    default:
+      return { bg: P.surfaceLow, text: P.muted };
+  }
+};
 
 type LocalAttachmentAsset = {
   uri: string;
@@ -160,6 +177,10 @@ export default function ServiceProviderRequestDetailScreen() {
         })
         .filter((item): item is { key: string; label: string; url: string } => item != null),
     [request?.attachments],
+  );
+  const lifecycleBadges = useMemo(
+    () => getRequestLifecycleBadges(request),
+    [request],
   );
   const actionHint = !request
     ? ''
@@ -319,6 +340,23 @@ export default function ServiceProviderRequestDetailScreen() {
             <View style={styles.card}>
               <View style={styles.rowBetween}><View style={styles.flex}><Text style={styles.eyebrow}>Provider Request</Text><Text style={styles.title}>{request.title}</Text><Text style={styles.meta}>{request.buildingName} | Unit {request.unit.label || 'N/A'}</Text></View><View style={[styles.pill, { backgroundColor: statusTone.bg }]}><Text style={[styles.pillText, { color: statusTone.text }]}>{formatProviderLabel(request.status)}</Text></View></View>
               <Text style={styles.body}>{request.description}</Text>
+              {lifecycleBadges.length > 0 ? (
+                <View style={styles.lifecycleBadgeRow}>
+                  {lifecycleBadges.map((badge) => {
+                    const tone = lifecycleBadgeTone(badge.tone);
+                    return (
+                      <View
+                        key={`${badge.key}-${badge.label}`}
+                        style={[styles.lifecycleBadge, { backgroundColor: tone.bg }]}
+                      >
+                        <Text style={[styles.lifecycleBadgeText, { color: tone.text }]}>
+                          {badge.label}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              ) : null}
               <MetaField label="Assigned Worker" value={getProviderActorDisplayName(request.serviceProviderAssignedTo)} />
               <MetaField label="Assigned Worker ID" value={getAssignedProviderWorkerId(request) || 'Not assigned'} mono />
               <MetaField label="Approval" value={formatProviderLabel(approvalStatus)} />
@@ -480,6 +518,21 @@ const styles = StyleSheet.create({
   title: { fontSize: 24, lineHeight: 28, fontWeight: '800', color: P.text },
   meta: { marginTop: 6, fontSize: 12, color: P.muted },
   body: { marginTop: 12, fontSize: 13, lineHeight: 20, color: P.text },
+  lifecycleBadgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  lifecycleBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  lifecycleBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
   note: { fontSize: 13, lineHeight: 20, color: P.muted },
   row: { flexDirection: 'row', gap: 10 },
   rowBetween: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },

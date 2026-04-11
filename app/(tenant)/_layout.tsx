@@ -155,6 +155,12 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="request-history"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
         name="lease-details"
         options={{
           href: null,

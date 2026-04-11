@@ -30,13 +30,16 @@ jest.mock('react-native', () => {
   const React = jest.requireActual('react');
   const createMockComponent =
     (name: string) =>
-    ({
-      children,
-      ...props
-    }: {
-      children?: React.ReactNode;
-    }) =>
-      React.createElement(name, props, children);
+      {
+        const MockComponent = ({
+          children,
+          ...props
+        }: {
+          children?: React.ReactNode;
+        }) => React.createElement(name, props, children);
+        MockComponent.displayName = name;
+        return MockComponent;
+      };
 
   return {
     Alert: {
@@ -336,7 +339,7 @@ describe('Portal runtime guards', () => {
     });
 
     expect(refetchContract).toHaveBeenCalledWith({ asRefresh: false, showLoading: true });
-    expect(refetchTenancy).toHaveBeenCalledWith({ asRefresh: false, showLoading: true });
+    expect(refetchTenancy).not.toHaveBeenCalled();
   });
 
   it('shows a full-screen recovery state for owner dashboard failures', async () => {
