@@ -228,7 +228,6 @@ export default function TenantHomeScreen() {
     preMoveInActionLabel,
     preMoveInStatusMessage,
     preMoveInStatusTitle,
-    refetch: refetchTenancy,
     statusMessage,
     statusTitle,
   } = useResidentTenancy({
@@ -319,17 +318,13 @@ export default function TenantHomeScreen() {
   }, [authActions]);
 
   const retryCriticalPortalLoad = useCallback(() => {
-    void Promise.all([
-      refetchContract({ asRefresh: false, showLoading: true }),
-      refetchTenancy({ asRefresh: false, showLoading: true }),
-    ]);
-  }, [refetchContract, refetchTenancy]);
+    void refetchContract({ asRefresh: false, showLoading: true });
+  }, [refetchContract]);
 
   const onRefreshHome = useCallback(async () => {
     await Promise.all([
       refreshRequests({ asRefresh: true, reason: "manual" }),
       refetchContract({ asRefresh: true, showLoading: false }),
-      refetchTenancy({ asRefresh: true, showLoading: false }),
       refetchBroadcastNotices({ asRefresh: true, showLoading: false }),
       contractData.contract?.id ? refetchHistory(contractData.contract.id) : Promise.resolve(),
     ]);
@@ -338,7 +333,6 @@ export default function TenantHomeScreen() {
     refetchBroadcastNotices,
     refetchContract,
     refetchHistory,
-    refetchTenancy,
     refreshRequests,
   ]);
 

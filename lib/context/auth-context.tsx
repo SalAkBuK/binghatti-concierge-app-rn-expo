@@ -5,6 +5,7 @@ import React, {
   ReactNode,
   useCallback,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import * as SecureStore from "expo-secure-store";
@@ -261,6 +262,133 @@ const buildAccessProfile = (
   return accessProfile;
 };
 
+const normalizeComparableString = (value: unknown): string | null => {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  return null;
+};
+
+const normalizeComparableStringArray = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((entry) => normalizeComparableString(entry))
+    .filter((entry): entry is string => Boolean(entry))
+    .sort();
+};
+
+const getUserRefreshSignature = (user: User): string => {
+  const resident =
+    user.resident && typeof user.resident === "object"
+      ? (user.resident as Record<string, unknown>)
+      : null;
+  const residentUnit =
+    resident?.unit && typeof resident.unit === "object"
+      ? (resident.unit as Record<string, unknown>)
+      : null;
+  const profile =
+    user.profile && typeof user.profile === "object"
+      ? (user.profile as Record<string, unknown>)
+      : null;
+  const persona = user.persona;
+
+  return JSON.stringify({
+    id: user.id,
+    email: user.email,
+    name: normalizeComparableString(user.name),
+    phone: normalizeComparableString(user.phone),
+    role: user.role,
+    orgId: normalizeComparableString(user.orgId),
+    activeWorkspace: normalizeComparableString(user.activeWorkspace),
+    mobileWorkspaces: normalizeComparableStringArray(user.mobileWorkspaces),
+    persona: persona
+      ? {
+          keys: normalizeComparableStringArray(persona.keys),
+          isResident: persona.isResident === true,
+          isOwner: persona.isOwner === true,
+          isServiceProvider: persona.isServiceProvider === true,
+          isBuildingStaff: persona.isBuildingStaff === true,
+          residentOccupancyStatus: normalizeComparableString(
+            persona.residentOccupancyStatus,
+          ),
+          residentInviteStatus: normalizeComparableString(
+            persona.residentInviteStatus,
+          ),
+          serviceProviderRoles: normalizeComparableStringArray(
+            persona.serviceProviderRoles,
+          ),
+          buildingStaffRoleKeys: normalizeComparableStringArray(
+            persona.buildingStaffRoleKeys,
+          ),
+        }
+      : null,
+    resident: resident
+      ? {
+          id: normalizeComparableString(resident.id),
+          buildingId: normalizeComparableString(
+            resident.buildingId ??
+              (resident.building as Record<string, unknown> | undefined)?.id,
+          ),
+          unitId: normalizeComparableString(
+            resident.unitId ?? residentUnit?.id,
+          ),
+          unitLabel: normalizeComparableString(
+            resident.unitLabel ??
+              resident.unitNumber ??
+              residentUnit?.label ??
+              residentUnit?.number,
+          ),
+        }
+      : null,
+    profile: profile
+      ? {
+          name: normalizeComparableString(profile.name),
+          phone: normalizeComparableString(profile.phone),
+          avatarUrl: normalizeComparableString(
+            profile.avatarUrl ?? profile.avatar,
+          ),
+          buildingId: normalizeComparableString(profile.buildingId),
+          buildingName: normalizeComparableString(profile.buildingName),
+          apartment: normalizeComparableString(profile.apartment),
+          floor: normalizeComparableString(profile.floor),
+        }
+      : null,
+  });
+};
+
+const shouldInvalidateResidentSessionCaches = (
+  previousUser: User,
+  nextUser: User,
+): boolean => {
+  const previouslyResident = previousUser.persona?.isResident === true;
+  const nextResident = nextUser.persona?.isResident === true;
+
+  if (!previouslyResident && !nextResident) {
+    return false;
+  }
+
+  return (
+    previousUser.id !== nextUser.id ||
+    previousUser.role !== nextUser.role ||
+    previousUser.activeWorkspace !== nextUser.activeWorkspace ||
+    previousUser.persona?.residentOccupancyStatus !==
+      nextUser.persona?.residentOccupancyStatus ||
+    previousUser.persona?.residentInviteStatus !==
+      nextUser.persona?.residentInviteStatus ||
+    getResidentWorkspaceAccessLevel(previousUser.persona) !==
+      getResidentWorkspaceAccessLevel(nextUser.persona)
+  );
+};
+
 const getWorkspaceSelectionKey = (user: {
   id?: unknown;
   email?: unknown;
@@ -363,6 +491,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     ...initialState,
     users: mergedInitialUsers,
   });
+  const refreshCurrentUserPromiseRef = useRef<Promise<User | null> | null>(null);
 
   // Sync users from AsyncStorage to state when loaded (only once on mount)
   useEffect(() => {
@@ -1111,168 +1240,186 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return null;
       }
 
-      const currentUser = state.currentUser;
-      const response = await apiService.getProfile();
-      const payloadUser =
-        (response as ApiResponse<any>)?.data ??
-        (response as { user?: any })?.user ??
-        response;
-
-      if (!payloadUser || typeof payloadUser !== "object") {
-        throw new Error("Current user refresh returned an invalid payload");
+      if (refreshCurrentUserPromiseRef.current) {
+        return refreshCurrentUserPromiseRef.current;
       }
 
-      const userEmail = String(
-        payloadUser?.email ?? currentUser.email,
-      ).trim().toLowerCase();
-      const persona = normalizeUserPersona(
-        payloadUser?.persona ?? currentUser.persona,
-      );
+      const refreshPromise = (async (): Promise<User | null> => {
+        const currentUser = state.currentUser;
+        const previousSignature = getUserRefreshSignature(currentUser);
+        const response = await apiService.getProfile();
+        const payloadUser =
+          (response as ApiResponse<any>)?.data ??
+          (response as { user?: any })?.user ??
+          response;
 
-      if (!persona) {
-        throw new Error("Current user refresh did not include persona");
-      }
+        if (!payloadUser || typeof payloadUser !== "object") {
+          throw new Error("Current user refresh returned an invalid payload");
+        }
 
-      const availableWorkspaces = getMobileWorkspaces({ persona });
-      const savedWorkspace = await getSavedWorkspaceSelection(
-        {
+        const userEmail = String(
+          payloadUser?.email ?? currentUser.email,
+        ).trim().toLowerCase();
+        const persona = normalizeUserPersona(
+          payloadUser?.persona ?? currentUser.persona,
+        );
+
+        if (!persona) {
+          throw new Error("Current user refresh did not include persona");
+        }
+
+        const availableWorkspaces = getMobileWorkspaces({ persona });
+        const savedWorkspace = await getSavedWorkspaceSelection(
+          {
+            id:
+              payloadUser?.id != null
+                ? String(payloadUser.id)
+                : currentUser.id,
+            email: userEmail,
+          },
+          availableWorkspaces,
+        );
+        const activeWorkspace =
+          currentUser.activeWorkspace &&
+          availableWorkspaces.includes(currentUser.activeWorkspace)
+            ? currentUser.activeWorkspace
+            : savedWorkspace ??
+              (availableWorkspaces.length === 1 ? availableWorkspaces[0] : null);
+        const userRole = activeWorkspace
+          ? getRoleForMobileWorkspace(activeWorkspace, persona)
+          : getDefaultRoleFromPersona(persona, currentUser.role ?? "tenant");
+        const accessProfile = buildAccessProfile(payloadUser, userRole);
+
+        let refreshedUser: User = {
+          ...currentUser,
           id:
-            payloadUser?.id != null
-              ? String(payloadUser.id)
-              : currentUser.id,
+            payloadUser?.id != null ? String(payloadUser.id) : currentUser.id,
           email: userEmail,
-        },
-        availableWorkspaces,
-      );
-      const activeWorkspace =
-        currentUser.activeWorkspace &&
-        availableWorkspaces.includes(currentUser.activeWorkspace)
-          ? currentUser.activeWorkspace
-          : savedWorkspace ??
-            (availableWorkspaces.length === 1 ? availableWorkspaces[0] : null);
-      const userRole = activeWorkspace
-        ? getRoleForMobileWorkspace(activeWorkspace, persona)
-        : getDefaultRoleFromPersona(persona, currentUser.role ?? "tenant");
-      const accessProfile = buildAccessProfile(payloadUser, userRole);
-
-      let refreshedUser: User = {
-        ...currentUser,
-        id:
-          payloadUser?.id != null ? String(payloadUser.id) : currentUser.id,
-        email: userEmail,
-        name:
-          payloadUser?.name ??
-          payloadUser?.fullName ??
-          currentUser.name ??
-          userEmail,
-        role: userRole,
-        orgId:
-          payloadUser?.orgId ??
-          payloadUser?.org_id ??
-          currentUser.orgId,
-        orgAccess:
-          payloadUser?.orgAccess ??
-          currentUser.orgAccess ??
-          null,
-        buildingAccess:
-          payloadUser?.buildingAccess ??
-          payloadUser?.buildingAssignments ??
-          currentUser.buildingAccess ??
-          null,
-        buildingAssignments:
-          payloadUser?.buildingAssignments ??
-          currentUser.buildingAssignments ??
-          null,
-        resident:
-          payloadUser?.resident ??
-          currentUser.resident ??
-          null,
-        persona,
-        mobileWorkspaces: availableWorkspaces,
-        activeWorkspace,
-        effectivePermissions:
-          Array.isArray(payloadUser?.effectivePermissions)
-            ? payloadUser.effectivePermissions.filter(
-                (permission: unknown): permission is string =>
-                  typeof permission === "string" && permission.length > 0,
-              )
-            : currentUser.effectivePermissions ?? [],
-        phone:
-          payloadUser?.phone ??
-          payloadUser?.phoneNumber ??
-          currentUser.phone,
-        mustChangePassword:
-          payloadUser?.mustChangePassword ?? currentUser.mustChangePassword,
-        profile: {
-          ...(currentUser.profile ?? {}),
-          ...(payloadUser?.profile && typeof payloadUser.profile === "object"
-            ? payloadUser.profile
-            : {}),
           name:
             payloadUser?.name ??
             payloadUser?.fullName ??
-            currentUser.profile?.name,
+            currentUser.name ??
+            userEmail,
+          role: userRole,
+          orgId:
+            payloadUser?.orgId ??
+            payloadUser?.org_id ??
+            currentUser.orgId,
+          orgAccess:
+            payloadUser?.orgAccess ??
+            currentUser.orgAccess ??
+            null,
+          buildingAccess:
+            payloadUser?.buildingAccess ??
+            payloadUser?.buildingAssignments ??
+            currentUser.buildingAccess ??
+            null,
+          buildingAssignments:
+            payloadUser?.buildingAssignments ??
+            currentUser.buildingAssignments ??
+            null,
+          resident:
+            payloadUser?.resident ??
+            currentUser.resident ??
+            null,
+          persona,
+          mobileWorkspaces: availableWorkspaces,
+          activeWorkspace,
+          effectivePermissions:
+            Array.isArray(payloadUser?.effectivePermissions)
+              ? payloadUser.effectivePermissions.filter(
+                  (permission: unknown): permission is string =>
+                    typeof permission === "string" && permission.length > 0,
+                )
+              : currentUser.effectivePermissions ?? [],
           phone:
             payloadUser?.phone ??
             payloadUser?.phoneNumber ??
-            currentUser.profile?.phone,
-          ...accessProfile,
-        },
-        createdAt:
-          currentUser.createdAt ??
-          payloadUser?.createdAt ??
-          new Date().toISOString(),
-        updatedAt: payloadUser?.updatedAt ?? new Date().toISOString(),
-      };
+            currentUser.phone,
+          mustChangePassword:
+            payloadUser?.mustChangePassword ?? currentUser.mustChangePassword,
+          profile: {
+            ...(currentUser.profile ?? {}),
+            ...(payloadUser?.profile && typeof payloadUser.profile === "object"
+              ? payloadUser.profile
+              : {}),
+            name:
+              payloadUser?.name ??
+              payloadUser?.fullName ??
+              currentUser.profile?.name,
+            phone:
+              payloadUser?.phone ??
+              payloadUser?.phoneNumber ??
+              currentUser.profile?.phone,
+            ...accessProfile,
+          },
+          createdAt:
+            currentUser.createdAt ??
+            payloadUser?.createdAt ??
+            new Date().toISOString(),
+          updatedAt: payloadUser?.updatedAt ?? new Date().toISOString(),
+        };
 
-      if (activeWorkspace && availableWorkspaces.length > 1) {
-        await persistWorkspaceSelection(refreshedUser, activeWorkspace);
-      }
+        if (activeWorkspace === "resident" || userRole === "tenant") {
+          refreshedUser = await enrichTenantProfile(refreshedUser);
+        }
 
-      if (persona.isResident || currentUser.persona?.isResident) {
-        await clearResidentRequestsCache(refreshedUser.id);
-        resetResidentRuntimeCaches();
-      }
+        const nextSignature = getUserRefreshSignature(refreshedUser);
+        if (previousSignature === nextSignature) {
+          console.log("[Auth] Skipping current user refresh; session unchanged");
+          return currentUser;
+        }
 
-      if (activeWorkspace === "resident" || userRole === "tenant") {
-        refreshedUser = await enrichTenantProfile(refreshedUser);
-      }
+        if (activeWorkspace && availableWorkspaces.length > 1) {
+          await persistWorkspaceSelection(refreshedUser, activeWorkspace);
+        }
 
-      dispatch({
-        type: AUTH_ACTIONS.UPDATE_USER,
-        payload: {
-          email: userEmail,
-          user: refreshedUser,
-        },
+        if (shouldInvalidateResidentSessionCaches(currentUser, refreshedUser)) {
+          await clearResidentRequestsCache(refreshedUser.id);
+          resetResidentRuntimeCaches();
+        }
+
+        dispatch({
+          type: AUTH_ACTIONS.UPDATE_USER,
+          payload: {
+            email: userEmail,
+            user: refreshedUser,
+          },
+        });
+
+        actions.setAuth({
+          isAuthenticated: state.isAuthenticated,
+          currentUser: refreshedUser,
+          userRole: refreshedUser.role,
+        });
+
+        try {
+          await SecureStore.setItemAsync(
+            STORAGE_KEYS.user_data,
+            JSON.stringify(refreshedUser),
+          );
+        } catch (storageError) {
+          console.warn(
+            "[Auth] Failed to persist refreshed user data to SecureStore:",
+            storageError,
+          );
+        }
+
+        console.log("[Auth] Refreshed current user session:", {
+          email: refreshedUser.email,
+          activeWorkspace: refreshedUser.activeWorkspace,
+          role: refreshedUser.role,
+          residentOccupancyStatus:
+            refreshedUser.persona?.residentOccupancyStatus,
+        });
+
+        return refreshedUser;
+      })().finally(() => {
+        refreshCurrentUserPromiseRef.current = null;
       });
 
-      actions.setAuth({
-        isAuthenticated: state.isAuthenticated,
-        currentUser: refreshedUser,
-        userRole: refreshedUser.role,
-      });
-
-      try {
-        await SecureStore.setItemAsync(
-          STORAGE_KEYS.user_data,
-          JSON.stringify(refreshedUser),
-        );
-      } catch (storageError) {
-        console.warn(
-          "[Auth] Failed to persist refreshed user data to SecureStore:",
-          storageError,
-        );
-      }
-
-      console.log("[Auth] Refreshed current user session:", {
-        email: refreshedUser.email,
-        activeWorkspace: refreshedUser.activeWorkspace,
-        role: refreshedUser.role,
-        residentOccupancyStatus:
-          refreshedUser.persona?.residentOccupancyStatus,
-      });
-
-      return refreshedUser;
+      refreshCurrentUserPromiseRef.current = refreshPromise;
+      return refreshPromise;
     },
 
     updateProfile: async (userData: Partial<User>): Promise<User> => {
