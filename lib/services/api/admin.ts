@@ -577,10 +577,13 @@ export class AdminApiService extends BaseApiService {
    * GET /BuildingManager/building/{buildingId}
    * Returns array of managers with their details
    */
-  async getBuildingManagers(buildingId: number): Promise<ApiResponse<any[]>> {
+  async getBuildingManagers(buildingId: number | string): Promise<ApiResponse<any[]>> {
     try {
-      console.log('[AdminApi] Fetching managers for building:', buildingId);
-      const response = await this.get<ApiResponse<any[]>>(`/BuildingManager/building/${buildingId}`);
+      const buildingIdentifier = String(buildingId).trim();
+      console.log('[AdminApi] Fetching managers for building:', buildingIdentifier);
+      const response = await this.get<ApiResponse<any[]>>(
+        `/BuildingManager/building/${buildingIdentifier}`
+      );
 
       return response;
     } catch (error) {

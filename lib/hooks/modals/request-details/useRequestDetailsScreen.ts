@@ -76,7 +76,7 @@ const mapCommentAttachments = (comment: any): string[] | undefined => {
 };
 
 export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
-  const { currentUser } = useAuth();
+  const { currentUser, bootstrapStatus } = useAuth();
   const { selectedRequest, actions: requestActions } = useRequests();
   const {
     operations: {
@@ -112,6 +112,7 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
   const [loading, setLoading] = useState(false);
   const [showImageViewer, setShowImageViewer] = useState(false);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  const isAuthReady = bootstrapStatus == null || bootstrapStatus === "ready";
   const isTenantUser = currentUser?.role === "tenant";
   const isTenantHistoricalRequest =
     isTenantUser &&
@@ -209,6 +210,7 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
 
   const fetchDetails = useCallback(async () => {
     if (!selectedRequest?.id) return;
+    if (!isAuthReady || !currentUser) return;
     if (isTenantUser && !hasResidentHistoryAccess) {
       markResidentHistoryUnavailable();
       return;
@@ -231,14 +233,11 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
           currentUser?.profile?.buildingId;
 
         if (buildingIdForManagers) {
-          const buildingIdNum =
-            typeof buildingIdForManagers === "string"
-              ? parseInt(String(buildingIdForManagers).replace(/\D/g, ""), 10)
-              : buildingIdForManagers;
-          if (Number.isFinite(buildingIdNum)) {
+          const buildingIdentifier = String(buildingIdForManagers).trim();
+          if (buildingIdentifier.length > 0) {
             try {
               const managersResponse =
-                await apiService.admin.getBuildingManagers(buildingIdNum);
+                await apiService.admin.getBuildingManagers(buildingIdentifier);
               if (managersResponse.success && Array.isArray(managersResponse.data)) {
                 const mapped: Record<string, string> = {};
                 managersResponse.data.forEach((manager: any) => {
@@ -409,7 +408,9 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
       lastDetailsFetchRef.current.inFlight = false;
     }
   }, [
+    bootstrapStatus,
     currentUser,
+    isAuthReady,
     hasResidentHistoryAccess,
     isTenantUser,
     markResidentHistoryUnavailable,
@@ -907,20 +908,17 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
         return;
       }
 
-      const requestIdNum = Number(selectedRequest.id);
-      const userIdNum =
-        typeof currentUser.id === "string"
-          ? parseInt(currentUser.id, 10)
-          : currentUser.id;
+      const requestIdentifier = String(selectedRequest.id).trim();
+      const userIdentifier = String(currentUser.id).trim();
 
-      if (!Number.isFinite(requestIdNum) || !Number.isFinite(userIdNum)) {
+      if (requestIdentifier.length === 0 || userIdentifier.length === 0) {
         Alert.alert("Error", "Missing request or user details.");
         return;
       }
 
       await maintenanceApi.addMaintenanceRequestComment({
-        requestId: requestIdNum,
-        userId: userIdNum,
+        requestId: requestIdentifier,
+        userId: userIdentifier,
         commentText: newComment.trim(),
       });
       setNewComment("");

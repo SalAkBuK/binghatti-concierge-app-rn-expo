@@ -3,6 +3,8 @@
 import { BaseApiService } from "./base";
 import type { ApiResponse } from "../../types";
 
+const normalizeApiIdentifier = (value: number | string): string => String(value).trim();
+
 export class MaintenanceApiService extends BaseApiService {
   /**
    * Create a maintenance request
@@ -55,12 +57,12 @@ export class MaintenanceApiService extends BaseApiService {
    */
   async getMaintenanceRequestById(requestId: number | string): Promise<ApiResponse<any>> {
     try {
-      const requestIdNum = typeof requestId === 'string'
-        ? parseInt(requestId.replace(/\D/g, ''), 10)
-        : requestId;
+      const requestIdentifier = normalizeApiIdentifier(requestId);
 
-      console.log('[MaintenanceApi] Fetching maintenance request:', requestIdNum);
-      const response = await this.get<ApiResponse<any>>(`/MaintenanceRequest/get/${requestIdNum}`);
+      console.log('[MaintenanceApi] Fetching maintenance request:', requestIdentifier);
+      const response = await this.get<ApiResponse<any>>(
+        `/MaintenanceRequest/get/${requestIdentifier}`
+      );
       console.log('[MaintenanceApi] Maintenance request fetched');
       return response;
     } catch (error) {
@@ -100,12 +102,12 @@ export class MaintenanceApiService extends BaseApiService {
    */
   async deleteMaintenanceRequest(requestId: number | string): Promise<ApiResponse<any>> {
     try {
-      const requestIdNum = typeof requestId === 'string'
-        ? parseInt(requestId.replace(/\D/g, ''), 10)
-        : requestId;
+      const requestIdentifier = normalizeApiIdentifier(requestId);
 
-      console.log('[MaintenanceApi] Deleting maintenance request:', requestIdNum);
-      const response = await this.delete<ApiResponse<any>>(`/Maintenance/delete/${requestIdNum}`);
+      console.log('[MaintenanceApi] Deleting maintenance request:', requestIdentifier);
+      const response = await this.delete<ApiResponse<any>>(
+        `/Maintenance/delete/${requestIdentifier}`
+      );
       console.log('[MaintenanceApi] Maintenance request deleted successfully');
       return response;
     } catch (error) {
@@ -381,8 +383,8 @@ export class MaintenanceApiService extends BaseApiService {
    * POST /MaintenanceRequest/comment
    */
   async addMaintenanceRequestComment(commentData: {
-    requestId: number;
-    userId: number;
+    requestId: number | string;
+    userId: number | string;
     commentText: string;
   }): Promise<ApiResponse<any>> {
     try {

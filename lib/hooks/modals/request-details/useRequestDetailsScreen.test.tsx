@@ -109,6 +109,7 @@ describe("useRequestDetailsScreen", () => {
     mockClearResidentRequestsCache.mockReset();
 
     mockUseAuth.mockReturnValue({
+      bootstrapStatus: "ready",
       currentUser: {
         id: "tenant-1",
         email: "tenant@example.com",
@@ -179,6 +180,54 @@ describe("useRequestDetailsScreen", () => {
     mockGetComments.mockResolvedValue({
       data: [],
     });
+  });
+
+  it("waits for auth bootstrap before fetching request details", async () => {
+    const authState: {
+      bootstrapStatus: "restoring" | "ready";
+      currentUser: null | {
+        id: string;
+        email: string;
+        role: string;
+        persona: {
+          isResident: boolean;
+          residentOccupancyStatus: string;
+        };
+      };
+    } = {
+      bootstrapStatus: "restoring",
+      currentUser: null,
+    };
+
+    mockUseAuth.mockImplementation(() => authState);
+
+    let renderer: TestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = TestRenderer.create(<Probe />);
+    });
+    await flushEffects();
+
+    expect(mockGetRequest).not.toHaveBeenCalled();
+    expect(mockGetComments).not.toHaveBeenCalled();
+
+    authState.bootstrapStatus = "ready";
+    authState.currentUser = {
+      id: "tenant-1",
+      email: "tenant@example.com",
+      role: "tenant",
+      persona: {
+        isResident: true,
+        residentOccupancyStatus: "ACTIVE",
+      },
+    };
+
+    await act(async () => {
+      renderer!.update(<Probe />);
+    });
+    await flushEffects();
+
+    expect(mockGetRequest).toHaveBeenCalledWith("request-1");
+    expect(mockGetComments).toHaveBeenCalledWith("request-1");
   });
 
   it("retains requester and tenancy lifecycle context after tenant detail refetch", async () => {
