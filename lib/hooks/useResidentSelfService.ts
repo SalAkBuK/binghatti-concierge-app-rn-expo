@@ -103,6 +103,11 @@ let cachedContractSnapshot: ResidentContractSnapshot = EMPTY_CONTRACT_SNAPSHOT;
 let sharedContractRequestPromise: Promise<ResidentContractSnapshot> | null = null;
 const contractListeners = new Set<(snapshot: ResidentContractSnapshot) => void>();
 
+export const clearResidentContractCache = (): void => {
+  cachedContractSnapshot = EMPTY_CONTRACT_SNAPSHOT;
+  sharedContractRequestPromise = null;
+};
+
 const getStatusCode = (error: unknown): number | undefined => {
   if (!error || typeof error !== "object") return undefined;
   const status = (error as { status?: unknown }).status;

@@ -20,6 +20,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
+import { TenantLockedFeatureCard } from "../../components/ui/TenantLockedFeatureCard";
 import { useAuth } from "../../lib/context/auth-context";
 import { useAppDomain } from "../../lib/context/connected-app-provider";
 import { useNotifications } from "../../lib/context/notifications-context";
@@ -33,6 +34,7 @@ import {
   filterNotificationsByUser,
   getUnreadNotificationsCount,
 } from "../../lib/utils/helpers";
+import { RESIDENT_HISTORY_UNAVAILABLE_MESSAGE } from "../../lib/utils/resident-history-access";
 
 const P = {
   bg: "#F8F9FA",
@@ -95,10 +97,12 @@ const getStatusMeta = (status: ResidentVisitorStatus) => {
 };
 
 function RecentVisitorCard({
+  canManageVisitors,
   visitor,
   onEdit,
   onCancel,
 }: {
+  canManageVisitors: boolean;
   visitor: ResidentVisitor;
   onEdit: (visitor: ResidentVisitor) => void;
   onCancel: (visitor: ResidentVisitor) => void;
@@ -137,7 +141,7 @@ function RecentVisitorCard({
       </Text>
 
       <View style={styles.recentActionRow}>
-        {visitor.status === "EXPECTED" ? (
+        {canManageVisitors && visitor.status === "EXPECTED" ? (
           <>
             <TouchableOpacity style={styles.recentSecondaryAction} onPress={() => onEdit(visitor)}>
               <Ionicons name="create-outline" size={15} color={P.primary} />
@@ -171,12 +175,19 @@ export default function VisitorsScreen() {
   } = useAppDomain();
   const {
     canManageVisitors,
+    isFormerResident,
+    isPreMoveIn,
     isLoading: isTenancyLoading,
+    preMoveInActionLabel,
+    preMoveInStatusMessage,
+    preMoveInStatusTitle,
+    refetch: refetchTenancy,
     statusMessage,
     statusTitle,
   } = useResidentTenancy({
     enabled: Boolean(currentUser?.role === "tenant" && currentUser?.id),
   });
+  const shouldShowMoveInCTA = preMoveInActionLabel === "Schedule Move-In";
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
   const lastVisitorsFetchAtRef = useRef(0);
@@ -224,9 +235,9 @@ export default function VisitorsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      if (!currentUser?.id) return;
+      if (!currentUser?.id || isPreMoveIn || isFormerResident) return;
       void loadVisitors({ showError: false });
-    }, [currentUser?.id, loadVisitors]),
+    }, [currentUser?.id, isFormerResident, isPreMoveIn, loadVisitors]),
   );
 
   const sortedVisitors = useMemo(() => {
@@ -268,12 +279,22 @@ export default function VisitorsScreen() {
   const scrollBottomPadding = footerBottomOffset + 96;
 
   const onRefresh = useCallback(async () => {
+    if (isPreMoveIn || isFormerResident) {
+      await refetchTenancy({ asRefresh: true, showLoading: false });
+      return;
+    }
+
     setRefreshing(true);
     await loadVisitors({ force: true });
     setRefreshing(false);
-  }, [loadVisitors]);
+  }, [isFormerResident, isPreMoveIn, loadVisitors, refetchTenancy]);
 
   const handleEditVisitor = (visitor: ResidentVisitor) => {
+    if (!canManageVisitors) {
+      Alert.alert("Visitor Access", statusMessage);
+      return;
+    }
+
     router.push({
       pathname: "/(modals)/register-visitor",
       params: { visitorId: visitor.id },
@@ -281,6 +302,11 @@ export default function VisitorsScreen() {
   };
 
   const handleCancelVisitor = async (visitor: ResidentVisitor) => {
+    if (!canManageVisitors) {
+      Alert.alert("Visitor Access", statusMessage);
+      return;
+    }
+
     Alert.alert(
       "Cancel Registration",
       `Cancel ${visitor.visitorName}'s visitor registration?`,
@@ -306,6 +332,91 @@ export default function VisitorsScreen() {
     );
   };
 
+  if (!isTenancyLoading && isPreMoveIn) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <KeyboardAvoidingView
+          style={styles.keyboardAvoidingView}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={{ paddingBottom: tabBarHeight + 32 }}
+            keyboardShouldPersistTaps="handled"
+            refreshControl={<RefreshControl refreshing={false} onRefresh={onRefresh} />}
+            showsVerticalScrollIndicator={false}
+          >
+            <HeaderBar
+              title="Visitors"
+              hasUnreadNotifications={hasUnreadNotifications}
+              showSideMenu={showSideMenu}
+              onSideMenuToggle={setShowSideMenu}
+              textColor={P.text}
+            />
+
+            <View style={styles.lockedFeatureSection}>
+              <TenantLockedFeatureCard
+                title={preMoveInStatusTitle}
+                message={`${preMoveInStatusMessage} Visitor registration unlocks automatically once your move-in is completed.`}
+                actionLabel={shouldShowMoveInCTA ? "Request Move In" : preMoveInActionLabel}
+                onPress={() =>
+                  router.push(
+                    shouldShowMoveInCTA
+                      ? ({
+                          pathname: "/(tenant)/lease-details",
+                          params: { openMoveModal: "move-in" },
+                        } as any)
+                      : ("/(tenant)/lease-details" as any),
+                  )
+                }
+              />
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+
+        <SideMenu isVisible={showSideMenu} onClose={() => setShowSideMenu(false)} />
+      </SafeAreaView>
+    );
+  }
+
+  if (!isTenancyLoading && isFormerResident) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <KeyboardAvoidingView
+          style={styles.keyboardAvoidingView}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={{ paddingBottom: tabBarHeight + 32 }}
+            keyboardShouldPersistTaps="handled"
+            refreshControl={<RefreshControl refreshing={false} onRefresh={onRefresh} />}
+            showsVerticalScrollIndicator={false}
+          >
+            <HeaderBar
+              title="Visitors"
+              hasUnreadNotifications={hasUnreadNotifications}
+              showSideMenu={showSideMenu}
+              onSideMenuToggle={setShowSideMenu}
+              textColor={P.text}
+            />
+
+            <View style={styles.lockedFeatureSection}>
+              <TenantLockedFeatureCard
+                title="Resident history unavailable"
+                message={RESIDENT_HISTORY_UNAVAILABLE_MESSAGE}
+                actionLabel="Review Lease Details"
+                onPress={() => router.push("/(tenant)/lease-details" as any)}
+              />
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+
+        <SideMenu isVisible={showSideMenu} onClose={() => setShowSideMenu(false)} />
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
@@ -328,10 +439,18 @@ export default function VisitorsScreen() {
           />
 
           <View style={styles.editorialHeader}>
-            <Text style={styles.eyebrow}>Guest Access</Text>
-            <Text style={styles.title}>Create a seamless entry experience.</Text>
+            <Text style={styles.eyebrow}>
+              {isFormerResident ? "Visitor History" : "Guest Access"}
+            </Text>
+            <Text style={styles.title}>
+              {isFormerResident
+                ? "Visitor registrations from your previous residency."
+                : "Create a seamless entry experience."}
+            </Text>
             <Text style={styles.subtitle}>
-              Fill in the details below to pre-authorize your visitor.
+              {isFormerResident
+                ? "Review past visitor registrations. New visitor access stays unavailable without an active unit."
+                : "Fill in the details below to pre-authorize your visitor."}
             </Text>
           </View>
 
@@ -412,6 +531,7 @@ export default function VisitorsScreen() {
               <>
                 {filteredVisitors.map((visitor) => (
                   <RecentVisitorCard
+                    canManageVisitors={canManageVisitors}
                     key={visitor.id}
                     visitor={visitor}
                     onEdit={handleEditVisitor}
@@ -458,6 +578,9 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
     paddingHorizontal: 20,
+  },
+  lockedFeatureSection: {
+    paddingTop: 8,
   },
   editorialHeader: {
     marginTop: 8,

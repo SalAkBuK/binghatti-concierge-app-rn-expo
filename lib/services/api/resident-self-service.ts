@@ -87,6 +87,20 @@ const unwrapResponseData = <T>(response: ApiResponse<T> | T): T => {
   return response as T;
 };
 
+const getRecordKeys = (value: unknown): string[] | null =>
+  isRecord(value) ? Object.keys(value) : null;
+
+const summarizeResidentIdentity = (identity: ResidentIdentity) => ({
+  buildingId: identity.occupancy?.buildingId ?? null,
+  buildingName: identity.occupancy?.buildingName ?? null,
+  hasOccupancy: Boolean(identity.occupancy),
+  hasUser: Boolean(identity.user),
+  occupancyId: identity.occupancy?.id ?? null,
+  unitId: identity.occupancy?.unitId ?? null,
+  unitLabel: identity.occupancy?.unitLabel ?? null,
+  userId: identity.user?.id ?? null,
+});
+
 const normalizeContractStatus = (value: unknown): ResidentContractStatus | null => {
   const normalized = toStringOrNull(value)?.toUpperCase();
   switch (normalized) {
@@ -741,13 +755,19 @@ export class ResidentSelfServiceApiService
 {
   async getResidentIdentity(): Promise<ResidentIdentity> {
     try {
+      logResidentContract("GET /resident/me request", {
+        endpoint: API_ENDPOINTS.resident.me,
+      });
       const response = await this.get<ApiResponse<unknown> | unknown>(
         API_ENDPOINTS.resident.me,
       );
-      logResidentContract("GET /resident/me raw response", response);
-
       const payload = unwrapResponseData(response);
+      logResidentContract("GET /resident/me payload keys", getRecordKeys(payload));
       const normalized = mapResidentIdentity(payload);
+      logResidentContract(
+        "GET /resident/me summary",
+        summarizeResidentIdentity(normalized),
+      );
       logResidentContract("GET /resident/me normalized", normalized);
       return normalized;
     } catch (error) {
@@ -769,8 +789,6 @@ export class ResidentSelfServiceApiService
         API_ENDPOINTS.resident.meAvatar,
         formData,
       );
-      logResidentContract("POST /resident/me/avatar raw response", response);
-
       const payload = unwrapResponseData(response);
       const normalized = mapResidentAvatarUploadResponse(payload);
       logResidentContract("POST /resident/me/avatar normalized", normalized);
@@ -786,8 +804,6 @@ export class ResidentSelfServiceApiService
       const response = await this.get<ApiResponse<unknown> | unknown>(
         API_ENDPOINTS.resident.contractLatest,
       );
-      logResidentContract("GET /resident/contracts/latest raw response", response);
-
       const payload = unwrapResponseData(response);
       const normalized = mapLatestContract(payload);
       logResidentContract("GET /resident/contracts/latest normalized", normalized);
@@ -803,8 +819,6 @@ export class ResidentSelfServiceApiService
       const response = await this.get<ApiResponse<unknown> | unknown>(
         API_ENDPOINTS.resident.contractDetail(contractId),
       );
-      logResidentContract("GET /resident/contracts/:id raw response", response);
-
       const payload = unwrapResponseData(response);
       const contractPayload = firstDefined(
         readProp(payload, "contract"),
@@ -846,8 +860,6 @@ export class ResidentSelfServiceApiService
         API_ENDPOINTS.resident.contracts,
         params,
       );
-      logResidentContract("GET /resident/contracts raw response", response);
-
       const payload = unwrapResponseData(response);
       const normalized = mapContractsList(payload);
       logResidentContract("GET /resident/contracts normalized", normalized);
@@ -863,8 +875,6 @@ export class ResidentSelfServiceApiService
       const response = await this.get<ApiResponse<unknown> | unknown>(
         API_ENDPOINTS.resident.activeLeaseDocuments,
       );
-      logResidentContract("GET /resident/lease/active/documents raw response", response);
-
       const payload = unwrapResponseData(response);
       const normalized = mapContractDocumentList(payload);
       logResidentContract(
@@ -887,8 +897,6 @@ export class ResidentSelfServiceApiService
         API_ENDPOINTS.resident.contractMoveInRequests(contractId),
         payload,
       );
-      logResidentContract("POST move-in raw response", response);
-
       const unwrappedPayload = unwrapResponseData(response);
       const normalized = mapMoveRequest(unwrappedPayload, contractId);
       logResidentContract("POST move-in normalized", normalized);
@@ -909,8 +917,6 @@ export class ResidentSelfServiceApiService
         API_ENDPOINTS.resident.contractMoveOutRequests(contractId),
         payload,
       );
-      logResidentContract("POST move-out raw response", response);
-
       const unwrappedPayload = unwrapResponseData(response);
       const normalized = mapMoveRequest(unwrappedPayload, contractId);
       logResidentContract("POST move-out normalized", normalized);
@@ -931,8 +937,6 @@ export class ResidentSelfServiceApiService
         API_ENDPOINTS.resident.contractMoveInRequests(contractId),
         params,
       );
-      logResidentContract("GET move-in history raw response", response);
-
       const payload = unwrapResponseData(response);
       const normalized = mapMoveRequestList(payload, contractId);
       logResidentContract("GET move-in history normalized", normalized);
@@ -952,8 +956,6 @@ export class ResidentSelfServiceApiService
         API_ENDPOINTS.resident.contractMoveOutRequests(contractId),
         params,
       );
-      logResidentContract("GET move-out history raw response", response);
-
       const payload = unwrapResponseData(response);
       const normalized = mapMoveRequestList(payload, contractId);
       logResidentContract("GET move-out history normalized", normalized);
@@ -973,8 +975,6 @@ export class ResidentSelfServiceApiService
         API_ENDPOINTS.resident.contractDocumentsUploadUrl(contractId),
         payload,
       );
-      logResidentContract("POST contract document upload-url raw response", response);
-
       const unwrappedPayload = unwrapResponseData(response);
       const normalized = mapUploadUrlResponse(unwrappedPayload);
       logResidentContract(
@@ -997,8 +997,6 @@ export class ResidentSelfServiceApiService
         API_ENDPOINTS.resident.contractDocuments(contractId),
         payload,
       );
-      logResidentContract("POST contract document raw response", response);
-
       const unwrappedPayload = unwrapResponseData(response);
       const normalized = mapContractDocument(unwrappedPayload, contractId);
       logResidentContract("POST contract document normalized", normalized);
@@ -1017,8 +1015,6 @@ export class ResidentSelfServiceApiService
         API_ENDPOINTS.resident.meProfile,
         payload,
       );
-      logResidentContract("PUT /resident/me/profile raw response", response);
-
       const unwrappedPayload = unwrapResponseData(response);
       const normalized = mapResidentExtendedProfile(unwrappedPayload);
       logResidentContract("PUT /resident/me/profile normalized", normalized);

@@ -2,7 +2,7 @@ import React from "react";
 import { TouchableOpacity } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
 
-import type { User } from "../../lib/types";
+import type { MobileWorkspace, User } from "../../lib/types";
 import IndexScreen from "../index";
 
 const mockUseAuth = jest.fn();
@@ -56,10 +56,26 @@ const buildUser = (overrides: Partial<User> = {}): User => ({
   email: "tenant@example.com",
   name: "Test User",
   role: "tenant",
+  persona: {
+    isResident: true,
+    residentOccupancyStatus: "ACTIVE",
+  },
+  mobileWorkspaces: ["resident"],
+  activeWorkspace: "resident",
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
   ...overrides,
 });
+
+const buildWorkspaceUser = (
+  workspaces: MobileWorkspace[],
+  overrides: Partial<User> = {},
+): User =>
+  buildUser({
+    mobileWorkspaces: workspaces,
+    activeWorkspace: workspaces.length === 1 ? workspaces[0] : null,
+    ...overrides,
+  });
 
 const buildAuthValue = (overrides: Record<string, unknown> = {}) => ({
   isAuthenticated: false,
@@ -100,7 +116,12 @@ describe("IndexScreen", () => {
     mockUseAuth.mockReturnValue(
       buildAuthValue({
         isAuthenticated: true,
-        currentUser: buildUser({ role: "owner" }),
+        currentUser: buildWorkspaceUser(["owner"], {
+          role: "owner",
+          persona: {
+            isOwner: true,
+          },
+        }),
       }),
     );
 
@@ -111,11 +132,43 @@ describe("IndexScreen", () => {
     expect(mockRedirect).toHaveBeenLastCalledWith({ href: "/(owner)" });
   });
 
-  it("redirects unsupported roles to the unavailable portal", () => {
+  it("redirects multi-workspace users to the selector", () => {
     mockUseAuth.mockReturnValue(
       buildAuthValue({
         isAuthenticated: true,
-        currentUser: buildUser({ role: "admin" }),
+        currentUser: buildWorkspaceUser(["resident", "owner"], {
+          activeWorkspace: null,
+          role: "tenant",
+          persona: {
+            isResident: true,
+            isOwner: true,
+            residentOccupancyStatus: "ACTIVE",
+          },
+        }),
+      }),
+    );
+
+    act(() => {
+      TestRenderer.create(<IndexScreen />);
+    });
+
+    expect(mockRedirect).toHaveBeenLastCalledWith({
+      href: "/workspace-selector",
+    });
+  });
+
+  it("redirects unsupported personas to the unavailable portal", () => {
+    mockUseAuth.mockReturnValue(
+      buildAuthValue({
+        isAuthenticated: true,
+        currentUser: buildUser({
+          role: "admin",
+          persona: {
+            keys: ["ORG_ADMIN"],
+          },
+          mobileWorkspaces: [],
+          activeWorkspace: null,
+        }),
       }),
     );
 
@@ -189,7 +242,8 @@ describe("IndexScreen", () => {
     expect(retryBootstrap).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      await touchables[1].props.onPress();
+      touchables[1].props.onPress();
+      await Promise.resolve();
     });
 
     expect(recoverFromBootstrapError).toHaveBeenCalledTimes(1);

@@ -2,6 +2,37 @@
 
 export type UserStatus = "active" | "inactive";
 
+export type MobileWorkspace =
+  | "resident"
+  | "owner"
+  | "provider_worker"
+  | "building_staff";
+
+export type ResidentOccupancyStatus =
+  | "ACTIVE"
+  | "NONE"
+  | "FORMER"
+  | string;
+
+export type ResidentInviteStatus =
+  | "PENDING"
+  | "ACCEPTED"
+  | "FAILED"
+  | "EXPIRED"
+  | string;
+
+export interface UserPersona {
+  keys?: string[];
+  isResident?: boolean;
+  isOwner?: boolean;
+  isServiceProvider?: boolean;
+  serviceProviderRoles?: string[];
+  isBuildingStaff?: boolean;
+  buildingStaffRoleKeys?: string[];
+  residentOccupancyStatus?: ResidentOccupancyStatus | null;
+  residentInviteStatus?: ResidentInviteStatus | null;
+}
+
 export interface UserAccessAssignment {
   assignmentId?: string;
   roleTemplateKey?: string;
@@ -70,6 +101,9 @@ export interface User {
   buildingAccess?: UserAccessAssignment[] | UserAccessAssignment | null;
   buildingAssignments?: UserAccessAssignment[] | UserAccessAssignment | null;
   resident?: UserResidentAccess | null;
+  persona?: UserPersona | null;
+  mobileWorkspaces?: MobileWorkspace[];
+  activeWorkspace?: MobileWorkspace | null;
   profile?: UserProfile;
   profileCompleted?: boolean; // Track if user has completed initial profile setup
   createdAt: string;
@@ -906,6 +940,7 @@ export interface ResidentAvatarUploadResponse {
 
 export type ResidentTenancyMode =
   | "active"
+  | "pre_move_in"
   | "former_resident"
   | "no_tenancy";
 

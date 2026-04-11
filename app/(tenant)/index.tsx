@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import { useFocusEffect } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -20,6 +21,7 @@ import { HomeScreenSkeleton } from "../../components/ui/HomeScreenSkeleton";
 import { PortalLoadErrorScreen } from "../../components/ui/PortalLoadErrorScreen";
 import { ScreenEntrance } from "../../components/ui/ScreenEntrance";
 import { SideMenu } from "../../components/ui/SideMenu";
+import { TenantLockedFeatureCard } from "../../components/ui/TenantLockedFeatureCard";
 import {
   TenantAnnouncementModal,
   type TenantAnnouncementPreview,
@@ -32,6 +34,7 @@ import { useResidentContract } from "../../lib/hooks/useResidentSelfService";
 import { useResidentRequests } from "../../lib/hooks/useResidentRequests";
 import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
 import type { ResidentMoveRequest, ResidentMoveRequestStatus } from "../../lib/types";
+import { RESIDENT_HISTORY_UNAVAILABLE_MESSAGE } from "../../lib/utils/resident-history-access";
 import {
   getResidentRequestOwnerRejectionReason,
   isResidentRequestOwnerRejected,
@@ -212,13 +215,19 @@ export default function TenantHomeScreen() {
   });
 
   const {
+    resident,
+    latestContract,
     canCreateMaintenanceRequest,
     canManageVisitors,
     displayBuildingName,
     displayUnitLabel,
     errorMessage: tenancyErrorMessage,
     isFormerResident,
+    isPreMoveIn,
     isLoading: isTenancyLoading,
+    preMoveInActionLabel,
+    preMoveInStatusMessage,
+    preMoveInStatusTitle,
     refetch: refetchTenancy,
     statusMessage,
     statusTitle,
@@ -287,6 +296,18 @@ export default function TenantHomeScreen() {
     });
   }, [contractData.contract?.id, refetchHistory]);
 
+  useFocusEffect(
+    useCallback(() => {
+      if (!isPreMoveIn) {
+        return;
+      }
+
+      // Contract refresh already invalidates resident tenancy, so calling both
+      // here creates a focus loop while the screen remains mounted.
+      void refetchContract({ asRefresh: true, showLoading: false });
+    }, [isPreMoveIn, refetchContract]),
+  );
+
   const handleReturnToSignIn = useCallback(async () => {
     try {
       await authActions.logout();
@@ -326,16 +347,25 @@ export default function TenantHomeScreen() {
 
   const buildingName =
     displayBuildingName || currentUser?.profile?.buildingName || "Towerdesk Residence";
-  const profileUnitInfo =
-    currentUser?.profile?.apartment || currentUser?.profile?.floor
+  const unitLabel =
+    displayUnitLabel || currentUser?.profile?.apartment || null;
+  const unitFloor =
+    resident?.occupancy?.floorNumber ||
+    latestContract?.contract?.unit?.floor != null
+      ? String(
+          resident?.occupancy?.floorNumber ??
+            latestContract?.contract?.unit?.floor,
+        )
+      : currentUser?.profile?.floor || null;
+  const unitInfo =
+    unitLabel || unitFloor
       ? [
-          currentUser?.profile?.apartment,
-          currentUser?.profile?.floor ? `Floor ${currentUser.profile.floor}` : null,
+          unitLabel,
+          unitFloor ? `Floor ${unitFloor}` : null,
         ]
           .filter(Boolean)
           .join(" - ")
       : "Not assigned";
-  const unitInfo = displayUnitLabel || profileUnitInfo;
   const avatarUri =
     currentUser?.profile?.avatarUrl || currentUser?.profile?.avatar || null;
 
@@ -359,40 +389,96 @@ export default function TenantHomeScreen() {
         .sort((a, b) => getMoveRequestTimestamp(b) - getMoveRequestTimestamp(a))[0] || null,
     [moveOutHistory],
   );
+  const isResidentHistoryLocked = isPreMoveIn || isFormerResident;
+  const canRequestMoveIn = isPreMoveIn && Boolean(contractData.canRequestMoveIn);
+  const shouldShowMoveInCTA =
+    isPreMoveIn && preMoveInActionLabel === "Schedule Move-In";
+  const openLeaseDetails = useCallback(
+    () => router.push("/(tenant)/lease-details" as any),
+    [],
+  );
+  const openMoveInRequest = useCallback(() => {
+    router.push({
+      pathname: "/(tenant)/lease-details",
+      params: { openMoveModal: "move-in" },
+    } as any);
+  }, []);
 
   const activeContract = contractData.contract;
   const quickActions = useMemo(
-    () => [
-      {
-        key: "main",
-        label: canCreateMaintenanceRequest ? "New Request" : "Lease Details",
-        icon: canCreateMaintenanceRequest ? "add-outline" : "document-text-outline",
-        onPress: () =>
-          router.push(
-            (canCreateMaintenanceRequest ? "/(tenant)/new-request" : "/(tenant)/lease-details") as any,
-          ),
-      },
-      {
-        key: "requests",
-        label: isFormerResident ? "History" : "My Requests",
-        icon: "receipt-outline",
-        onPress: () => router.push("/(tenant)/requests" as any),
-      },
-      {
-        key: "messages",
-        label: "Messages",
-        icon: "chatbubble-ellipses-outline",
-        onPress: () => router.push("/(tenant)/messages" as any),
-      },
-      {
-        key: canManageVisitors ? "visitors" : "profile",
-        label: canManageVisitors ? "Visitors" : "Profile",
-        icon: canManageVisitors ? "people-outline" : "person-outline",
-        onPress: () =>
-          router.push((canManageVisitors ? "/(tenant)/visitors" : "/(tenant)/profile") as any),
-      },
+    () =>
+      isResidentHistoryLocked
+        ? [
+            {
+              key: shouldShowMoveInCTA ? "move-in" : "lease-details",
+              label:
+                shouldShowMoveInCTA ? "Request Move In" : "Lease Details",
+              icon:
+                shouldShowMoveInCTA
+                  ? "enter-outline"
+                  : "document-text-outline",
+              onPress:
+                canRequestMoveIn ? openMoveInRequest : openLeaseDetails,
+            },
+            {
+              key: "profile",
+              label: "Profile",
+              icon: "person-outline",
+              onPress: () => router.push("/(tenant)/profile" as any),
+            },
+            {
+              key: "announcements",
+              label: "Announcements",
+              icon: "notifications-outline",
+              onPress: () => router.push("/(modals)/notifications-hub" as any),
+            },
+          ]
+        : [
+            {
+              key: "main",
+              label: canCreateMaintenanceRequest ? "New Request" : "Lease Details",
+              icon: canCreateMaintenanceRequest ? "add-outline" : "document-text-outline",
+              onPress: () =>
+                router.push(
+                  (canCreateMaintenanceRequest
+                    ? "/(tenant)/new-request"
+                    : "/(tenant)/lease-details") as any,
+                ),
+            },
+            {
+              key: "requests",
+              label: isFormerResident ? "History" : "My Requests",
+              icon: "receipt-outline",
+              onPress: () => router.push("/(tenant)/requests" as any),
+            },
+            {
+              key: "messages",
+              label: isFormerResident ? "Message History" : "Messages",
+              icon: "chatbubble-ellipses-outline",
+              onPress: () => router.push("/(tenant)/messages" as any),
+            },
+            {
+              key: canManageVisitors ? "visitors" : "profile",
+              label: canManageVisitors ? "Visitors" : "Profile",
+              icon: canManageVisitors ? "people-outline" : "person-outline",
+              onPress: () =>
+                router.push(
+                  (canManageVisitors ? "/(tenant)/visitors" : "/(tenant)/profile") as any,
+                ),
+            },
+          ],
+    [
+      canCreateMaintenanceRequest,
+      canManageVisitors,
+      canRequestMoveIn,
+      isFormerResident,
+      isPreMoveIn,
+      preMoveInActionLabel,
+      isResidentHistoryLocked,
+      openLeaseDetails,
+      openMoveInRequest,
+      shouldShowMoveInCTA,
     ],
-    [canCreateMaintenanceRequest, canManageVisitors, isFormerResident],
   );
 
   const handleNoticePress = useCallback(
@@ -528,20 +614,74 @@ export default function TenantHomeScreen() {
           </View>
         </Animated.View>
 
-        {isFormerResident ? (
+        {isFormerResident || isPreMoveIn ? (
           <Animated.View entering={FadeInDown.delay(110).duration(400)} style={styles.banner}>
             <View style={styles.bannerIcon}>
               <Ionicons name="information-circle-outline" size={18} color={P.warningText} />
             </View>
             <View style={styles.bannerCopy}>
-              <Text style={styles.bannerTitle}>{statusTitle}</Text>
-              <Text style={styles.bannerText}>{statusMessage}</Text>
+              <Text style={styles.bannerTitle}>
+                {isPreMoveIn ? preMoveInStatusTitle : statusTitle}
+              </Text>
+              <Text style={styles.bannerText}>
+                {isPreMoveIn ? preMoveInStatusMessage : statusMessage}
+              </Text>
+            </View>
+          </Animated.View>
+        ) : null}
+
+        {isResidentHistoryLocked ? (
+          <Animated.View entering={FadeInDown.delay(140).duration(400)} style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View>
+                <Text style={styles.sectionTitle}>
+                  {isPreMoveIn ? "Before you move in" : "Resident history unavailable"}
+                </Text>
+                <Text style={styles.sectionSubtitle}>
+                  {isPreMoveIn
+                    ? "Complete move-in to unlock the full resident workspace"
+                    : "Requests and messages return automatically when this account has an active occupancy again"}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.preMoveInCard}>
+              <View style={styles.preMoveInEyebrowRow}>
+                <View style={styles.preMoveInEyebrowPill}>
+                  <Ionicons name="key-outline" size={14} color={P.primary} />
+                  <Text style={styles.preMoveInEyebrowText}>Move-In Access</Text>
+                </View>
+              </View>
+              <Text style={styles.preMoveInTitle}>
+                {isPreMoveIn ? preMoveInStatusTitle : statusTitle}
+              </Text>
+              <Text style={styles.preMoveInText}>
+                {isPreMoveIn ? preMoveInStatusMessage : RESIDENT_HISTORY_UNAVAILABLE_MESSAGE}
+              </Text>
+
+              <TouchableOpacity
+                style={styles.preMoveInAction}
+                activeOpacity={0.9}
+                onPress={canRequestMoveIn ? openMoveInRequest : openLeaseDetails}
+              >
+                <Text style={styles.preMoveInActionText}>
+                  {isPreMoveIn
+                    ? shouldShowMoveInCTA
+                      ? "Request Move In"
+                      : preMoveInActionLabel
+                    : "Review Lease Details"}
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color={P.primary} />
+              </TouchableOpacity>
             </View>
           </Animated.View>
         ) : null}
 
         {latestMoveOutRequest ? (
-          <Animated.View entering={FadeInDown.delay(140).duration(400)} style={styles.section}>
+          <Animated.View
+            entering={FadeInDown.delay(isPreMoveIn ? 170 : 140).duration(400)}
+            style={styles.section}
+          >
             <TouchableOpacity
               style={styles.moveOutCard}
               activeOpacity={0.9}
@@ -603,86 +743,123 @@ export default function TenantHomeScreen() {
           </Animated.View>
         ) : null}
 
-        <Animated.View entering={FadeInDown.delay(170).duration(400)} style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <View>
-              <Text style={styles.sectionTitle}>Active Service Requests</Text>
-              <Text style={styles.sectionSubtitle}>Follow the latest status on your maintenance issues</Text>
+        {isResidentHistoryLocked ? (
+          <Animated.View entering={FadeInDown.delay(200).duration(400)} style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View>
+                <Text style={styles.sectionTitle}>
+                  {isPreMoveIn ? "Features unlock after move-in" : "Resident tools are locked"}
+                </Text>
+                <Text style={styles.sectionSubtitle}>
+                  {isPreMoveIn
+                    ? "Requests, messages, and visitors become available once occupancy is active"
+                    : "This resident workspace needs an active occupancy before history and messaging can be used"}
+                </Text>
+              </View>
             </View>
-            <TouchableOpacity onPress={() => router.push("/(tenant)/requests" as any)}>
-              <Text style={styles.linkText}>View all</Text>
-            </TouchableOpacity>
-          </View>
 
-          {activeRequests.length > 0 ? (
-            activeRequests.map((request) => {
-              const status = requestStatusMeta(request);
-              const ownerRejected = isResidentRequestOwnerRejected(request);
-              const ownerRejectionReason = getResidentRequestOwnerRejectionReason(request);
+            <TenantLockedFeatureCard
+              title={isPreMoveIn ? "Resident services are still locked" : "Resident history is unavailable"}
+              message={
+                isPreMoveIn
+                  ? "Once your move-in is completed, you will be able to submit maintenance requests, message the building team, and manage visitor access without reopening the app."
+                  : RESIDENT_HISTORY_UNAVAILABLE_MESSAGE
+              }
+              actionLabel={
+                isPreMoveIn
+                  ? shouldShowMoveInCTA
+                    ? "Request Move In"
+                    : preMoveInActionLabel
+                  : "Review Lease Details"
+              }
+              onPress={canRequestMoveIn ? openMoveInRequest : openLeaseDetails}
+            />
+          </Animated.View>
+        ) : (
+          <Animated.View entering={FadeInDown.delay(170).duration(400)} style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View>
+                <Text style={styles.sectionTitle}>Active Service Requests</Text>
+                <Text style={styles.sectionSubtitle}>
+                  Follow the latest status on your maintenance issues
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => router.push("/(tenant)/requests" as any)}>
+                <Text style={styles.linkText}>View all</Text>
+              </TouchableOpacity>
+            </View>
 
-              return (
-                <TouchableOpacity
-                  key={request.id}
-                  style={styles.requestCard}
-                  activeOpacity={0.85}
-                  onPress={() => {
-                    requestActions.setSelectedRequest(request);
-                    router.push("/(modals)/request-details" as any);
-                  }}
-                >
-                  <View style={styles.requestTop}>
-                    <View style={styles.requestIconWrap}>
-                      <Ionicons name="construct-outline" size={18} color={P.primary} />
-                    </View>
-                    <View style={styles.requestCopy}>
-                      <Text style={styles.requestTitle} numberOfLines={1}>
-                        {request.title}
-                      </Text>
-                      <Text style={styles.requestMeta}>Updated {formatDate(request.updatedAt || request.createdAt)}</Text>
-                    </View>
-                    <View style={[styles.requestBadge, { backgroundColor: status.bg }]}>
-                      <Text style={[styles.requestBadgeText, { color: status.text }]}>
-                        {status.label}
-                      </Text>
-                    </View>
-                  </View>
+            {activeRequests.length > 0 ? (
+              activeRequests.map((request) => {
+                const status = requestStatusMeta(request);
+                const ownerRejected = isResidentRequestOwnerRejected(request);
+                const ownerRejectionReason = getResidentRequestOwnerRejectionReason(request);
 
-                  <View style={styles.requestBottom}>
-                    <View style={styles.requestBottomCopy}>
-                      <Text style={styles.requestDescription} numberOfLines={1}>
-                        {request.description || "Tap to review request details and latest updates."}
-                      </Text>
-                      {ownerRejected ? (
-                        <Text style={styles.requestRejectionText} numberOfLines={2}>
-                          {ownerRejectionReason
-                            ? `Owner rejected this request: ${ownerRejectionReason}`
-                            : "Owner rejected this request."}
-                        </Text>
-                      ) : null}
-                    </View>
-                    {request.isEmergency ? (
-                      <View style={styles.requestEmergencyBadge}>
-                        <Ionicons name="warning-outline" size={12} color={P.dangerText} />
-                        <Text style={styles.requestEmergencyBadgeText}>Emergency</Text>
+                return (
+                  <TouchableOpacity
+                    key={request.id}
+                    style={styles.requestCard}
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      requestActions.setSelectedRequest(request);
+                      router.push("/(modals)/request-details" as any);
+                    }}
+                  >
+                    <View style={styles.requestTop}>
+                      <View style={styles.requestIconWrap}>
+                        <Ionicons name="construct-outline" size={18} color={P.primary} />
                       </View>
-                    ) : null}
-                    <Ionicons name="chevron-forward" size={16} color={P.soft} />
-                  </View>
-                </TouchableOpacity>
-              );
-            })
-          ) : (
-            <View style={styles.emptyCard}>
-              <Ionicons name="clipboard-outline" size={26} color={P.soft} />
-              <Text style={styles.emptyTitle}>No active requests</Text>
-              <Text style={styles.emptyText}>
-                There are no active requests right now.
-              </Text>
-            </View>
-          )}
-        </Animated.View>
+                      <View style={styles.requestCopy}>
+                        <Text style={styles.requestTitle} numberOfLines={1}>
+                          {request.title}
+                        </Text>
+                        <Text style={styles.requestMeta}>
+                          Updated {formatDate(request.updatedAt || request.createdAt)}
+                        </Text>
+                      </View>
+                      <View style={[styles.requestBadge, { backgroundColor: status.bg }]}>
+                        <Text style={[styles.requestBadgeText, { color: status.text }]}>
+                          {status.label}
+                        </Text>
+                      </View>
+                    </View>
 
-        <Animated.View entering={FadeInDown.delay(200).duration(400)} style={styles.section}>
+                    <View style={styles.requestBottom}>
+                      <View style={styles.requestBottomCopy}>
+                        <Text style={styles.requestDescription} numberOfLines={1}>
+                          {request.description ||
+                            "Tap to review request details and latest updates."}
+                        </Text>
+                        {ownerRejected ? (
+                          <Text style={styles.requestRejectionText} numberOfLines={2}>
+                            {ownerRejectionReason
+                              ? `Owner rejected this request: ${ownerRejectionReason}`
+                              : "Owner rejected this request."}
+                          </Text>
+                        ) : null}
+                      </View>
+                      {request.isEmergency ? (
+                        <View style={styles.requestEmergencyBadge}>
+                          <Ionicons name="warning-outline" size={12} color={P.dangerText} />
+                          <Text style={styles.requestEmergencyBadgeText}>Emergency</Text>
+                        </View>
+                      ) : null}
+                      <Ionicons name="chevron-forward" size={16} color={P.soft} />
+                    </View>
+                  </TouchableOpacity>
+                );
+              })
+            ) : (
+              <View style={styles.emptyCard}>
+                <Ionicons name="clipboard-outline" size={26} color={P.soft} />
+                <Text style={styles.emptyTitle}>No active requests</Text>
+                <Text style={styles.emptyText}>There are no active requests right now.</Text>
+              </View>
+            )}
+          </Animated.View>
+        )}
+
+        <Animated.View entering={FadeInDown.delay(230).duration(400)} style={styles.section}>
           <View style={styles.sectionHeader}>
             <View>
               <Text style={styles.sectionTitle}>Recent Announcements</Text>
@@ -749,7 +926,7 @@ export default function TenantHomeScreen() {
           )}
         </Animated.View>
 
-        <Animated.View entering={FadeInDown.delay(230).duration(400)} style={styles.section}>
+        <Animated.View entering={FadeInDown.delay(260).duration(400)} style={styles.section}>
           <View style={styles.sectionHeader}>
             <View>
               <Text style={styles.sectionTitle}>Quick Actions</Text>
@@ -774,7 +951,7 @@ export default function TenantHomeScreen() {
           </View>
         </Animated.View>
 
-        <Animated.View entering={FadeInDown.delay(260).duration(400)} style={styles.footerCard}>
+        <Animated.View entering={FadeInDown.delay(290).duration(400)} style={styles.footerCard}>
           <View style={styles.footerIcon}>
             <Ionicons name="document-text-outline" size={18} color={P.surface} />
           </View>
@@ -873,6 +1050,67 @@ const styles = StyleSheet.create({
   bannerCopy: { flex: 1, gap: 4 },
   bannerTitle: { fontSize: 15, fontWeight: "700", color: P.text },
   bannerText: { fontSize: 13, lineHeight: 20, color: P.muted },
+  preMoveInCard: {
+    backgroundColor: P.surface,
+    borderRadius: 24,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: P.border,
+    shadowColor: P.shadow,
+    shadowOpacity: 1,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 3,
+  },
+  preMoveInEyebrowRow: {
+    flexDirection: "row",
+    marginBottom: 14,
+  },
+  preMoveInEyebrowPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: P.surfaceLow,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: P.border,
+  },
+  preMoveInEyebrowText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: P.primary,
+  },
+  preMoveInTitle: {
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: "800",
+    color: P.text,
+  },
+  preMoveInText: {
+    marginTop: 10,
+    fontSize: 14,
+    lineHeight: 22,
+    color: P.muted,
+  },
+  preMoveInAction: {
+    marginTop: 18,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: P.surfaceLow,
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: P.border,
+  },
+  preMoveInActionText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: P.primary,
+  },
   section: { marginBottom: 28 },
   moveOutCard: {
     backgroundColor: P.surface,

@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,6 +13,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import { useFocusEffect } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -22,6 +24,7 @@ import { useNotifications } from "../../lib/context/notifications-context";
 import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
 import type { Conversation } from "../../lib/types";
 import { filterNotificationsByUser, getUnreadNotificationsCount } from "../../lib/utils/helpers";
+import { RESIDENT_HISTORY_UNAVAILABLE_MESSAGE } from "../../lib/utils/resident-history-access";
 import {
   getTenantConversationAvatarLetter,
   getTenantConversationAvatarUrl,
@@ -32,6 +35,7 @@ import {
 } from "../../lib/utils/tenant-messaging-privacy";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { SideMenu } from "../../components/ui/SideMenu";
+import { TenantLockedFeatureCard } from "../../components/ui/TenantLockedFeatureCard";
 
 const P = {
   bg: "#F8F9FA",
@@ -355,17 +359,24 @@ function ConversationRow({
 const MemoizedConversationRow = React.memo(ConversationRow);
 
 export default function MessagesScreen() {
-  const { conversations, loading, actions } = useMessaging();
+  const { conversations, error, loading, actions } = useMessaging();
   const { currentUser } = useAuth();
   const { notifications } = useNotifications();
   const insets = useSafeAreaInsets();
   const {
     canCreateManagementConversation,
     isFormerResident,
-    statusMessage,
+    isPreMoveIn,
+    preMoveInActionLabel,
+    preMoveInStatusMessage,
+    preMoveInStatusTitle,
+    refetch: refetchTenancy,
   } = useResidentTenancy({
     enabled: Boolean(currentUser?.role === "tenant" && currentUser?.id),
   });
+  const shouldShowMoveInCTA = preMoveInActionLabel === "Schedule Move-In";
+  const isResidentHistoryLocked =
+    isFormerResident || error === RESIDENT_HISTORY_UNAVAILABLE_MESSAGE;
   const tabBarHeight = useBottomTabBarHeight();
   const fabBottomOffset = tabBarHeight + Math.max(insets.bottom, 24) + 28;
   const [refreshing, setRefreshing] = useState(false);
@@ -381,11 +392,110 @@ export default function MessagesScreen() {
   );
   const hasUnreadNotifications = getUnreadNotificationsCount(userNotifications) > 0;
 
+  useFocusEffect(
+    useCallback(() => {
+      if (!isPreMoveIn) {
+        return;
+      }
+
+      void refetchTenancy({ asRefresh: true, showLoading: false });
+    }, [isPreMoveIn, refetchTenancy]),
+  );
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await actions.fetchConversations();
     setRefreshing(false);
   }, [actions]);
+
+  if (isPreMoveIn) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingBottom: tabBarHeight + 32, paddingTop: 0 },
+          ]}
+          refreshControl={
+            <RefreshControl
+              refreshing={false}
+              onRefresh={() => {
+                void refetchTenancy({ asRefresh: true, showLoading: false });
+              }}
+            />
+          }
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.headerBlock}>
+            <HeaderBar
+              title="Messages"
+              hasUnreadNotifications={hasUnreadNotifications}
+              showSideMenu={showSideMenu}
+              onSideMenuToggle={setShowSideMenu}
+              textColor={P.text}
+            />
+          </View>
+
+          <TenantLockedFeatureCard
+            title={preMoveInStatusTitle}
+            message={`${preMoveInStatusMessage} Messaging with management and staff unlocks automatically once your move-in is completed.`}
+            actionLabel={shouldShowMoveInCTA ? "Request Move In" : preMoveInActionLabel}
+            onPress={() =>
+              router.push(
+                shouldShowMoveInCTA
+                  ? ({
+                      pathname: "/(tenant)/lease-details",
+                      params: { openMoveModal: "move-in" },
+                    } as any)
+                  : ("/(tenant)/lease-details" as any),
+              )
+            }
+          />
+        </ScrollView>
+
+        <SideMenu isVisible={showSideMenu} onClose={() => setShowSideMenu(false)} />
+      </SafeAreaView>
+    );
+  }
+
+  if (isResidentHistoryLocked) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingBottom: tabBarHeight + 32, paddingTop: 0 },
+          ]}
+          refreshControl={
+            <RefreshControl
+              refreshing={false}
+              onRefresh={onRefresh}
+            />
+          }
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.headerBlock}>
+            <HeaderBar
+              title="Messages"
+              hasUnreadNotifications={hasUnreadNotifications}
+              showSideMenu={showSideMenu}
+              onSideMenuToggle={setShowSideMenu}
+              textColor={P.text}
+            />
+          </View>
+
+          <TenantLockedFeatureCard
+            title="Resident history unavailable"
+            message={error ?? RESIDENT_HISTORY_UNAVAILABLE_MESSAGE}
+            actionLabel="Review Lease Details"
+            onPress={() => router.push("/(tenant)/lease-details" as any)}
+          />
+        </ScrollView>
+
+        <SideMenu isVisible={showSideMenu} onClose={() => setShowSideMenu(false)} />
+      </SafeAreaView>
+    );
+  }
 
   const conversationItems = useMemo(
     () =>
@@ -507,7 +617,9 @@ export default function MessagesScreen() {
 
           <View style={styles.heroCopy}>
             <Text style={styles.heroEyebrow}>Conversation overview</Text>
-            <Text style={styles.heroTitle}>Everything you need to follow up, in one inbox</Text>
+            <Text style={styles.heroTitle}>
+              Everything you need to follow up, in one inbox
+            </Text>
             <Text style={styles.heroSubtitle}>
               Scan unread threads, search by team, and jump straight into the conversations that still need your attention.
             </Text>
@@ -533,16 +645,13 @@ export default function MessagesScreen() {
                 primary
               />
             ) : null}
-            <InboxAction icon="refresh-outline" label="Refresh" onPress={onRefresh} />
+            <InboxAction
+              icon="refresh-outline"
+              label="Refresh"
+              onPress={onRefresh}
+            />
           </View>
         </View>
-
-        {isFormerResident ? (
-          <View style={styles.infoBanner}>
-            <Ionicons name="information-circle-outline" size={18} color={P.warningText} />
-            <Text style={styles.infoBannerText}>{statusMessage}</Text>
-          </View>
-        ) : null}
 
         {featuredConversation ? (
           <TouchableOpacity
@@ -661,12 +770,10 @@ export default function MessagesScreen() {
       filteredConversations.length,
       hasUnreadNotifications,
       hasActiveQuery,
-      isFormerResident,
       loading,
       onRefresh,
       searchQuery,
       showSideMenu,
-      statusMessage,
       summary.total,
       summary.unread,
     ],

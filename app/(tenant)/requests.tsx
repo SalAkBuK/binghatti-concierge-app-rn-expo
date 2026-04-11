@@ -1,8 +1,9 @@
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -19,9 +20,11 @@ import { AnimatedButton } from "../../components/ui/AnimatedButton";
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { RequestsScreenSkeleton } from "../../components/ui/RequestsScreenSkeleton";
 import { SideMenu } from "../../components/ui/SideMenu";
+import { TenantLockedFeatureCard } from "../../components/ui/TenantLockedFeatureCard";
 import { useAuth } from "../../lib/context/auth-context";
 import { useNotifications } from "../../lib/context/notifications-context";
 import { useRequests } from "../../lib/context/requests-context";
+import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
 import { useResidentRequests } from "../../lib/hooks/useResidentRequests";
 import type { Request, RequestPriority, RequestStatus } from "../../lib/types";
 import {
@@ -32,6 +35,7 @@ import {
   filterNotificationsByUser,
   getUnreadNotificationsCount,
 } from "../../lib/utils/helpers";
+import { RESIDENT_HISTORY_UNAVAILABLE_MESSAGE } from "../../lib/utils/resident-history-access";
 
 const P = {
   bg: "#F8F9FA",
@@ -178,13 +182,41 @@ export default function RequestsScreen() {
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [page, setPage] = useState(1);
   const tabBarHeight = useBottomTabBarHeight();
+  const {
+    canCreateMaintenanceRequest,
+    isFormerResident,
+    isLoading: isTenancyLoading,
+    isPreMoveIn,
+    preMoveInActionLabel,
+    preMoveInStatusMessage,
+    preMoveInStatusTitle,
+    refetch: refetchTenancy,
+    statusMessage,
+    statusTitle,
+  } = useResidentTenancy({
+    enabled: Boolean(currentUser?.role === "tenant" && currentUser?.id),
+  });
+  const shouldShowMoveInCTA = preMoveInActionLabel === "Schedule Move-In";
 
   const {
     requests: backendRequests,
+    errorMessage,
+    historyUnavailable,
     isLoading,
     isRefreshing,
     refreshRequests,
   } = useResidentRequests({ currentUser, notifications });
+  const isResidentHistoryLocked = isFormerResident || historyUnavailable;
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!isPreMoveIn) {
+        return;
+      }
+
+      void refetchTenancy({ asRefresh: true, showLoading: false });
+    }, [isPreMoveIn, refetchTenancy]),
+  );
 
   const allRequestsByNewest = useMemo(
     () => [...backendRequests].sort((a, b) => getRequestTimestamp(b) - getRequestTimestamp(a)),
@@ -293,7 +325,14 @@ export default function RequestsScreen() {
 
   useEffect(() => {
     const requestId = params.requestId ? String(params.requestId) : null;
-    if (!requestId || handledRequestIdRef.current === requestId) return;
+    if (
+      isPreMoveIn ||
+      isResidentHistoryLocked ||
+      !requestId ||
+      handledRequestIdRef.current === requestId
+    ) {
+      return;
+    }
 
     const request = backendRequests.find((item) => item.id === requestId);
     if (!request) return;
@@ -301,10 +340,95 @@ export default function RequestsScreen() {
     handledRequestIdRef.current = requestId;
     requestActions.setSelectedRequest(request);
     router.push("/(modals)/request-details");
-  }, [backendRequests, params.requestId, requestActions]);
+  }, [backendRequests, isPreMoveIn, isResidentHistoryLocked, params.requestId, requestActions]);
 
   const userNotifications = filterNotificationsByUser(notifications || [], currentUser?.id);
   const hasUnreadNotifications = getUnreadNotificationsCount(userNotifications) > 0;
+
+  if (!isTenancyLoading && isPreMoveIn) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={{ paddingBottom: tabBarHeight + 32 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={false}
+              onRefresh={() => {
+                void refetchTenancy({ asRefresh: true, showLoading: false });
+              }}
+            />
+          }
+        >
+          <HeaderBar
+            title="My Requests"
+            hasUnreadNotifications={hasUnreadNotifications}
+            showSideMenu={showSideMenu}
+            onSideMenuToggle={setShowSideMenu}
+            textColor={P.text}
+          />
+
+          <View style={styles.lockedSection}>
+            <TenantLockedFeatureCard
+              title={preMoveInStatusTitle}
+              message={`${preMoveInStatusMessage} Maintenance requests will unlock automatically once your move-in is completed.`}
+              actionLabel={shouldShowMoveInCTA ? "Request Move In" : preMoveInActionLabel}
+              onPress={() =>
+                router.push(
+                  shouldShowMoveInCTA
+                    ? ({
+                        pathname: "/(tenant)/lease-details",
+                        params: { openMoveModal: "move-in" },
+                      } as any)
+                    : ("/(tenant)/lease-details" as any),
+                )
+              }
+            />
+          </View>
+        </ScrollView>
+
+        <SideMenu isVisible={showSideMenu} onClose={() => setShowSideMenu(false)} />
+      </SafeAreaView>
+    );
+  }
+
+  if (!isTenancyLoading && isResidentHistoryLocked) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={{ paddingBottom: tabBarHeight + 32 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={false}
+              onRefresh={() => {
+                void refetchTenancy({ asRefresh: true, showLoading: false });
+              }}
+            />
+          }
+        >
+          <HeaderBar
+            title="My Requests"
+            hasUnreadNotifications={hasUnreadNotifications}
+            showSideMenu={showSideMenu}
+            onSideMenuToggle={setShowSideMenu}
+            textColor={P.text}
+          />
+
+          <View style={styles.lockedSection}>
+            <TenantLockedFeatureCard
+              title="Resident history unavailable"
+              message={errorMessage ?? RESIDENT_HISTORY_UNAVAILABLE_MESSAGE}
+              actionLabel="Review Lease Details"
+              onPress={() => router.push("/(tenant)/lease-details" as any)}
+            />
+          </View>
+        </ScrollView>
+
+        <SideMenu isVisible={showSideMenu} onClose={() => setShowSideMenu(false)} />
+      </SafeAreaView>
+    );
+  }
 
   const renderRequestCard = ({ item: request }: { item: Request }) => {
     const ownerRejected = isResidentRequestOwnerRejected(request);
@@ -405,24 +529,40 @@ export default function RequestsScreen() {
         >
           <View style={styles.heroCopy}>
             <Text style={styles.heroEyebrow}>Service Desk</Text>
-            <Text style={styles.heroTitle}>Request Tracking</Text>
+            <Text style={styles.heroTitle}>
+              {isFormerResident ? "Request History" : "Request Tracking"}
+            </Text>
             <Text style={styles.heroSubtitle}>
-              {filterStatus === "all"
+              {isFormerResident
+                ? "Review the latest request history from your previous residency."
+                : filterStatus === "all"
                 ? `${stats.open} active requests need attention across your residence.`
                 : `${allUserRequests.length} request${allUserRequests.length === 1 ? "" : "s"} in ${activeFilterLabel.toLowerCase()}.`}
             </Text>
           </View>
 
-          <TouchableOpacity
-            style={styles.heroAction}
-            activeOpacity={0.88}
-            onPress={() => router.push("/(tenant)/new-request" as any)}
-          >
-            <Ionicons name="add-outline" size={16} color={P.surface} />
-            <Text style={styles.heroActionText}>New Request</Text>
-          </TouchableOpacity>
+          {canCreateMaintenanceRequest ? (
+            <TouchableOpacity
+              style={styles.heroAction}
+              activeOpacity={0.88}
+              onPress={() => router.push("/(tenant)/new-request" as any)}
+            >
+              <Ionicons name="add-outline" size={16} color={P.surface} />
+              <Text style={styles.heroActionText}>New Request</Text>
+            </TouchableOpacity>
+          ) : null}
         </LinearGradient>
       </View>
+
+      {isFormerResident ? (
+        <View style={styles.infoBanner}>
+          <Ionicons name="information-circle-outline" size={18} color={P.warningText} />
+          <View style={styles.infoBannerCopy}>
+            <Text style={styles.infoBannerTitle}>{statusTitle}</Text>
+            <Text style={styles.infoBannerText}>{statusMessage}</Text>
+          </View>
+        </View>
+      ) : null}
 
       <View style={styles.summaryRow}>
         {summaryCards.map((card) => (
@@ -489,15 +629,19 @@ export default function RequestsScreen() {
           <Text style={styles.emptyStateTitle}>No requests found</Text>
           <Text style={styles.emptyStateText}>
             {filterStatus === "all"
-              ? "Create a new service request to start tracking it here."
+              ? canCreateMaintenanceRequest
+                ? "Create a new service request to start tracking it here."
+                : "Your previous resident requests will appear here when history is available."
               : `There are no requests in ${activeFilterLabel.toLowerCase()} right now.`}
           </Text>
-          <TouchableOpacity
-            style={styles.emptyAction}
-            onPress={() => router.push("/(tenant)/new-request" as any)}
-          >
-            <Text style={styles.emptyActionText}>Create Request</Text>
-          </TouchableOpacity>
+          {canCreateMaintenanceRequest ? (
+            <TouchableOpacity
+              style={styles.emptyAction}
+              onPress={() => router.push("/(tenant)/new-request" as any)}
+            >
+              <Text style={styles.emptyActionText}>Create Request</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       );
     }
@@ -601,6 +745,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: P.bg,
   },
+  scrollView: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  lockedSection: {
+    paddingTop: 8,
+  },
   listContent: {
     paddingHorizontal: 20,
   },
@@ -650,6 +801,32 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     color: P.surface,
+  },
+  infoBanner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    marginBottom: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderRadius: 18,
+    backgroundColor: P.accent,
+    borderWidth: 1,
+    borderColor: P.accentBorder,
+  },
+  infoBannerCopy: {
+    flex: 1,
+  },
+  infoBannerTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: P.warningText,
+  },
+  infoBannerText: {
+    marginTop: 4,
+    fontSize: 13,
+    lineHeight: 19,
+    color: P.warningText,
   },
   summaryRow: {
     flexDirection: "row",

@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AppState, type AppStateStatus } from "react-native";
 
+import { useAuth } from "../context/auth-context";
 import { residentSelfServiceApi } from "../services/api/resident-self-service";
 import type {
   ResidentContractStatus,
   ResidentIdentity,
   ResidentLatestContract,
+  ResidentMoveRequestStatus,
+  ResidentOccupancyStatus,
   ResidentTenancyMode,
 } from "../types";
 
@@ -24,6 +28,7 @@ type UseResidentTenancyResult = {
   latestContract: ResidentLatestContract;
   mode: ResidentTenancyMode;
   isActiveResident: boolean;
+  isPreMoveIn: boolean;
   isFormerResident: boolean;
   hasActiveOccupancy: boolean;
   hasTenancyContext: boolean;
@@ -31,6 +36,9 @@ type UseResidentTenancyResult = {
   canCreateMaintenanceRequest: boolean;
   canManageVisitors: boolean;
   canCreateManagementConversation: boolean;
+  preMoveInStatusTitle: string;
+  preMoveInStatusMessage: string;
+  preMoveInActionLabel: string;
   statusTitle: string;
   statusMessage: string;
   displayBuildingName: string | null;
@@ -61,6 +69,8 @@ const EMPTY_LATEST_CONTRACT: ResidentLatestContract = {
 };
 
 const CACHE_TTL_MS = 30_000;
+const PRE_MOVE_IN_FOREGROUND_REFRESH_TTL_MS = 10_000;
+const PERSONA_SYNC_TTL_MS = 10_000;
 let cachedSnapshot: ResidentTenancySnapshot | null = null;
 let sharedRequestPromise: Promise<ResidentTenancySnapshot> | null = null;
 const tenancyListeners = new Set<() => void>();
@@ -96,18 +106,44 @@ const hasOccupancy = (resident: ResidentIdentity): boolean => {
   );
 };
 
+const isInactiveContractStatus = (
+  status: ResidentContractStatus | null | undefined,
+): boolean => status === "ENDED" || status === "CANCELLED";
+
 const deriveMode = (
   resident: ResidentIdentity,
   latestContract: ResidentLatestContract,
+  personaOccupancyStatus?: ResidentOccupancyStatus | null,
 ): ResidentTenancyMode => {
+  const normalizedPersonaOccupancyStatus =
+    typeof personaOccupancyStatus === "string"
+      ? personaOccupancyStatus.trim().toUpperCase()
+      : null;
   const occupancyExists = hasOccupancy(resident);
   const latestStatus = latestContract.contract?.status ?? null;
+  const hasCurrentContract = Boolean(latestContract.contract?.id);
 
-  if (occupancyExists && latestStatus !== "ENDED" && latestStatus !== "CANCELLED") {
+  if (normalizedPersonaOccupancyStatus === "ACTIVE") {
     return "active";
   }
 
-  if (!occupancyExists && (latestStatus === "ENDED" || latestStatus === "CANCELLED")) {
+  if (normalizedPersonaOccupancyStatus === "NONE") {
+    return "pre_move_in";
+  }
+
+  if (occupancyExists && !isInactiveContractStatus(latestStatus)) {
+    return "active";
+  }
+
+  if (!occupancyExists && hasCurrentContract && !isInactiveContractStatus(latestStatus)) {
+    return "pre_move_in";
+  }
+
+  if (normalizedPersonaOccupancyStatus === "FORMER") {
+    return "former_resident";
+  }
+
+  if (!occupancyExists && isInactiveContractStatus(latestStatus)) {
     return "former_resident";
   }
 
@@ -118,14 +154,73 @@ const deriveMode = (
   return "no_tenancy";
 };
 
+const getPreMoveInStatusCopy = (
+  latestMoveInRequestStatus: ResidentMoveRequestStatus,
+  canRequestMoveIn: boolean,
+): {
+  actionLabel: string;
+  message: string;
+  title: string;
+} => {
+  switch (latestMoveInRequestStatus) {
+    case "PENDING":
+      return {
+        title: "Move-in request submitted",
+        message:
+          "Your move-in request is under review. Requests, messages, and visitors will unlock automatically once your occupancy is activated.",
+        actionLabel: "Review Move-In",
+      };
+    case "APPROVED":
+      return {
+        title: "Move-in approved",
+        message:
+          "Your move-in request has been approved. Open lease details to review the timeline. Resident features will unlock once occupancy becomes active.",
+        actionLabel: "Review Move-In",
+      };
+    case "REJECTED":
+      return {
+        title: "Move-in needs attention",
+        message:
+          "Your last move-in request was rejected. Review the details and submit a new move-in request to unlock resident features.",
+        actionLabel: "Review Lease Details",
+      };
+    case "COMPLETED":
+      return {
+        title: "Finishing your move-in",
+        message:
+          "Your move-in has been recorded and resident access is being finalized. Features will unlock automatically once occupancy is active.",
+        actionLabel: "Review Lease Details",
+      };
+    case "CANCELLED":
+      return {
+        title: "Move-in not scheduled",
+        message:
+          "Your previous move-in request was cancelled. Open lease details to submit a new move-in request when you are ready.",
+        actionLabel: "Schedule Move-In",
+      };
+    default:
+      return {
+        title: "Before you move in",
+        message: canRequestMoveIn
+          ? "Your contract is active, but resident services unlock only after move-in is completed. Schedule your move-in from lease details to activate the full portal."
+          : "Your contract is active, but resident services unlock only after move-in is completed. Open lease details to check your move-in eligibility and next steps.",
+        actionLabel: canRequestMoveIn ? "Schedule Move-In" : "Review Lease Details",
+      };
+  }
+};
+
 export const useResidentTenancy = (
   options?: HookOptions,
 ): UseResidentTenancyResult => {
+  const { currentUser, actions: authActions } = useAuth();
   const enabled = options?.enabled ?? true;
   const providedLatestContract = options?.latestContractData;
   const onUnauthorized = options?.onUnauthorized;
   const onUnauthorizedRef = useRef(onUnauthorized);
   const inFlightRef = useRef(false);
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const lastForegroundRefreshAtRef = useRef(0);
+  const lastPersonaSyncAtRef = useRef(0);
 
   const [resident, setResident] = useState<ResidentIdentity>(EMPTY_IDENTITY);
   const [latestContract, setLatestContract] = useState<ResidentLatestContract>(
@@ -266,13 +361,52 @@ export const useResidentTenancy = (
   }, [load]);
 
   const mode = useMemo(
-    () => deriveMode(resident, latestContract),
-    [resident, latestContract],
+    () =>
+      deriveMode(
+        resident,
+        latestContract,
+        currentUser?.persona?.residentOccupancyStatus,
+      ),
+    [currentUser?.persona?.residentOccupancyStatus, latestContract, resident],
   );
+  const preMoveInCopy = useMemo(
+    () =>
+      getPreMoveInStatusCopy(
+        latestContract.latestMoveInRequestStatus,
+        latestContract.canRequestMoveIn,
+      ),
+    [latestContract.canRequestMoveIn, latestContract.latestMoveInRequestStatus],
+  );
+
+  useEffect(() => {
+    if (!enabled || mode !== "pre_move_in") {
+      return;
+    }
+
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      const shouldRefresh =
+        appStateRef.current.match(/inactive|background/) &&
+        nextAppState === "active" &&
+        Date.now() - lastForegroundRefreshAtRef.current >
+          PRE_MOVE_IN_FOREGROUND_REFRESH_TTL_MS;
+
+      appStateRef.current = nextAppState;
+
+      if (shouldRefresh) {
+        lastForegroundRefreshAtRef.current = Date.now();
+        void load({ asRefresh: true, showLoading: false });
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [enabled, load, mode]);
 
   const latestContractStatus = latestContract.contract?.status ?? null;
   const isFormerResident = mode === "former_resident";
   const isActiveResident = mode === "active";
+  const isPreMoveIn = mode === "pre_move_in";
   const hasActiveOccupancy = hasOccupancy(resident);
   const hasTenancyContext = Boolean(hasActiveOccupancy || latestContract.contract?.id);
   const displayBuildingName =
@@ -280,9 +414,44 @@ export const useResidentTenancy = (
   const displayUnitLabel =
     resident.occupancy?.unitLabel ?? latestContract.contract?.unitLabel ?? null;
 
+  useEffect(() => {
+    const currentPersonaStatus =
+      currentUser?.persona?.residentOccupancyStatus ?? null;
+    const shouldSyncPersona =
+      enabled &&
+      currentUser?.persona?.isResident === true &&
+      currentPersonaStatus !== "ACTIVE" &&
+      hasActiveOccupancy &&
+      !isInactiveContractStatus(latestContractStatus);
+
+    if (!shouldSyncPersona) {
+      return;
+    }
+
+    if (Date.now() - lastPersonaSyncAtRef.current < PERSONA_SYNC_TTL_MS) {
+      return;
+    }
+
+    lastPersonaSyncAtRef.current = Date.now();
+
+    void authActions.refreshCurrentUser().catch((error) => {
+      console.warn("[ResidentTenancy] Failed to refresh resident persona", error);
+    });
+  }, [
+    authActions,
+    currentUser?.id,
+    currentUser?.persona?.isResident,
+    currentUser?.persona?.residentOccupancyStatus,
+    enabled,
+    hasActiveOccupancy,
+    latestContractStatus,
+  ]);
+
   const statusTitle =
     mode === "former_resident"
       ? "Former resident"
+      : mode === "pre_move_in"
+        ? preMoveInCopy.title
       : mode === "no_tenancy"
         ? "No active unit"
         : "Active resident";
@@ -290,6 +459,8 @@ export const useResidentTenancy = (
   const statusMessage =
     mode === "former_resident"
       ? "You no longer have an active unit in this building. You can still view your previous contract details and history here."
+      : mode === "pre_move_in"
+        ? preMoveInCopy.message
       : mode === "no_tenancy"
         ? "Your account does not currently have an active unit. You can still access your available profile and tenancy history."
         : "";
@@ -299,6 +470,7 @@ export const useResidentTenancy = (
     latestContract,
     mode,
     isActiveResident,
+    isPreMoveIn,
     isFormerResident,
     hasActiveOccupancy,
     hasTenancyContext,
@@ -306,6 +478,9 @@ export const useResidentTenancy = (
     canCreateMaintenanceRequest: isActiveResident,
     canManageVisitors: isActiveResident,
     canCreateManagementConversation: isActiveResident,
+    preMoveInStatusTitle: preMoveInCopy.title,
+    preMoveInStatusMessage: preMoveInCopy.message,
+    preMoveInActionLabel: preMoveInCopy.actionLabel,
     statusTitle,
     statusMessage,
     displayBuildingName,

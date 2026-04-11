@@ -62,4 +62,22 @@ describe('notification recipient scoping', () => {
 
     expect(getUnreadNotificationsCount(notifications, 'tenant-1')).toBe(1);
   });
+
+  it('keeps reassignment notifications visible for displaced recipients even if assignee metadata changes', () => {
+    const notification = buildNotification({
+      id: 'assignment-reassigned',
+      userId: 'staff-removed',
+      type: 'REQUEST_ASSIGNED' as any,
+      data: {
+        requestId: 'request-1',
+        currentAssigneeUserId: 'staff-new',
+        previousAssigneeUserId: 'staff-removed',
+      } as any,
+    });
+
+    expect(filterNotificationsByUser([notification], 'staff-removed')).toEqual([
+      notification,
+    ]);
+    expect(filterNotificationsByUser([notification], 'staff-new')).toEqual([]);
+  });
 });

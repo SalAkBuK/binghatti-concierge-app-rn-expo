@@ -3,10 +3,7 @@ import React, { useEffect } from "react";
 import { AppBootstrapErrorScreen } from "../components/ui/AppBootstrapErrorScreen";
 import { LoadingScreen } from "../components/ui/LoadingScreen";
 import { useAuth } from "../lib/context/auth-context";
-import {
-  getMountedPortalConfig,
-  getPostLoginHrefForRole,
-} from "../lib/config/portals";
+import { resolveInitialMobileRoute } from "../lib/config/mobile-workspaces";
 
 export default function IndexScreen() {
   const {
@@ -64,18 +61,21 @@ export default function IndexScreen() {
     return <Redirect href="/change-password" />;
   }
 
-  const portalConfig = getMountedPortalConfig(currentUser.role);
-  const destinationHref = getPostLoginHrefForRole(currentUser.role) as Href;
+  const routeDecision = resolveInitialMobileRoute(currentUser);
 
-  if (portalConfig) {
-    console.log(
-      `[Index] ${currentUser.role} user, redirecting to ${portalConfig.rootHref}`,
-    );
-  } else {
-    console.log(
-      `[Index] No mounted portal for role "${currentUser.role}", redirecting to /portal-unavailable`,
-    );
+  if (routeDecision.type === "workspace_selector") {
+    console.log("[Index] Multiple mobile workspaces available, redirecting to selector");
+    return <Redirect href="/workspace-selector" />;
   }
 
-  return <Redirect href={destinationHref} />;
+  if (routeDecision.type === "unsupported") {
+    console.log("[Index] No supported mobile workspace found, redirecting to /portal-unavailable");
+    return <Redirect href="/portal-unavailable" />;
+  }
+
+  console.log(
+    `[Index] ${routeDecision.name} resolved for ${routeDecision.workspace}, redirecting to ${routeDecision.href}`,
+  );
+
+  return <Redirect href={routeDecision.href as Href} />;
 }

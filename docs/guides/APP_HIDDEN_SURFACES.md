@@ -35,6 +35,10 @@ Use this document when:
   - `Privacy Policy`, `Terms of Service`, and `Contact Support` are intentionally hidden from `app/auth.tsx` until real mobile destinations exist.
 - The login screen hides the old `Contact Management` footer line.
   - `app/auth.tsx` now ends the primary card at the cache action so production-backed sign-in copy does not point at a vague manual fallback.
+- Multi-persona accounts do not auto-collapse into a single mobile portal on first entry.
+  - They are routed through `app/workspace-selector.tsx` until a supported workspace is selected.
+- Accounts with no supported mobile workspace are blocked from portal entry.
+  - They land on `app/portal-unavailable.tsx` instead of being forced into a mounted portal.
 
 ### Building Employee Portal
 

@@ -152,13 +152,10 @@ export const useManagementRequestDetails = ({
 
         const response = await orgBuildingsApi.getRequest(buildingId, requestId);
         const data = (response as any)?.data ?? response ?? {};
-        console.log('[ManagementRequests] Raw request detail response:', response);
-
         const commentsResponse = await orgBuildingsApi.getComments(
           buildingId,
           requestId,
         );
-        console.log('[ManagementRequests] Raw comments response:', commentsResponse);
 
         const commentItems = getResponseItems<OrgBuildingRequestComment>(
           commentsResponse,

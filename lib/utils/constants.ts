@@ -70,6 +70,7 @@ export const STORAGE_KEYS = {
   refresh_token: "binghatti_refresh_token",
   user_data: "binghatti_user_data",
   user_role: "binghatti_user_role",
+  selected_mobile_workspace: "binghatti_selected_mobile_workspace",
   conversations: "binghatti_conversations",
   push_device_token: "binghatti_push_device_token",
   owner_push_device_id: "binghatti_owner_push_device_id",

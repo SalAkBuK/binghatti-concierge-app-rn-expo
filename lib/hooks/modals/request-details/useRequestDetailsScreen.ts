@@ -8,7 +8,10 @@ import {
   useAuth,
   useRequests,
 } from "../../../context/connected-app-provider";
-import { upsertResidentRequestSnapshot } from "../../useResidentRequests";
+import {
+  clearResidentRequestsCache,
+  upsertResidentRequestSnapshot,
+} from "../../useResidentRequests";
 import { apiService } from "../../../services/api";
 import { maintenanceApi } from "../../../services/api/maintenance";
 import { residentRequestsApi } from "../../../services/api/resident-requests";
@@ -32,6 +35,11 @@ import {
   normalizeRequestType,
 } from "./request-details-helpers";
 import { normalizeOwnerApprovalSnapshot } from "../../../utils/resident-request-approval";
+import {
+  hasActiveResidentHistoryAccess,
+  isActiveOccupancyRequiredError,
+  RESIDENT_HISTORY_UNAVAILABLE_MESSAGE,
+} from "../../../utils/resident-history-access";
 
 export type RequestDetailsComment = {
   id: string;
@@ -84,6 +92,8 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
   const [comments, setComments] = useState<RequestDetailsComment[]>([]);
   const [newComment, setNewComment] = useState("");
   const [isPostingComment, setIsPostingComment] = useState(false);
+  const [historyUnavailable, setHistoryUnavailable] = useState(false);
+  const [historyUnavailableMessage, setHistoryUnavailableMessage] = useState<string | null>(null);
   const assignedUserIdRef = useRef<string | null>(null);
   const assignedUserNameRef = useRef<string | null>(null);
   const managerNamesRef = useRef<Record<string, string>>({});
@@ -101,6 +111,7 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
   const [showImageViewer, setShowImageViewer] = useState(false);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const isTenantUser = currentUser?.role === "tenant";
+  const hasResidentHistoryAccess = hasActiveResidentHistoryAccess(currentUser);
   const lastDetailsFetchRef = useRef<{ id: string | null; inFlight: boolean }>({
     id: null,
     inFlight: false,
@@ -181,8 +192,21 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
       );
   }, []);
 
+  const markResidentHistoryUnavailable = useCallback(() => {
+    setComments([]);
+    setHistoryUnavailable(true);
+    setHistoryUnavailableMessage(RESIDENT_HISTORY_UNAVAILABLE_MESSAGE);
+    if (currentUser?.id) {
+      void clearResidentRequestsCache(currentUser.id);
+    }
+  }, [currentUser?.id]);
+
   const fetchDetails = useCallback(async () => {
     if (!selectedRequest?.id) return;
+    if (isTenantUser && !hasResidentHistoryAccess) {
+      markResidentHistoryUnavailable();
+      return;
+    }
 
     const requestId = String(selectedRequest.id);
     const lastFetch = lastDetailsFetchRef.current;
@@ -236,6 +260,8 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
       if (isTenantUser) {
         const response = await residentRequestsApi.getRequest(selectedRequest.id);
         if (response.success && response.data) {
+          setHistoryUnavailable(false);
+          setHistoryUnavailableMessage(null);
           const apiRequest = response.data;
           const ownerApproval =
             normalizeOwnerApprovalSnapshot(apiRequest) ??
@@ -362,6 +388,10 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
         }
       }
     } catch (error) {
+      if (isTenantUser && isActiveOccupancyRequiredError(error)) {
+        markResidentHistoryUnavailable();
+        return;
+      }
       console.error("[RequestDetails] Failed to fetch request details:", error);
     } finally {
       setFetchingDetails(false);
@@ -369,7 +399,9 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
     }
   }, [
     currentUser,
+    hasResidentHistoryAccess,
     isTenantUser,
+    markResidentHistoryUnavailable,
     mapComments,
     selectedRequest,
     setSelectedRequest,
@@ -387,6 +419,8 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
 
   useEffect(() => {
     setComments([]);
+    setHistoryUnavailable(false);
+    setHistoryUnavailableMessage(null);
     setResolvedBuildingName(null);
     lastDetailsFetchRef.current = {
       id: selectedRequest?.id ? String(selectedRequest.id) : null,
@@ -633,6 +667,12 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
         throw new Error(response.message || "Failed to delete request");
       }
     } catch (error: any) {
+      if (isTenantUser && isActiveOccupancyRequiredError(error)) {
+        markResidentHistoryUnavailable();
+        setShowDeleteConfirm(false);
+        Alert.alert("Resident History", RESIDENT_HISTORY_UNAVAILABLE_MESSAGE);
+        return;
+      }
       console.error("[RequestDetails] Error deleting request:", error);
       Alert.alert(
         "Error",
@@ -641,7 +681,13 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
     } finally {
       setLoading(false);
     }
-  }, [currentUser?.id, isTenantUser, selectedRequest, setSelectedRequest]);
+  }, [
+    currentUser?.id,
+    isTenantUser,
+    markResidentHistoryUnavailable,
+    selectedRequest,
+    setSelectedRequest,
+  ]);
 
   const handleUpdateRequest = useCallback(async () => {
     if (!selectedRequest) return;
@@ -745,6 +791,11 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
       setShowEditMode(false);
       Alert.alert("Success", "Request updated successfully");
     } catch (error: any) {
+      if (isTenantUser && isActiveOccupancyRequiredError(error)) {
+        markResidentHistoryUnavailable();
+        Alert.alert("Resident History", RESIDENT_HISTORY_UNAVAILABLE_MESSAGE);
+        return;
+      }
       Alert.alert(
         "Error",
         error?.message || "Failed to update request",
@@ -757,6 +808,7 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
     currentUser?.id,
     editForm,
     isTenantUser,
+    markResidentHistoryUnavailable,
     selectedRequest,
     setSelectedRequest,
     updateRequest,
@@ -764,6 +816,11 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
 
   const handleSubmitComment = useCallback(async () => {
     if (!selectedRequest || !newComment.trim() || !currentUser?.id) return;
+    if (isTenantUser && !hasResidentHistoryAccess) {
+      markResidentHistoryUnavailable();
+      Alert.alert("Resident History", RESIDENT_HISTORY_UNAVAILABLE_MESSAGE);
+      return;
+    }
 
     const requestStatus = normalizeStatus(selectedRequest.status);
     if (requestStatus === "cancelled" || requestStatus === "completed") return;
@@ -836,6 +893,11 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
         );
       }
     } catch (error) {
+      if (isTenantUser && isActiveOccupancyRequiredError(error)) {
+        markResidentHistoryUnavailable();
+        Alert.alert("Resident History", RESIDENT_HISTORY_UNAVAILABLE_MESSAGE);
+        return;
+      }
       console.error("[RequestDetails] Failed to add comment:", error);
       Alert.alert("Error", "Could not add your comment. Please try again.");
     } finally {
@@ -843,7 +905,9 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
     }
   }, [
     currentUser?.id,
+    hasResidentHistoryAccess,
     isTenantUser,
+    markResidentHistoryUnavailable,
     mapComments,
     newComment,
     selectedRequest,
@@ -858,6 +922,8 @@ export const useRequestDetailsScreen = (requestedInitialTab?: string) => {
     detailTab,
     setDetailTab,
     fetchingDetails,
+    historyUnavailable,
+    historyUnavailableMessage,
     newComment,
     setNewComment,
     isPostingComment,

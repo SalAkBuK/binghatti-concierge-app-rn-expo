@@ -9,22 +9,20 @@ import React, {
 } from "react";
 import * as SecureStore from "expo-secure-store";
 import { useAsyncStorage } from "../hooks/useAsyncStorage";
+import { clearResidentRequestsCache } from "../hooks/useResidentRequests";
+import { clearResidentContractCache } from "../hooks/useResidentSelfService";
+import { invalidateResidentTenancy } from "../hooks/useResidentTenancy";
 import {
-  hasCanonicalAccessAxes,
-  resolveAccessDerivedUserRole,
-  resolveClaimedUserRole,
-  resolveExplicitUserRole,
-  resolveProviderRoleClaim,
-  resolveUserRole,
-  shouldFetchAssignmentsForAuthRole,
-  shouldProbeProviderRuntimeForAuthRole,
-  shouldProbeOwnerRuntimeForAuthRole,
-} from "./auth-role";
+  getDefaultRoleFromPersona,
+  getMobileWorkspaces,
+  getResidentWorkspaceAccessLevel,
+  getRoleForMobileWorkspace,
+  normalizeUserPersona,
+} from "../config/mobile-workspaces";
 import { API_ENDPOINTS, STORAGE_KEYS } from "../utils";
 import apiService from "../services/api";
 import { ownerPortalApi } from "../services/api/owner-portal";
-import { providerPortalApi } from "../services/api/provider-portal";
-import type { ApiResponse, LoginDTO, User } from "../types";
+import type { ApiResponse, LoginDTO, MobileWorkspace, User } from "../types";
 
 // Auth State Interface
 interface AuthState {
@@ -47,6 +45,7 @@ interface AuthActions {
   }) => void;
   login: (credentials: LoginDTO) => Promise<void>;
   logout: () => Promise<void>;
+  refreshCurrentUser: () => Promise<User | null>;
   updateProfile: (userData: Partial<User>) => Promise<User>;
   updateUser: (email: string, userData: User) => Promise<User>;
   addUser: (email: string, userData: User) => void;
@@ -56,6 +55,7 @@ interface AuthActions {
   clearError: () => void;
   retryBootstrap: () => void;
   recoverFromBootstrapError: () => Promise<void>;
+  selectWorkspace: (workspace: MobileWorkspace) => Promise<void>;
 }
 
 // Auth Context Type
@@ -172,48 +172,6 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
-const resolveRoleFromAssignments = (assignments: any[]): User["role"] | null => {
-  if (!Array.isArray(assignments) || assignments.length === 0) {
-    return null;
-  }
-
-  const types = assignments
-    .map((assignment) => assignment?.type)
-    .filter((value) => typeof value === "string")
-    .map((value) => value.toUpperCase());
-
-  if (types.some((type) => type.includes("MANAGER") || type.includes("MANAGEMENT"))) {
-    return "management";
-  }
-
-  if (types.some((type) => type.includes("STAFF") || type.includes("EMPLOYEE"))) {
-    return "building_employee";
-  }
-
-  return null;
-};
-
-const buildAssignmentProfile = (assignments: any[], role: User["role"]) => {
-  const assignmentBuildingIds = assignments
-    .map((assignment) => assignment?.buildingId)
-    .filter((id) => id != null)
-    .map((id) => String(id));
-  const assignmentBuildingName = assignments.find(
-    (assignment) => assignment?.buildingName,
-  )?.buildingName;
-  const assignmentProfile: Record<string, any> = {};
-  if (assignmentBuildingIds.length > 0) {
-    assignmentProfile.buildingId = assignmentBuildingIds[0];
-    if (role === "management") {
-      assignmentProfile.managedBuildingIds = assignmentBuildingIds;
-    }
-  }
-  if (assignmentBuildingName) {
-    assignmentProfile.buildingName = assignmentBuildingName;
-  }
-  return assignmentProfile;
-};
-
 const asAccessEntries = (value: unknown): Record<string, any>[] => {
   if (Array.isArray(value)) {
     return value.filter(
@@ -303,51 +261,88 @@ const buildAccessProfile = (
   return accessProfile;
 };
 
-const getStatusCode = (error: unknown): number | undefined => {
-  if (!error || typeof error !== "object") {
-    return undefined;
+const getWorkspaceSelectionKey = (user: {
+  id?: unknown;
+  email?: unknown;
+}): string | null => {
+  if (typeof user.id === "string" && user.id.length > 0) {
+    return `id:${user.id}`;
   }
 
-  const status = (error as { status?: unknown }).status;
-  return typeof status === "number" ? status : undefined;
-};
-
-const OWNER_ACCESS_REQUIRED_CODE = "OWNER_ACCESS_REQUIRED";
-
-const createOwnerAccessError = (): Error & { code: string } => {
-  const error = new Error(
-    "Owner access is not active for this account.",
-  ) as Error & { code: string };
-  error.code = OWNER_ACCESS_REQUIRED_CODE;
-  return error;
-};
-
-const getAssignmentsPayload = (response: any): any[] =>
-  Array.isArray(response)
-    ? response
-    : Array.isArray(response?.data)
-      ? response.data
-      : [];
-
-const buildProviderProfile = (providers: Array<{ id?: string; name?: string }>) => {
-  const providerIds = providers
-    .map((provider) => provider?.id)
-    .filter((id): id is string => typeof id === "string" && id.length > 0);
-  const providerNames = providers
-    .map((provider) => provider?.name)
-    .filter((name): name is string => typeof name === "string" && name.length > 0);
-  const providerProfile: Record<string, any> = {
-    providerMembershipCount: providers.length,
-    providerMembershipIds: providerIds,
-    providerMembershipNames: providerNames,
-  };
-
-  if (providers.length === 1) {
-    providerProfile.serviceProviderId = providers[0]?.id;
-    providerProfile.serviceProviderName = providers[0]?.name;
+  if (typeof user.email === "string" && user.email.length > 0) {
+    return `email:${user.email.toLowerCase()}`;
   }
 
-  return providerProfile;
+  return null;
+};
+
+const readStoredWorkspaceSelections = async (): Promise<
+  Record<string, MobileWorkspace>
+> => {
+  try {
+    const rawValue = await SecureStore.getItemAsync(
+      STORAGE_KEYS.selected_mobile_workspace,
+    );
+
+    if (!rawValue) {
+      return {};
+    }
+
+    const parsedValue = JSON.parse(rawValue);
+    return parsedValue && typeof parsedValue === "object"
+      ? (parsedValue as Record<string, MobileWorkspace>)
+      : {};
+  } catch (error) {
+    console.warn("[Auth] Failed to read saved workspace selection:", error);
+    return {};
+  }
+};
+
+const getSavedWorkspaceSelection = async (
+  user: {
+    id?: unknown;
+    email?: unknown;
+  },
+  availableWorkspaces: MobileWorkspace[],
+): Promise<MobileWorkspace | null> => {
+  const selectionKey = getWorkspaceSelectionKey(user);
+
+  if (!selectionKey || availableWorkspaces.length === 0) {
+    return null;
+  }
+
+  const storedSelections = await readStoredWorkspaceSelections();
+  const savedWorkspace = storedSelections[selectionKey];
+
+  return savedWorkspace && availableWorkspaces.includes(savedWorkspace)
+    ? savedWorkspace
+    : null;
+};
+
+const persistWorkspaceSelection = async (
+  user: {
+    id?: unknown;
+    email?: unknown;
+  },
+  workspace: MobileWorkspace,
+): Promise<void> => {
+  const selectionKey = getWorkspaceSelectionKey(user);
+
+  if (!selectionKey) {
+    return;
+  }
+
+  const storedSelections = await readStoredWorkspaceSelections();
+  storedSelections[selectionKey] = workspace;
+
+  try {
+    await SecureStore.setItemAsync(
+      STORAGE_KEYS.selected_mobile_workspace,
+      JSON.stringify(storedSelections),
+    );
+  } catch (error) {
+    console.warn("[Auth] Failed to save workspace selection:", error);
+  }
 };
 
 // Auth Provider Component
@@ -368,138 +363,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     ...initialState,
     users: mergedInitialUsers,
   });
-
-  const resolveOwnerRuntimeRole = async (
-    role: User["role"] | null,
-    source: "login" | "restore",
-  ): Promise<User["role"] | null> => {
-    if (!shouldProbeOwnerRuntimeForAuthRole(role)) {
-      return role;
-    }
-
-    try {
-      await ownerPortalApi.getSummary();
-      console.log(`[Auth] Owner runtime probe succeeded during ${source}`);
-      return "owner";
-    } catch (error) {
-      const status = getStatusCode(error);
-
-      if (status === 401 || status === 403 || status === 404) {
-        if (role === "owner") {
-          throw createOwnerAccessError();
-        }
-
-        console.log(
-          `[Auth] Owner runtime probe skipped owner routing during ${source}:`,
-          status,
-        );
-        return role;
-      }
-
-      console.warn(
-        `[Auth] Owner runtime probe failed during ${source}:`,
-        error,
-      );
-      return role;
-    }
-  };
-
-  const resolveProviderRuntimeRole = async (
-    role: User["role"] | null,
-    source: "login" | "restore",
-  ): Promise<{
-    role: User["role"] | null;
-    providerProfile: Record<string, any>;
-    providerRuntimePresent: boolean;
-  }> => {
-    if (!shouldProbeProviderRuntimeForAuthRole(role)) {
-      return {
-        role,
-        providerProfile: {},
-        providerRuntimePresent: false,
-      };
-    }
-
-    try {
-      const runtime = await providerPortalApi.getMe();
-      const providers = Array.isArray(runtime.providers) ? runtime.providers : [];
-
-      if (providers.length === 0) {
-        if (role === "service_provider") {
-          console.log(`[Auth] Provider runtime resolved no active memberships during ${source}`);
-          return {
-            role: "service_provider",
-            providerProfile: buildProviderProfile([]),
-            providerRuntimePresent: true,
-          };
-        }
-
-        return {
-          role,
-          providerProfile: {},
-          providerRuntimePresent: false,
-        };
-      }
-
-      console.log(
-        `[Auth] Provider runtime resolved ${providers.length} membership(s) during ${source}`,
-      );
-      return {
-        role: "service_provider",
-        providerProfile: buildProviderProfile(providers),
-        providerRuntimePresent: true,
-      };
-    } catch (error) {
-      const status = getStatusCode(error);
-
-      if (status === 401) {
-        throw error;
-      }
-
-      if (status === 403) {
-        if (role === "service_provider") {
-          console.log(`[Auth] Provider runtime denied access during ${source}`);
-          return {
-            role: "service_provider",
-            providerProfile: buildProviderProfile([]),
-            providerRuntimePresent: true,
-          };
-        }
-
-        console.log(
-          `[Auth] Provider runtime probe skipped provider routing during ${source}:`,
-          status,
-        );
-        return {
-          role,
-          providerProfile: {},
-          providerRuntimePresent: false,
-        };
-      }
-
-      if (status === 404) {
-        console.log(
-          `[Auth] Provider runtime probe endpoint unavailable during ${source}:`,
-          status,
-        );
-        return {
-          role,
-          providerProfile: {},
-          providerRuntimePresent: false,
-        };
-      }
-
-      console.warn(
-        `[Auth] Provider runtime probe failed during ${source}:`,
-        error,
-      );
-      return {
-        role,
-        providerProfile: {},
-        providerRuntimePresent: false,
-      };
-    }
-  };
 
   // Sync users from AsyncStorage to state when loaded (only once on mount)
   useEffect(() => {
@@ -594,6 +457,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, [users, isLoadingUsers, isInitialized, setUsers]);
 
   const clearPersistedSession = useCallback(async (): Promise<void> => {
+    await clearResidentRequestsCache();
+    clearResidentContractCache();
+    invalidateResidentTenancy();
+
     try {
       await apiService.clearAuthToken();
     } catch (error) {
@@ -612,6 +479,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     } catch (error) {
       console.warn("[Auth] Failed to clear persisted session state:", error);
     }
+  }, []);
+
+  const resetResidentRuntimeCaches = useCallback((): void => {
+    clearResidentContractCache();
+    invalidateResidentTenancy();
   }, []);
 
   // Update AsyncStorage when users change (but not on initial load)
@@ -645,63 +517,36 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             try {
               const userData = JSON.parse(savedUserData);
               let resolvedUser = userData;
-              const providerRoleClaim = resolveProviderRoleClaim(userData);
-              const claimedRole =
-                resolveClaimedUserRole(userData) ?? resolvedUser?.role ?? null;
-              const providerRuntime = await resolveProviderRuntimeRole(
-                providerRoleClaim ?? claimedRole,
-                "restore",
+              const persona = normalizeUserPersona(resolvedUser?.persona);
+              const availableWorkspaces = getMobileWorkspaces({
+                persona,
+              });
+              const savedWorkspace = await getSavedWorkspaceSelection(
+                resolvedUser,
+                availableWorkspaces,
               );
-              let resolvedRole = providerRuntime.role;
-              if (!providerRuntime.providerRuntimePresent) {
-                resolvedRole = await resolveOwnerRuntimeRole(
-                  claimedRole,
-                  "restore",
-                );
-              }
-              let assignmentsPayload: any[] = [];
-              if (
-                !providerRuntime.providerRuntimePresent &&
-                shouldFetchAssignmentsForAuthRole(resolvedRole) &&
-                !hasCanonicalAccessAxes(resolvedUser)
-              ) {
-                try {
-                  const assignmentsResponse = await apiService.users.getMyAssignments();
-                  assignmentsPayload = getAssignmentsPayload(assignmentsResponse);
-                  console.log("[AuthProvider] Assignments response:", assignmentsPayload);
-                } catch (assignmentError) {
-                  console.warn("[AuthProvider] Failed to load assignments:", assignmentError);
-                }
-              }
+              const activeWorkspace =
+                resolvedUser?.activeWorkspace &&
+                availableWorkspaces.includes(resolvedUser.activeWorkspace)
+                  ? resolvedUser.activeWorkspace
+                  : savedWorkspace ??
+                    (availableWorkspaces.length === 1
+                      ? availableWorkspaces[0]
+                      : null);
+              const resolvedRole = activeWorkspace
+                ? getRoleForMobileWorkspace(activeWorkspace, persona)
+                : getDefaultRoleFromPersona(
+                    persona,
+                    resolvedUser?.role ?? "tenant",
+                  );
 
-              const accessDerivedRole = resolveAccessDerivedUserRole(resolvedUser);
-              const assignmentRole = !providerRuntime.providerRuntimePresent
-                ? resolveRoleFromAssignments(assignmentsPayload)
-                : null;
-              resolvedRole =
-                resolvedRole ??
-                accessDerivedRole ??
-                assignmentRole ??
-                claimedRole ??
-                resolveUserRole(resolvedUser);
-
-              if (resolvedRole && resolvedUser?.role !== resolvedRole) {
-                resolvedUser = {
-                  ...resolvedUser,
-                  role: resolvedRole,
-                };
-              }
-
-              if (resolvedUser?.role == null) {
-                const fallbackRole = resolveUserRole(resolvedUser);
-                if (!fallbackRole) {
-                  throw new Error("Stored session is missing a resolvable role");
-                }
-                resolvedUser = {
-                  ...resolvedUser,
-                  role: fallbackRole,
-                };
-              }
+              resolvedUser = {
+                ...resolvedUser,
+                persona,
+                mobileWorkspaces: availableWorkspaces,
+                activeWorkspace,
+                role: resolvedRole,
+              };
 
               const restoredAccessProfile = buildAccessProfile(
                 resolvedUser,
@@ -713,32 +558,35 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                   profile: {
                     ...(resolvedUser?.profile ?? {}),
                     ...restoredAccessProfile,
-                    ...providerRuntime.providerProfile,
-                    ...(!providerRuntime.providerRuntimePresent && assignmentRole
-                      ? buildAssignmentProfile(assignmentsPayload, assignmentRole)
-                      : {}),
-                  },
-                };
-              } else if (
-                Object.keys(providerRuntime.providerProfile).length > 0 ||
-                (!providerRuntime.providerRuntimePresent && assignmentRole)
-              ) {
-                resolvedUser = {
-                  ...resolvedUser,
-                  profile: {
-                    ...(resolvedUser?.profile ?? {}),
-                    ...providerRuntime.providerProfile,
-                    ...(!providerRuntime.providerRuntimePresent && assignmentRole
-                      ? buildAssignmentProfile(assignmentsPayload, assignmentRole)
-                      : {}),
                   },
                 };
               }
 
-              if (resolvedUser.role === "tenant") {
+              if (activeWorkspace && availableWorkspaces.length > 1) {
+                await persistWorkspaceSelection(resolvedUser, activeWorkspace);
+              }
+
+              if (activeWorkspace === "resident" || resolvedUser.role === "tenant") {
                 resolvedUser = await enrichTenantProfile(resolvedUser);
               }
-              console.log('[AuthProvider] Restored user from storage:', { email: resolvedUser.email, role: resolvedUser.role });
+              if (getResidentWorkspaceAccessLevel(persona) !== "active") {
+                await clearResidentRequestsCache(resolvedUser.id);
+                resetResidentRuntimeCaches();
+              }
+              console.log('[AuthProvider] Restored persona summary:', {
+                personaKeys: persona.keys,
+                residentOccupancyStatus: persona.residentOccupancyStatus,
+                residentInviteStatus: persona.residentInviteStatus,
+                isResident: persona.isResident,
+                activeWorkspace,
+                resolvedRole,
+              });
+              console.log('[AuthProvider] Restored user from storage:', {
+                email: resolvedUser.email,
+                role: resolvedUser.role,
+                activeWorkspace,
+                availableWorkspaces,
+              });
 
               // Restore auth state from saved data
               dispatch({
@@ -761,16 +609,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
               console.log('[AuthProvider] Session restored successfully!');
             } catch (parseError) {
-              if (
-                parseError &&
-                typeof parseError === "object" &&
-                "code" in parseError &&
-                (parseError as { code?: unknown }).code === OWNER_ACCESS_REQUIRED_CODE
-              ) {
-                console.warn("[AuthProvider] Stored owner session no longer has active owner access");
-              } else {
-                console.error('[AuthProvider] Failed to parse saved user data:', parseError);
-              }
+              console.error('[AuthProvider] Failed to parse saved user data:', parseError);
 
               // Clear invalid data
               await SecureStore.deleteItemAsync(STORAGE_KEYS.user_data);
@@ -960,65 +799,48 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         await apiService.setAuthTokens({ accessToken, refreshToken });
 
-        const providerRoleClaim = resolveProviderRoleClaim(payloadUser);
-        const claimedUserRole = resolveClaimedUserRole(payloadUser);
-        const explicitUserRole = resolveExplicitUserRole(payloadUser);
-        const providerRuntime = await resolveProviderRuntimeRole(
-          providerRoleClaim ?? claimedUserRole,
-          "login",
-        );
-        let userRole = providerRuntime.role;
-        if (!providerRuntime.providerRuntimePresent) {
-          userRole = await resolveOwnerRuntimeRole(claimedUserRole, "login");
-        }
-        let assignmentsPayload: any[] = [];
-        if (
-          !providerRuntime.providerRuntimePresent &&
-          shouldFetchAssignmentsForAuthRole(userRole) &&
-          !hasCanonicalAccessAxes(payloadUser)
-        ) {
-          try {
-            const assignmentsResponse = await apiService.users.getMyAssignments();
-            console.log("[Auth] Assignments raw response:", assignmentsResponse);
-            assignmentsPayload = getAssignmentsPayload(assignmentsResponse);
-            console.log("[Auth] Assignments response:", assignmentsPayload);
-          } catch (assignmentError) {
-            console.warn("[Auth] Failed to load assignments:", assignmentError);
-          }
-        }
-
         const nowIso = new Date().toISOString();
         const userEmail = (payloadUser.email || normalizedEmail).toLowerCase();
         const existingUser = state.users[userEmail];
-        const accessDerivedRole = resolveAccessDerivedUserRole(payloadUser);
-        const assignmentRole = !providerRuntime.providerRuntimePresent
-          ? resolveRoleFromAssignments(assignmentsPayload)
-          : null;
-        userRole =
-          userRole ??
-          accessDerivedRole ??
-          assignmentRole ??
-          claimedUserRole ??
-          resolveUserRole(payloadUser);
-        if (!userRole) {
-          throw new Error("Unable to resolve user role from login response");
+        const persona = normalizeUserPersona(payloadUser?.persona);
+        if (!persona) {
+          throw new Error("Login response did not include persona");
         }
-        console.log("[Auth] Resolved user role:", {
-          rawRole: payloadUser?.role ?? payloadUser?.roleKey ?? payloadUser?.roleName ?? payloadUser?.userRole ?? payloadUser?.type,
-          explicitRole: explicitUserRole,
-          claimedRole: claimedUserRole,
+        const availableWorkspaces = getMobileWorkspaces({ persona });
+        const savedWorkspace = await getSavedWorkspaceSelection(
+          {
+            id: payloadUser?.id ? String(payloadUser.id) : existingUser?.id,
+            email: userEmail,
+          },
+          availableWorkspaces,
+        );
+        const activeWorkspace =
+          savedWorkspace ??
+          (availableWorkspaces.length === 1 ? availableWorkspaces[0] : null);
+        const userRole = activeWorkspace
+          ? getRoleForMobileWorkspace(activeWorkspace, persona)
+          : getDefaultRoleFromPersona(persona, existingUser?.role ?? "tenant");
+
+        console.log("[Auth] Resolved mobile workspace:", {
+          personaKeys: persona.keys,
+          availableWorkspaces,
+          activeWorkspace,
           resolvedRole: userRole,
-          assignmentRole,
-          accessDerivedRole,
-          providerRuntimePresent: providerRuntime.providerRuntimePresent,
-          providerRoleClaim,
+          residentOccupancyStatus: persona.residentOccupancyStatus,
+          residentInviteStatus: persona.residentInviteStatus,
+        });
+        console.log("[Auth] Persona summary:", {
+          id: payloadUser?.id,
+          email: userEmail,
+          personaKeys: persona.keys,
+          isResident: persona.isResident,
+          residentOccupancyStatus: persona.residentOccupancyStatus,
+          residentInviteStatus: persona.residentInviteStatus,
+          activeWorkspace,
+          resolvedRole: userRole,
         });
 
         const accessProfile = buildAccessProfile(payloadUser, userRole);
-        const assignmentProfile =
-          !providerRuntime.providerRuntimePresent && assignmentRole
-            ? buildAssignmentProfile(assignmentsPayload, assignmentRole)
-            : {};
 
         const authenticatedUser: User = {
           id: payloadUser?.id
@@ -1045,10 +867,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             payloadUser?.buildingAssignments ??
             existingUser?.buildingAccess ??
             null,
+          buildingAssignments:
+            payloadUser?.buildingAssignments ??
+            existingUser?.buildingAssignments ??
+            null,
           resident:
             payloadUser?.resident ??
             existingUser?.resident ??
             null,
+          persona,
+          mobileWorkspaces: availableWorkspaces,
+          activeWorkspace,
           effectivePermissions:
             Array.isArray(payloadUser?.effectivePermissions)
               ? payloadUser.effectivePermissions.filter(
@@ -1074,15 +903,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               payloadUser?.phoneNumber ??
               existingUser?.profile?.phone,
             ...accessProfile,
-            ...assignmentProfile,
-            ...providerRuntime.providerProfile,
           },
           createdAt: existingUser?.createdAt ?? payloadUser?.createdAt ?? nowIso,
           updatedAt: payloadUser?.updatedAt ?? nowIso,
         };
 
+        if (activeWorkspace && availableWorkspaces.length > 1) {
+          await persistWorkspaceSelection(authenticatedUser, activeWorkspace);
+        }
+
+        await clearResidentRequestsCache(authenticatedUser.id);
+        resetResidentRuntimeCaches();
+
         let resolvedUser = authenticatedUser;
-        if (userRole === "tenant") {
+        if (activeWorkspace === "resident" || userRole === "tenant") {
           resolvedUser = await enrichTenantProfile(authenticatedUser);
         }
 
@@ -1127,9 +961,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         } else if (error?.status === 500) {
           console.warn("[Auth] Login failed: server error");
           errorMessage = "Server error. Please try again later";
-        } else if (error?.code === OWNER_ACCESS_REQUIRED_CODE) {
-          console.warn("[Auth] Login failed: owner access is not active");
-          errorMessage = "Owner access is not active for this account.";
         } else if (error.code === "NETWORK_ERROR" || error.message?.includes("Network")) {
           console.warn("[Auth] Login failed: network error");
           errorMessage = "Network error. Please check your connection.";
@@ -1145,6 +976,66 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         throw new Error(errorMessage);
       }
     },
+    selectWorkspace: async (workspace: MobileWorkspace): Promise<void> => {
+      if (!state.currentUser) {
+        throw new Error("No user logged in");
+      }
+
+      const persona = normalizeUserPersona(state.currentUser.persona);
+      const availableWorkspaces = getMobileWorkspaces({
+        persona,
+      });
+
+      if (!availableWorkspaces.includes(workspace)) {
+        throw new Error("Selected workspace is not available for this account");
+      }
+
+      actions.clearError();
+
+      const role = getRoleForMobileWorkspace(workspace, persona);
+      let updatedUser: User = {
+        ...state.currentUser,
+        persona,
+        role,
+        mobileWorkspaces: availableWorkspaces,
+        activeWorkspace: workspace,
+      };
+
+      if (workspace === "resident") {
+        updatedUser = await enrichTenantProfile(updatedUser);
+      }
+
+      await clearResidentRequestsCache(updatedUser.id);
+      resetResidentRuntimeCaches();
+
+      dispatch({
+        type: AUTH_ACTIONS.UPDATE_USER,
+        payload: {
+          email: updatedUser.email,
+          user: updatedUser,
+        },
+      });
+
+      actions.setAuth({
+        isAuthenticated: state.isAuthenticated,
+        currentUser: updatedUser,
+        userRole: updatedUser.role,
+      });
+
+      await persistWorkspaceSelection(updatedUser, workspace);
+
+      try {
+        await SecureStore.setItemAsync(
+          STORAGE_KEYS.user_data,
+          JSON.stringify(updatedUser),
+        );
+      } catch (storageError) {
+        console.warn(
+          "[Auth] Failed to persist selected workspace to SecureStore:",
+          storageError,
+        );
+      }
+    },
     logout: async (): Promise<void> => {
       try {
         actions.setLoading(true);
@@ -1152,6 +1043,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         console.log('[Auth] Logging out, clearing session data...');
         const currentRole = state.currentUser?.role;
+        const currentUserId = state.currentUser?.id;
+        const hasOwnerWorkspace =
+          state.currentUser?.activeWorkspace === "owner" ||
+          state.currentUser?.mobileWorkspaces?.includes("owner") ||
+          state.currentUser?.persona?.isOwner === true;
 
         // Clear auth state
         actions.setAuth({
@@ -1162,6 +1058,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         // Clear persisted session data from SecureStore
         try {
+          await clearResidentRequestsCache(currentUserId);
           const pushDeviceToken = await SecureStore.getItemAsync(
             STORAGE_KEYS.push_device_token,
           );
@@ -1177,7 +1074,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               console.warn("[Auth] Failed to unregister push device:", pushError);
             }
           }
-          if (currentRole === 'owner' && ownerPushDeviceId) {
+          if ((currentRole === 'owner' || hasOwnerWorkspace) && ownerPushDeviceId) {
             try {
               await ownerPortalApi.deleteNotificationDevice(ownerPushDeviceId);
             } catch (ownerPushError) {
@@ -1207,6 +1104,175 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         actions.setError(error.message || "Logout failed");
         throw error;
       }
+    },
+
+    refreshCurrentUser: async (): Promise<User | null> => {
+      if (!state.currentUser) {
+        return null;
+      }
+
+      const currentUser = state.currentUser;
+      const response = await apiService.getProfile();
+      const payloadUser =
+        (response as ApiResponse<any>)?.data ??
+        (response as { user?: any })?.user ??
+        response;
+
+      if (!payloadUser || typeof payloadUser !== "object") {
+        throw new Error("Current user refresh returned an invalid payload");
+      }
+
+      const userEmail = String(
+        payloadUser?.email ?? currentUser.email,
+      ).trim().toLowerCase();
+      const persona = normalizeUserPersona(
+        payloadUser?.persona ?? currentUser.persona,
+      );
+
+      if (!persona) {
+        throw new Error("Current user refresh did not include persona");
+      }
+
+      const availableWorkspaces = getMobileWorkspaces({ persona });
+      const savedWorkspace = await getSavedWorkspaceSelection(
+        {
+          id:
+            payloadUser?.id != null
+              ? String(payloadUser.id)
+              : currentUser.id,
+          email: userEmail,
+        },
+        availableWorkspaces,
+      );
+      const activeWorkspace =
+        currentUser.activeWorkspace &&
+        availableWorkspaces.includes(currentUser.activeWorkspace)
+          ? currentUser.activeWorkspace
+          : savedWorkspace ??
+            (availableWorkspaces.length === 1 ? availableWorkspaces[0] : null);
+      const userRole = activeWorkspace
+        ? getRoleForMobileWorkspace(activeWorkspace, persona)
+        : getDefaultRoleFromPersona(persona, currentUser.role ?? "tenant");
+      const accessProfile = buildAccessProfile(payloadUser, userRole);
+
+      let refreshedUser: User = {
+        ...currentUser,
+        id:
+          payloadUser?.id != null ? String(payloadUser.id) : currentUser.id,
+        email: userEmail,
+        name:
+          payloadUser?.name ??
+          payloadUser?.fullName ??
+          currentUser.name ??
+          userEmail,
+        role: userRole,
+        orgId:
+          payloadUser?.orgId ??
+          payloadUser?.org_id ??
+          currentUser.orgId,
+        orgAccess:
+          payloadUser?.orgAccess ??
+          currentUser.orgAccess ??
+          null,
+        buildingAccess:
+          payloadUser?.buildingAccess ??
+          payloadUser?.buildingAssignments ??
+          currentUser.buildingAccess ??
+          null,
+        buildingAssignments:
+          payloadUser?.buildingAssignments ??
+          currentUser.buildingAssignments ??
+          null,
+        resident:
+          payloadUser?.resident ??
+          currentUser.resident ??
+          null,
+        persona,
+        mobileWorkspaces: availableWorkspaces,
+        activeWorkspace,
+        effectivePermissions:
+          Array.isArray(payloadUser?.effectivePermissions)
+            ? payloadUser.effectivePermissions.filter(
+                (permission: unknown): permission is string =>
+                  typeof permission === "string" && permission.length > 0,
+              )
+            : currentUser.effectivePermissions ?? [],
+        phone:
+          payloadUser?.phone ??
+          payloadUser?.phoneNumber ??
+          currentUser.phone,
+        mustChangePassword:
+          payloadUser?.mustChangePassword ?? currentUser.mustChangePassword,
+        profile: {
+          ...(currentUser.profile ?? {}),
+          ...(payloadUser?.profile && typeof payloadUser.profile === "object"
+            ? payloadUser.profile
+            : {}),
+          name:
+            payloadUser?.name ??
+            payloadUser?.fullName ??
+            currentUser.profile?.name,
+          phone:
+            payloadUser?.phone ??
+            payloadUser?.phoneNumber ??
+            currentUser.profile?.phone,
+          ...accessProfile,
+        },
+        createdAt:
+          currentUser.createdAt ??
+          payloadUser?.createdAt ??
+          new Date().toISOString(),
+        updatedAt: payloadUser?.updatedAt ?? new Date().toISOString(),
+      };
+
+      if (activeWorkspace && availableWorkspaces.length > 1) {
+        await persistWorkspaceSelection(refreshedUser, activeWorkspace);
+      }
+
+      if (persona.isResident || currentUser.persona?.isResident) {
+        await clearResidentRequestsCache(refreshedUser.id);
+        resetResidentRuntimeCaches();
+      }
+
+      if (activeWorkspace === "resident" || userRole === "tenant") {
+        refreshedUser = await enrichTenantProfile(refreshedUser);
+      }
+
+      dispatch({
+        type: AUTH_ACTIONS.UPDATE_USER,
+        payload: {
+          email: userEmail,
+          user: refreshedUser,
+        },
+      });
+
+      actions.setAuth({
+        isAuthenticated: state.isAuthenticated,
+        currentUser: refreshedUser,
+        userRole: refreshedUser.role,
+      });
+
+      try {
+        await SecureStore.setItemAsync(
+          STORAGE_KEYS.user_data,
+          JSON.stringify(refreshedUser),
+        );
+      } catch (storageError) {
+        console.warn(
+          "[Auth] Failed to persist refreshed user data to SecureStore:",
+          storageError,
+        );
+      }
+
+      console.log("[Auth] Refreshed current user session:", {
+        email: refreshedUser.email,
+        activeWorkspace: refreshedUser.activeWorkspace,
+        role: refreshedUser.role,
+        residentOccupancyStatus:
+          refreshedUser.persona?.residentOccupancyStatus,
+      });
+
+      return refreshedUser;
     },
 
     updateProfile: async (userData: Partial<User>): Promise<User> => {

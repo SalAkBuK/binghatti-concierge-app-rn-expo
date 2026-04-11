@@ -45,6 +45,10 @@ const buildUser = (overrides: Partial<User> = {}): User => ({
   email: 'tenant@example.com',
   name: 'Tenant User',
   role: 'tenant',
+  persona: {
+    isResident: true,
+    residentOccupancyStatus: 'ACTIVE',
+  } as any,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
   ...overrides,
@@ -150,6 +154,59 @@ describe('TenantLayout', () => {
       }),
     );
   });
+
+  it.each([
+    ['NONE', 'pre-move-in'],
+    ['FORMER', 'former resident'],
+  ])(
+    'hides resident history tabs from the primary shell for %s occupancy',
+    (residentOccupancyStatus) => {
+      mockUseAuth.mockReturnValue({
+        isAuthenticated: true,
+        currentUser: buildUser({
+          persona: {
+            isResident: true,
+            residentOccupancyStatus,
+          } as any,
+        }),
+      });
+
+      act(() => {
+        TestRenderer.create(<TenantLayout />);
+      });
+
+      expect(mockTabsScreen).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'requests',
+          options: expect.objectContaining({ href: null }),
+        }),
+      );
+      expect(mockTabsScreen).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'messages',
+          options: expect.objectContaining({ href: null }),
+        }),
+      );
+      expect(mockTabsScreen).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'visitors',
+          options: expect.objectContaining({ href: null }),
+        }),
+      );
+      expect(mockTabsScreen).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'index',
+          options: expect.objectContaining({ title: 'Home' }),
+        }),
+      );
+      expect(mockTabsScreen).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'profile',
+          options: expect.objectContaining({ title: 'Profile' }),
+        }),
+      );
+    },
+  );
 
   it('keeps tenant detail routes hidden from the tab bar', () => {
     mockUseAuth.mockReturnValue({

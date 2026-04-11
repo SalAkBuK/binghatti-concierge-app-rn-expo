@@ -28,6 +28,11 @@ const buildUser = (overrides: Partial<User> = {}): User => ({
   email: "admin@example.com",
   name: "Admin User",
   role: "admin",
+  persona: {
+    keys: ["ORG_ADMIN"],
+  },
+  mobileWorkspaces: [],
+  activeWorkspace: null,
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
   ...overrides,
@@ -63,10 +68,12 @@ describe("PortalUnavailableScreen", () => {
 
     expect(renderedTexts).toContain("Portal Unavailable");
     expect(renderedTexts).toContain(
-      "No mounted mobile portal for the current role",
+      "This account is not enabled for the mobile app",
     );
     expect(renderedTexts).toContain("Role: ");
     expect(renderedTexts).toContain("admin");
+    expect(renderedTexts).toContain("Persona keys: ");
+    expect(renderedTexts).toContain("ORG_ADMIN");
   });
 
   it("signs out and routes to auth when the button is pressed", async () => {
@@ -97,7 +104,16 @@ describe("PortalUnavailableScreen", () => {
   it("redirects mounted roles away from the unavailable screen", () => {
     mockUseAuth.mockReturnValue({
       isAuthenticated: true,
-      currentUser: buildUser({ role: "service_provider" }),
+      currentUser: buildUser({
+        email: "provider@example.com",
+        role: "service_provider",
+        persona: {
+          isServiceProvider: true,
+          serviceProviderRoles: ["WORKER"],
+        },
+        mobileWorkspaces: ["provider_worker"],
+        activeWorkspace: "provider_worker",
+      }),
       actions: {
         logout: jest.fn().mockResolvedValue(undefined),
       },
@@ -108,5 +124,31 @@ describe("PortalUnavailableScreen", () => {
     });
 
     expect(mockRedirect).toHaveBeenCalledWith({ href: "/(serviceProvider)" });
+  });
+
+  it("redirects multi-workspace users to the workspace selector", () => {
+    mockUseAuth.mockReturnValue({
+      isAuthenticated: true,
+      currentUser: buildUser({
+        email: "hybrid@example.com",
+        role: "tenant",
+        persona: {
+          isResident: true,
+          isOwner: true,
+          residentOccupancyStatus: "ACTIVE",
+        },
+        mobileWorkspaces: ["resident", "owner"],
+        activeWorkspace: null,
+      }),
+      actions: {
+        logout: jest.fn().mockResolvedValue(undefined),
+      },
+    });
+
+    act(() => {
+      TestRenderer.create(<PortalUnavailableScreen />);
+    });
+
+    expect(mockRedirect).toHaveBeenCalledWith({ href: "/workspace-selector" });
   });
 });

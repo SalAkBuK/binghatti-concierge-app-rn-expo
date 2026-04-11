@@ -4,7 +4,10 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAuth } from "../lib/context/auth-context";
-import { getRoleHomeHref } from "../lib/config/portals";
+import {
+  getMobileWorkspaceLabel,
+  resolveInitialMobileRoute,
+} from "../lib/config/mobile-workspaces";
 
 const formatRoleLabel = (role?: string | null) => {
   if (!role) {
@@ -19,14 +22,19 @@ const formatRoleLabel = (role?: string | null) => {
 
 export default function PortalUnavailableScreen() {
   const { isAuthenticated, currentUser, actions } = useAuth();
-  const mountedPortalHref = getRoleHomeHref(currentUser?.role);
 
   if (!isAuthenticated || !currentUser) {
     return <Redirect href="/auth" />;
   }
 
-  if (mountedPortalHref) {
-    return <Redirect href={mountedPortalHref as any} />;
+  const routeDecision = resolveInitialMobileRoute(currentUser);
+
+  if (routeDecision.type === "route") {
+    return <Redirect href={routeDecision.href as any} />;
+  }
+
+  if (routeDecision.type === "workspace_selector") {
+    return <Redirect href="/workspace-selector" />;
   }
 
   const handleSignOut = async () => {
@@ -43,14 +51,29 @@ export default function PortalUnavailableScreen() {
       <View style={styles.container}>
         <Text style={styles.eyebrow}>Portal Unavailable</Text>
         <Text style={styles.title}>
-          No mounted mobile portal for the current role
+          This account is not enabled for the mobile app
         </Text>
         <Text style={styles.body}>
-          Signed in as {formatRoleLabel(currentUser.role)}. This role exists in
-          the broader product model, but its mobile workspace is not mounted in
-          this app yet.
+          Signed in as {formatRoleLabel(currentUser.role)}. The account is
+          authenticated, but none of its personas currently map to a supported
+          mobile workspace.
         </Text>
         <Text style={styles.meta}>Role: {currentUser.role}</Text>
+        {Array.isArray(currentUser.persona?.keys) &&
+        currentUser.persona.keys.length > 0 ? (
+          <Text style={styles.meta}>
+            Persona keys: {currentUser.persona.keys.join(", ")}
+          </Text>
+        ) : null}
+        {Array.isArray(currentUser.mobileWorkspaces) &&
+        currentUser.mobileWorkspaces.length > 0 ? (
+          <Text style={styles.meta}>
+            Supported workspaces:{" "}
+            {currentUser.mobileWorkspaces
+              .map((workspace) => getMobileWorkspaceLabel(workspace))
+              .join(", ")}
+          </Text>
+        ) : null}
 
         <TouchableOpacity style={styles.primaryButton} onPress={handleSignOut}>
           <Text style={styles.primaryButtonText}>Sign Out</Text>

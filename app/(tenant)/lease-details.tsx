@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -193,6 +193,7 @@ const StatusChip = ({
 };
 
 export default function TenantContractScreen() {
+  const params = useLocalSearchParams<{ openMoveModal?: string | string[] }>();
   const { currentUser, isAuthenticated, actions: authActions } = useAuth();
   const { notifications } = useNotifications();
   const tabBarHeight = useBottomTabBarHeight();
@@ -210,6 +211,7 @@ export default function TenantContractScreen() {
   const [isPickingFile, setIsPickingFile] = useState(false);
   const unauthRef = useRef(false);
   const previousLatestContractIdRef = useRef<string | null>(null);
+  const handledOpenMoveModalRef = useRef(false);
 
   const handleUnauthorized = useCallback(async () => {
     if (unauthRef.current) return;
@@ -338,6 +340,24 @@ export default function TenantContractScreen() {
     setNotes("");
     setShowMoveModal(true);
   };
+
+  const openMoveModalParam = Array.isArray(params.openMoveModal)
+    ? params.openMoveModal[0]
+    : params.openMoveModal;
+
+  useEffect(() => {
+    if (openMoveModalParam !== "move-in") {
+      handledOpenMoveModalRef.current = false;
+      return;
+    }
+
+    if (handledOpenMoveModalRef.current || !canRequestMoveIn || !actionContractId) {
+      return;
+    }
+
+    handledOpenMoveModalRef.current = true;
+    openMoveModal("move-in");
+  }, [actionContractId, canRequestMoveIn, openMoveModalParam]);
 
   const submitMoveRequest = async () => {
     if (!actionContractId) return showErrorAlert(new Error("Missing contract id"));

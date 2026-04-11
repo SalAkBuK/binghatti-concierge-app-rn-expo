@@ -8,6 +8,7 @@ import ProfileIcon from "../../components/icons/ProfileIcon";
 import RequestsTabIcon from "../../components/icons/RequestsTabIcon";
 import TenantTabIcon from "../../components/icons/TenantTabIcon";
 
+import { getResidentWorkspaceAccessLevel } from "../../lib/config/mobile-workspaces";
 import { useAuth } from "../../lib/context/auth-context";
 import { getFloatingTabBarLayout } from "../../lib/utils/tab-bar-layout";
 
@@ -20,6 +21,11 @@ export default function TabLayout() {
     bottomInset: insets.bottom,
     screenWidth: width,
   });
+  const residentWorkspaceAccessLevel = getResidentWorkspaceAccessLevel(
+    currentUser?.persona,
+  );
+  const isLimitedResidentShell =
+    currentUser?.role === "tenant" && residentWorkspaceAccessLevel !== "active";
 
   // Redirect non-tenant users to their appropriate portal
   useEffect(() => {
@@ -72,33 +78,45 @@ export default function TabLayout() {
       <Tabs.Screen
         name="requests"
         options={{
-          title: "Requests",
-          tabBarIcon: ({ color, focused }) => (
-            <RequestsTabIcon color={color} focused={focused} />
-          ),
+          ...(isLimitedResidentShell
+            ? { href: null }
+            : {
+                title: "Requests",
+                tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => (
+                  <RequestsTabIcon color={color} focused={focused} />
+                ),
+              }),
         }}
       />
       <Tabs.Screen
         name="messages"
         options={{
-          title: "Messages",
-          tabBarIcon: ({ color, focused }) => (
-            <MessagesTabIcon color={color} focused={focused} />
-          ),
+          ...(isLimitedResidentShell
+            ? { href: null }
+            : {
+                title: "Messages",
+                tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => (
+                  <MessagesTabIcon color={color} focused={focused} />
+                ),
+              }),
         }}
       />
       <Tabs.Screen
         name="visitors"
         options={{
-          title: "Visitors",
-          tabBarIcon: ({ color, focused }) => (
-            <TenantTabIcon
-              icon="people-outline"
-              activeIcon="people"
-              color={color}
-              focused={focused}
-            />
-          ),
+          ...(isLimitedResidentShell
+            ? { href: null }
+            : {
+                title: "Visitors",
+                tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => (
+                  <TenantTabIcon
+                    icon="people-outline"
+                    activeIcon="people"
+                    color={color}
+                    focused={focused}
+                  />
+                ),
+              }),
         }}
       />
       <Tabs.Screen

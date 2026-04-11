@@ -14,6 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { HeaderBar } from "../../components/ui/HeaderBar";
 import { ImageViewer } from "../../components/ui/ImageViewer";
+import { TenantLockedFeatureCard } from "../../components/ui/TenantLockedFeatureCard";
 import { RequestDetailsComments } from "../../components/modals/request-details/request-details-comments";
 import { RequestDetailsDeleteModal } from "../../components/modals/request-details/request-details-delete-modal";
 import { RequestDetailsOverview } from "../../components/modals/request-details/request-details-overview";
@@ -39,6 +40,7 @@ import {
   isResidentRequestOwnerRejected,
 } from "../../lib/utils/resident-request-approval";
 import { requestToResidentRequestForm } from "../../lib/utils/resident-request-form";
+import { RESIDENT_HISTORY_UNAVAILABLE_MESSAGE } from "../../lib/utils/resident-history-access";
 import {
   filterNotificationsByUser,
   getUnreadNotificationsCount,
@@ -58,6 +60,8 @@ export default function RequestDetailsScreen() {
     detailTab,
     setDetailTab,
     fetchingDetails,
+    historyUnavailable,
+    historyUnavailableMessage,
     newComment,
     setNewComment,
     isPostingComment,
@@ -377,6 +381,39 @@ export default function RequestDetailsScreen() {
     });
   };
 
+  if (historyUnavailable) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <KeyboardAvoidingView
+          style={styles.keyboardAvoidingView}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <ScrollView
+            style={styles.scrollView}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.lockedScrollContent}
+          >
+            <HeaderBar
+              title={isTenantUser ? "Maintenance Issue" : "Request Details"}
+              showBackButton
+              showMenu={false}
+              hasUnreadNotifications={hasUnreadNotifications}
+            />
+
+            <TenantLockedFeatureCard
+              title="Resident history unavailable"
+              message={
+                historyUnavailableMessage ?? RESIDENT_HISTORY_UNAVAILABLE_MESSAGE
+              }
+              actionLabel="Review Lease Details"
+              onPress={() => router.push("/(tenant)/lease-details" as any)}
+            />
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
@@ -523,6 +560,10 @@ const styles = StyleSheet.create({
   },
   keyboardAvoidingView: {
     flex: 1,
+  },
+  lockedScrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 32,
   },
   header: {
     flexDirection: "row",

@@ -117,18 +117,30 @@ Reality:
 ### Live
 
 - Tenant
+- Owner
 - Management
 - Building employee
+- Service provider
 
 ### Partial or planned
 
 - Admin
 - Super admin
-- Service provider
 - Employee
-- Owner
 
 These planned roles appear in types, docs, and some navigation code, but they are not yet fully mounted, consistent, and production-ready.
+
+### Mobile auth routing
+
+- Post-login mobile routing is persona-based, not legacy role-field-based.
+- Source of truth: `user.persona` from the login payload.
+- Supported mobile workspaces:
+  - resident
+  - owner
+  - service provider worker
+  - building staff
+- Accounts with multiple supported workspaces must pass through the workspace selector before entering a portal.
+- Accounts with no supported mobile workspace are authenticated but routed to the unavailable mobile-access screen.
 
 ## 5. Data Maturity
 

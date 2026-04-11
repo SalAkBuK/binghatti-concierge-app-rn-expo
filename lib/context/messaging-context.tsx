@@ -14,6 +14,11 @@ import {
   subscribeNotificationsSocket,
 } from "../services/notificationsSocket";
 import { playIncomingNotificationSound } from "../services/local-notifications";
+import {
+  hasActiveResidentHistoryAccess,
+  isActiveOccupancyRequiredError,
+  RESIDENT_HISTORY_UNAVAILABLE_MESSAGE,
+} from "../utils/resident-history-access";
 import { useAuth } from "./auth-context";
 import { useNotifications } from "./notifications-context";
 import type {
@@ -74,6 +79,7 @@ const ACTIONS = {
   SET_LOADING: "SET_LOADING",
   SET_ERROR: "SET_ERROR",
   CLEAR_ERROR: "CLEAR_ERROR",
+  RESET_STATE: "RESET_STATE",
 } as const;
 
 type ActionType = (typeof ACTIONS)[keyof typeof ACTIONS];
@@ -398,6 +404,9 @@ const messagingReducer = (state: MessagingState, action: Action): MessagingState
     case ACTIONS.CLEAR_ERROR:
       return { ...state, error: null };
 
+    case ACTIONS.RESET_STATE:
+      return { ...initialState };
+
     default:
       return state;
   }
@@ -428,6 +437,9 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
   const notifiedMessageIdsRef = useRef<Set<string>>(new Set());
   const notificationsRef = useRef(notifications);
   const isOwnerRuntime = currentUser?.role === "owner";
+  const hasResidentHistoryAccess = hasActiveResidentHistoryAccess(currentUser);
+  const isResidentHistoryUnavailable =
+    currentUser?.role === "tenant" && !hasResidentHistoryAccess;
 
   // Keep ref in sync with state for socket handlers
   useEffect(() => {
@@ -446,8 +458,25 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
     notificationsRef.current = notifications;
   }, [notifications]);
 
+  useEffect(() => {
+    notifiedMessageIdsRef.current = new Set();
+    dispatch({ type: ACTIONS.RESET_STATE });
+  }, [currentUser?.activeWorkspace, currentUser?.id]);
+
+  useEffect(() => {
+    if (!isResidentHistoryUnavailable) {
+      return;
+    }
+
+    dispatch({ type: ACTIONS.RESET_STATE });
+    dispatch({
+      type: ACTIONS.SET_ERROR,
+      payload: RESIDENT_HISTORY_UNAVAILABLE_MESSAGE,
+    });
+  }, [isResidentHistoryUnavailable]);
+
   const fetchUnreadCount = useCallback(async () => {
-    if (isOwnerRuntime) {
+    if (isOwnerRuntime || isResidentHistoryUnavailable) {
       dispatch({ type: ACTIONS.SET_TOTAL_UNREAD, payload: 0 });
       return;
     }
@@ -459,21 +488,40 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
         dispatch({ type: ACTIONS.SET_TOTAL_UNREAD, payload: unreadCount });
       }
     } catch (error) {
+      if (isActiveOccupancyRequiredError(error)) {
+        dispatch({ type: ACTIONS.RESET_STATE });
+        dispatch({
+          type: ACTIONS.SET_ERROR,
+          payload: RESIDENT_HISTORY_UNAVAILABLE_MESSAGE,
+        });
+        return;
+      }
+
       if (__DEV__) {
         console.log("[Messaging] Failed to fetch unread count", error);
       }
     }
-  }, [isOwnerRuntime]);
+  }, [isOwnerRuntime, isResidentHistoryUnavailable]);
 
   const fetchResidentManagementContacts = useCallback(async () => {
+    if (isResidentHistoryUnavailable) {
+      return [];
+    }
+
     const response = await apiService.conversations.getResidentManagementContacts();
     return normalizeResidentManagementContacts(response);
-  }, []);
+  }, [isResidentHistoryUnavailable]);
 
   const fetchConversations = useCallback(async () => {
-    if (isOwnerRuntime) {
+    if (isOwnerRuntime || isResidentHistoryUnavailable) {
       dispatch({ type: ACTIONS.SET_CONVERSATIONS, payload: [] });
       dispatch({ type: ACTIONS.SET_TOTAL_UNREAD, payload: 0 });
+      if (isResidentHistoryUnavailable) {
+        dispatch({
+          type: ACTIONS.SET_ERROR,
+          payload: RESIDENT_HISTORY_UNAVAILABLE_MESSAGE,
+        });
+      }
       return;
     }
 
@@ -484,7 +532,6 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
         apiService.conversations.getUnreadCount().catch(() => null),
       ]);
       if (__DEV__) {
-        console.log("[Messaging] fetchConversations raw response:", JSON.stringify(response, null, 2));
       }
       const data = Array.isArray(response)
         ? response
@@ -505,16 +552,34 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
         dispatch({ type: ACTIONS.SET_TOTAL_UNREAD, payload: unreadCount });
       }
     } catch (error) {
+      if (isActiveOccupancyRequiredError(error)) {
+        dispatch({ type: ACTIONS.RESET_STATE });
+        dispatch({
+          type: ACTIONS.SET_ERROR,
+          payload: RESIDENT_HISTORY_UNAVAILABLE_MESSAGE,
+        });
+        return;
+      }
+
       if (__DEV__) {
         console.log("[Messaging] Failed to fetch conversations", error);
       }
       dispatch({ type: ACTIONS.SET_ERROR, payload: "Failed to load conversations" });
     }
-  }, [isOwnerRuntime]);
+  }, [isOwnerRuntime, isResidentHistoryUnavailable]);
 
   const openConversation = useCallback(async (id: string) => {
     if (isOwnerRuntime) {
       dispatch({ type: ACTIONS.SET_ERROR, payload: "Owner messaging uses owner runtime routes" });
+      return;
+    }
+
+    if (isResidentHistoryUnavailable) {
+      dispatch({ type: ACTIONS.CLEAR_ACTIVE_CONVERSATION });
+      dispatch({
+        type: ACTIONS.SET_ERROR,
+        payload: RESIDENT_HISTORY_UNAVAILABLE_MESSAGE,
+      });
       return;
     }
 
@@ -546,12 +611,21 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
         // silent — optimistic update already applied
       });
     } catch (error) {
+      if (isActiveOccupancyRequiredError(error)) {
+        dispatch({ type: ACTIONS.CLEAR_ACTIVE_CONVERSATION, payload: null });
+        dispatch({
+          type: ACTIONS.SET_ERROR,
+          payload: RESIDENT_HISTORY_UNAVAILABLE_MESSAGE,
+        });
+        return;
+      }
+
       if (__DEV__) {
         console.log("[Messaging] Failed to open conversation", error);
       }
       dispatch({ type: ACTIONS.SET_ERROR, payload: "Failed to load conversation" });
     }
-  }, [fetchUnreadCount, isOwnerRuntime]);
+  }, [fetchUnreadCount, isOwnerRuntime, isResidentHistoryUnavailable]);
 
   const closeConversation = useCallback(() => {
     dispatch({ type: ACTIONS.CLEAR_ACTIVE_CONVERSATION });
@@ -561,6 +635,14 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
     async (conversationId: string, content: string) => {
       if (isOwnerRuntime) {
         dispatch({ type: ACTIONS.SET_ERROR, payload: "Owner messaging uses owner runtime routes" });
+        return;
+      }
+
+      if (isResidentHistoryUnavailable) {
+        dispatch({
+          type: ACTIONS.SET_ERROR,
+          payload: RESIDENT_HISTORY_UNAVAILABLE_MESSAGE,
+        });
         return;
       }
 
@@ -599,6 +681,14 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
           });
         }
       } catch (error) {
+        if (isActiveOccupancyRequiredError(error)) {
+          dispatch({
+            type: ACTIONS.SET_ERROR,
+            payload: RESIDENT_HISTORY_UNAVAILABLE_MESSAGE,
+          });
+          return;
+        }
+
         if (__DEV__) {
           console.log("[Messaging] Failed to send message", error);
         }
@@ -607,13 +697,21 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
         void fetchUnreadCount();
       }
     },
-    [currentUser, fetchUnreadCount, isOwnerRuntime],
+    [currentUser, fetchUnreadCount, isOwnerRuntime, isResidentHistoryUnavailable],
   );
 
   const createConversation = useCallback(
     async (data: CreateConversationDTO): Promise<Conversation | null> => {
       if (isOwnerRuntime) {
         dispatch({ type: ACTIONS.SET_ERROR, payload: "Owner compose uses owner runtime routes" });
+        return null;
+      }
+
+      if (isResidentHistoryUnavailable) {
+        dispatch({
+          type: ACTIONS.SET_ERROR,
+          payload: RESIDENT_HISTORY_UNAVAILABLE_MESSAGE,
+        });
         return null;
       }
 
@@ -627,6 +725,14 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
         }
         return null;
       } catch (error) {
+        if (isActiveOccupancyRequiredError(error)) {
+          dispatch({
+            type: ACTIONS.SET_ERROR,
+            payload: RESIDENT_HISTORY_UNAVAILABLE_MESSAGE,
+          });
+          return null;
+        }
+
         if (__DEV__) {
           console.log("[Messaging] Failed to create conversation", error);
         }
@@ -634,7 +740,7 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
         return null;
       }
     },
-    [fetchConversations, isOwnerRuntime],
+    [fetchConversations, isOwnerRuntime, isResidentHistoryUnavailable],
   );
 
   const createResidentConversation = useCallback(
@@ -647,29 +753,46 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
         return null;
       }
 
-      const response =
-        target === "owner"
-          ? await apiService.conversations.createResidentOwnerConversation(data)
-          : await apiService.conversations.createResidentManagementConversation(data);
-
-      const conversation = normalizeConversationSummary(response);
-      if (conversation && conversation.id) {
-        dispatch({ type: ACTIONS.UPSERT_CONVERSATION, payload: conversation });
-        void fetchConversations();
-        return conversation;
+      if (isResidentHistoryUnavailable) {
+        dispatch({
+          type: ACTIONS.SET_ERROR,
+          payload: RESIDENT_HISTORY_UNAVAILABLE_MESSAGE,
+        });
+        return null;
       }
 
-      return null;
+      try {
+        const response =
+          target === "owner"
+            ? await apiService.conversations.createResidentOwnerConversation(data)
+            : await apiService.conversations.createResidentManagementConversation(data);
+
+        const conversation = normalizeConversationSummary(response);
+        if (conversation && conversation.id) {
+          dispatch({ type: ACTIONS.UPSERT_CONVERSATION, payload: conversation });
+          void fetchConversations();
+          return conversation;
+        }
+
+        return null;
+      } catch (error) {
+        if (isActiveOccupancyRequiredError(error)) {
+          dispatch({
+            type: ACTIONS.SET_ERROR,
+            payload: RESIDENT_HISTORY_UNAVAILABLE_MESSAGE,
+          });
+          return null;
+        }
+
+        throw error;
+      }
     },
-    [fetchConversations, isOwnerRuntime],
+    [fetchConversations, isOwnerRuntime, isResidentHistoryUnavailable],
   );
 
   // Socket event handlers (named functions for clean detach)
   const handleConversationNew = useCallback(
     (_payload: ConversationNewPayload) => {
-      if (__DEV__) {
-        console.log("[Messaging] conversation:new", _payload);
-      }
       fetchConversations();
     },
     [fetchConversations],
@@ -677,9 +800,6 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
 
   const handleMessageNew = useCallback(
     (payload: MessageNewPayload) => {
-      if (__DEV__) {
-        console.log("[Messaging] message:new", payload);
-      }
       if (!payload?.conversationId || !payload?.message) return;
       if (payload.message.id && notifiedMessageIdsRef.current.has(payload.message.id)) {
         return;
@@ -771,9 +891,6 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
   );
 
   const handleConversationRead = useCallback((payload: ConversationReadPayload) => {
-    if (__DEV__) {
-      console.log("[Messaging] conversation:read", payload);
-    }
     if (payload?.conversationId) {
       dispatch({ type: ACTIONS.MARK_READ, payload: payload.conversationId });
       void fetchUnreadCount();
@@ -808,6 +925,14 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
     if (isOwnerRuntime) {
       dispatch({ type: ACTIONS.SET_CONVERSATIONS, payload: [] });
       dispatch({ type: ACTIONS.SET_TOTAL_UNREAD, payload: 0 });
+      return;
+    }
+    if (isResidentHistoryUnavailable) {
+      dispatch({ type: ACTIONS.RESET_STATE });
+      dispatch({
+        type: ACTIONS.SET_ERROR,
+        payload: RESIDENT_HISTORY_UNAVAILABLE_MESSAGE,
+      });
       return;
     }
 
@@ -863,6 +988,7 @@ export const MessagingProvider: React.FC<MessagingProviderProps> = ({ children }
   }, [
     isAuthenticated,
     isOwnerRuntime,
+    isResidentHistoryUnavailable,
     fetchConversations,
     handleConversationNew,
     handleMessageNew,

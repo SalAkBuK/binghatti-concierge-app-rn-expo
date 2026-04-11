@@ -162,6 +162,10 @@ jest.mock('@react-navigation/bottom-tabs', () => ({
   useBottomTabBarHeight: () => 0,
 }));
 
+jest.mock('@react-navigation/native', () => ({
+  useFocusEffect: () => {},
+}));
+
 jest.mock('@expo/vector-icons', () => ({
   Ionicons: ({ name }: { name: string }) => {
     const React = jest.requireActual('react');

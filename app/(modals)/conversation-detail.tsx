@@ -23,6 +23,7 @@ import type {
   ConversationMessage,
   ConversationParticipant,
 } from "../../lib/types";
+import { RESIDENT_HISTORY_UNAVAILABLE_MESSAGE } from "../../lib/utils/resident-history-access";
 import {
   getTenantConversationDisplayName,
   getTenantMessageSenderName,
@@ -88,7 +89,7 @@ function getInitials(name?: string | null): string {
 
 export default function ConversationDetailModal() {
   const { conversationId } = useLocalSearchParams<{ conversationId: string }>();
-  const { activeConversation, loading, actions } = useMessaging();
+  const { activeConversation, error, loading, actions } = useMessaging();
   const { currentUser } = useAuth();
   const insets = useSafeAreaInsets();
   const [text, setText] = useState("");
@@ -178,6 +179,8 @@ export default function ConversationDetailModal() {
           ? "In conversation"
           : "Online";
   const onlineLabel = messages.length > 0 ? "In conversation" : "Online";
+  const historyUnavailable =
+    error === RESIDENT_HISTORY_UNAVAILABLE_MESSAGE && !loading && !activeConversation;
 
   const renderParticipantRow = useCallback(
     (participant: ConversationParticipant) => {
@@ -391,6 +394,16 @@ export default function ConversationDetailModal() {
           <View style={styles.centered}>
             <ActivityIndicator size="large" color={P.primary} />
           </View>
+        ) : historyUnavailable ? (
+          <View style={styles.centered}>
+            <View style={styles.lockedState}>
+              <Ionicons name="lock-closed-outline" size={28} color={P.primary} />
+              <Text style={styles.lockedTitle}>Resident history unavailable</Text>
+              <Text style={styles.lockedText}>
+                {RESIDENT_HISTORY_UNAVAILABLE_MESSAGE}
+              </Text>
+            </View>
+          </View>
         ) : (
           <FlatList
             ref={flatListRef}
@@ -415,60 +428,62 @@ export default function ConversationDetailModal() {
           />
         )}
 
-        <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-          <View style={styles.composerCard}>
-            {!isTenantUser ? (
-              <TouchableOpacity style={styles.attachButton} activeOpacity={0.85}>
-                <Ionicons name="add-circle" size={20} color={P.muted} />
-              </TouchableOpacity>
-            ) : null}
-            <View style={styles.inputShell}>
-              <TextInput
-                style={styles.textInput}
-                placeholder="Type a message..."
-                placeholderTextColor="#8A969B"
-                value={text}
-                onChangeText={setText}
-                multiline
-                maxLength={2000}
-                onSubmitEditing={handleSend}
-                blurOnSubmit={false}
-              />
-              <View style={styles.inputFocusLine} />
-            </View>
-            <View style={styles.composerActions}>
-              {text.trim().length > 0 ? (
-                <Text style={styles.composerHint}>{text.trim().length}/2000</Text>
+        {!historyUnavailable ? (
+          <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+            <View style={styles.composerCard}>
+              {!isTenantUser ? (
+                <TouchableOpacity style={styles.attachButton} activeOpacity={0.85}>
+                  <Ionicons name="add-circle" size={20} color={P.muted} />
+                </TouchableOpacity>
               ) : null}
-              <TouchableOpacity
-                style={[
-                  styles.sendButton,
-                  (!text.trim() || sending) && styles.sendButtonDisabled,
-                ]}
-                onPress={handleSend}
-                disabled={!text.trim() || sending}
-                activeOpacity={0.9}
-              >
-                <LinearGradient
-                  colors={
-                    !text.trim() || sending
-                      ? ["#AAB7BC", "#8F9DA3"]
-                      : [P.primary, P.primaryDark]
-                  }
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.sendButtonGradient}
+              <View style={styles.inputShell}>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Type a message..."
+                  placeholderTextColor="#8A969B"
+                  value={text}
+                  onChangeText={setText}
+                  multiline
+                  maxLength={2000}
+                  onSubmitEditing={handleSend}
+                  blurOnSubmit={false}
+                />
+                <View style={styles.inputFocusLine} />
+              </View>
+              <View style={styles.composerActions}>
+                {text.trim().length > 0 ? (
+                  <Text style={styles.composerHint}>{text.trim().length}/2000</Text>
+                ) : null}
+                <TouchableOpacity
+                  style={[
+                    styles.sendButton,
+                    (!text.trim() || sending) && styles.sendButtonDisabled,
+                  ]}
+                  onPress={handleSend}
+                  disabled={!text.trim() || sending}
+                  activeOpacity={0.9}
                 >
-                  {sending ? (
-                    <ActivityIndicator size="small" color="#EEF7FB" />
-                  ) : (
-                    <Ionicons name="send" size={16} color="#EEF7FB" />
-                  )}
-                </LinearGradient>
-              </TouchableOpacity>
+                  <LinearGradient
+                    colors={
+                      !text.trim() || sending
+                        ? ["#AAB7BC", "#8F9DA3"]
+                        : [P.primary, P.primaryDark]
+                    }
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.sendButtonGradient}
+                  >
+                    {sending ? (
+                      <ActivityIndicator size="small" color="#EEF7FB" />
+                    ) : (
+                      <Ionicons name="send" size={16} color="#EEF7FB" />
+                    )}
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
+        ) : null}
 
         <Modal
           animationType="fade"
@@ -643,6 +658,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 20,
+  },
+  lockedState: {
+    width: "100%",
+    borderRadius: 24,
+    backgroundColor: P.surface,
+    borderWidth: 1,
+    borderColor: P.border,
+    paddingHorizontal: 24,
+    paddingVertical: 28,
+    alignItems: "center",
+    gap: 12,
+  },
+  lockedTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: P.text,
+    textAlign: "center",
+  },
+  lockedText: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: P.muted,
+    textAlign: "center",
   },
   backgroundDecoration: {
     ...StyleSheet.absoluteFillObject,

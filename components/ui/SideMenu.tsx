@@ -28,6 +28,7 @@ import {
   getRoleHomeHref,
   hasMountedPortal,
 } from "../../lib/config/portals";
+import { getResidentWorkspaceAccessLevel } from "../../lib/config/mobile-workspaces";
 import { useAuth } from "../../lib/context/auth-context";
 import { useMessaging } from "../../lib/context/messaging-context";
 import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
@@ -55,6 +56,7 @@ interface MenuItem {
   icon: keyof typeof Ionicons.glyphMap;
   action?: () => void;
   color?: string;
+  locked?: boolean;
   routePatterns?: string[];
   subItems?: SubMenuItem[];
   expandable?: boolean;
@@ -104,8 +106,22 @@ export function SideMenu({ isVisible, onClose, userRole }: SideMenuProps) {
   const { totalUnreadCount: messagingUnreadCount } = useMessaging();
   const pathname = usePathname();
   const effectiveRole = userRole ?? currentUser?.role;
-  const { canCreateMaintenanceRequest, canManageVisitors } = useResidentTenancy({
-    enabled: Boolean(effectiveRole === "tenant" && currentUser?.id),
+  const residentWorkspaceAccessLevel = getResidentWorkspaceAccessLevel(
+    currentUser?.persona,
+  );
+  const isLimitedResidentShell =
+    effectiveRole === "tenant" && residentWorkspaceAccessLevel !== "active";
+  const {
+    canCreateMaintenanceRequest,
+    canManageVisitors,
+    isFormerResident,
+    isPreMoveIn,
+  } = useResidentTenancy({
+    enabled: Boolean(
+      effectiveRole === "tenant" &&
+        currentUser?.id &&
+        residentWorkspaceAccessLevel === "active",
+    ),
   });
   const insets = useSafeAreaInsets();
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
@@ -133,6 +149,8 @@ export function SideMenu({ isVisible, onClose, userRole }: SideMenuProps) {
       "1.0.0";
     return `Version ${version}`;
   }, []);
+  const canSwitchWorkspace =
+    (currentUser?.mobileWorkspaces?.length ?? 0) > 1;
 
   // Animation values
   const translateX = useSharedValue(-MENU_WIDTH - 20);
@@ -173,11 +191,12 @@ export function SideMenu({ isVisible, onClose, userRole }: SideMenuProps) {
     ]);
   };
 
-  const tenantMenu: MenuItem[] = [
+  const tenantFullMenu: MenuItem[] = [
     {
       id: "tenant-requests",
       title: "Requests",
       icon: "list-outline",
+      locked: isPreMoveIn || isFormerResident,
       routePatterns: ["/(tenant)/requests"],
       action: () => navigateAndClose("/(tenant)/requests"),
     },
@@ -192,12 +211,13 @@ export function SideMenu({ isVisible, onClose, userRole }: SideMenuProps) {
           },
         ]
       : []),
-    ...(canManageVisitors
+    ...(canManageVisitors || isPreMoveIn || isFormerResident
       ? [
           {
             id: "tenant-visitors",
             title: "Visitors",
             icon: "people-outline" as const,
+            locked: isPreMoveIn || isFormerResident,
             routePatterns: ["/(tenant)/visitors", "/(modals)/register-visitor"],
             action: () => navigateAndClose("/(tenant)/visitors"),
           },
@@ -208,8 +228,50 @@ export function SideMenu({ isVisible, onClose, userRole }: SideMenuProps) {
       title: "Messages",
       icon: "chatbubbles-outline",
       badge: messagingUnreadCount,
+      locked: isPreMoveIn || isFormerResident,
       routePatterns: ["/(tenant)/messages", "/(modals)/conversation-detail", "/(modals)/new-conversation"],
       action: () => navigateAndClose("/(tenant)/messages"),
+    },
+    {
+      id: "tenant-lease-details",
+      title: "Lease Details",
+      icon: "document-text-outline",
+      routePatterns: ["/(tenant)/lease-details"],
+      action: () => navigateAndClose("/(tenant)/lease-details"),
+    },
+    {
+      id: "tenant-profile",
+      title: "Profile",
+      icon: "person-outline",
+      routePatterns: ["/(tenant)/profile"],
+      action: () => navigateAndClose("/(tenant)/profile"),
+    },
+    {
+      id: "logout",
+      title: "Sign Out",
+      icon: "log-out-outline",
+      color: "#ef4444",
+      action: () => {
+        closeMenu();
+        handleLogout();
+      },
+    },
+  ];
+
+  const tenantLimitedMenu: MenuItem[] = [
+    {
+      id: "tenant-home",
+      title: "Home",
+      icon: "home-outline",
+      routePatterns: ["/(tenant)", "/(tenant)/index"],
+      action: () => navigateAndClose("/(tenant)", true),
+    },
+    {
+      id: "tenant-lease-details",
+      title: "Lease Details",
+      icon: "document-text-outline",
+      routePatterns: ["/(tenant)/lease-details"],
+      action: () => navigateAndClose("/(tenant)/lease-details"),
     },
     {
       id: "tenant-profile",
@@ -455,7 +517,7 @@ export function SideMenu({ isVisible, onClose, userRole }: SideMenuProps) {
     },
   ];
 
-  const menuItems: MenuItem[] =
+  const baseMenuItems: MenuItem[] =
     effectiveRole === "management"
       ? managementMenu
       : effectiveRole === "owner"
@@ -465,8 +527,23 @@ export function SideMenu({ isVisible, onClose, userRole }: SideMenuProps) {
         : effectiveRole === "service_provider"
           ? providerWorkerMenu
         : effectiveRole === "tenant"
-          ? tenantMenu
+          ? isLimitedResidentShell
+            ? tenantLimitedMenu
+            : tenantFullMenu
           : unsupportedPortalMenu;
+  const menuItems: MenuItem[] = canSwitchWorkspace
+    ? [
+        ...baseMenuItems.filter((item) => item.id !== "logout"),
+        {
+          id: "switch-workspace",
+          title: "Switch Workspace",
+          icon: "swap-horizontal-outline",
+          routePatterns: ["/workspace-selector"],
+          action: () => navigateAndClose("/workspace-selector"),
+        },
+        ...baseMenuItems.filter((item) => item.id === "logout"),
+      ]
+    : baseMenuItems;
   const primaryMenuItems = menuItems.filter((item) => item.id !== "logout");
   const footerMenuItems = menuItems.filter((item) => item.id === "logout");
 
@@ -590,6 +667,12 @@ export function SideMenu({ isVisible, onClose, userRole }: SideMenuProps) {
           >
             {item.title}
           </Text>
+          {item.locked ? (
+            <View style={styles.menuLockPill}>
+              <Ionicons name="lock-closed-outline" size={11} color={P.accentText} />
+              <Text style={styles.menuLockPillText}>Locked</Text>
+            </View>
+          ) : null}
           {item.badge != null && item.badge > 0 ? (
             <View
               style={[
@@ -933,6 +1016,25 @@ const styles = StyleSheet.create({
   },
   menuItemTextActive: {
     color: P.text,
+  },
+  menuLockPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: P.accent,
+    borderWidth: 1,
+    borderColor: "#EFD8BB",
+    marginLeft: 8,
+  },
+  menuLockPillText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: P.accentText,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
   },
   expandIcon: {
     marginLeft: "auto",

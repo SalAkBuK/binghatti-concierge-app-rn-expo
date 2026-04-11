@@ -5,6 +5,11 @@ import { useAsyncStorage } from "./useAsyncStorage";
 import { residentRequestsApi } from "../services/api/resident-requests";
 import { STORAGE_KEYS } from "../utils/constants";
 import { filterNotificationsByUser } from "../utils/helpers";
+import {
+  hasActiveResidentHistoryAccess,
+  isActiveOccupancyRequiredError,
+  RESIDENT_HISTORY_UNAVAILABLE_MESSAGE,
+} from "../utils/resident-history-access";
 import { normalizeOwnerApprovalSnapshot } from "../utils/resident-request-approval";
 import type {
   Notification,
@@ -375,6 +380,31 @@ export const upsertResidentRequestSnapshot = (
   );
 };
 
+export const clearResidentRequestsCache = async (
+  userId?: string | null,
+): Promise<void> => {
+  if (userId) {
+    residentRequestsSnapshots.delete(userId);
+    sharedResidentRequestsPromises.delete(userId);
+
+    try {
+      await AsyncStorage.removeItem(getResidentRequestsStorageKey(userId));
+    } catch (error) {
+      console.warn("[ResidentRequests] Failed to clear snapshot", error);
+    }
+    return;
+  }
+
+  residentRequestsSnapshots.clear();
+  sharedResidentRequestsPromises.clear();
+
+  try {
+    await AsyncStorage.removeItem(STORAGE_KEYS.resident_requests);
+  } catch (error) {
+    console.warn("[ResidentRequests] Failed to clear base snapshot", error);
+  }
+};
+
 const getLatestNotification = (notifications: Notification[]) => {
   return notifications.reduce((latest, current) => {
     if (!latest) return current;
@@ -406,6 +436,7 @@ export const useResidentRequests = ({
   );
   const [isLoading, setIsLoading] = useState(Boolean(currentUserId && !hasInitialSnapshot));
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const inFlightRef = useRef(false);
   const pendingNotificationRefreshRef = useRef(false);
   const lastNotificationIdRef = useRef<string | null>(null);
@@ -416,6 +447,9 @@ export const useResidentRequests = ({
     () => filterNotificationsByUser(notifications ?? [], currentUserId),
     [currentUserId, notifications],
   );
+  const hasResidentHistoryAccess = hasActiveResidentHistoryAccess(currentUser);
+  const historyUnavailable =
+    currentUser?.role === "tenant" && !hasResidentHistoryAccess;
 
   useEffect(() => {
     onUnauthorizedRef.current = onUnauthorized;
@@ -431,6 +465,7 @@ export const useResidentRequests = ({
       setRequests([]);
       setIsLoading(false);
       setIsRefreshing(false);
+      setErrorMessage(null);
       return;
     }
 
@@ -438,7 +473,22 @@ export const useResidentRequests = ({
     setRequests(snapshot?.items ?? []);
     setIsLoading(!isResidentRequestsSnapshotFresh(snapshot));
     setIsRefreshing(false);
+    setErrorMessage(null);
   }, [currentUserId]);
+
+  useEffect(() => {
+    if (!currentUserId || !historyUnavailable) {
+      return;
+    }
+
+    inFlightRef.current = false;
+    bootstrappedUserIdRef.current = null;
+    setRequests([]);
+    setIsLoading(false);
+    setIsRefreshing(false);
+    setErrorMessage(RESIDENT_HISTORY_UNAVAILABLE_MESSAGE);
+    void clearResidentRequestsCache(currentUserId);
+  }, [currentUserId, historyUnavailable]);
 
   const refreshRequests = useCallback(
     async (options: RefreshOptions = {}): Promise<void> => {
@@ -446,6 +496,17 @@ export const useResidentRequests = ({
         setRequests([]);
         setIsLoading(false);
         setIsRefreshing(false);
+        setErrorMessage(null);
+        return;
+      }
+
+      if (!hasResidentHistoryAccess) {
+        bootstrappedUserIdRef.current = null;
+        setRequests([]);
+        setIsLoading(false);
+        setIsRefreshing(false);
+        setErrorMessage(RESIDENT_HISTORY_UNAVAILABLE_MESSAGE);
+        void clearResidentRequestsCache(currentUserId);
         return;
       }
 
@@ -456,15 +517,16 @@ export const useResidentRequests = ({
         return;
       }
 
-      if (!options.asRefresh && options.reason !== "notification") {
-        const cachedSnapshot = getResidentRequestsSnapshot(currentUserId);
-        if (isResidentRequestsSnapshotFresh(cachedSnapshot)) {
-          setRequests(cachedSnapshot?.items ?? []);
-          setIsLoading(false);
-          setIsRefreshing(false);
-          return;
+        if (!options.asRefresh && options.reason !== "notification") {
+          const cachedSnapshot = getResidentRequestsSnapshot(currentUserId);
+          if (isResidentRequestsSnapshotFresh(cachedSnapshot)) {
+            setRequests(cachedSnapshot?.items ?? []);
+            setIsLoading(false);
+            setIsRefreshing(false);
+            setErrorMessage(null);
+            return;
+          }
         }
-      }
 
       inFlightRef.current = true;
       if (options.showLoading) setIsLoading(true);
@@ -501,9 +563,18 @@ export const useResidentRequests = ({
           persist: true,
         });
         setRequests(publishedSnapshot.items);
+        setErrorMessage(null);
       } catch (error) {
         if (getStatusCode(error) === 401) {
           await onUnauthorizedRef.current?.();
+          return;
+        }
+
+        if (isActiveOccupancyRequiredError(error)) {
+          bootstrappedUserIdRef.current = null;
+          await clearResidentRequestsCache(currentUserId);
+          setRequests([]);
+          setErrorMessage(RESIDENT_HISTORY_UNAVAILABLE_MESSAGE);
           return;
         }
 
@@ -511,6 +582,7 @@ export const useResidentRequests = ({
 
         const cachedSnapshot = getResidentRequestsSnapshot(currentUserId);
         setRequests(cachedSnapshot?.items ?? []);
+        setErrorMessage(null);
       } finally {
         if (options.showLoading) setIsLoading(false);
         if (options.asRefresh) setIsRefreshing(false);
@@ -522,7 +594,7 @@ export const useResidentRequests = ({
         }
       }
     },
-    [currentUser, currentUserId],
+    [currentUser, currentUserId, hasResidentHistoryAccess],
   );
 
   useEffect(() => {
@@ -547,6 +619,7 @@ export const useResidentRequests = ({
   useEffect(() => {
     if (cacheLoading) return;
     if (!currentUserId) return;
+    if (historyUnavailable) return;
     if (bootstrappedUserIdRef.current === currentUserId) return;
 
     bootstrappedUserIdRef.current = currentUserId;
@@ -577,9 +650,10 @@ export const useResidentRequests = ({
       showLoading: hydratedItems.length === 0,
       reason: "initial",
     });
-  }, [cache, cacheLoading, currentUserId, refreshRequests]);
+  }, [cache, cacheLoading, currentUserId, historyUnavailable, refreshRequests]);
 
   useEffect(() => {
+    if (historyUnavailable) return;
     if (!currentUserId || userNotifications.length === 0) return;
     const relevant = userNotifications.filter(isRequestNotification);
     if (relevant.length === 0) return;
@@ -600,9 +674,11 @@ export const useResidentRequests = ({
 
     lastNotificationIdRef.current = latest.id;
     void refreshRequests({ reason: "notification" });
-  }, [currentUserId, refreshRequests, userNotifications]);
+  }, [currentUserId, historyUnavailable, refreshRequests, userNotifications]);
 
   return {
+    errorMessage,
+    historyUnavailable,
     requests,
     isLoading,
     isRefreshing,
