@@ -6,7 +6,11 @@ import {
 } from '../tenant-request-tenancy-display';
 import type { Request } from '../../types';
 
-const buildRequest = (id: string, requestTenancyContext?: Request['requestTenancyContext']) =>
+const buildRequest = (
+  id: string,
+  requestTenancyContext?: Request['requestTenancyContext'],
+  requesterContext?: Request['requesterContext'],
+) =>
   ({
     id,
     tenantId: 'tenant-1',
@@ -23,6 +27,7 @@ const buildRequest = (id: string, requestTenancyContext?: Request['requestTenanc
     createdAt: '2026-04-11T10:00:00.000Z',
     updatedAt: '2026-04-11T11:00:00.000Z',
     requestTenancyContext,
+    requesterContext,
   } as Request);
 
 describe('tenant request tenancy display', () => {
@@ -70,5 +75,24 @@ describe('tenant request tenancy display', () => {
     expect(getTenantLifecycleMessage(request)).toBe(
       'This request is archived from a previous stay.',
     );
+  });
+
+  it('treats requester-context current occupancy as current when tenancy context is missing', () => {
+    const request = buildRequest(
+      'current-fallback',
+      undefined,
+      {
+        isResident: true,
+        residentOccupancyStatus: 'ACTIVE',
+        isFormerResident: false,
+        currentUnitOccupiedByRequester: true,
+      },
+    );
+
+    expect(classifyTenantRequestByTenancyCycle(request)).toBe('current');
+    expect(getTenantLifecycleChip(request)).toEqual({
+      label: 'Current',
+      tone: 'success',
+    });
   });
 });

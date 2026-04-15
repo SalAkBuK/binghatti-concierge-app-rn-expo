@@ -5,6 +5,7 @@ import { useAsyncStorage } from "./useAsyncStorage";
 import { residentRequestsApi } from "../services/api/resident-requests";
 import { STORAGE_KEYS } from "../utils/constants";
 import { filterNotificationsByUser } from "../utils/helpers";
+import { mergeResidentLifecycleContext } from "../utils/resident-request-lifecycle";
 import {
   hasActiveResidentHistoryAccess,
   isActiveOccupancyRequiredError,
@@ -549,10 +550,18 @@ export const useResidentRequests = ({
                 : Array.isArray((response as any)?.items)
                   ? (response as any).items
                   : [];
+            const existingItemsById = new Map(
+              (getResidentRequestsSnapshot(currentUserId)?.items ?? []).map((item) => [
+                item.id,
+                item,
+              ]),
+            );
 
             return {
               userId: currentUserId,
-              items: mapResidentRequestsFromBackend(items, currentUser),
+              items: mapResidentRequestsFromBackend(items, currentUser).map((item) =>
+                mergeResidentLifecycleContext(item, existingItemsById.get(item.id)),
+              ),
               fetchedAt: Date.now(),
             };
           })().finally(() => {

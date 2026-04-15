@@ -37,7 +37,7 @@ export const TENANT_REQUEST_SECTION_COPY: Record<
 };
 
 export const classifyTenantRequestByTenancyCycle = (
-  request: Pick<Request, 'requestTenancyContext'>,
+  request: Pick<Request, 'requestTenancyContext' | 'requesterContext'>,
 ): TenantRequestSectionKey => {
   switch (request.requestTenancyContext?.label) {
     case 'CURRENT_OCCUPANCY':
@@ -50,6 +50,19 @@ export const classifyTenantRequestByTenancyCycle = (
         ? 'older'
         : 'archived';
     default:
+      if (request.requesterContext?.currentUnitOccupiedByRequester === true) {
+        return 'current';
+      }
+
+      if (
+        request.requesterContext?.currentUnitOccupiedByRequester === false ||
+        request.requesterContext?.isFormerResident === true ||
+        request.requesterContext?.residentOccupancyStatus === 'FORMER' ||
+        request.requesterContext?.residentOccupancyStatus === 'NONE'
+      ) {
+        return 'archived';
+      }
+
       return 'archived';
   }
 };
@@ -71,7 +84,7 @@ export const groupTenantRequestsByTenancyCycle = (
 };
 
 export const getTenantLifecycleChip = (
-  request: Pick<Request, 'requestTenancyContext'>,
+  request: Pick<Request, 'requestTenancyContext' | 'requesterContext'>,
 ): TenantLifecycleChip | null => {
   switch (classifyTenantRequestByTenancyCycle(request)) {
     case 'current':
@@ -86,11 +99,11 @@ export const getTenantLifecycleChip = (
 };
 
 export const getTenantLifecycleMessage = (
-  request: Pick<Request, 'requestTenancyContext'>,
-): string => {
+  request: Pick<Request, 'requestTenancyContext' | 'requesterContext'>,
+): string | null => {
   switch (classifyTenantRequestByTenancyCycle(request)) {
     case 'current':
-      return 'This request belongs to your current stay.';
+      return null;
     case 'older':
       return 'This is an older request with limited history.';
     case 'archived':

@@ -42,6 +42,7 @@ import {
   type ResidentRequestValidationErrors,
   validateResidentRequestForm,
 } from "../../lib/utils/resident-request-form";
+import { applyActiveResidentLifecycleFallback } from "../../lib/utils/resident-request-lifecycle";
 import { showErrorAlert, showSuccessAlert } from "../../lib/utils/alertHelpers";
 import * as FileSystem from "expo-file-system/legacy";
 import {
@@ -361,9 +362,13 @@ export default function NewRequestScreen() {
                 new Date().toISOString(),
             }
           : null);
+      const createdRequestWithLifecycle =
+        createdRequest && currentUser
+          ? applyActiveResidentLifecycleFallback(createdRequest, currentUser)
+          : createdRequest;
 
-      if (currentUser?.id && createdRequest) {
-        upsertResidentRequestSnapshot(currentUser.id, createdRequest);
+      if (currentUser?.id && createdRequestWithLifecycle) {
+        upsertResidentRequestSnapshot(currentUser.id, createdRequestWithLifecycle);
       }
 
       console.log("[NewRequest] Request created successfully:", response);
