@@ -206,6 +206,7 @@ export function TenantRequestsScene({
   const { actions: requestActions } = useRequests();
   const params = useLocalSearchParams<{ requestId?: string }>();
   const handledRequestIdRef = useRef<string | null>(null);
+  const lastAutoRefreshAtRef = useRef(0);
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
   const [showSideMenu, setShowSideMenu] = useState(false);
   const [page, setPage] = useState(1);
@@ -241,11 +242,17 @@ export function TenantRequestsScene({
   useFocusEffect(
     useCallback(() => {
       if (!isPreMoveIn) {
+        const now = Date.now();
+        if (now - lastAutoRefreshAtRef.current < 15_000) {
+          return;
+        }
+        lastAutoRefreshAtRef.current = now;
+        void refreshRequests({ asRefresh: true, showLoading: false, reason: "manual" });
         return;
       }
 
       void refetchTenancy({ asRefresh: true, showLoading: false });
-    }, [isPreMoveIn, refetchTenancy]),
+    }, [isPreMoveIn, refetchTenancy, refreshRequests]),
   );
 
   const allRequestsByNewest = useMemo(

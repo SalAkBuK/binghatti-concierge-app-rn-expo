@@ -1,3 +1,4 @@
+import { AppState, type AppStateStatus } from "react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { apiService } from "../services/api";
@@ -77,6 +78,7 @@ export const useBroadcastNotifications = (
   const onUnauthorized = options?.onUnauthorized;
   const onUnauthorizedRef = useRef(onUnauthorized);
   const inFlightRef = useRef(false);
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
 
   const [fetchedNotifications, setFetchedNotifications] = useState<Notification[]>(
     [],
@@ -145,6 +147,27 @@ export const useBroadcastNotifications = (
   useEffect(() => {
     void refetch({ showLoading: true, asRefresh: false });
   }, [refetch]);
+
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      if (
+        appStateRef.current.match(/inactive|background/) &&
+        nextAppState === "active"
+      ) {
+        void refetch({ asRefresh: true, showLoading: false });
+      }
+
+      appStateRef.current = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [enabled, refetch]);
 
   const notifications = useMemo(
     () =>

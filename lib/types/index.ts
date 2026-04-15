@@ -997,6 +997,16 @@ export interface ResidentIdentity {
   occupancy: ResidentOccupancy | null;
 }
 
+export interface ResidentParkingAllocation {
+  id: string | null;
+  slotId: string | null;
+  code: string | null;
+  level: string | null;
+  type: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
 export interface ResidentAvatarUploadResponse {
   avatarUrl: string;
 }

@@ -13,6 +13,7 @@ const mockUseRequestsContext = jest.fn();
 const mockUseResidentContract = jest.fn();
 const mockUseResidentTenancy = jest.fn();
 const mockUseResidentRequests = jest.fn();
+const mockUseResidentParkingAllocation = jest.fn();
 const mockUseBroadcastNotifications = jest.fn();
 const mockUseOwnerUnreadSummary = jest.fn();
 const mockUseOwnerUnauthorized = jest.fn();
@@ -80,6 +81,10 @@ jest.mock('../../lib/hooks/useResidentTenancy', () => ({
 
 jest.mock('../../lib/hooks/useResidentRequests', () => ({
   useResidentRequests: () => mockUseResidentRequests(),
+}));
+
+jest.mock('../../lib/hooks/useResidentParkingAllocation', () => ({
+  useResidentParkingAllocation: () => mockUseResidentParkingAllocation(),
 }));
 
 jest.mock('../../lib/hooks/useBroadcastNotifications', () => ({
@@ -269,6 +274,13 @@ describe('Portal runtime guards', () => {
       requests: [],
       refreshRequests: jest.fn().mockResolvedValue(undefined),
       isRefreshing: false,
+    });
+    mockUseResidentParkingAllocation.mockReturnValue({
+      data: null,
+      errorMessage: null,
+      isLoading: false,
+      isRefreshing: false,
+      refetch: jest.fn().mockResolvedValue(undefined),
     });
     mockUseBroadcastNotifications.mockReturnValue({
       notifications: [],

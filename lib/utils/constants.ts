@@ -103,6 +103,7 @@ export const API_ENDPOINTS = {
     me: "/resident/me",
     meProfile: "/resident/me/profile",
     meAvatar: "/resident/me/avatar",
+    parkingActiveAllocation: "/resident/parking/active-allocation",
     visitors: "/resident/visitors",
     visitorDetail: (visitorId: string) => `/resident/visitors/${visitorId}`,
     visitorCancel: (visitorId: string) =>

@@ -30,6 +30,7 @@ import { useAuth } from "../../lib/context/auth-context";
 import { useNotifications } from "../../lib/context/notifications-context";
 import { useRequests } from "../../lib/context/requests-context";
 import { useBroadcastNotifications } from "../../lib/hooks/useBroadcastNotifications";
+import { useResidentParkingAllocation } from "../../lib/hooks/useResidentParkingAllocation";
 import { useResidentContract } from "../../lib/hooks/useResidentSelfService";
 import { useResidentRequests } from "../../lib/hooks/useResidentRequests";
 import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
@@ -92,6 +93,24 @@ const formatDateTime = (value?: string | null) => {
     hour: "2-digit",
     minute: "2-digit",
   });
+};
+
+const formatParkingLevel = (value?: string | null) => {
+  if (!value) return "Level unavailable";
+  const normalized = value.trim();
+  if (!normalized) return "Level unavailable";
+  return /^level\b/i.test(normalized) ? normalized : `Level ${normalized}`;
+};
+
+const formatParkingType = (value?: string | null) => {
+  if (!value) return "Type unavailable";
+  return value
+    .trim()
+    .toLowerCase()
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 };
 
 const greeting = () => {
@@ -188,6 +207,7 @@ export default function TenantHomeScreen() {
   const [hasLoadedCriticalPortalData, setHasLoadedCriticalPortalData] = useState(false);
   const tabBarHeight = useBottomTabBarHeight();
   const isHandlingUnauthorizedRef = useRef(false);
+  const lastAutoRefreshAtRef = useRef(0);
 
   const handleUnauthorized = useCallback(async () => {
     if (isHandlingUnauthorizedRef.current) return;
@@ -246,6 +266,21 @@ export default function TenantHomeScreen() {
     notifications,
     onUnauthorized: handleUnauthorized,
   });
+  const {
+    data: activeParkingAllocation,
+    errorMessage: parkingErrorMessage,
+    isLoading: isParkingLoading,
+    refetch: refetchParkingAllocation,
+  } = useResidentParkingAllocation({
+    enabled: Boolean(
+      currentUser?.id &&
+        isAuthenticated &&
+        !isTenancyLoading &&
+        !isFormerResident &&
+        !isPreMoveIn,
+    ),
+    onUnauthorized: handleUnauthorized,
+  });
 
   const {
     notifications: broadcastNotifications,
@@ -298,14 +333,43 @@ export default function TenantHomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      if (!isPreMoveIn) {
+      if (!currentUser?.id || !isAuthenticated) {
         return;
       }
 
-      // Contract refresh already invalidates resident tenancy, so calling both
-      // here creates a focus loop while the screen remains mounted.
-      void refetchContract({ asRefresh: true, showLoading: false });
-    }, [isPreMoveIn, refetchContract]),
+      const now = Date.now();
+      if (now - lastAutoRefreshAtRef.current < 15_000) {
+        return;
+      }
+      lastAutoRefreshAtRef.current = now;
+
+      void Promise.all([
+        refetchContract({ asRefresh: true, showLoading: false }),
+        refreshRequests({ asRefresh: true, showLoading: false, reason: "manual" }),
+        refetchBroadcastNotices({ asRefresh: true, showLoading: false }),
+        !isFormerResident && !isPreMoveIn
+          ? refetchParkingAllocation({ asRefresh: true, showLoading: false })
+          : Promise.resolve(),
+        contractData.contract?.id
+          ? refetchHistory(contractData.contract.id).catch((error) => {
+              console.warn("[TenantHome] Failed to refresh move request history on focus:", error);
+            })
+          : Promise.resolve(),
+      ]).catch((error) => {
+        console.warn("[TenantHome] Failed to refresh tenant home on focus:", error);
+      });
+    }, [
+      contractData.contract?.id,
+      currentUser?.id,
+      isAuthenticated,
+      isFormerResident,
+      isPreMoveIn,
+      refetchBroadcastNotices,
+      refetchContract,
+      refetchHistory,
+      refetchParkingAllocation,
+      refreshRequests,
+    ]),
   );
 
   const handleReturnToSignIn = useCallback(async () => {
@@ -326,11 +390,13 @@ export default function TenantHomeScreen() {
     await Promise.all([
       refreshRequests({ asRefresh: true, reason: "manual" }),
       refetchContract({ asRefresh: true, showLoading: false }),
+      refetchParkingAllocation({ asRefresh: true, showLoading: false }),
       refetchBroadcastNotices({ asRefresh: true, showLoading: false }),
       contractData.contract?.id ? refetchHistory(contractData.contract.id) : Promise.resolve(),
     ]);
   }, [
     contractData.contract?.id,
+    refetchParkingAllocation,
     refetchBroadcastNotices,
     refetchContract,
     refetchHistory,
@@ -626,6 +692,67 @@ export default function TenantHomeScreen() {
                 {isPreMoveIn ? preMoveInStatusMessage : statusMessage}
               </Text>
             </View>
+          </Animated.View>
+        ) : null}
+
+        {!isResidentHistoryLocked ? (
+          <Animated.View entering={FadeInDown.delay(125).duration(400)} style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View>
+                <Text style={styles.sectionTitle}>Parking Allocation</Text>
+                <Text style={styles.sectionSubtitle}>
+                  Your currently assigned resident parking slot
+                </Text>
+              </View>
+            </View>
+
+            {isParkingLoading && !activeParkingAllocation ? (
+              <View style={styles.emptyCard}>
+                <Ionicons name="car-outline" size={26} color={P.soft} />
+                <Text style={styles.emptyTitle}>Loading parking allocation</Text>
+                <Text style={styles.emptyText}>
+                  Pulling your latest active slot assignment.
+                </Text>
+              </View>
+            ) : activeParkingAllocation ? (
+              <View style={styles.parkingCard}>
+                <View style={styles.parkingTopRow}>
+                  <View>
+                    <Text style={styles.parkingEyebrow}>Assigned Slot</Text>
+                    <Text style={styles.parkingCode}>
+                      {activeParkingAllocation.code || "Slot unavailable"}
+                    </Text>
+                  </View>
+                  <View style={styles.parkingIconWrap}>
+                    <Ionicons name="car-sport-outline" size={20} color={P.primary} />
+                  </View>
+                </View>
+
+                <View style={styles.parkingMetaRow}>
+                  <View style={styles.parkingMetaPill}>
+                    <Ionicons name="layers-outline" size={14} color={P.primary} />
+                    <Text style={styles.parkingMetaText}>
+                      {formatParkingLevel(activeParkingAllocation.level)}
+                    </Text>
+                  </View>
+                  <View style={styles.parkingMetaPill}>
+                    <Ionicons name="bookmark-outline" size={14} color={P.primary} />
+                    <Text style={styles.parkingMetaText}>
+                      {formatParkingType(activeParkingAllocation.type)}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            ) : (
+              <View style={styles.emptyCard}>
+                <Ionicons name="car-outline" size={26} color={P.soft} />
+                <Text style={styles.emptyTitle}>No active parking allocation</Text>
+                <Text style={styles.emptyText}>
+                  {parkingErrorMessage ||
+                    "No active parking slot is assigned to this resident right now."}
+                </Text>
+              </View>
+            )}
           </Animated.View>
         ) : null}
 
@@ -1027,6 +1154,70 @@ const styles = StyleSheet.create({
     borderColor: P.border,
   },
   profilePillText: { flexShrink: 1, fontSize: 13, fontWeight: "600", color: P.text },
+  parkingCard: {
+    backgroundColor: P.surface,
+    borderRadius: 24,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: P.border,
+    shadowColor: P.shadow,
+    shadowOpacity: 1,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 3,
+    gap: 16,
+  },
+  parkingTopRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  parkingEyebrow: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: P.primary,
+    letterSpacing: 0.3,
+    textTransform: "uppercase",
+  },
+  parkingCode: {
+    marginTop: 8,
+    fontSize: 28,
+    lineHeight: 32,
+    fontWeight: "800",
+    color: P.text,
+  },
+  parkingIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 16,
+    backgroundColor: P.surfaceLow,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: P.border,
+  },
+  parkingMetaRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  parkingMetaPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: P.surfaceLow,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: P.border,
+  },
+  parkingMetaText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: P.text,
+  },
   banner: {
     flexDirection: "row",
     alignItems: "flex-start",

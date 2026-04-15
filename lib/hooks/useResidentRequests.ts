@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { AppState, type AppStateStatus } from "react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAsyncStorage } from "./useAsyncStorage";
@@ -447,6 +448,7 @@ export const useResidentRequests = ({
   const lastNotificationIdRef = useRef<string | null>(null);
   const bootstrappedUserIdRef = useRef<string | null>(null);
   const onUnauthorizedRef = useRef(onUnauthorized);
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
 
   const userNotifications = useMemo(
     () => filterNotificationsByUser(notifications ?? [], currentUserId),
@@ -688,6 +690,27 @@ export const useResidentRequests = ({
     lastNotificationIdRef.current = latest.id;
     void refreshRequests({ reason: "notification" });
   }, [currentUserId, historyUnavailable, refreshRequests, userNotifications]);
+
+  useEffect(() => {
+    if (!currentUserId || historyUnavailable) {
+      return;
+    }
+
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      if (
+        appStateRef.current.match(/inactive|background/) &&
+        nextAppState === "active"
+      ) {
+        void refreshRequests({ asRefresh: true, showLoading: false });
+      }
+
+      appStateRef.current = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [currentUserId, historyUnavailable, refreshRequests]);
 
   return {
     errorMessage,

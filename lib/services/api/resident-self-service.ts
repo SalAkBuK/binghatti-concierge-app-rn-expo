@@ -13,6 +13,7 @@ import type {
   ResidentContractsListResponse,
   ResidentAvatarUploadResponse,
   ResidentIdentity,
+  ResidentParkingAllocation,
   ResidentContractDisplayStatus,
   ResidentContractStatus,
   ResidentExtendedProfile,
@@ -528,6 +529,67 @@ const mapResidentIdentity = (payload: unknown): ResidentIdentity => {
   };
 };
 
+const mapResidentParkingAllocation = (
+  payload: unknown,
+): ResidentParkingAllocation | null => {
+  if (!payload) {
+    return null;
+  }
+
+  const record = isRecord(payload) ? payload : null;
+  if (!record) {
+    return null;
+  }
+
+  const slotRecord = isRecord(readProp(record, "slot"))
+    ? (readProp(record, "slot") as UnknownRecord)
+    : null;
+
+  return {
+    id: toStringOrNull(firstDefined(record.id, record.allocationId)),
+    slotId: toStringOrNull(
+      firstDefined(
+        record.slotId,
+        record.slot_id,
+        slotRecord?.id,
+        slotRecord?.slotId,
+      ),
+    ),
+    code: toStringOrNull(
+      firstDefined(
+        record.code,
+        record.slotCode,
+        record.slot_code,
+        slotRecord?.code,
+        slotRecord?.slotCode,
+        slotRecord?.slot_code,
+      ),
+    ),
+    level: toStringOrNull(
+      firstDefined(
+        record.level,
+        record.slotLevel,
+        record.slot_level,
+        slotRecord?.level,
+        slotRecord?.slotLevel,
+        slotRecord?.slot_level,
+      ),
+    ),
+    type: toStringOrNull(
+      firstDefined(
+        record.type,
+        record.slotType,
+        record.slot_type,
+        slotRecord?.type,
+        slotRecord?.slotType,
+        slotRecord?.slot_type,
+      ),
+    ),
+    createdAt: toStringOrNull(firstDefined(record.createdAt, record.created_at)),
+    updatedAt: toStringOrNull(firstDefined(record.updatedAt, record.updated_at)),
+  };
+};
+
 const mapResidentAvatarUploadResponse = (
   payload: unknown,
 ): ResidentAvatarUploadResponse => {
@@ -802,6 +864,24 @@ export class ResidentSelfServiceApiService
       return normalized;
     } catch (error) {
       logResidentContract("GET /resident/me error", error);
+      throw error;
+    }
+  }
+
+  async getResidentActiveParkingAllocation(): Promise<ResidentParkingAllocation | null> {
+    try {
+      const response = await this.get<ApiResponse<unknown> | unknown>(
+        API_ENDPOINTS.resident.parkingActiveAllocation,
+      );
+      const payload = unwrapResponseData(response);
+      const normalized = mapResidentParkingAllocation(payload);
+      logResidentContract(
+        "GET /resident/parking/active-allocation normalized",
+        normalized,
+      );
+      return normalized;
+    } catch (error) {
+      logResidentContract("GET /resident/parking/active-allocation error", error);
       throw error;
     }
   }

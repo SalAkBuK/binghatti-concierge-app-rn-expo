@@ -13,6 +13,7 @@ const mockUseRequestsContext = jest.fn();
 const mockUseResidentContract = jest.fn();
 const mockUseResidentTenancy = jest.fn();
 const mockUseResidentRequests = jest.fn();
+const mockUseResidentParkingAllocation = jest.fn();
 const mockUseBroadcastNotifications = jest.fn();
 const mockUseMessaging = jest.fn();
 const mockUseAppDomain = jest.fn();
@@ -114,6 +115,10 @@ jest.mock("../../lib/hooks/useResidentTenancy", () => ({
 
 jest.mock("../../lib/hooks/useResidentRequests", () => ({
   useResidentRequests: () => mockUseResidentRequests(),
+}));
+
+jest.mock("../../lib/hooks/useResidentParkingAllocation", () => ({
+  useResidentParkingAllocation: () => mockUseResidentParkingAllocation(),
 }));
 
 jest.mock("../../lib/hooks/useBroadcastNotifications", () => ({
@@ -357,6 +362,13 @@ describe("Tenant pre-move-in screens", () => {
           priority: "medium",
         },
       ],
+    });
+    mockUseResidentParkingAllocation.mockReturnValue({
+      data: null,
+      errorMessage: null,
+      isLoading: false,
+      isRefreshing: false,
+      refetch: jest.fn().mockResolvedValue(undefined),
     });
     mockUseBroadcastNotifications.mockReturnValue({
       notifications: [],

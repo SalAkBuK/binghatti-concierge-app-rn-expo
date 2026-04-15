@@ -25,6 +25,7 @@ import type {
   EmployeeEarnings,
   ResidentLatestContract,
   ResidentIdentity,
+  ResidentParkingAllocation,
   ResidentContract,
   ResidentContractsListResponse,
   ResidentAvatarUploadResponse,
@@ -137,6 +138,7 @@ export interface EmployeeApi {
 
 export interface ResidentSelfServiceApi {
   getResidentIdentity(): Promise<ResidentIdentity>;
+  getResidentActiveParkingAllocation(): Promise<ResidentParkingAllocation | null>;
   uploadResidentAvatar(file: {
     uri: string;
     type: string;
