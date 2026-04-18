@@ -669,12 +669,12 @@ export function TenantRequestsScene({
               {isHistoryView ? "Request History" : "Request Tracking"}
             </Text>
             <Text style={styles.heroSubtitle}>
-              {isFormerResident
-                ? "Review the latest request history from your previous residency."
-                : filterStatus === "all"
-                ? activeView === "current"
-                  ? `${currentRequestCount} current request${currentRequestCount === 1 ? "" : "s"} are visible in your active stay.`
-                  : `${historyRequestCount} archived request${historyRequestCount === 1 ? "" : "s"} are available in your history.`
+                {isFormerResident
+                  ? "Review the latest request history from your previous residency."
+                  : filterStatus === "all"
+                  ? activeView === "current"
+                    ? `${currentRequestCount} current request${currentRequestCount === 1 ? "" : "s"} are visible in your active stay.`
+                    : `${historyRequestCount} request${historyRequestCount === 1 ? "" : "s"} are available in your history.`
                 : `${allUserRequests.length} ${activeView === "current" ? "current" : "history"} request${allUserRequests.length === 1 ? "" : "s"} in ${activeFilterLabel.toLowerCase()}.`}
             </Text>
           </View>
@@ -729,7 +729,7 @@ export function TenantRequestsScene({
             <Text style={styles.sectionSubtitle}>
               {activeView === "current"
                 ? "Only requests from your current stay appear here."
-                : "Archived requests stay separate from your active work."}
+                : "Archived and unresolved requests stay separate from your active work."}
             </Text>
           </View>
           {isHistoryView ? (
@@ -795,7 +795,7 @@ export function TenantRequestsScene({
             {filterStatus === "all"
               ? activeView === "current"
                 ? "You do not have any requests from your current stay right now."
-                : "You do not have any archived requests in history right now."
+                : "You do not have any request history right now."
               : `There are no ${activeView === "current" ? "current" : "history"} requests in ${activeFilterLabel.toLowerCase()} right now.`}
           </Text>
           {activeView === "history" && currentRequestCount > 0 ? (

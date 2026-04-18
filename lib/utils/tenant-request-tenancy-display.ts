@@ -39,32 +39,33 @@ export const TENANT_REQUEST_SECTION_COPY: Record<
 export const classifyTenantRequestByTenancyCycle = (
   request: Pick<Request, 'requestTenancyContext' | 'requesterContext'>,
 ): TenantRequestSectionKey => {
-  switch (request.requestTenancyContext?.label) {
-    case 'CURRENT_OCCUPANCY':
-      return 'current';
-    case 'PREVIOUS_OCCUPANCY':
-    case 'NO_ACTIVE_OCCUPANCY':
-      return 'archived';
-    case 'UNKNOWN_TENANCY_CYCLE':
-      return request.requestTenancyContext.tenancyContextSource === 'UNRESOLVED'
-        ? 'older'
-        : 'archived';
-    default:
-      if (request.requesterContext?.currentUnitOccupiedByRequester === true) {
+  if (request.requestTenancyContext) {
+    switch (request.requestTenancyContext.label) {
+      case 'CURRENT_OCCUPANCY':
         return 'current';
-      }
-
-      if (
-        request.requesterContext?.currentUnitOccupiedByRequester === false ||
-        request.requesterContext?.isFormerResident === true ||
-        request.requesterContext?.residentOccupancyStatus === 'FORMER' ||
-        request.requesterContext?.residentOccupancyStatus === 'NONE'
-      ) {
+      case 'PREVIOUS_OCCUPANCY':
+      case 'NO_ACTIVE_OCCUPANCY':
         return 'archived';
-      }
-
-      return 'archived';
+      case 'UNKNOWN_TENANCY_CYCLE':
+      default:
+        return 'older';
+    }
   }
+
+  if (request.requesterContext?.currentUnitOccupiedByRequester === true) {
+    return 'current';
+  }
+
+  if (
+    request.requesterContext?.currentUnitOccupiedByRequester === false ||
+    request.requesterContext?.isFormerResident === true ||
+    request.requesterContext?.residentOccupancyStatus === 'FORMER' ||
+    request.requesterContext?.residentOccupancyStatus === 'NONE'
+  ) {
+    return 'archived';
+  }
+
+  return 'archived';
 };
 
 export const groupTenantRequestsByTenancyCycle = (

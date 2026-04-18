@@ -1,10 +1,40 @@
 import type { Request, RequestTenancyContext, RequesterContext, User } from '../types';
 
-const isActiveResident = (user: Pick<User, 'role' | 'persona'> | null | undefined) =>
-  user?.role === 'tenant' && user.persona?.residentOccupancyStatus === 'ACTIVE';
+const hasResidentAccessOccupancy = (
+  resident: Pick<
+    NonNullable<User['resident']>,
+    'occupancyId' | 'buildingId' | 'unitId' | 'unitLabel' | 'unitNumber'
+  > | null | undefined,
+) =>
+  Boolean(
+    resident?.occupancyId ||
+      resident?.buildingId ||
+      resident?.unitId ||
+      resident?.unitLabel ||
+      resident?.unitNumber,
+  );
+
+const isActiveResident = (
+  user: Pick<User, 'role' | 'persona' | 'resident'> | null | undefined,
+) => {
+  if (user?.role !== 'tenant') {
+    return false;
+  }
+
+  const occupancyStatus = user.persona?.residentOccupancyStatus?.trim().toUpperCase() ?? null;
+  if (occupancyStatus === 'ACTIVE') {
+    return true;
+  }
+
+  if (occupancyStatus === 'NONE') {
+    return false;
+  }
+
+  return hasResidentAccessOccupancy(user.resident);
+};
 
 export const buildActiveResidentRequesterContext = (
-  user: Pick<User, 'id' | 'name' | 'role' | 'persona'> | null | undefined,
+  user: Pick<User, 'id' | 'name' | 'role' | 'persona' | 'resident'> | null | undefined,
 ): RequesterContext | null => {
   if (!isActiveResident(user)) {
     return null;
@@ -23,7 +53,7 @@ export const buildActiveResidentRequesterContext = (
 };
 
 export const buildActiveResidentTenancyContext = (
-  user: Pick<User, 'role' | 'persona'> | null | undefined,
+  user: Pick<User, 'role' | 'persona' | 'resident'> | null | undefined,
 ): RequestTenancyContext | null => {
   if (!isActiveResident(user)) {
     return null;
@@ -45,7 +75,7 @@ export const buildActiveResidentTenancyContext = (
 
 export const applyActiveResidentLifecycleFallback = (
   request: Request,
-  user: Pick<User, 'id' | 'name' | 'role' | 'persona'> | null | undefined,
+  user: Pick<User, 'id' | 'name' | 'role' | 'persona' | 'resident'> | null | undefined,
 ): Request => {
   const requesterContext =
     request.requesterContext ?? buildActiveResidentRequesterContext(user);

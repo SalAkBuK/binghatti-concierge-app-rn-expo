@@ -539,7 +539,7 @@ describe("tenant request lifecycle labeling", () => {
     expect(text).toContain("Archived");
     expect(text).toContain("Older Record");
     expect(text).toContain(
-      "3 archived requests are available in your history.",
+      "3 requests are available in your history.",
     );
     expect(getTouchableTextContent(renderer!, "All")).toEqual(["All", "3"]);
     expect(getTouchableTextContent(renderer!, "Submitted")).toEqual([

@@ -60,20 +60,20 @@ describe('tenant request tenancy display', () => {
     expect(grouped.older.map((request) => request.id)).toEqual(['legacy']);
   });
 
-  it('treats non-unresolved unknown requests as archived rather than older records', () => {
+  it('treats backend unknown tenancy as older records instead of archive', () => {
     const request = buildRequest('legacy', {
       label: 'UNKNOWN_TENANCY_CYCLE',
       leaseLabel: 'UNKNOWN_LEASE_CYCLE',
       tenancyContextSource: 'HISTORICAL_INFERENCE',
     });
 
-    expect(classifyTenantRequestByTenancyCycle(request)).toBe('archived');
+    expect(classifyTenantRequestByTenancyCycle(request)).toBe('older');
     expect(getTenantLifecycleChip(request)).toEqual({
-      label: 'Archived',
-      tone: 'warning',
+      label: 'Older Record',
+      tone: 'neutral',
     });
     expect(getTenantLifecycleMessage(request)).toBe(
-      'This request is archived from a previous stay.',
+      'This is an older request with limited history.',
     );
   });
 

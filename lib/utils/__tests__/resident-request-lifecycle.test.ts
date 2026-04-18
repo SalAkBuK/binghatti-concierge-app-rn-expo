@@ -4,7 +4,9 @@ import {
 } from '../resident-request-lifecycle';
 import type { Request, User } from '../../types';
 
-const buildUser = (): User =>
+const buildUser = (
+  overrides?: Partial<User>,
+): User =>
   ({
     id: 'resident-1',
     email: 'resident@example.com',
@@ -21,7 +23,11 @@ const buildUser = (): User =>
       isBuildingStaff: false,
       buildingStaffRoleKeys: [],
     },
+    resident: null,
     profile: {},
+    createdAt: '2026-04-11T10:00:00.000Z',
+    updatedAt: '2026-04-11T10:00:00.000Z',
+    ...overrides,
   } as User);
 
 const buildRequest = (overrides?: Partial<Request>): Request =>
@@ -99,5 +105,98 @@ describe('resident request lifecycle helpers', () => {
         requestTenancyContext: existing.requestTenancyContext,
       }),
     );
+  });
+
+  it('does not overwrite backend lifecycle context when it is already present', () => {
+    const request = applyActiveResidentLifecycleFallback(
+      buildRequest({
+        requesterContext: {
+          isResident: true,
+          residentOccupancyStatus: 'FORMER',
+          isFormerResident: true,
+          currentUnitOccupiedByRequester: false,
+        },
+        requestTenancyContext: {
+          occupancyIdAtCreation: 'occupancy-old',
+          leaseIdAtCreation: 'lease-old',
+          currentOccupancyId: 'occupancy-current',
+          currentLeaseId: 'lease-current',
+          isCurrentOccupancy: false,
+          isCurrentLease: false,
+          label: 'PREVIOUS_OCCUPANCY',
+          leaseLabel: 'PREVIOUS_LEASE',
+          tenancyContextSource: 'SNAPSHOT',
+          leaseContextSource: 'SNAPSHOT',
+        },
+      }),
+      buildUser(),
+    );
+
+    expect(request.requesterContext).toEqual({
+      isResident: true,
+      residentOccupancyStatus: 'FORMER',
+      isFormerResident: true,
+      currentUnitOccupiedByRequester: false,
+    });
+    expect(request.requestTenancyContext).toEqual({
+      occupancyIdAtCreation: 'occupancy-old',
+      leaseIdAtCreation: 'lease-old',
+      currentOccupancyId: 'occupancy-current',
+      currentLeaseId: 'lease-current',
+      isCurrentOccupancy: false,
+      isCurrentLease: false,
+      label: 'PREVIOUS_OCCUPANCY',
+      leaseLabel: 'PREVIOUS_LEASE',
+      tenancyContextSource: 'SNAPSHOT',
+      leaseContextSource: 'SNAPSHOT',
+    });
+  });
+
+  it('treats returning residents with active resident access as current even before persona catches up', () => {
+    const request = applyActiveResidentLifecycleFallback(
+      buildRequest(),
+      buildUser({
+        persona: {
+          isResident: true,
+          residentOccupancyStatus: 'FORMER',
+          residentInviteStatus: null,
+          keys: ['RESIDENT'],
+          isOwner: false,
+          isServiceProvider: false,
+          serviceProviderRoles: [],
+          isBuildingStaff: false,
+          buildingStaffRoleKeys: [],
+        },
+        resident: {
+          occupancyId: 'occupancy-1',
+          buildingId: 'building-1',
+          unitId: 'unit-1',
+          unitLabel: '1204',
+        },
+      }),
+    );
+
+    expect(request.requesterContext).toEqual({
+      isResident: true,
+      residentOccupancyStatus: 'ACTIVE',
+      isFormerResident: false,
+      currentUnitOccupiedByRequester: true,
+      currentUnitOccupant: {
+        userId: 'resident-1',
+        name: 'Resident User',
+      },
+    });
+    expect(request.requestTenancyContext).toEqual({
+      occupancyIdAtCreation: null,
+      leaseIdAtCreation: null,
+      currentOccupancyId: null,
+      currentLeaseId: null,
+      isCurrentOccupancy: true,
+      isCurrentLease: true,
+      label: 'CURRENT_OCCUPANCY',
+      leaseLabel: 'CURRENT_LEASE',
+      tenancyContextSource: 'SNAPSHOT',
+      leaseContextSource: 'SNAPSHOT',
+    });
   });
 });
