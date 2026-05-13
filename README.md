@@ -1,44 +1,58 @@
-# Tower Desk Mobile
+# Towerdesk Mobile
 
-Expo Router mobile app for Binghatti concierge and property operations.
+Towerdesk Mobile is an Expo Router / React Native app for property concierge and building operations workflows. It supports authenticated mobile workspaces for residents, owners, management staff, building employees, and service provider workers.
 
-## Current State
+This repository is not currently production-publication ready. It contains useful application work, but it still mixes real API integrations with mock-backed modules, depends on a private backend, and has publish-safety cleanup items that should be handled before making the repo public.
 
-This repository is in an active transition from a broad multi-role concept to a cleaner, more maintainable app structure.
+## Demo Or Screenshots
 
-What is live today:
-- Tenant portal
-- Management portal
-- Building employee portal
-- Shared modal flows, auth, notifications, messaging, requests, and resident self-service
+No public demo link or vetted screenshots are included yet.
 
-What is planned or partially scaffolded, but not fully mounted as first-class portals:
-- Admin
-- Super admin
-- Service provider
-- Employee
-- Owner
+Suggested before publishing:
 
-The most important rule for contributors is: trust the runtime structure in `app/` and the architecture guide in `docs/ARCHITECTURE.md` over older docs that describe a `src/`-based layout or portals that are not currently mounted.
+- Add 2-4 screenshots that do not expose real tenant, owner, building, or backend data.
+- Add a short demo video or Expo preview only after environment files and service configuration are sanitized.
+
+## Features
+
+- Authentication, session restoration, password reset, and forced password-change flow.
+- Persona-based workspace routing after login.
+- Resident workspace for requests, request history, amenities, bookings, visitors, lease details, messages, ratings, and profile flows.
+- Owner workspace for portfolio overview, units, requests, messages, notifications, and profile flows.
+- Management workspace for operations dashboards, requests, buildings, units, visitors, parcels, billing, maintenance, shifts, workforce, managers, activity, amenities, and profile flows.
+- Building employee workspace for job/task workflows, amenities, messages, and profile management.
+- Service provider worker workspace for assigned request handling.
+- Shared modal flows for notifications, request details, conversations, visitor registration, amenity bookings, ratings, provider access, and job completion approval.
+- REST API service layer with token storage, refresh handling, request helpers, and domain-specific clients.
+- Jest coverage for routing, portal guards, request utilities, owner flows, resident flows, and selected hooks.
 
 ## Tech Stack
 
 - Expo SDK 54
 - React Native 0.81
 - React 19
-- TypeScript
-- Expo Router
-- Context-based state modules under `lib/context`
-- REST clients under `lib/services/api`
+- Expo Router 6
+- TypeScript 5.9
+- React Navigation
+- Jest / jest-expo
+- Expo SecureStore, Notifications, FileSystem, ImagePicker, DocumentPicker, Splash Screen, WebBrowser
+- AsyncStorage
+- Socket.IO client
+- Lottie React Native
+- EAS Build configuration for Android preview and production profiles
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js `>=20.19.4`
 - npm
-- Android Studio for Android work
-- Xcode for iOS work on macOS
+- Expo CLI through `npx expo`
+- Android Studio for Android builds
+- Xcode on macOS for iOS builds
+- Access to the Towerdesk backend API, if you need real authenticated data
+
+On Windows PowerShell, `npm.ps1` may be blocked by execution policy. Use `npm.cmd` if plain `npm` fails.
 
 ### Install
 
@@ -46,13 +60,26 @@ The most important rule for contributors is: trust the runtime structure in `app
 npm install
 ```
 
+The install runs `patch-package` and applies the checked-in React Native Gradle plugin patch.
+
+### Environment
+
+The app reads these public Expo variables:
+
+```bash
+EXPO_PUBLIC_API_BASE_URL=https://api.example.com/api
+EXPO_PUBLIC_WS_BASE_URL=wss://api.example.com
+```
+
+The current repository has checked-in `.env.development` and `.env.production` files pointing at the Towerdesk API. Before publishing, replace committed environment files with a sanitized `.env.example` and keep real environment files out of version control.
+
 ### Run
 
 ```bash
 npm start
 ```
 
-Useful variants:
+Useful platform commands:
 
 ```bash
 npm run android
@@ -60,79 +87,98 @@ npm run ios
 npm run web
 ```
 
-### Quality Checks
+## Available Scripts
 
-```bash
-npm run lint
-npm run typecheck
-npm test
-```
+- `npm start` - start Expo.
+- `npm run android` - start Expo and open Android.
+- `npm run ios` - start Expo and open iOS.
+- `npm run web` - start Expo for web.
+- `npm run lint` - run Expo ESLint.
+- `npm run typecheck` - run TypeScript without emitting files.
+- `npm test` - run Jest.
+- `npm run doctor` - run Expo Doctor.
+- `npm run prebuild` - generate native projects.
+- `npm run build:preview` - run EAS Android preview APK build.
+- `npm run build:production` - run EAS Android production app bundle build.
+- `npm run build:local` - prebuild Android and run a local release assemble.
 
-## Actual Project Structure
+## Project Structure
 
 ```text
-app/                  Expo Router routes and portal entry points
-  (tenant)/           Live tenant portal
-  (management)/       Live management portal
-  (buildingEmployee)/ Live building employee portal
-  (modals)/           Shared modal routes
+app/                         Expo Router routes and layouts
+  (tenant)/                  resident / tenant workspace
+  (owner)/                   owner workspace
+  (management)/              management workspace
+  (buildingEmployee)/        building employee workspace
+  (serviceProvider)/         service provider worker workspace
+  (modals)/                  shared modal routes
 
-lib/                  Main app core
-  context/            Auth, requests, notifications, messaging, domain modules
-  hooks/              App-level hooks
-  services/           API clients, storage, notifications
-  types/              Shared TypeScript types
-  utils/              Shared helpers and constants
+components/                  reusable UI and portal-specific components
+lib/                         main application logic
+  config/                    portal and mobile workspace routing config
+  context/                   auth, notifications, requests, app state modules
+  hooks/                     domain hooks and screen hooks
+  services/api/              REST clients and API mappers
+  services/storage/          local storage and cache helpers
+  types/                     shared TypeScript types
+  utils/                     shared helpers, constants, mock data
 
-components/           Reusable UI and role-specific UI building blocks
-assets/               Images, icons, fonts, lottie assets
-features/             Role and feature documentation
-APIs/                 Backend/API notes and contracts
-docs/                 Contributor-facing architecture and cleanup docs
-  guides/             Stable operational/setup guides moved out of repo root
-  archive/            Historical notes, source backups, design exports, and diagnostics
-scripts/              Repo and maintenance scripts
-  windows/            Windows-specific helper scripts
-  dev/                Local development utilities
+assets/                      images, icons, Lottie files, static assets
+APIs/                        backend notes and API contracts
+features/                    role and feature documentation
+docs/                        architecture, maturity, guides, archive
+patches/                     patch-package patches
+scripts/                     repo utilities and build helpers
+android/                     generated native Android project currently present
+dist-export-test/            generated export artifact currently present
 ```
 
-## Key Architecture Notes
+## Current Status
 
-- `app/` should stay thin. Route files should compose domain hooks and present screens, not own business logic.
-- `lib/` is the current source of truth for shared app logic.
-- `components/` contains reusable UI, including portal-specific components.
-- `features/` documents planned and partial experiences, but some of those docs are ahead of the actual router state.
-- Several domains are still hybrid: part API-backed, part mock/local-state backed. Check the architecture guide before assuming a screen is fully server-backed.
-- `CLAUDE.md` intentionally remains at the repo root because Claude-compatible tooling expects that filename in-place.
+The app is actively developed and has substantial runtime code, but it is not uniformly backend-backed.
 
-## Main Docs
+Current data maturity from `docs/MODULE_MATURITY.md`:
 
-- [Architecture Guide](./docs/ARCHITECTURE.md)
-- [App State Guide](./docs/APP_STATE.md)
-- [Module Maturity Guide](./docs/MODULE_MATURITY.md)
-- [Guides](./docs/guides/)
-- [Archive](./docs/archive/)
-- [Repository Guidelines](./AGENTS.md)
-- [Feature Overview](./features/README.md)
-- [API Notes](./APIs/)
+- Auth/session: API-backed.
+- Resident self-service and several request/owner flows: partly API-backed.
+- Visitors: hybrid; resident visitor CRUD is API-backed, while general visitor lists, passes, and logs still rely on mock/local state.
+- Property/management: hybrid; some backend calls exist, but cache/local state and simulated helpers remain.
+- Amenities: mock-backed.
+- Jobs: mock-backed.
+- Ratings: mock-backed.
 
-## Contributor Rules
+Validation from the latest audit:
 
-- Prefer adding new shared logic under `lib/`, not directly into route files.
-- Do not assume a role is live just because types or docs mention it.
-- Keep generated files, backups, and design exports out of runtime code paths.
-- Put standalone operational notes under `docs/guides/` or `docs/archive/`, not the repo root.
-- If you change routing, update both the router and the contributor docs in the same change.
+- `npm.cmd ci --dry-run` passed.
+- `npm.cmd run typecheck` passed.
+- `npm.cmd run lint` passed.
+- `npm.cmd run doctor` passed.
+- `npm.cmd test -- --runInBand` failed: one Jest test timed out in `app/__tests__/index.test.tsx`.
+- `npx.cmd expo export --platform web` failed because `@lottiefiles/dotlottie-react` is missing for the web Lottie import path.
 
-## Current Risks
+Native Android/iOS release builds were not verified in this audit.
 
-- `useApp()` still exists as a broad compatibility hook, even though runtime code is intended to use narrow hooks under `lib/context/`.
-- A few management and job workflows still rely on mock/local state.
-- Test coverage is minimal relative to repo size.
+## Known Limitations
 
-## Next Cleanup Priorities
+- The repo depends on private Towerdesk backend services. A fresh clone can install and compile, but meaningful login and real data require backend access.
+- Some screens appear operational while using mock or local-only state. This should be made clearer in the UI or fully replaced with backend integration.
+- Web export currently fails due to a missing Lottie web dependency.
+- One Jest test currently times out.
+- Root environment files are committed and should be replaced with `.env.example` before publication.
+- `google-services.json` is committed. Firebase config is not the same as a server secret, but it should still be reviewed and restricted before public release.
+- `lib/config/cloudinary.ts` contains a hardcoded Cloudinary cloud name and unsigned upload preset. Review upload preset restrictions before publishing.
+- Generated artifacts and local/tooling files are tracked, including `dist-export-test/`, `.claude/`, `.idea/`, `.vscode/`, archived logs, crash reports, profiling data, and source backups.
+- Documentation is better than a typical prototype, but there is still drift between older feature docs and the current router/runtime state.
+- No license file is present.
 
-1. Align route registration, side-menu links, and role redirects to one source of truth.
-2. Keep `useApp()` compatibility-only and clarify ownership between app-state hooks and domain modules.
-3. Make mock-backed modules explicit and easier to phase out.
-4. Continue tightening contributor docs and archive boundaries as Phase 1 stabilization wraps up.
+## Lessons Learned
+
+- Keep route registration, role mapping, workspace selection, and menu definitions tied to one source of truth. This app has multiple role concepts, so drift is easy.
+- Track module maturity explicitly. Mixing API-backed, hybrid, and mock-backed modules is workable during development only when the boundaries are documented.
+- Keep generated exports, crash logs, source backups, and IDE/tooling state out of the publishable source tree.
+- Treat mobile "public" environment variables as public configuration, not secrets, but still avoid committing project-specific production endpoints in an open repository.
+- Validate web separately from native. Expo Doctor and TypeScript can pass while web export still fails on platform-specific dependencies.
+
+## License
+
+No license is currently provided. Until a license is added, this code should be treated as proprietary and not reusable by third parties.
