@@ -29,6 +29,7 @@ import { useResidentRequests } from "../../lib/hooks/useResidentRequests";
 import type { Request, RequestStatus } from "../../lib/types";
 import {
   getResidentRequestOwnerRejectionReason,
+  isResidentRequestOwnerApprovalPending,
   isResidentRequestOwnerRejected,
 } from "../../lib/utils/resident-request-approval";
 import {
@@ -550,6 +551,7 @@ export function TenantRequestsScene({
 
   const renderRequestCard = (request: Request) => {
     const ownerRejected = isResidentRequestOwnerRejected(request);
+    const ownerApprovalPending = isResidentRequestOwnerApprovalPending(request);
     const ownerRejectionReason = getResidentRequestOwnerRejectionReason(request);
     const statusMeta = getStatusMeta(request);
     const typeMeta = getRequestTypeMeta(request.type);
@@ -609,6 +611,10 @@ export function TenantRequestsScene({
               ? `Owner rejected this request: ${ownerRejectionReason}`
               : "Owner rejected this request. Management will review the next step."}
           </Text>
+        ) : ownerApprovalPending ? (
+          <Text style={styles.requestNoticeText} numberOfLines={2}>
+            Awaiting owner approval. Management will continue once the decision is recorded.
+          </Text>
         ) : null}
 
         <View style={styles.requestInfoRow}>
@@ -623,6 +629,8 @@ export function TenantRequestsScene({
           >
             {ownerRejected
               ? "Execution blocked"
+              : ownerApprovalPending
+                ? "Awaiting owner approval"
               : request.assignedTo
                 ? `Assigned to ${request.assignedTo}`
                 : "Awaiting assignment"}
@@ -1231,6 +1239,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     color: P.dangerText,
+    fontWeight: "600",
+  },
+  requestNoticeText: {
+    marginTop: -2,
+    marginBottom: 12,
+    fontSize: 12,
+    lineHeight: 18,
+    color: P.muted,
     fontWeight: "600",
   },
   requestInfoRow: {

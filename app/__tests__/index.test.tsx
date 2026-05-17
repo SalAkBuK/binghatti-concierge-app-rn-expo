@@ -157,6 +157,32 @@ describe("IndexScreen", () => {
     });
   });
 
+  it("redirects resident building staff users directly to building employee portal", () => {
+    mockUseAuth.mockReturnValue(
+      buildAuthValue({
+        isAuthenticated: true,
+        currentUser: buildWorkspaceUser(["resident", "building_staff"], {
+          activeWorkspace: null,
+          role: "tenant",
+          persona: {
+            keys: ["RESIDENT", "BUILDING_STAFF"],
+            isResident: true,
+            residentOccupancyStatus: "ACTIVE",
+          },
+          buildingAccess: [{ roleTemplateKey: "building_admin" }],
+        }),
+      }),
+    );
+
+    act(() => {
+      TestRenderer.create(<IndexScreen />);
+    });
+
+    expect(mockRedirect).toHaveBeenLastCalledWith({
+      href: "/(buildingEmployee)",
+    });
+  });
+
   it("redirects unsupported personas to the unavailable portal", () => {
     mockUseAuth.mockReturnValue(
       buildAuthValue({
@@ -178,6 +204,55 @@ describe("IndexScreen", () => {
 
     expect(mockRedirect).toHaveBeenLastCalledWith({
       href: "/portal-unavailable",
+    });
+  });
+
+  it("ignores stale cached mobileWorkspaces when persona no longer grants them", () => {
+    mockUseAuth.mockReturnValue(
+      buildAuthValue({
+        isAuthenticated: true,
+        currentUser: buildUser({
+          role: "tenant",
+          persona: {
+            isBuildingStaff: true,
+            buildingStaffRoleKeys: ["BUILDING_EMPLOYEE"],
+          },
+          mobileWorkspaces: ["resident"],
+          activeWorkspace: "resident",
+        }),
+      }),
+    );
+
+    act(() => {
+      TestRenderer.create(<IndexScreen />);
+    });
+
+    expect(mockRedirect).toHaveBeenLastCalledWith({
+      href: "/(buildingEmployee)",
+    });
+  });
+
+  it("routes org admin persona to the management workspace", () => {
+    mockUseAuth.mockReturnValue(
+      buildAuthValue({
+        isAuthenticated: true,
+        currentUser: buildUser({
+          role: "admin",
+          persona: {
+            isOrgAdmin: true,
+          },
+          mobileWorkspaces: [],
+          activeWorkspace: null,
+        }),
+      }),
+    );
+
+    act(() => {
+      TestRenderer.create(<IndexScreen />);
+    });
+
+    expect(mockRedirect).toHaveBeenLastCalledWith({
+      href: "/(management)",
     });
   });
 

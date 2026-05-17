@@ -15,6 +15,9 @@ export type OwnerNotificationTarget =
       id: string;
     };
 
+export const OWNER_APPROVAL_REQUESTED = 'OWNER_APPROVAL_REQUESTED' as const;
+export const OWNER_MAINTENANCE_NOTICE = 'OWNER_MAINTENANCE_NOTICE' as const;
+
 export const OWNER_PALETTE = {
   bg: '#F8F9FA',
   surface: '#FFFFFF',
@@ -214,6 +217,18 @@ export const resolveOwnerRequestApprovalStatus = (
     request?.ownerApproval?.status ?? request?.ownerApprovalStatus,
   );
 
+export const isOwnerApprovalRequestedNotification = (
+  notification: Pick<OwnerNotification, 'type'> | unknown,
+): boolean =>
+  String(asRecord(notification)?.type ?? '').trim().toUpperCase() ===
+  OWNER_APPROVAL_REQUESTED;
+
+export const isOwnerMaintenanceNoticeNotification = (
+  notification: Pick<OwnerNotification, 'type'> | unknown,
+): boolean =>
+  String(asRecord(notification)?.type ?? '').trim().toUpperCase() ===
+  OWNER_MAINTENANCE_NOTICE;
+
 export const getOwnerNotificationTarget = (
   payload: unknown,
 ): OwnerNotificationTarget | null => {
@@ -300,8 +315,12 @@ export const getOwnerConversationDisplayName = (
 export const getOwnerNotificationTone = (notification: OwnerNotification) => {
   const type = notification.type?.toUpperCase();
 
-  if (type?.includes('APPROVAL')) {
+  if (isOwnerApprovalRequestedNotification(notification)) {
     return { bg: OWNER_PALETTE.warningBg, text: OWNER_PALETTE.warningText };
+  }
+
+  if (isOwnerMaintenanceNoticeNotification(notification)) {
+    return { bg: OWNER_PALETTE.infoBg, text: OWNER_PALETTE.infoText };
   }
 
   if (type?.includes('MESSAGE') || type?.includes('CONVERSATION')) {

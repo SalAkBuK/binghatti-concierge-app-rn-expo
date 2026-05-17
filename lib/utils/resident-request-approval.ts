@@ -150,10 +150,19 @@ export const getResidentRequestOwnerApproval = (
   return normalizeOwnerApprovalSnapshot(request);
 };
 
+export const getResidentRequestOwnerApprovalStatus = (
+  request: Pick<Request, 'ownerApproval' | 'ownerApprovalStatus'> | unknown,
+): OwnerApprovalStatus | null =>
+  getResidentRequestOwnerApproval(request)?.status ?? null;
+
+export const isResidentRequestOwnerApprovalPending = (
+  request: Pick<Request, 'ownerApproval' | 'ownerApprovalStatus'> | unknown,
+): boolean => getResidentRequestOwnerApprovalStatus(request) === 'PENDING';
+
 export const isResidentRequestOwnerRejected = (
   request: Pick<Request, 'ownerApproval' | 'ownerApprovalStatus'> | unknown,
 ): boolean =>
-  getResidentRequestOwnerApproval(request)?.status === 'REJECTED';
+  getResidentRequestOwnerApprovalStatus(request) === 'REJECTED';
 
 export const getResidentRequestOwnerRejectionReason = (
   request: Pick<Request, 'ownerApproval' | 'ownerApprovalStatus'> | unknown,

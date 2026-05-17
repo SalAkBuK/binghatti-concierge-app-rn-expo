@@ -250,4 +250,32 @@ describe('SideMenu', () => {
     expect(renderedTexts).toContain('Home');
     expect(renderedTexts).not.toContain('Requests');
   });
+
+  it('hides workspace switching for resident users with building staff access', () => {
+    mockUseAuth.mockReturnValue(
+      buildAuthValue(
+        buildUser({
+          role: 'building_employee',
+          persona: {
+            keys: ['RESIDENT', 'BUILDING_STAFF'],
+            isResident: true,
+            residentOccupancyStatus: 'ACTIVE',
+          } as any,
+          buildingAccess: [{ roleTemplateKey: 'building_staff' }],
+          mobileWorkspaces: ['resident', 'building_staff'],
+          activeWorkspace: 'building_staff',
+        }),
+      ),
+    );
+
+    let tree: TestRenderer.ReactTestRenderer;
+
+    act(() => {
+      tree = TestRenderer.create(<SideMenu isVisible onClose={jest.fn()} />);
+    });
+
+    const renderedTexts = getRenderedTexts(tree!);
+
+    expect(renderedTexts).not.toContain('Switch Workspace');
+  });
 });

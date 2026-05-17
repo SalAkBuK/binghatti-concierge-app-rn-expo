@@ -6,6 +6,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "../lib/context/auth-context";
 import {
   getMobileWorkspaceLabel,
+  getMobileWorkspaces,
   resolveInitialMobileRoute,
 } from "../lib/config/mobile-workspaces";
 
@@ -28,6 +29,7 @@ export default function PortalUnavailableScreen() {
   }
 
   const routeDecision = resolveInitialMobileRoute(currentUser);
+  const availableWorkspaces = getMobileWorkspaces(currentUser);
 
   if (routeDecision.type === "route") {
     return <Redirect href={routeDecision.href as any} />;
@@ -65,11 +67,10 @@ export default function PortalUnavailableScreen() {
             Persona keys: {currentUser.persona.keys.join(", ")}
           </Text>
         ) : null}
-        {Array.isArray(currentUser.mobileWorkspaces) &&
-        currentUser.mobileWorkspaces.length > 0 ? (
+        {availableWorkspaces.length > 0 ? (
           <Text style={styles.meta}>
             Supported workspaces:{" "}
-            {currentUser.mobileWorkspaces
+            {availableWorkspaces
               .map((workspace) => getMobileWorkspaceLabel(workspace))
               .join(", ")}
           </Text>

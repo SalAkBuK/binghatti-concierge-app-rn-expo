@@ -61,7 +61,12 @@ export class ResidentRequestsApiService extends BaseApiService {
     id: string,
     payload: UpdateResidentRequestDTO,
   ): Promise<ApiResponse<any>> {
-    return this.patch<ApiResponse<any>>(API_ENDPOINTS.residentRequests.update(id), payload);
+    return this.request<ApiResponse<any>>({
+      method: "PATCH",
+      url: API_ENDPOINTS.residentRequests.update(id),
+      data: payload,
+      timeout: 30000,
+    });
   }
 
   async cancelRequest(id: string): Promise<ApiResponse<any>> {

@@ -1,4 +1,9 @@
-import { getOwnerNotificationTarget } from '../owner-portal';
+import {
+  getOwnerNotificationTarget,
+  getOwnerNotificationTone,
+  isOwnerApprovalRequestedNotification,
+  isOwnerMaintenanceNoticeNotification,
+} from '../owner-portal';
 
 describe('owner portal helpers', () => {
   it('extracts a request target from a flat payload', () => {
@@ -53,5 +58,40 @@ describe('owner portal helpers', () => {
       kind: 'request',
       id: 'req-3',
     });
+  });
+
+  it('recognizes owner maintenance notices as FYI request notifications', () => {
+    const notification = {
+      id: 'notification-2',
+      userId: 'owner-user-1',
+      title: 'Maintenance activity',
+      type: 'OWNER_MAINTENANCE_NOTICE',
+      data: {
+        requestId: 'req-4',
+        buildingId: 'building-1',
+        ownerApprovalStatus: 'NOT_REQUIRED',
+        requiresOwnerApproval: false,
+      },
+      createdAt: '2026-04-11T10:00:00.000Z',
+    };
+
+    expect(isOwnerMaintenanceNoticeNotification(notification)).toBe(true);
+    expect(isOwnerApprovalRequestedNotification(notification)).toBe(false);
+    expect(getOwnerNotificationTarget(notification)).toEqual({
+      kind: 'request',
+      id: 'req-4',
+    });
+    expect(getOwnerNotificationTone(notification as any)).toEqual({
+      bg: '#E7EEF9',
+      text: '#3C5A8C',
+    });
+  });
+
+  it('keeps OWNER_APPROVAL_REQUESTED as the approval notification type', () => {
+    expect(
+      isOwnerApprovalRequestedNotification({
+        type: 'OWNER_APPROVAL_REQUESTED',
+      }),
+    ).toBe(true);
   });
 });

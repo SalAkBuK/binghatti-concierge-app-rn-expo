@@ -24,6 +24,8 @@ import {
   formatOwnerLabel,
   getOwnerNotificationTarget,
   getOwnerNotificationTone,
+  isOwnerApprovalRequestedNotification,
+  isOwnerMaintenanceNoticeNotification,
   OWNER_PALETTE as P,
 } from '../../lib/utils/owner-portal';
 
@@ -276,6 +278,15 @@ export default function OwnerNotificationsScreen() {
               const tone = getOwnerNotificationTone(notification);
               const unread = !notification.readAt;
               const target = getOwnerNotificationTarget(notification);
+              const isApprovalRequest =
+                isOwnerApprovalRequestedNotification(notification);
+              const isMaintenanceNotice =
+                isOwnerMaintenanceNoticeNotification(notification);
+              const requestActionLabel = isApprovalRequest
+                ? 'Review approval'
+                : isMaintenanceNotice
+                  ? 'Open request'
+                  : 'Open request';
 
               return (
                 <View key={notification.id} style={styles.notificationCard}>
@@ -312,7 +323,7 @@ export default function OwnerNotificationsScreen() {
                         onPress={() => void handleOpenNotification(notification)}
                       >
                         <Text style={styles.actionChipText}>
-                          {target.kind === 'request' ? 'Open request' : 'Open message'}
+                          {target.kind === 'request' ? requestActionLabel : 'Open message'}
                         </Text>
                       </TouchableOpacity>
                     ) : null}

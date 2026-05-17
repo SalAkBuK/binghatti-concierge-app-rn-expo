@@ -12,6 +12,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useAuth } from "../lib/context/auth-context";
 import {
+  canSwitchMobileWorkspace,
   getMobileWorkspaceLabel,
   getMobileWorkspaces,
   getResidentWorkspaceDescription,
@@ -56,11 +57,11 @@ export default function WorkspaceSelectorScreen() {
   const [isSaving, setIsSaving] = useState<MobileWorkspace | null>(null);
 
   const availableWorkspaces = useMemo(
-    () =>
-      Array.isArray(currentUser?.mobileWorkspaces) &&
-      currentUser.mobileWorkspaces.length > 0
-        ? currentUser.mobileWorkspaces
-        : getMobileWorkspaces(currentUser),
+    () => getMobileWorkspaces(currentUser),
+    [currentUser],
+  );
+  const canSwitchWorkspace = useMemo(
+    () => canSwitchMobileWorkspace(currentUser),
     [currentUser],
   );
 
@@ -76,7 +77,7 @@ export default function WorkspaceSelectorScreen() {
     return <Redirect href="/portal-unavailable" />;
   }
 
-  if (availableWorkspaces.length === 1) {
+  if (!canSwitchWorkspace) {
     return <Redirect href="/" />;
   }
 

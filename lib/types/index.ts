@@ -29,6 +29,8 @@ export interface UserPersona {
   serviceProviderRoles?: string[];
   isBuildingStaff?: boolean;
   buildingStaffRoleKeys?: string[];
+  isOrgAdmin?: boolean;
+  isPlatformAdmin?: boolean;
   residentOccupancyStatus?: ResidentOccupancyStatus | null;
   residentInviteStatus?: ResidentInviteStatus | null;
 }
@@ -382,9 +384,13 @@ export type NotificationSeverity = "info" | "success" | "warning" | "error";
 export type ChatNotificationType =
   | "CONVERSATION_CREATED"
   | "MESSAGE_CREATED";
+export type OwnerNotificationType =
+  | "OWNER_APPROVAL_REQUESTED"
+  | "OWNER_MAINTENANCE_NOTICE";
 export type NotificationEventType =
   | NotificationSeverity
   | ChatNotificationType
+  | OwnerNotificationType
   | (string & {});
 
 export interface Notification {

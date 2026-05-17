@@ -25,7 +25,10 @@ import {
   subscribeNotificationsSocket,
 } from '../services/notificationsSocket';
 import { STORAGE_KEYS } from '../utils/constants';
-import { getOwnerNotificationTarget } from '../utils/owner-portal';
+import {
+  getOwnerNotificationTarget,
+  isOwnerApprovalRequestedNotification,
+} from '../utils/owner-portal';
 
 type OwnerNotificationsContextValue = {
   conversationUnreadCount: number;
@@ -367,7 +370,7 @@ export function OwnerNotificationsProvider({
             invalidateNotifications();
             refreshWithCooldown('push');
             const data = asRecord(notification.request.content.data);
-            if (data?.type === 'OWNER_APPROVAL_REQUESTED') {
+            if (isOwnerApprovalRequestedNotification(data)) {
               return;
             }
           },

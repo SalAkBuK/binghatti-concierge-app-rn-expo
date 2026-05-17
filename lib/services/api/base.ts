@@ -12,12 +12,21 @@ import type {
 } from "./types";
 
 // Helper to create timeout signal (compatible with Hermes/React Native)
-function createTimeoutSignal(ms: number): { signal: AbortSignal; cleanup: () => void } {
+function createTimeoutSignal(ms: number): {
+  signal: AbortSignal;
+  cleanup: () => void;
+  didTimeout: () => boolean;
+} {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), ms);
+  let timedOut = false;
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, ms);
   return {
     signal: controller.signal,
     cleanup: () => clearTimeout(timeoutId),
+    didTimeout: () => timedOut,
   };
 }
 
@@ -295,6 +304,8 @@ export class BaseApiService {
 
   // Core request method
   async request<T = any>(config: RequestConfig): Promise<T> {
+    let requestTimedOut = false;
+
     try {
       // Apply request interceptors
       const modifiedConfig = await this.applyRequestInterceptors(config);
@@ -307,7 +318,7 @@ export class BaseApiService {
       );
 
       // Create timeout signal (compatible with Hermes/React Native)
-      const { signal, cleanup } = createTimeoutSignal(
+      const { signal, cleanup, didTimeout } = createTimeoutSignal(
         modifiedConfig.timeout || this.config.timeout,
       );
 
@@ -353,6 +364,7 @@ export class BaseApiService {
       try {
         response = await fetch(finalUrl, fetchOptions);
       } finally {
+        requestTimedOut = didTimeout();
         cleanup(); // Clear timeout to prevent memory leaks
       }
 
@@ -445,7 +457,10 @@ export class BaseApiService {
       return finalData;
     } catch (error) {
       // Handle network or other errors
-      if (error instanceof Error && error.name === "TimeoutError") {
+      if (
+        requestTimedOut ||
+        (error instanceof Error && error.name === "TimeoutError")
+      ) {
         const apiError: ApiError = {
           message: "Request timeout",
           code: "TIMEOUT",

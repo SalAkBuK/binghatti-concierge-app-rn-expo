@@ -38,6 +38,7 @@ import type { ResidentMoveRequest, ResidentMoveRequestStatus } from "../../lib/t
 import { RESIDENT_HISTORY_UNAVAILABLE_MESSAGE } from "../../lib/utils/resident-history-access";
 import {
   getResidentRequestOwnerRejectionReason,
+  isResidentRequestOwnerApprovalPending,
   isResidentRequestOwnerRejected,
 } from "../../lib/utils/resident-request-approval";
 import { classifyTenantRequestByTenancyCycle } from "../../lib/utils/tenant-request-tenancy-display";
@@ -919,6 +920,7 @@ export default function TenantHomeScreen() {
               activeRequests.map((request) => {
                 const status = requestStatusMeta(request);
                 const ownerRejected = isResidentRequestOwnerRejected(request);
+                const ownerApprovalPending = isResidentRequestOwnerApprovalPending(request);
                 const ownerRejectionReason = getResidentRequestOwnerRejectionReason(request);
 
                 return (
@@ -961,6 +963,10 @@ export default function TenantHomeScreen() {
                             {ownerRejectionReason
                               ? `Owner rejected this request: ${ownerRejectionReason}`
                               : "Owner rejected this request."}
+                          </Text>
+                        ) : ownerApprovalPending ? (
+                          <Text style={styles.requestApprovalNoticeText} numberOfLines={2}>
+                            Awaiting owner approval.
                           </Text>
                         ) : null}
                       </View>
@@ -1404,6 +1410,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     color: P.dangerText,
+    fontWeight: "600",
+  },
+  requestApprovalNoticeText: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: P.muted,
     fontWeight: "600",
   },
   requestEmergencyBadge: {

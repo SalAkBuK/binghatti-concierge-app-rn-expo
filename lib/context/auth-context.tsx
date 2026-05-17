@@ -16,9 +16,10 @@ import { invalidateResidentTenancy } from "../hooks/useResidentTenancy";
 import {
   getDefaultRoleFromPersona,
   getMobileWorkspaces,
+  getPriorityMobileWorkspace,
   getResidentWorkspaceAccessLevel,
   getRoleForMobileWorkspace,
-  normalizeUserPersona,
+  normalizeMobileWorkspacePersona,
 } from "../config/mobile-workspaces";
 import { API_ENDPOINTS, STORAGE_KEYS } from "../utils";
 import apiService from "../services/api";
@@ -317,6 +318,8 @@ const getUserRefreshSignature = (user: User): string => {
           isOwner: persona.isOwner === true,
           isServiceProvider: persona.isServiceProvider === true,
           isBuildingStaff: persona.isBuildingStaff === true,
+          isOrgAdmin: persona.isOrgAdmin === true,
+          isPlatformAdmin: persona.isPlatformAdmin === true,
           residentOccupancyStatus: normalizeComparableString(
             persona.residentOccupancyStatus,
           ),
@@ -442,9 +445,23 @@ const getSavedWorkspaceSelection = async (
   const storedSelections = await readStoredWorkspaceSelections();
   const savedWorkspace = storedSelections[selectionKey];
 
-  return savedWorkspace && availableWorkspaces.includes(savedWorkspace)
-    ? savedWorkspace
-    : null;
+  if (savedWorkspace && availableWorkspaces.includes(savedWorkspace)) {
+    return savedWorkspace;
+  }
+
+  if (savedWorkspace) {
+    delete storedSelections[selectionKey];
+    try {
+      await SecureStore.setItemAsync(
+        STORAGE_KEYS.selected_mobile_workspace,
+        JSON.stringify(storedSelections),
+      );
+    } catch (error) {
+      console.warn("[Auth] Failed to discard stale workspace selection:", error);
+    }
+  }
+
+  return null;
 };
 
 const persistWorkspaceSelection = async (
@@ -645,23 +662,97 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           if (savedUserData) {
             try {
               const userData = JSON.parse(savedUserData);
-              let resolvedUser = userData;
-              const persona = normalizeUserPersona(resolvedUser?.persona);
+              const profileResponse = await apiService.getProfile();
+              const backendUser =
+                (profileResponse as ApiResponse<any>)?.data ??
+                (profileResponse as { user?: any })?.user ??
+                profileResponse;
+
+              if (!backendUser || typeof backendUser !== "object") {
+                throw new Error("Session restore returned an invalid user payload");
+              }
+
+              const restoredEmail = String(
+                backendUser?.email ?? userData?.email ?? "",
+              ).trim().toLowerCase();
+              let resolvedUser = {
+                ...userData,
+                ...backendUser,
+                id:
+                  backendUser?.id != null
+                    ? String(backendUser.id)
+                    : userData?.id,
+                email: restoredEmail || userData?.email,
+                name:
+                  backendUser?.name ??
+                  backendUser?.fullName ??
+                  userData?.name ??
+                  restoredEmail,
+                orgId:
+                  backendUser?.orgId ??
+                  backendUser?.org_id ??
+                  userData?.orgId,
+                orgAccess:
+                  backendUser?.orgAccess ?? userData?.orgAccess ?? null,
+                buildingAccess:
+                  backendUser?.buildingAccess ??
+                  backendUser?.buildingAssignments ??
+                  userData?.buildingAccess ??
+                  null,
+                buildingAssignments:
+                  backendUser?.buildingAssignments ??
+                  userData?.buildingAssignments ??
+                  null,
+                resident:
+                  backendUser?.resident ?? userData?.resident ?? null,
+                effectivePermissions: Array.isArray(
+                  backendUser?.effectivePermissions,
+                )
+                  ? backendUser.effectivePermissions.filter(
+                      (permission: unknown): permission is string =>
+                        typeof permission === "string" && permission.length > 0,
+                    )
+                  : [],
+                profile: {
+                  ...(userData?.profile ?? {}),
+                  ...(backendUser?.profile && typeof backendUser.profile === "object"
+                    ? backendUser.profile
+                    : {}),
+                  name:
+                    backendUser?.name ??
+                    backendUser?.fullName ??
+                    userData?.profile?.name,
+                  phone:
+                    backendUser?.phone ??
+                    backendUser?.phoneNumber ??
+                    userData?.profile?.phone,
+                },
+              };
+              const persona = normalizeMobileWorkspacePersona(resolvedUser);
+              if (!persona) {
+                throw new Error("Session restore did not include persona");
+              }
               const availableWorkspaces = getMobileWorkspaces({
+                ...resolvedUser,
                 persona,
               });
               const savedWorkspace = await getSavedWorkspaceSelection(
                 resolvedUser,
                 availableWorkspaces,
               );
+              const priorityWorkspace = getPriorityMobileWorkspace(
+                persona,
+                availableWorkspaces,
+              );
               const activeWorkspace =
-                resolvedUser?.activeWorkspace &&
+                priorityWorkspace ??
+                (resolvedUser?.activeWorkspace &&
                 availableWorkspaces.includes(resolvedUser.activeWorkspace)
                   ? resolvedUser.activeWorkspace
                   : savedWorkspace ??
                     (availableWorkspaces.length === 1
                       ? availableWorkspaces[0]
-                      : null);
+                      : null));
               const resolvedRole = activeWorkspace
                 ? getRoleForMobileWorkspace(activeWorkspace, persona)
                 : getDefaultRoleFromPersona(
@@ -931,11 +1022,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const nowIso = new Date().toISOString();
         const userEmail = (payloadUser.email || normalizedEmail).toLowerCase();
         const existingUser = state.users[userEmail];
-        const persona = normalizeUserPersona(payloadUser?.persona);
+        const persona = normalizeMobileWorkspacePersona(payloadUser);
         if (!persona) {
           throw new Error("Login response did not include persona");
         }
-        const availableWorkspaces = getMobileWorkspaces({ persona });
+        const availableWorkspaces = getMobileWorkspaces({
+          ...payloadUser,
+          persona,
+        });
         const savedWorkspace = await getSavedWorkspaceSelection(
           {
             id: payloadUser?.id ? String(payloadUser.id) : existingUser?.id,
@@ -943,7 +1037,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           },
           availableWorkspaces,
         );
+        const priorityWorkspace = getPriorityMobileWorkspace(
+          persona,
+          availableWorkspaces,
+        );
         const activeWorkspace =
+          priorityWorkspace ??
           savedWorkspace ??
           (availableWorkspaces.length === 1 ? availableWorkspaces[0] : null);
         const userRole = activeWorkspace
@@ -1110,8 +1209,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         throw new Error("No user logged in");
       }
 
-      const persona = normalizeUserPersona(state.currentUser.persona);
+      const persona = normalizeMobileWorkspacePersona(state.currentUser);
       const availableWorkspaces = getMobileWorkspaces({
+        ...state.currentUser,
         persona,
       });
 
@@ -1260,15 +1360,27 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const userEmail = String(
           payloadUser?.email ?? currentUser.email,
         ).trim().toLowerCase();
-        const persona = normalizeUserPersona(
-          payloadUser?.persona ?? currentUser.persona,
-        );
+        const persona = normalizeMobileWorkspacePersona({
+          ...currentUser,
+          ...payloadUser,
+          persona: payloadUser?.persona ?? currentUser.persona,
+          buildingAccess:
+            payloadUser?.buildingAccess ??
+            payloadUser?.buildingAssignments ??
+            currentUser.buildingAccess,
+          buildingAssignments:
+            payloadUser?.buildingAssignments ?? currentUser.buildingAssignments,
+        });
 
         if (!persona) {
           throw new Error("Current user refresh did not include persona");
         }
 
-        const availableWorkspaces = getMobileWorkspaces({ persona });
+        const availableWorkspaces = getMobileWorkspaces({
+          ...currentUser,
+          ...payloadUser,
+          persona,
+        });
         const savedWorkspace = await getSavedWorkspaceSelection(
           {
             id:
@@ -1279,11 +1391,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           },
           availableWorkspaces,
         );
+        const priorityWorkspace = getPriorityMobileWorkspace(
+          persona,
+          availableWorkspaces,
+        );
         const activeWorkspace =
           currentUser.activeWorkspace &&
           availableWorkspaces.includes(currentUser.activeWorkspace)
             ? currentUser.activeWorkspace
-            : savedWorkspace ??
+            : priorityWorkspace ??
+              savedWorkspace ??
               (availableWorkspaces.length === 1 ? availableWorkspaces[0] : null);
         const userRole = activeWorkspace
           ? getRoleForMobileWorkspace(activeWorkspace, persona)

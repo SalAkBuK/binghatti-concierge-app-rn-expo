@@ -33,29 +33,78 @@ export type MobileRouteDecision =
       workspaces: MobileWorkspace[];
     };
 
-const MANAGEMENT_BUILDING_STAFF_MARKERS = [
-  "ADMIN",
+type MobileWorkspaceUser = Pick<User, "persona"> &
+  Partial<Pick<User, "buildingAccess" | "buildingAssignments">>;
+
+const BUILDING_STAFF_PERSONA_KEYS = new Set(["BUILDING_STAFF"]);
+const BUILDING_STAFF_ACCESS_ROLE_KEYS = new Set([
+  "BUILDING_STAFF",
   "BUILDING_ADMIN",
   "BUILDING_MANAGER",
-  "MANAGER",
-  "MANAGEMENT",
-];
+  "BUILDING_EMPLOYEE",
+  "MAINTENANCE_STAFF",
+  "MAINTENANCESTAFF",
+  "STAFF",
+]);
 
 const normalizeToken = (value: unknown): string | null =>
   typeof value === "string" && value.trim().length > 0
     ? value.trim().toUpperCase()
     : null;
 
-const normalizeTokenArray = (values: unknown): string[] =>
+const normalizeKeyToken = (value: unknown): string | null => {
+  const token = normalizeToken(value);
+  return token ? token.replace(/[\s-]+/g, "_") : null;
+};
+
+const normalizeKeyTokenArray = (values: unknown): string[] =>
   Array.isArray(values)
     ? values
-        .map((value) => normalizeToken(value))
+        .map((value) => normalizeKeyToken(value))
         .filter((value): value is string => value != null)
     : [];
 
 const dedupeWorkspaces = (
   workspaces: MobileWorkspace[],
 ): MobileWorkspace[] => [...new Set(workspaces)];
+
+const dedupeTokens = (tokens: string[]): string[] => [...new Set(tokens)];
+
+const asAccessEntries = (value: unknown): Record<string, unknown>[] => {
+  if (Array.isArray(value)) {
+    return value.filter(
+      (entry): entry is Record<string, unknown> =>
+        entry != null && typeof entry === "object",
+    );
+  }
+
+  if (value != null && typeof value === "object") {
+    return [value as Record<string, unknown>];
+  }
+
+  return [];
+};
+
+const getBuildingAccessRoleKeys = (
+  ...accessSources: unknown[]
+): string[] =>
+  dedupeTokens(
+    accessSources
+      .flatMap((source) => asAccessEntries(source))
+      .flatMap((entry) => [
+        entry.roleTemplateKey,
+        entry.roleKey,
+        entry.roleName,
+        entry.type,
+        entry.name,
+        entry.key,
+      ])
+      .map((value) => normalizeKeyToken(value))
+      .filter((value): value is string => value != null),
+  );
+
+const hasBuildingStaffRoleKey = (roleKeys: string[]): boolean =>
+  roleKeys.some((roleKey) => BUILDING_STAFF_ACCESS_ROLE_KEYS.has(roleKey));
 
 export const normalizeUserPersona = (
   persona: unknown,
@@ -65,28 +114,69 @@ export const normalizeUserPersona = (
   }
 
   const source = persona as Record<string, unknown>;
+  const keys = normalizeKeyTokenArray(source.keys);
+  const buildingStaffRoleKeys = normalizeKeyTokenArray(
+    source.buildingStaffRoleKeys,
+  );
   const residentOccupancyStatus = normalizeToken(
     source.residentOccupancyStatus,
   );
   const residentInviteStatus = normalizeToken(source.residentInviteStatus);
 
   return {
-    keys: normalizeTokenArray(source.keys),
+    keys,
     isResident: source.isResident === true,
     isOwner: source.isOwner === true,
     isServiceProvider: source.isServiceProvider === true,
-    serviceProviderRoles: normalizeTokenArray(source.serviceProviderRoles),
-    isBuildingStaff: source.isBuildingStaff === true,
-    buildingStaffRoleKeys: normalizeTokenArray(source.buildingStaffRoleKeys),
+    serviceProviderRoles: normalizeKeyTokenArray(source.serviceProviderRoles),
+    isBuildingStaff:
+      source.isBuildingStaff === true ||
+      keys.some((key) => BUILDING_STAFF_PERSONA_KEYS.has(key)) ||
+      hasBuildingStaffRoleKey(buildingStaffRoleKeys),
+    buildingStaffRoleKeys,
+    isOrgAdmin: source.isOrgAdmin === true,
+    isPlatformAdmin: source.isPlatformAdmin === true,
     residentOccupancyStatus,
     residentInviteStatus,
   };
 };
 
-export const getMobileWorkspaces = (
-  user: Pick<User, "persona"> | { persona?: UserPersona | null } | null | undefined,
-): MobileWorkspace[] => {
+export const normalizeMobileWorkspacePersona = (
+  user: MobileWorkspaceUser | { persona?: UserPersona | null } | null | undefined,
+): UserPersona | null => {
   const persona = normalizeUserPersona(user?.persona);
+
+  if (!persona) {
+    return null;
+  }
+
+  const accessRoleKeys = getBuildingAccessRoleKeys(
+    (user as MobileWorkspaceUser | undefined)?.buildingAccess,
+    (user as MobileWorkspaceUser | undefined)?.buildingAssignments,
+  );
+
+  if (accessRoleKeys.length === 0) {
+    return persona;
+  }
+
+  const buildingStaffRoleKeys = dedupeTokens([
+    ...(persona.buildingStaffRoleKeys ?? []),
+    ...accessRoleKeys,
+  ]);
+
+  return {
+    ...persona,
+    buildingStaffRoleKeys,
+    isBuildingStaff:
+      persona.isBuildingStaff === true ||
+      hasBuildingStaffRoleKey(buildingStaffRoleKeys),
+  };
+};
+
+export const getMobileWorkspaces = (
+  user: MobileWorkspaceUser | { persona?: UserPersona | null } | null | undefined,
+): MobileWorkspace[] => {
+  const persona = normalizeMobileWorkspacePersona(user);
 
   if (!persona) {
     return [];
@@ -109,7 +199,7 @@ export const getMobileWorkspaces = (
     workspaces.push("provider_worker");
   }
 
-  if (persona.isBuildingStaff) {
+  if (persona.isBuildingStaff || persona.isOrgAdmin) {
     workspaces.push("building_staff");
   }
 
@@ -125,7 +215,7 @@ export const getMobileWorkspaceLabel = (workspace: MobileWorkspace): string => {
     case "provider_worker":
       return "Service Provider";
     case "building_staff":
-      return "Building Staff";
+      return "Operations";
   }
 };
 
@@ -167,14 +257,11 @@ export const getResidentWorkspaceDescription = (
 const resolveBuildingStaffPortalRole = (
   persona: UserPersona | null,
 ): User["role"] => {
-  const roleKeys = normalizeTokenArray(persona?.buildingStaffRoleKeys);
-  const isManagementWorkspace = roleKeys.some((roleKey) =>
-    MANAGEMENT_BUILDING_STAFF_MARKERS.some((marker) =>
-      roleKey.includes(marker),
-    ),
-  );
+  if (persona?.isOrgAdmin === true) {
+    return "management";
+  }
 
-  return isManagementWorkspace ? "management" : "building_employee";
+  return "building_employee";
 };
 
 export const getRoleForMobileWorkspace = (
@@ -201,7 +288,9 @@ export const getDefaultRoleFromPersona = (
     return fallbackRole;
   }
 
-  const keys = normalizeTokenArray(persona.keys);
+  if (persona.isBuildingStaff) {
+    return resolveBuildingStaffPortalRole(persona);
+  }
 
   if (persona.isResident) {
     return "tenant";
@@ -218,15 +307,11 @@ export const getDefaultRoleFromPersona = (
     return "service_provider";
   }
 
-  if (persona.isBuildingStaff) {
-    return resolveBuildingStaffPortalRole(persona);
-  }
-
-  if (keys.includes("PLATFORM_ADMIN")) {
+  if (persona.isPlatformAdmin) {
     return "super_admin";
   }
 
-  if (keys.includes("ORG_ADMIN")) {
+  if (persona.isOrgAdmin) {
     return "admin";
   }
 
@@ -235,6 +320,34 @@ export const getDefaultRoleFromPersona = (
   }
 
   return fallbackRole;
+};
+
+export const getPriorityMobileWorkspace = (
+  persona: UserPersona | null | undefined,
+  workspaces: MobileWorkspace[],
+): MobileWorkspace | null => {
+  const normalizedPersona = normalizeUserPersona(persona);
+
+  if (
+    normalizedPersona?.isBuildingStaff === true &&
+    workspaces.includes("building_staff")
+  ) {
+    return "building_staff";
+  }
+
+  return null;
+};
+
+export const canSwitchMobileWorkspace = (
+  user: MobileWorkspaceUser | { persona?: UserPersona | null } | null | undefined,
+): boolean => {
+  const persona = normalizeMobileWorkspacePersona(user);
+  const workspaces = getMobileWorkspaces(user);
+
+  return (
+    workspaces.length > 1 &&
+    getPriorityMobileWorkspace(persona, workspaces) == null
+  );
 };
 
 export const getResidentRouteName = (
@@ -251,13 +364,20 @@ export const getResidentRouteName = (
 };
 
 export const resolveInitialMobileRoute = (
-  user: Pick<User, "persona" | "mobileWorkspaces" | "activeWorkspace"> | null | undefined,
+  user:
+    | Pick<
+        User,
+        | "persona"
+        | "mobileWorkspaces"
+        | "activeWorkspace"
+        | "buildingAccess"
+        | "buildingAssignments"
+      >
+    | null
+    | undefined,
 ): MobileRouteDecision => {
-  const persona = normalizeUserPersona(user?.persona);
-  const workspaces =
-    Array.isArray(user?.mobileWorkspaces) && user.mobileWorkspaces.length > 0
-      ? dedupeWorkspaces(user.mobileWorkspaces)
-      : getMobileWorkspaces(user);
+  const persona = normalizeMobileWorkspacePersona(user);
+  const workspaces = getMobileWorkspaces(user);
 
   if (workspaces.length === 0) {
     return {
@@ -270,15 +390,16 @@ export const resolveInitialMobileRoute = (
     user?.activeWorkspace && workspaces.includes(user.activeWorkspace)
       ? user.activeWorkspace
       : null;
+  const priorityWorkspace = getPriorityMobileWorkspace(persona, workspaces);
 
-  if (workspaces.length > 1 && !activeWorkspace) {
+  if (workspaces.length > 1 && !activeWorkspace && !priorityWorkspace) {
     return {
       type: "workspace_selector",
       workspaces,
     };
   }
 
-  const workspace = activeWorkspace ?? workspaces[0];
+  const workspace = activeWorkspace ?? priorityWorkspace ?? workspaces[0];
   const role = getRoleForMobileWorkspace(workspace, persona);
   const href = getRoleHomeHref(role) ?? "/portal-unavailable";
   const name =

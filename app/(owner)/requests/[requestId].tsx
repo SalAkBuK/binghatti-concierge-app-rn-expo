@@ -219,6 +219,34 @@ export default function OwnerRequestDetailScreen() {
     () => resolveOwnerRequestApprovalStatus(request),
     [request],
   );
+  const approvalStateCopy = useMemo(() => {
+    switch (approvalStatus) {
+      case 'PENDING':
+        return {
+          title: 'Approval pending',
+          body:
+            'This request is waiting for your decision. Approve to let management continue, or reject with a reason.',
+        };
+      case 'APPROVED':
+        return {
+          title: 'Approved',
+          body: 'You approved this request. Management can continue the maintenance workflow.',
+        };
+      case 'REJECTED':
+        return {
+          title: 'Rejected',
+          body:
+            request?.ownerApproval?.reason ||
+            'You rejected this request. Management will review the next step.',
+        };
+      case 'NOT_REQUIRED':
+      default:
+        return {
+          title: 'Approval not required',
+          body: 'This maintenance activity is FYI-only for the owner portal.',
+        };
+    }
+  }, [approvalStatus, request?.ownerApproval?.reason]);
   const requestedByLabel = useMemo(
     () =>
       resolveKnownUserLabel({
@@ -759,8 +787,7 @@ export default function OwnerRequestDetailScreen() {
               {approvalStatus === 'PENDING' ? (
                 <>
                   <Text style={styles.pendingHelperText}>
-                    This request is waiting for your decision. Approve to let management continue,
-                    or reject with a reason.
+                    {approvalStateCopy.body}
                   </Text>
                   <TextInput
                     style={styles.textArea}
@@ -797,9 +824,10 @@ export default function OwnerRequestDetailScreen() {
                   </View>
                 </>
               ) : (
-                <Text style={styles.emptyInlineText}>
-                  This approval is no longer actionable from the owner portal.
-                </Text>
+                <View style={styles.approvalStateBox}>
+                  <Text style={styles.approvalStateTitle}>{approvalStateCopy.title}</Text>
+                  <Text style={styles.approvalStateText}>{approvalStateCopy.body}</Text>
+                </View>
               )}
             </View>
 
@@ -1102,6 +1130,24 @@ const styles = StyleSheet.create({
   },
   emptyInlineText: {
     marginTop: 8,
+    fontSize: 13,
+    lineHeight: 20,
+    color: P.muted,
+  },
+  approvalStateBox: {
+    marginTop: 14,
+    borderRadius: 16,
+    backgroundColor: P.surfaceLow,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  approvalStateTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: P.text,
+  },
+  approvalStateText: {
+    marginTop: 4,
     fontSize: 13,
     lineHeight: 20,
     color: P.muted,

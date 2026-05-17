@@ -28,7 +28,10 @@ import {
   getRoleHomeHref,
   hasMountedPortal,
 } from "../../lib/config/portals";
-import { getResidentWorkspaceAccessLevel } from "../../lib/config/mobile-workspaces";
+import {
+  canSwitchMobileWorkspace,
+  getResidentWorkspaceAccessLevel,
+} from "../../lib/config/mobile-workspaces";
 import { useAuth } from "../../lib/context/auth-context";
 import { useMessaging } from "../../lib/context/messaging-context";
 import { useResidentTenancy } from "../../lib/hooks/useResidentTenancy";
@@ -149,8 +152,7 @@ export function SideMenu({ isVisible, onClose, userRole }: SideMenuProps) {
       "1.0.0";
     return `Version ${version}`;
   }, []);
-  const canSwitchWorkspace =
-    (currentUser?.mobileWorkspaces?.length ?? 0) > 1;
+  const canSwitchWorkspace = canSwitchMobileWorkspace(currentUser);
 
   // Animation values
   const translateX = useSharedValue(-MENU_WIDTH - 20);

@@ -37,6 +37,7 @@ import {
 import { useRequestDetailsScreen } from "../../lib/hooks/modals/request-details/useRequestDetailsScreen";
 import {
   getResidentRequestOwnerRejectionReason,
+  isResidentRequestOwnerApprovalPending,
   isResidentRequestOwnerRejected,
 } from "../../lib/utils/resident-request-approval";
 import { requestToResidentRequestForm } from "../../lib/utils/resident-request-form";
@@ -149,6 +150,8 @@ export default function RequestDetailsScreen() {
   const canApproveTenantJobCompletion =
     !isTenantHistoricalRequest && Boolean(approveTenantJobCompletion);
   const ownerRejected = isTenantUser && isResidentRequestOwnerRejected(selectedRequest);
+  const ownerApprovalPending =
+    isTenantUser && isResidentRequestOwnerApprovalPending(selectedRequest);
   const ownerRejectionReason = ownerRejected
     ? getResidentRequestOwnerRejectionReason(selectedRequest)
     : null;
@@ -361,6 +364,8 @@ export default function RequestDetailsScreen() {
     ? ownerRejectionReason
       ? `Owner declined this request. Reason: ${ownerRejectionReason}. Management will need to review the next step before work can continue.`
       : "Owner declined this request. Management will need to review the next step before work can continue."
+    : ownerApprovalPending
+      ? "Awaiting owner approval. Management will continue the request once the decision is recorded."
     : getTenantRequestNextStep(normalizedStatus);
   const hasExistingRating = canProvideFeedback
     ? Boolean(getRatingByRequestId(selectedRequest.id))
@@ -492,6 +497,8 @@ export default function RequestDetailsScreen() {
                 isTenantUser
                   ? ownerRejected
                     ? "Owner Rejected"
+                    : ownerApprovalPending
+                      ? "Awaiting Approval"
                     : getTenantRequestStatusLabel(normalizedStatus)
                   : normalizedStatus.replace("-", " ")
               }
